@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const config = readSttConfig();
     if (!config) {
       return Response.json(
-        { error: "STT not configured. Set OMP_WEB_STT_ENDPOINT or OMP_WEB_STT_MODEL." },
+        { error: "STT not configured. Set OMP_WEB_STT_ENDPOINT." },
         { status: 501 }
       );
     }

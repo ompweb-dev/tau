@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { SttAfter } from "@/lib/stt";
-import { authGatewayRequest } from "@/lib/omp/auth-gateway";
 
 function cleanEnvVar(val?: string): string | undefined {
   const cleaned = val?.replace(/\\n|[\r\n]/g, "").trim();
@@ -8,18 +7,16 @@ function cleanEnvVar(val?: string): string | undefined {
 }
 
 export interface SttConfig {
-  /** Unset: transcribe with `model` (an omp model selector) through omp's auth gateway. */
-  endpoint: string | undefined;
+  endpoint: string;
   apiKey: string | undefined;
   model: string | undefined;
 }
 
-/** STT settings from OMP_WEB_STT_*; null when neither an endpoint nor a model is configured. Server-only: lib/stt.ts is shared with the browser. */
+/** STT settings from OMP_WEB_STT_*; null when OMP_WEB_STT_ENDPOINT is not configured. Server-only: lib/stt.ts is shared with the browser. */
 export function readSttConfig(): SttConfig | null {
   const endpoint = cleanEnvVar(process.env.OMP_WEB_STT_ENDPOINT);
-  const model = cleanEnvVar(process.env.OMP_WEB_STT_MODEL);
-  if (!endpoint && !model) return null;
-  return { endpoint, apiKey: cleanEnvVar(process.env.OMP_WEB_STT_KEY), model };
+  if (!endpoint) return null;
+  return { endpoint, apiKey: cleanEnvVar(process.env.OMP_WEB_STT_KEY), model: cleanEnvVar(process.env.OMP_WEB_STT_MODEL) };
 }
 
 /**
@@ -119,22 +116,9 @@ function extractUpstreamErrorMessage(data: unknown, rawText: string, status: num
   return `Transcription failed (upstream ${status})`;
 }
 
-const MAX_GATEWAY_AUDIO_BYTES = 18 * 1024 * 1024;
-
-/** One upstream round trip: the configured endpoint, or omp's auth gateway when only a model is set. */
+/** One upstream round trip to the configured STT endpoint. */
 async function requestTranscription({ endpoint, apiKey, model }: SttConfig, audio: File, signal: AbortSignal): Promise<{ ok: boolean; status: number; rawText: string }> {
   signal = AbortSignal.any([signal, AbortSignal.timeout(STT_UPSTREAM_TIMEOUT_MS)]);
-  if (!endpoint) {
-    // The gateway caps its JSON body at 25MB and base64 grows audio by 4/3.
-    if (audio.size > MAX_GATEWAY_AUDIO_BYTES) {
-      return { ok: false, status: 413, rawText: "Recording too large for omp's transcription gateway (max 18MB)" };
-    }
-    const ext = audio.name.match(/\.([a-z0-9]+)$/i)?.[1] ?? "webm";
-    const data = Buffer.from(await audio.arrayBuffer()).toString("base64");
-    const res = await authGatewayRequest("/v1/audio/transcriptions", { model, input_audio: { data, format: ext } }, signal);
-    const rawText = typeof res.body === "string" ? res.body : JSON.stringify(res.body ?? {});
-    return { ok: res.status >= 200 && res.status < 300, status: res.status, rawText };
-  }
   const formData = new FormData();
   formData.append("file", audio, audio.name);
   if (model) formData.append("model", model);
