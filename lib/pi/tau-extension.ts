@@ -5,8 +5,9 @@
  *   1. Host tools the server registers (`/tau_host_tools`), called via `ctx.ui.input("__tau_host_tool__", ...)`
  *   2. Interactive `ask` tool via `ctx.ui.input("__tau_ask__", ...)`
  *   3. `clientMessageId` / `origin` tracking via `/tau_meta` + `input` / `message_start`
- *   4. `/btw` side-question bridge (`/btw`, `/tau_btw`)
- *   5. `pi-subagents` event bridge (`pi.events`)
+ *   4. `/btw` side questions (`/tau_btw`)
+ *   5. History Edit (`/tau_edit`)
+ * pi-subagents needs no bridge here: tau reads its tool progress and `subagent-async` widget (lib/omp/subagent-bridge.ts).
  */
 
 interface PiUI {
@@ -360,24 +361,4 @@ export default function tauExtension(pi: PiExtensionAPI): void {
       }
     },
   });
-
-  // 6. pi-subagents event bridge
-  const subagentEvents = [
-    "subagent:start",
-    "subagent:update",
-    "subagent:end",
-    "subagent_start",
-    "subagent_update",
-    "subagent_end",
-    "pi-subagents:event",
-  ];
-  let lastCtx: PiContext | null = null;
-  pi.on("session_start", (_event, ctx) => {
-    lastCtx = ctx;
-  });
-  for (const eventName of subagentEvents) {
-    pi.events.on(eventName, (data) => {
-      lastCtx?.ui.setStatus("tau-subagent", JSON.stringify({ event: eventName, data }));
-    });
-  }
 }

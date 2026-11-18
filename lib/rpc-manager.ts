@@ -171,7 +171,6 @@ const PASSTHROUGH_COMMANDS = new Set([
   "get_messages_page",
   "export_html",
   "handoff",
-  "get_subagents",
   "get_subagent_messages",
   "set_subagent_subscription",
   "get_login_providers",
@@ -3009,6 +3008,10 @@ export class AgentSessionWrapper {
         this.proc.sendFrame(command as { type: string; [key: string]: unknown });
         return null;
       }
+
+      // pi-subagents' running children, as RpcProcess's bridge last saw them (pi has no such command).
+      case "get_subagents":
+        return { subagents: this.proc.subagents?.running() ?? [] };
 
       // pi has no side questions: the companion extension answers them (`/tau_btw`, lib/pi/tau-extension.ts) and
       // streams btw_record / btw_delta frames.

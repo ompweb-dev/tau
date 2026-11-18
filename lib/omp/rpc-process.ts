@@ -8,6 +8,7 @@ import { isRecord } from "../type-guards";
 import { OMP_NOT_FOUND, resolveOmpBin } from "./omp-cli";
 import { type RpcTransport, spawnLocalRpcTransport } from "./rpc-transport";
 import { LINK_LIMITS } from "../hosts/link-protocol";
+import { SubagentBridge } from "./subagent-bridge";
 
 /**
  * Process + protocol layer for `pi --mode rpc` (NDJSON over stdio).
@@ -166,6 +167,8 @@ export class RpcProcess {
   /** Standard pi extension dialog methods awaiting `ui_response` -> `extension_ui_response`. */
   private readonly extensionDialogMethods = new Map<string, string>();
   private nextId = 1;
+  /** pi-subagents' reports as tau's subagent frames; its running children answer get_subagents. */
+  readonly subagents = new SubagentBridge();
   /** Companion-extension calls awaiting their `tau_reply` frame (see `callExtension`). */
   private readonly extensionReplies = new Map<string, { command: string; resolve(data: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   /** Whether pi has settled since its last `agent_start` (`agent_settled`); null for an adopted child whose history is unknown. */
@@ -310,6 +313,12 @@ export class RpcProcess {
     }
     if (parsed.type === "ready" || parsed.type === "hello") {
       this.resolveReady({ ...parsed, type: "ready" });
+      return;
+    }
+    const bridged = this.subagents.translate(parsed as RpcFrame);
+    if (bridged) {
+      if (!bridged.consume) this.dispatch(parsed as RpcFrame, replayed);
+      for (const frame of bridged.frames) this.dispatch(frame, replayed);
       return;
     }
     if (parsed.type === "extension_ui_request" && typeof parsed.method === "string") {
