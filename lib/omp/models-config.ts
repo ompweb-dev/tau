@@ -180,7 +180,7 @@ export function readModelsConfig(): ModelsFileConfig {
 }
 
 /** Serialize a config as formatted JSON. */
-export function serializeModelsConfig(config: ModelsFileConfig, _existingSource?: string): string {
+export function serializeModelsConfig(config: ModelsFileConfig): string {
   return `${JSON.stringify(config, null, 2)}\n`;
 }
 

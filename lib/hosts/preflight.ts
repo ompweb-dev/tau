@@ -5,7 +5,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { getAgentEnvOverrides } from "../omp/agent-env";
 import { getOmpVersion, resolveOmpBin } from "../omp/omp-cli";
 import { spawnOmpTransport } from "../omp/rpc-process";
-import { CHANNEL_PROTO } from "./omp-socket";
 
 // `ompweb preflight`: start the session omp the way a host starts one for a new session (same resolver, same
 // spawn, plus --no-session in a scratch cwd) and wait for its channel hello. Updaters run it on a candidate

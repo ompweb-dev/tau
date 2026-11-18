@@ -27,7 +27,8 @@ export function mapPresetToolNames(toolNames: string[]): string[] {
 const FULL_PRESET_KEY = [...PRESET_FULL].map((n) => n.toLowerCase()).sort().join(",");
 
 /** Extra CLI args for spawning `pi --mode rpc` for a session. */
-export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], _advisor = false, launchConfig?: ProjectLaunchConfig, modelOverride?: string): string[] {
+export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], advisor = false, launchConfig?: ProjectLaunchConfig, modelOverride?: string): string[] {
+  void advisor;
   const args: string[] = [];
   if (sessionFile) {
     args.push("--session", sessionFile);
