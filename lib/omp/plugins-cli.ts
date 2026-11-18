@@ -64,7 +64,35 @@ async function declaredSources(plugin: { name: string; path?: unknown } | undefi
   }
 }
 
-/** The installed plugins, from `omp plugin list --json`. A marketplace plugin counts by its first user-scope entry; one with none is skipped. A version that is not a string is null, and an npm plugin is enabled only with `enabled: true`, so one odd entry never makes members refuse the manifest. An npm plugin's `source` is its spec in omp's plugins package.json (null: none, a linked plugin), absent when that file cannot be read. A list of another shape rejects: it must never read as "no plugins", which members would apply by removing theirs. */
+export interface PiPackageEntry {
+  source: string;
+  path: string;
+  scope: "global" | "project";
+}
+
+/** Parse `pi list` stdout (`User packages:` / `Project packages:` sections). */
+export function parsePiListOutput(stdout: string): PiPackageEntry[] {
+  const cleaned = stdout.replace(ANSI_RE, "");
+  const entries: PiPackageEntry[] = [];
+  let scope: "global" | "project" | null = null;
+  let currentSource: string | null = null;
+  for (const rawLine of cleaned.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+    if (trimmed === "User packages:") { scope = "global"; currentSource = null; continue; }
+    if (trimmed === "Project packages:") { scope = "project"; currentSource = null; continue; }
+    if (!scope) continue;
+    if (/^\s{4}/.test(rawLine) && currentSource) {
+      entries.push({ source: currentSource, path: trimmed, scope });
+      currentSource = null;
+    } else if (/^\s{2}/.test(rawLine)) {
+      currentSource = trimmed;
+    }
+  }
+  return entries;
+}
+
+/** The installed plugins, from `omp plugin list --json` or `pi list`. */
 export async function listPlugins(run: (args: string[]) => Promise<string>): Promise<PluginEntry[]> {
   const list = parseJsonLoose<OmpPluginList>(await run(["plugin", "list", "--json"]));
   const named = (entry: unknown, key: "name" | "id") => typeof entry === "object" && entry !== null && typeof (entry as Record<string, unknown>)[key] === "string";

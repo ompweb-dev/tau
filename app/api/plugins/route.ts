@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { existsSync, promises as fs } from "fs";
 import { basename, extname, join } from "path";
-import { ANSI_RE, parseJsonLoose } from "@/lib/omp/plugins-cli";
+import { ANSI_RE, parseJsonLoose, parsePiListOutput } from "@/lib/omp/plugins-cli";
 import { OMP_NOT_FOUND, resolveOmpBin } from "@/lib/omp/omp-cli";
 import { ensureAgentDir } from "@/lib/omp/paths";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
@@ -208,14 +208,9 @@ async function readPlugins(cwd: string | null): Promise<PluginsResponse> {
   const totals = emptyCounts();
 
   try {
-    const { stdout } = await runOmp(["plugin", "list", "--json"], { cwd: cwd ?? ensureAgentDir(), timeout: 60_000 });
+    const { stdout } = await runOmp(["list"], { cwd: cwd ?? ensureAgentDir(), timeout: 60_000 });
     const list = parseJsonLoose<OmpPluginList>(stdout);
-    if (!list) {
-      diagnostics.push({
-        type: "error",
-        message: "Could not parse `omp plugin list --json` output.",
-      });
-    } else {
+    if (list) {
       for (const plugin of list.npm ?? []) {
         packages.push(await toNpmPackageInfo(plugin));
       }
@@ -231,12 +226,34 @@ async function readPlugins(cwd: string | null): Promise<PluginsResponse> {
         }
         packages.push(info);
       }
-      for (const pkg of packages) {
-        totals.extensions += pkg.counts.extensions;
-        totals.skills += pkg.counts.skills;
-        totals.prompts += pkg.counts.prompts;
-        totals.themes += pkg.counts.themes;
+    } else {
+      const piPackages = parsePiListOutput(stdout);
+      for (const pkg of piPackages) {
+        if (!cwd && pkg.scope === "project") continue;
+        const installed = Boolean(pkg.path && existsSync(pkg.path));
+        const resources = pkg.path ? await scanPluginSkills(pkg.path) : [];
+        const counts = emptyCounts();
+        counts.skills = resources.length;
+        packages.push({
+          source: pkg.source,
+          scope: pkg.scope,
+          filtered: false,
+          disabled: false,
+          installedPath: pkg.path || undefined,
+          packageName: basename(pkg.path) || pkg.source,
+          version: undefined,
+          configuredVersion: undefined,
+          counts,
+          resources,
+          status: resources.length > 0 ? "loaded" : installed ? "installed" : "missing",
+        });
       }
+    }
+    for (const pkg of packages) {
+      totals.extensions += pkg.counts.extensions;
+      totals.skills += pkg.counts.skills;
+      totals.prompts += pkg.counts.prompts;
+      totals.themes += pkg.counts.themes;
     }
   } catch (error) {
     diagnostics.push({
@@ -294,20 +311,19 @@ export async function POST(req: Request) {
     }
 
     const source = body.source?.trim();
-    const scopeArgs = scope === "project" ? ["--scope", "project"] : [];
+    const scopeArgs = scope === "project" ? ["-l"] : [];
     const dir = cwd ?? ensureAgentDir();
 
     if (body.action === "install") {
       if (!source) return Response.json({ error: "source required", code: "source_required" }, { status: 400 });
-      await runOmp(["plugin", "install", source, "--json", ...scopeArgs], { cwd: dir, timeout: 300_000 });
+      await runOmp(["install", source, ...scopeArgs], { cwd: dir, timeout: 300_000 });
     } else if (body.action === "remove") {
       if (!source) return Response.json({ error: "source required", code: "source_required" }, { status: 400 });
-      await runOmp(["plugin", "uninstall", source, "--json", ...scopeArgs], { cwd: dir, timeout: 120_000 });
+      await runOmp(["remove", source, ...scopeArgs], { cwd: dir, timeout: 120_000 });
     } else if (body.action === "update") {
-      await runOmp(["plugin", "upgrade", ...(source ? [source, ...scopeArgs] : [])], { cwd: dir, timeout: 300_000 });
+      await runOmp(["update", ...(source ? [source] : [])], { cwd: dir, timeout: 300_000 });
     } else if (body.action === "disable" || body.action === "enable") {
-      if (!source) return Response.json({ error: "source required", code: "source_required" }, { status: 400 });
-      await runOmp(["plugin", body.action, source, "--json", ...scopeArgs], { cwd: dir, timeout: 60_000 });
+      return Response.json({ error: `pi packages do not support ${body.action} via CLI; use remove/install instead.`, code: "plugin_unsupported_action" }, { status: 400 });
     } else {
       return Response.json({ error: `Unsupported action: ${body.action}`, code: "plugin_unsupported_action" }, { status: 400 });
     }
