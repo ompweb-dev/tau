@@ -24,10 +24,7 @@ type Channel = {
   commands: Map<string, { link: DaemonLink | null; id: unknown; op: string }>;
   /** `onReply`: runs as pi's successful reply is read, before the next stdout line. */
   internal: Map<string, { resolve(frame: WireFrame): void; reject(error: Error): void; timer: NodeJS.Timeout; onReply?(): void }>;
-  ready: Promise<WireFrame | null>; noteReady(frame: WireFrame | null): void; readyTimer: NodeJS.Timeout;
   startup: Promise<void>; exited: boolean; opened: boolean; fullFallback: boolean; forceTimer?: NodeJS.Timeout;
-  /** omp the daemon did not start (a TUI's runner on the host socket): no idle stop, never recovered. */
-  adopted?: boolean;
   sessionMovePending?: boolean;
   replacing?: boolean;
   /** The link holding the history-edit lease: other links' history mutations are refused. */
@@ -47,7 +44,6 @@ type ChannelDeps = {
   sessionsChanged?(): void;
   channelsChanged?(ch: string): void;
 };
-const collision = () => new HostOpError(409, "session_running_elsewhere", "This session is already running on another link");
 const invalid = (message = "Invalid channel request") => new HostOpError(400, "invalid_request", message);
 /** A process start's launch, from what its opener asked: the wire never names the credentials server (it is the opening
  * link's own, and only when the hub asks), and a configuration version passes only in its one valid form. */
@@ -242,34 +238,19 @@ export class ChannelTable {
     }
   }
 
-  /** A channel whose omp the daemon did not start (a TUI's runner on the host socket); resolves with its id once hello is read.
-   * Refuses (409) a session that already has a channel: two omps must never write one session file. */
-  async adopt(spawned: SpawnResult, launch: SpawnRequest, sessionId?: string): Promise<string> {
-    const prepared = this.deps.prepareLaunch(launch);
-    const identity = (prepared.sessionFile ? this.identity(prepared) : null) ?? (sessionId && isValidSessionId(sessionId) ? sessionId : null);
-    const key = identity ?? (prepared.sessionFile || null);
-    if (this.find(identity, prepared.sessionFile) || (key !== null && this.spawning.has(key))) throw collision();
-    const channel = await this.create(prepared, identity, undefined, spawned);
-    channel.opened = true;
-    this.deps.channelsChanged?.(channel.ch);
-    return channel.ch;
-  }
-
-  private async create(launch: SpawnRequest, identity: string | null, preparingLinkId?: string, adopted?: SpawnResult): Promise<Channel> {
+  private async create(launch: SpawnRequest, identity: string | null, preparingLinkId?: string): Promise<Channel> {
     this.spawningCount++;
     try {
-      if (this.stopped) { adopted?.transport.killTree(true); throw new HostOpError(503, "host_stopping", "ompweb host is stopping"); }
-      const spawned = adopted ?? await this.deps.spawn(launch);
+      if (this.stopped) throw new HostOpError(503, "host_stopping", "ompweb host is stopping");
+      const spawned = await this.deps.spawn(launch);
       if (this.stopped) { spawned.transport.killTree(true); throw new HostOpError(503, "host_stopping", "ompweb host is stopping"); }
-      const { promise: ready, resolve: noteReady } = Promise.withResolvers<WireFrame | null>();
-      const readyTimer = setTimeout(() => noteReady(null), LINK_LIMITS.channelReadyMs); readyTimer.unref?.();
       const ch = randomUUID();
       const channel: Channel = { ...spawned, ch, launch, pending: new PendingRequests(LINK_LIMITS.pendingBytes, identity), snapshot: new StreamSnapshot(),
         members: new Map(), aliases: new Set(identity ? [identity] : []), files: new Set(launch.sessionFile ? [launch.sessionFile] : []),
-        commands: new Map(), internal: new Map(), ready, noteReady, readyTimer,
-        startup: Promise.resolve(), exited: false, opened: false, fullFallback: false, adopted: adopted !== undefined };
+        commands: new Map(), internal: new Map(),
+        startup: Promise.resolve(), exited: false, opened: false, fullFallback: false };
       this.channels.set(ch, channel);
-      channel.lifecycle = new ChannelLifecycle({ stop: reason => { if (channel.adopted) return; this.deps.log(`channel ${ch}: stopping (${reason})`); this.stopChannel(channel, reason); }, onRunning: () => this.deps.runningChanged?.() });
+      channel.lifecycle = new ChannelLifecycle({ stop: reason => { this.deps.log(`channel ${ch}: stopping (${reason})`); this.stopChannel(channel, reason); }, onRunning: () => this.deps.runningChanged?.() });
       if (preparingLinkId) channel.lifecycle.setPreparing(preparingLinkId, true);
       channel.shared = new SharedRequests({ members: () => [...channel.members.keys()], isUp: id => channel.members.get(id)?.link.isUp() ?? false,
         deliver: (id, lines) => { const member = channel.members.get(id); if (member) for (const line of lines) this.deliver(channel, member, { type: "stdout", ch, line }); },
@@ -283,7 +264,7 @@ export class ChannelTable {
       });
       spawned.transport.onExit((code, signal) => {
         if (startupStderr) this.deps.log(`channel ${ch}: omp exited during startup (code ${code ?? "null"}, signal ${signal ?? "none"}): ${JSON.stringify(startupStderr.toString("utf8"))}`);
-        channel.exited = true; clearTimeout(channel.readyTimer); channel.noteReady(null); clearTimeout(channel.forceTimer);
+        channel.exited = true; clearTimeout(channel.forceTimer);
         channel.lifecycle?.dispose(); channel.snapshot.clear();
         for (const pending of channel.internal.values()) { clearTimeout(pending.timer); pending.reject(new Error("omp exited")); }
         channel.internal.clear(); channel.commands.clear(); this.channels.delete(ch);
@@ -305,25 +286,24 @@ export class ChannelTable {
   private async configure(channel: Channel): Promise<void> {
     if (channel.exited) return;
     try {
-      const res = await this.command(channel, "get_state", {});
-      clearTimeout(channel.readyTimer);
+      // Readiness: pi answers once its extensions have loaded, which may take as long as the hub waits for an open.
+      const res = await this.command(channel, "get_state", {}, undefined, LINK_LIMITS.channelReadyMs);
       if (isRecord(res.data)) {
         this.noteIdentity(channel, res.data as WireFrame);
       }
     } catch (error) {
-      clearTimeout(channel.readyTimer);
       if (channel.exited) return;
-      if (!channel.adopted) channel.transport.killTree(true);
+      channel.transport.killTree(true);
       throw new HostOpError(502, "host_process_exited", error instanceof Error ? error.message : "pi did not answer get_state");
     }
   }
 
-  private command(channel: Channel, op: string, args: Record<string, unknown>, onReply?: () => void): Promise<WireFrame> {
+  private command(channel: Channel, op: string, args: Record<string, unknown>, onReply?: () => void, timeoutMs = 15000): Promise<WireFrame> {
     if (channel.exited) return Promise.reject(new Error("pi exited"));
     const id = String(++this.commandId);
     const command = { ...args, type: op, id };
     const { promise, resolve, reject } = Promise.withResolvers<WireFrame>();
-    const timer = setTimeout(() => { channel.internal.delete(id); channel.lifecycle?.forgetCommand(id); reject(new Error(`pi ${op} timed out`)); }, 15000); timer.unref?.();
+    const timer = setTimeout(() => { channel.internal.delete(id); channel.lifecycle?.forgetCommand(id); reject(new Error(`pi ${op} timed out`)); }, timeoutMs); timer.unref?.();
     channel.internal.set(id, { resolve, reject, timer, onReply }); channel.lifecycle?.noteStdin(command);
     channel.transport.write(JSON.stringify(command) + "\n", error => {
       if (error) { const pending = channel.internal.get(id); if (!pending) return; clearTimeout(pending.timer); channel.internal.delete(id); channel.lifecycle?.forgetCommand(id, true); reject(error); }
@@ -528,7 +508,7 @@ export class ChannelTable {
   }
   running(): HostResumeEntry[] {
     // A recovered session starts on the version already applied: the resume manifest never names one.
-    return [...this.channels.values()].filter(channel => !channel.adopted && (channel.lifecycle?.isRunning || channel.resuming) && channel.pending.sessionId && channel.launch.sessionFile && !channel.sessionMovePending)
+    return [...this.channels.values()].filter(channel => (channel.lifecycle?.isRunning || channel.resuming) && channel.pending.sessionId && channel.launch.sessionFile && !channel.sessionMovePending)
       .map(channel => { const launch = { ...channel.launch }; delete launch.configVersion; return { sessionId: channel.pending.sessionId!, launch }; });
   }
   /** Resumes each entry once; returns the entries whose resume failed. */

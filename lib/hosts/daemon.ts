@@ -20,7 +20,6 @@ import { runOmpCli } from "../omp/plugins-cli";
 import { HostResumeTracker, type HostResumeEntry } from "./host-resume";
 import { CONFIG_VERSION_RE, CREATION_ID_RE, encodeLine, HostOpError, isHostOp, LINK_LIMITS, LINK_PROTOCOL_VERSION, SESSION_OP_PARAMS, type DownMessage, type OpenChannelRequest, type UnknownMessage } from "./link-protocol";
 import { localHost, resolveSpawnCwdResult } from "./local-host";
-import { listenHostSocket, type HostSocket } from "./omp-socket";
 import { sessionOps } from "./session-ops";
 import packageJson from "../../package.json";
 import { acknowledgeHostUpdateReceipt, checkHostUpdates, configureHostUpdateSafety, getHostUpdateOperation, hostUpdateBlocksNewWork, HostUpdateError, startHostUpdate } from "./updates";
@@ -96,8 +95,7 @@ export interface HostDaemon {
   started: Promise<void>;
   control(command: HostControlCommand): HostControlStatus;
 }
-/** `hostSocket`: where omps started from a TUI attach (`hostSocketPath()`); unset, none can. */
-type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[]; hostSocket?: string };
+type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[] };
 export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const explicit = options.url !== undefined && options.token !== undefined ? [{ url: options.url, token: options.token }] : options.links;
   const initial = explicit ?? readHostLinks();
@@ -178,14 +176,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     sessionsChanged,
     channelsChanged,
   });
-  const hostSocket: Promise<HostSocket | undefined> = options.hostSocket === undefined ? Promise.resolve(undefined) : listenHostSocket(options.hostSocket, {
-    adopt: async (spawned, launch, sessionId) => {
-      if (stopped) throw new HostOpError(503, "host_stopping", "This host is stopping");
-      if (drained) throw new HostOpError(409, "host_drained", "This host is locally drained for maintenance");
-      return channels.adopt(spawned, launch, sessionId);
-    },
-    log,
-  }).catch(error => { log("omps started from a TUI cannot attach: " + reason(error)); return undefined; });
   configureHostUpdateSafety(() => drained ? "This host is locally drained for maintenance." : busyReason(), { drained: () => drained, sessions: () => channels.size });
   const uploads = new StagedUploads(ack => {
     const link = uploadAttempts.get(ack.id + ":" + ack.attempt);
@@ -516,7 +506,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     resume.freeze();
     // The configuration first: its requests to a server are aborted at once, so no start waiting on them holds the stop.
     const configStopped = config.stop();
-    stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await (await hostSocket)?.close(); await channels.stop(); await configStopped; await forwarder.stop(); resume.dispose(); finish(code); })();
+    stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await channels.stop(); await configStopped; await forwarder.stop(); resume.dispose(); finish(code); })();
     return stopping;
   }
   // Links first: a recovered sharing session needs its link to start.
@@ -549,6 +539,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       operationsInFlight--;
       if (!stopped) for (const link of links.values()) link.start();
     });
-  const started = Promise.all([startupSweep, startupRecovery, versionRead, hostSocket]).then(() => {});
+  const started = Promise.all([startupSweep, startupRecovery, versionRead]).then(() => {});
   return { stop: () => shutdown(0), done, control, started };
 }
