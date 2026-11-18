@@ -38,7 +38,7 @@ const ATTEMPT_FILES = ["descriptor.json", "launch-env.json", "job.json", "releas
 /** Per-attempt markers in the update root. The first two are the boot proof; the rest only older releases wrote. */
 const ATTEMPT_MARKERS = ["expect.json", "boot.json", "ready", "go", "abort.json", "armed.json", "restart-request.json", "restart-ack.json", "complete.json", "complete-ack.json"];
 /** The launcher's plumbing: a restarted launcher/server sets its own, and the helper never needs them. */
-const PLUMBING_ENV = ["OMP_WEB_PACKAGE_DIR", "OMP_WEB_LAUNCHER_PID", "OMP_WEB_RESTART_DESCRIPTOR", "OMP_WEB_NODE_BIN"];
+const PLUMBING_ENV = ["TAU_PACKAGE_DIR", "TAU_LAUNCHER_PID", "TAU_RESTART_DESCRIPTOR", "TAU_NODE_BIN"];
 
 export interface PrepareResult {
   attemptId: string;
@@ -74,7 +74,7 @@ function assertOwnedWritableDirectory(path: string, what: string): void {
 }
 
 function nodeRuntime(): string {
-  if (process.env.OMP_WEB_NODE_BIN) return process.env.OMP_WEB_NODE_BIN;
+  if (process.env.TAU_NODE_BIN) return process.env.TAU_NODE_BIN;
   // `npm start` runs Bun directly: the package's launcher and host are Node scripts.
   const name = process.platform === "win32" ? "node.exe" : "node";
   for (const directory of (process.env.PATH ?? "").split(delimiter)) if (directory && existsSync(join(directory, name))) return join(directory, name);
@@ -84,7 +84,7 @@ function nodeRuntime(): string {
 /** The installation this server runs from, when it can be replaced in place; otherwise the reason it cannot. */
 export function resolveServerInstall(): ServerInstall {
   let installDir: string;
-  try { installDir = realpathSync(process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd()); }
+  try { installDir = realpathSync(process.env.TAU_PACKAGE_DIR ?? process.cwd()); }
   catch { throw unsupported("The installation directory was not found"); }
   try {
     assertOwnedWritableDirectory(installDir, "The installation");
@@ -97,7 +97,7 @@ export function resolveServerInstall(): ServerInstall {
     let executable = "";
     try { executable = realpathSync(process.execPath); } catch { /* compared below */ }
     if (executable !== join(installDir, serverBinaryName()) || !existsSync(join(installDir, "dist", "index.html"))) {
-      throw unsupported("Updates need the server to run from a complete release directory's own ompweb binary");
+      throw unsupported("Updates need the server to run from a complete release directory's own tau binary");
     }
     return { method: "binary", installDir, runtime: process.execPath };
   }
@@ -108,7 +108,7 @@ export function resolveServerInstall(): ServerInstall {
 }
 
 export function getSelfUpdateSupport(): { supported: boolean; reason?: string; packageDir: string } {
-  const packageDir = process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd();
+  const packageDir = process.env.TAU_PACKAGE_DIR ?? process.cwd();
   if (isUpdateDisabled()) return { supported: false, reason: `Updates are disabled by ${DISABLE_AUTOUPDATE_ENV_VAR}`, packageDir };
   try {
     return { supported: true, packageDir: resolveServerInstall().installDir };
@@ -168,7 +168,7 @@ function discardAttempt(attemptId: string): void {
 /** Staging and failed-candidate trees of attempts nobody runs any more (only ever called with no active attempt); the backup of a failed recovery is kept. */
 function pruneServerArtifacts(installDir: string): void {
   for (const name of readdirSync(dirname(installDir))) {
-    if (!/^\.ompweb-server-(?:staging|failed)-[0-9a-f-]{36}$/i.test(name)) continue;
+    if (!/^\.tau-server-(?:staging|failed)-[0-9a-f-]{36}$/i.test(name)) continue;
     const path = join(dirname(installDir), name);
     try {
       const info = lstatSync(path);
@@ -334,12 +334,12 @@ export function parseUpgradeApproval(value: unknown): UpgradeApproval {
 
 /** How the server restarts: the compiled binary, the package launcher, or (`npm start`) Bun on main.ts, with the address it listens on. */
 function serverRestart(install: ServerInstall): { launch: Omit<UpgradeLaunch, "env">; viaLauncher: boolean } {
-  const port = process.env.OMP_WEB_PORT;
-  const hostname = process.env.OMP_WEB_HOSTNAME;
+  const port = process.env.TAU_PORT;
+  const hostname = process.env.TAU_HOSTNAME;
   if (!port || !hostname) throw new SelfUpdateError("self_update_unsupported", "The server's listen address is unknown, so it cannot be restarted", 409);
   const listen = ["-p", port, "-H", hostname];
   if (install.method === "binary") return { launch: { command: join(install.installDir, serverBinaryName()), args: [...listen, "--no-open"], cwd: process.cwd() }, viaLauncher: false };
-  if (process.env.OMP_WEB_LAUNCHER_PID) return { launch: { command: install.runtime, args: [join(install.installDir, "bin", "omp-web.js"), ...listen, "--no-open"], cwd: install.installDir }, viaLauncher: true };
+  if (process.env.TAU_LAUNCHER_PID) return { launch: { command: install.runtime, args: [join(install.installDir, "bin", "tau.js"), ...listen, "--no-open"], cwd: install.installDir }, viaLauncher: true };
   return { launch: { command: process.execPath, args: [join(install.installDir, "server", "main.ts"), ...listen], cwd: install.installDir }, viaLauncher: false };
 }
 
@@ -393,7 +393,7 @@ async function ownsRecoveryJob(job: Partial<RecoveryJob>): Promise<boolean> {
     const install = resolveServerInstall();
     const { launch, viaLauncher } = serverRestart(install);
     if (JSON.stringify(job.install) !== JSON.stringify(install) || JSON.stringify(job.launch) !== JSON.stringify(launch) || !job.server) return false;
-    const launcherPid = Number(process.env.OMP_WEB_LAUNCHER_PID);
+    const launcherPid = Number(process.env.TAU_LAUNCHER_PID);
     const top = viaLauncher && launcherPid === process.ppid ? launcherPid : process.pid;
     const current = await inspectUpgradeProcess({ pid: top, installDir: install.installDir, role: "server", launch });
     if (JSON.stringify(current.supervisor) !== JSON.stringify(job.server.supervisor)) return false;
@@ -507,7 +507,7 @@ async function startSelfUpdate(attemptId: string, approval: UpgradeApproval, res
 
     const { launch, viaLauncher } = serverRestart(install);
     // The launcher is what a supervisor runs; stopping it stops its server. Without one, the server is the process.
-    const launcherPid = Number(process.env.OMP_WEB_LAUNCHER_PID);
+    const launcherPid = Number(process.env.TAU_LAUNCHER_PID);
     const top = viaLauncher && launcherPid === process.ppid ? launcherPid : process.pid;
     const serverProcess = await controllable("The server cannot be restarted safely", () => inspectUpgradeProcess({ pid: top, installDir: install.installDir, role: "server", launch }));
     const { localHost, hostArgs } = await controllable("This machine's host cannot be stopped safely", () => captureLocalHost({ installDir: install.installDir, installMethod: install.method, runtime: install.runtime }));

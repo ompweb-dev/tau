@@ -4,8 +4,8 @@ import {
   createWebSession,
   isValidWebPassword,
   isWebPasswordEnabled,
-  OMP_WEB_SESSION_COOKIE,
-  OMP_WEB_SESSION_MAX_AGE_SECONDS,
+  TAU_SESSION_COOKIE,
+  TAU_SESSION_MAX_AGE_SECONDS,
 } from "@/lib/web-auth";
 
 const MAX_PASSWORD_REQUEST_BYTES = 8 * 1024;
@@ -27,11 +27,11 @@ export async function POST(request: Request) {
   }
 
   const secure = requestProtocol(request) === "https:";
-  const cookie = new Bun.Cookie(OMP_WEB_SESSION_COOKIE, createWebSession(), {
+  const cookie = new Bun.Cookie(TAU_SESSION_COOKIE, createWebSession(), {
     httpOnly: true,
     secure,
     sameSite: "lax",
-    maxAge: OMP_WEB_SESSION_MAX_AGE_SECONDS,
+    maxAge: TAU_SESSION_MAX_AGE_SECONDS,
     path: "/",
   });
   return Response.json({ ok: true }, { headers: { "set-cookie": cookie.serialize() } });

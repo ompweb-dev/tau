@@ -11,7 +11,7 @@ let cached: { tag: string; checkedAt: number; release: LegacyRecoveryRelease } |
 
 /** A prerelease's package version is not its artifact identity: use the tag stamped into that exact build. */
 export function installedRecoveryTag(): string {
-  const file = join(process.env.OMP_WEB_PACKAGE_DIR || process.cwd(), "build-info.json");
+  const file = join(process.env.TAU_PACKAGE_DIR || process.cwd(), "build-info.json");
   if (!existsSync(file)) return `v${packageJson.version}`;
   const info: unknown = JSON.parse(readFileSync(file, "utf8"));
   if (!isRecord(info) || info.version !== packageJson.version || typeof info.releaseTag !== "string" || !TAG.test(info.releaseTag)) {
@@ -30,7 +30,7 @@ export async function recoveryHelperRelease(force = false): Promise<LegacyRecove
   }
   const assets: LegacyRecoveryRelease["assets"] = [];
   for (const item of value.assets) {
-    if (!isRecord(item) || typeof item.name !== "string" || !/^ompweb-(?:linux|darwin)-(?:x64|arm64)\.tar\.gz$|^ompweb-windows-x64\.zip$/.test(item.name)) continue;
+    if (!isRecord(item) || typeof item.name !== "string" || !/^tau-(?:linux|darwin)-(?:x64|arm64)\.tar\.gz$|^tau-windows-x64\.zip$/.test(item.name)) continue;
     if (typeof item.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(item.digest) || assets.some((asset) => asset.name === item.name)) {
       throw new Error("The recovery release has an invalid or duplicate asset digest");
     }

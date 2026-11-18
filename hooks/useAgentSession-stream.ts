@@ -255,7 +255,7 @@ export const PROMPT_SETTLE_MAX_MS = 20_000;
 export const AGENT_STATE_RECONCILE_MS = 15_000;
 export const BASH_STATE_RECONCILE_MS = 1_000;
 // Cadence for re-reading a session that some OTHER `omp` process is running.
-// omp-web owns no wrapper for those, so /api/agent/<id>/events 409s and nothing
+// tau owns no wrapper for those, so /api/agent/<id>/events 409s and nothing
 // streams in; the only way their transcript advances is an explicit sync poll.
 // Fast enough to look live, far slower than the SSE path it stands in for.
 export const EXTERNAL_RUN_POLL_MS = 2_000;
@@ -263,7 +263,7 @@ export const EXTERNAL_RUN_POLL_MS = 2_000;
 // or the run was interrupted between a tool call and its result). Stop polling;
 // the cheap heuristic below re-arms the poll if the transcript grows again.
 export const EXTERNAL_RUN_STALE_MS = 60_000;
-// A cold ompweb-omp start (extension + skill + LSP discovery) can take
+// A cold tau-omp start (extension + skill + LSP discovery) can take
 // far longer than a few seconds, and the SSE route may only answer once the
 // child is ready. Give up only after the child would have timed out anyway
 // (rpc-process waitReady, server-side) rather than dropping the prompt.
@@ -354,7 +354,7 @@ async function resolveLocalFile(sessionId: string | undefined, uri: string, sign
 }
 
 /**
- * Execute an omp-web host tool (open_url / notify / open_file) and return the
+ * Execute an tau host tool (open_url / notify / open_file) and return the
  * toolResult text. Shared by the session's own stream and by tabs answering
  * calls for a session they are not viewing. `sessionId` is the session the
  * call came from, which owns a `local://` file; required (undefined only when
@@ -420,7 +420,7 @@ export async function runHostTool(
       return { text: text || `Opened ${requested}`, isError: false };
     }
     default:
-      return { text: `Host tool "${toolName}" is not available in omp-web`, isError: true };
+      return { text: `Host tool "${toolName}" is not available in tau`, isError: true };
   }
 }
 

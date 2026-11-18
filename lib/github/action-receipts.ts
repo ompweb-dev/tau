@@ -9,7 +9,7 @@ const UNCERTAIN = "The GitHub Actions write outcome is unknown. Inspect existing
 /** Reserve before sending: a process death cannot turn the same tool request into another dispatch. */
 export async function withActionReceipt(session: string, request: string, operation: string, args: unknown, perform: () => Promise<unknown>): Promise<unknown> {
   if (!request) throw new Error("GitHub Actions writes require a request identity.");
-  const dir = join(getAgentDir(), "omp-web");
+  const dir = join(getAgentDir(), "tau");
   mkdirSync(dir, { recursive: true });
   const db = new Database(join(dir, "github-action-receipts.sqlite"));
   try {

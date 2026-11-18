@@ -6,15 +6,15 @@ import { getAgentEnvOverrides } from "../omp/agent-env";
 import { getOmpVersion, resolveOmpBin } from "../omp/omp-cli";
 import { spawnOmpTransport } from "../omp/rpc-process";
 
-// `ompweb preflight`: start the session omp the way a host starts one for a new session (same resolver, same
+// `tau preflight`: start the session omp the way a host starts one for a new session (same resolver, same
 // spawn, plus --no-session in a scratch cwd) and wait for its channel hello. Updaters run it on a candidate
 // release before they switch to it. Deploy scripts grep its output for the literal success prefix below.
 // Loaded by Node/jiti and the compiled binary: no `@/` imports.
 // shortcut: no credentials env, --resume/--tools or cluster config as the daemon adds; upgrade if those break a start.
 
 /** Only this module embeds it (the scratch cwd's prefix): the host updater finds the command in a compiled release
- * by it (update-worker.ts holds it base64-encoded). An older ompweb takes `preflight` for a positional instead. */
-export const PREFLIGHT_MARKER = "ompweb-preflight-scratch-";
+ * by it (update-worker.ts holds it base64-encoded). An older tau takes `preflight` for a positional instead. */
+export const PREFLIGHT_MARKER = "tau-preflight-scratch-";
 
 export async function runPreflight(timeoutMs = 30_000): Promise<number> {
   const fail = (bin: string, reason: string) => {
@@ -22,7 +22,7 @@ export async function runPreflight(timeoutMs = 30_000): Promise<number> {
     return 1;
   };
   const bin = resolveOmpBin();
-  if (!bin) return fail(process.env.OMP_WEB_OMP_BIN || "ompweb-omp", "not found");
+  if (!bin) return fail(process.env.TAU_OMP_BIN || "tau-omp", "not found");
   if (process.platform !== "win32") {
     try { accessSync(bin, constants.X_OK); } catch { return fail(bin, "not executable"); }
   }

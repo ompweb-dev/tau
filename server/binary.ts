@@ -1,14 +1,14 @@
-// The compiled `ompweb` (scripts/build-binary.ts): the web server by default, with the npm launcher's flags and
-// password env, `ompweb host` (the session daemon) and `ompweb hash-password`. The server runs in this process: there
+// The compiled `tau` (scripts/build-binary.ts): the web server by default, with the npm launcher's flags and
+// password env, `tau host` (the session daemon) and `tau hash-password`. The server runs in this process: there
 // is no launcher; standalone update workers run from private copies outside the release. Static root: the executable's
-// directory (dist/, public/, node_modules/katex/), unless OMP_WEB_PACKAGE_DIR names another.
+// directory (dist/, public/, node_modules/katex/), unless TAU_PACKAGE_DIR names another.
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import packageJson from "../package.json";
 import { releaseRepo } from "../lib/release-repo";
 import { formatAddressBanner, getAccessibleAddresses, getBrowserUrl, openInBrowser } from "../bin/network-addresses";
-import { runHashPasswordCommand } from "../bin/omp-web-hash-password";
-import { checkLaunchSecurity, parseLaunchOptions } from "../bin/omp-web-options";
+import { runHashPasswordCommand } from "../bin/tau-hash-password";
+import { checkLaunchSecurity, parseLaunchOptions } from "../bin/tau-options";
 import { runHostCli } from "@/lib/hosts/host-cli";
 import { runHostUpdateWorker } from "../lib/hosts/update-worker";
 import { runHostRecoveryCli } from "../lib/hosts/recovery";
@@ -16,9 +16,9 @@ import { runServerUpdateWorker } from "../lib/server-update-worker";
 
 // Before any server module loads: app/api/manifest reads public/ from it when it loads, and the daemon names
 // lib/omp/session-edit-extension.mjs in it to omp.
-process.env.OMP_WEB_PACKAGE_DIR ??= path.dirname(realpathSync(process.execPath));
-const root = process.env.OMP_WEB_PACKAGE_DIR;
-const SEE_README = `https://github.com/${releaseRepo()}#single-binary shows how to run \`ompweb\` and \`ompweb host\` as services instead.`;
+process.env.TAU_PACKAGE_DIR ??= path.dirname(realpathSync(process.execPath));
+const root = process.env.TAU_PACKAGE_DIR;
+const SEE_README = `https://github.com/${releaseRepo()}#single-binary shows how to run \`tau\` and \`tau host\` as services instead.`;
 
 const command = process.argv[2];
 if (command === "host-update-worker") {
@@ -27,7 +27,7 @@ if (command === "host-update-worker") {
 if (command === "server-update-worker") process.exit(await runServerUpdateWorker(process.argv[3] || ""));
 if (command === "recover-host") process.exit(await runHostRecoveryCli(process.argv.slice(3)));
 if (command === "host") process.exit(await runHostCli(process.argv.slice(3)));
-// The host updater finds this command in a release by PREFLIGHT_MARKER before it runs it: an older ompweb starts the web server instead.
+// The host updater finds this command in a release by PREFLIGHT_MARKER before it runs it: an older tau starts the web server instead.
 if (command === "preflight") process.exit(await (await import("../lib/hosts/preflight")).runPreflight());
 if (command === "hash-password" || command === "hash_password") {
   process.exit(await runHashPasswordCommand().catch((error: unknown) => {
@@ -35,8 +35,8 @@ if (command === "hash-password" || command === "hash_password") {
     return 1;
   }));
 }
-if (["launchd", "ompweb-launchd", "systemd", "ompweb-systemd"].includes(command)) {
-  console.error(`The ompweb binary has no service installer. ${SEE_README}`);
+if (["launchd", "tau-launchd", "systemd", "tau-systemd"].includes(command)) {
+  console.error(`The tau binary has no service installer. ${SEE_README}`);
   process.exit(2);
 }
 
@@ -47,16 +47,16 @@ if (options.error) {
   process.exit(2);
 }
 if (options.installTray || options.uninstallTray || options.tray) {
-  console.error(`The ompweb binary has no tray. ${SEE_README}`);
+  console.error(`The tau binary has no tray. ${SEE_README}`);
   process.exit(2);
 }
 const passwordHash = checkLaunchSecurity(options);
 if (!existsSync(path.join(root, "dist", "index.html"))) {
-  console.error(`No dist/index.html in ${root}. Keep the ompweb binary in the directory it was released in, or set OMP_WEB_PACKAGE_DIR to that directory.`);
+  console.error(`No dist/index.html in ${root}. Keep the tau binary in the directory it was released in, or set TAU_PACKAGE_DIR to that directory.`);
   process.exit(1);
 }
 const { hostname, port } = options;
-// Loaded after OMP_WEB_PACKAGE_DIR is set above, for the modules that read it when they load.
+// Loaded after TAU_PACKAGE_DIR is set above, for the modules that read it when they load.
 const { startProduction } = await import("./app");
 await startProduction({ port: Number(port), hostname });
 const { entries, hint } = getAccessibleAddresses({ hostname, port });

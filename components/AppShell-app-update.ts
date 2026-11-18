@@ -1,8 +1,8 @@
 import type { UpgradeApproval, UpgradePlan } from "@/lib/upgrade-types";
 import type { AppUpdateInfo } from "./AppUpdateDialog";
 
-export const DISMISSED_APP_UPDATE_KEY = "omp-web:dismissed-app-update";
-export const COMPLETED_APP_UPDATE_KEY = "omp-web:completed-app-update";
+export const DISMISSED_APP_UPDATE_KEY = "tau:dismissed-app-update";
+export const COMPLETED_APP_UPDATE_KEY = "tau:completed-app-update";
 export const APP_UPDATE_POLL_MS = 500;
 export const APP_UPDATE_STOPPING_POLL_MS = 200;
 // Longer than the backend's 30-minute coordinator lease, so the browser never gives up before the server does.

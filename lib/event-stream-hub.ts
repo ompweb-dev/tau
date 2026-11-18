@@ -436,7 +436,7 @@ function openSessionChannel(sessionId: string, handle: SubscriptionHandle): Subs
   let session = existing?.isAlive() ? existing : undefined;
   // Held messages show before omp runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
   if (!session && outboxEntries(sessionId).length === 0) {
-    return { ok: false, status: 409, error: "Session is not managed by omp-web", code: "session_not_managed" };
+    return { ok: false, status: 409, error: "Session is not managed by tau", code: "session_not_managed" };
   }
 
   handle.open();

@@ -1,12 +1,12 @@
 import { createHostControlServer, requestHostControl } from "./host-control";
 import type { HostDaemon } from "./daemon";
 
-// `ompweb host`: link this machine to web servers through ./daemon.
+// `tau host`: link this machine to web servers through ./daemon.
 // Loaded by Node/jiti and the compiled binary: no `@/` imports.
 // Tokens are read from stdin, never from argv.
 import { addHostLink, loginHost, readHostLinks, removeHostLink } from "./host-login";
 
-const USAGE = "Usage: ompweb host login [--add] --url <server url>   (the host token is read from stdin)\n       ompweb host logout --url <server url>\n       ompweb host [--allow-http]\n       ompweb host status|drain|resume";
+const USAGE = "Usage: tau host login [--add] --url <server url>   (the host token is read from stdin)\n       tau host logout --url <server url>\n       tau host [--allow-http]\n       tau host status|drain|resume";
 
 /** A host token is 43 characters; anything this long is not one. */
 const MAX_TOKEN_LINE_BYTES = 4096;
@@ -49,7 +49,7 @@ async function main(argv: string[]): Promise<number> {
       const link = { url, token: (await readTokenLine()).trim() };
       if (add) await addHostLink(link);
       else await loginHost(link);
-      console.log(`Saved. Run \`ompweb host\` to link this machine to ${url}.`);
+      console.log(`Saved. Run \`tau host\` to link this machine to ${url}.`);
     }
     return 0;
   }
@@ -65,7 +65,7 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (readHostLinks().length === 0) {
-    console.error("This machine is not linked yet. Start ompweb on this machine (it writes the link), or run `ompweb host login --url <server url>`.");
+    console.error("This machine is not linked yet. Start tau on this machine (it writes the link), or run `tau host login --url <server url>`.");
     return 1;
   }
   // Login/logout need none of the daemon, which jiti would otherwise transpile on every run.
@@ -78,7 +78,7 @@ async function main(argv: string[]): Promise<number> {
   try {
     daemon = runHostDaemon({ allowHttp: argv.includes("--allow-http") });
     // Worker cutover starts fail-closed; ordinary hosts have no maintenance environment.
-    if (process.env.OMP_WEB_HOST_DRAINED === "1") daemon.control("drain");
+    if (process.env.TAU_HOST_DRAINED === "1") daemon.control("drain");
     const stop = () => void daemon!.stop();
     for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, stop);
     try { return await daemon.done; }
@@ -89,10 +89,10 @@ async function main(argv: string[]): Promise<number> {
   }
 }
 
-/** `ompweb host <argv>`: the exit code; errors are printed, never thrown. */
+/** `tau host <argv>`: the exit code; errors are printed, never thrown. */
 export function runHostCli(argv: string[]): Promise<number> {
   return main(argv).catch((error: unknown) => {
-    console.error(`ompweb host: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`tau host: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   });
 }

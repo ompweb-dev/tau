@@ -176,7 +176,7 @@ function ownSettings(dir: string): { path: string; yaml: string } | null {
 
 export function createClusterConfig(deps: {
   roots(): Record<ConfigRoot, string>;
-  stateDir(): string; // <agent dir>/omp-web
+  stateDir(): string; // <agent dir>/tau
   fetch(serverUrl: string, path: string, signal: AbortSignal): Promise<Response>; // authenticated by the caller; path starts with /api/hosts/cluster-config/
   /** `signal` (stop()) ends the command early. */
   runOmp(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<string>;

@@ -524,8 +524,8 @@ function servePooledWorkspace() {
     { path: "/shared", hostId: "local", alias: "Mac project" },
   ];
   const hosts = [
-    { id: "local", label: "Mac", status: "online", ompVersion: "18.4.4", ompwebVersion: "0.6.0", platform: "darwin", lastSeenAt: null, hostVersion: 2, serverVersion: 2, serverPlatform: "darwin", daemonManaged: false },
-    ...["h1", "h2"].map((id, index) => ({ id, label: `Worker ${index + 1}`, status: "online", ompVersion: "18.4.4", ompwebVersion: "0.6.0", platform: "linux", lastSeenAt: "2026-11-10T00:00:00.000Z", allowAgentStart: true, hostVersion: 2, serverVersion: 2 })),
+    { id: "local", label: "Mac", status: "online", ompVersion: "18.4.4", tauVersion: "0.6.0", platform: "darwin", lastSeenAt: null, hostVersion: 2, serverVersion: 2, serverPlatform: "darwin", daemonManaged: false },
+    ...["h1", "h2"].map((id, index) => ({ id, label: `Worker ${index + 1}`, status: "online", ompVersion: "18.4.4", tauVersion: "0.6.0", platform: "linux", lastSeenAt: "2026-11-10T00:00:00.000Z", allowAgentStart: true, hostVersion: 2, serverVersion: 2 })),
   ];
   const pools = [{
     id: "workers", label: "Worker pool", enabled: true,
@@ -550,7 +550,7 @@ function servePooledWorkspace() {
     if (url.pathname === "/api/file-index") return jsonResponse(200, { matches: url.searchParams.get("sessionId") === "worker-one" ? [{ path: "worker-search-result.txt", isDir: false }] : [], truncated: false });
     return null;
   };
-  localStorage.setItem("omp-web:expanded-projects", JSON.stringify(["pool:workers:app", "h1:/legacy", "/shared"]));
+  localStorage.setItem("tau:expanded-projects", JSON.stringify(["pool:workers:app", "h1:/legacy", "/shared"]));
   return { sessions, projects, hosts, pools };
 }
 
@@ -697,7 +697,7 @@ for (const [preference, mode] of [["steer", "steer"], ["followup", "followUp"]])
     primeSession(sid, [userMsg("u0", "before")]);
     world.agents.set(sid, { running: true, state: { isStreaming: true, isPromptRunning: true } });
     world.outboxHold = true;
-    localStorage.setItem("omp-web:submit-during-run", preference);
+    localStorage.setItem("tau:submit-during-run", preference);
     setDraft(sid, { value: "with my file", images: [], files: [], uploads: [{ id: "queue-upload", name: "queued.zip", size: 8, hostId: "local", proof: "queue-completion-proof" }] });
     const view = ownRoot(render(React.createElement(ChatWindow, { session: sessionInfo(sid), newSessionCwd: null }), { wrapper: TestRoot }));
     await settle();
@@ -719,7 +719,7 @@ test("a `!` message with an inline text attachment is held as a prompt, never ru
   primeSession(sid, [userMsg("u0", "before")]);
   world.outboxHold = true;
   setDraft(sid, {
-    value: "!touch /tmp/ompweb-never-run",
+    value: "!touch /tmp/tau-never-run",
     images: [],
     files: [{ name: "notes.txt", mimeType: "text/plain", content: "rm -rf /", size: 8 }],
   });
@@ -728,7 +728,7 @@ test("a `!` message with an inline text attachment is held as a prompt, never ru
   await act(async () => { fireEvent.keyDown(view.getByRole("textbox"), { key: "Enter" }); });
   await until(() => world.outbox.length === 1, "the composed prompt must reach worker storage");
   assert.equal(world.outbox[0].mode, "prompt");
-  assert.equal(world.outbox[0].message, "!touch /tmp/ompweb-never-run\n\nAttached file: notes.txt\n```text\nrm -rf /\n```");
+  assert.equal(world.outbox[0].message, "!touch /tmp/tau-never-run\n\nAttached file: notes.txt\n```text\nrm -rf /\n```");
   assert.deepEqual(world.calls.filter((call) => call.body?.type === "bash"), [], "neither the typed text nor the attachment reaches the shell");
   assert.equal(getDraft(sid), null, "the stored prompt consumes the unchanged draft");
 });
@@ -3920,7 +3920,7 @@ function primeEditableHistory(originalSid, messages = [
             native.onMove?.(previousId, sid);
           }
           entries.push({
-            type: "custom", customType: "omp-web-history-navigation", id: `edit-marker-${native.edits.length}`,
+            type: "custom", customType: "tau-history-navigation", id: `edit-marker-${native.edits.length}`,
             parentId: target.parentId, timestamp: header.timestamp, data: { entryId: target.id },
           });
           persist();
@@ -6524,7 +6524,7 @@ test("a selected remote session can browse its owner files without reading a sam
   servePooledWorkspace();
   window.history.replaceState(null, "", "?session=worker-one");
   t.after(() => window.history.replaceState(null, "", "/"));
-  const view = ownRoot(render(React.createElement(AppShell, { appName: "ompweb" }), { wrapper: TestRoot }));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
   await settle();
   await until(() => view.queryByRole("button", { name: translate("appShell.showFilePanel") }), "the restored remote session's panel control appears");
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.showFilePanel") })); await sleep(60); });
@@ -6541,7 +6541,7 @@ test("equal-path file tabs retain their originating session when the selected ow
   servePooledWorkspace();
   window.history.replaceState(null, "", "?session=worker-one");
   t.after(() => window.history.replaceState(null, "", "/"));
-  const view = ownRoot(render(React.createElement(AppShell, { appName: "ompweb" }), { wrapper: TestRoot }));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
   await settle();
   const stream = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
   assert.ok(stream);
@@ -6571,7 +6571,7 @@ test("a retained foreign-source tab cannot mention its path into the selected wo
   servePooledWorkspace();
   window.history.replaceState(null, "", "?session=worker-one");
   t.after(() => window.history.replaceState(null, "", "/"));
-  const view = ownRoot(render(React.createElement(AppShell, { appName: "ompweb" }), { wrapper: TestRoot }));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
   await settle();
   const stream = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
   assert.ok(stream);
@@ -6727,7 +6727,7 @@ test("a slash command held during a run dispatches as a prompt with its streamin
 });
 
 // What the worker answers when the session socket dropped after sending a command (spec D5).
-const SOCKET_LOST = { error: "The connection to omp-web dropped before the answer arrived; the command may have run.", code: "transport_lost" };
+const SOCKET_LOST = { error: "The connection to tau dropped before the answer arrived; the command may have run.", code: "transport_lost" };
 
 /** Runs a test with the worker in WebSocket mode, so agent commands go to it instead of fetch. */
 async function inWebSocketMode(run) {

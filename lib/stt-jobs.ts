@@ -12,11 +12,11 @@ export interface SttConfig {
   model: string | undefined;
 }
 
-/** STT settings from OMP_WEB_STT_*; null when OMP_WEB_STT_ENDPOINT is not configured. Server-only: lib/stt.ts is shared with the browser. */
+/** STT settings from TAU_STT_*; null when TAU_STT_ENDPOINT is not configured. Server-only: lib/stt.ts is shared with the browser. */
 export function readSttConfig(): SttConfig | null {
-  const endpoint = cleanEnvVar(process.env.OMP_WEB_STT_ENDPOINT);
+  const endpoint = cleanEnvVar(process.env.TAU_STT_ENDPOINT);
   if (!endpoint) return null;
-  return { endpoint, apiKey: cleanEnvVar(process.env.OMP_WEB_STT_KEY), model: cleanEnvVar(process.env.OMP_WEB_STT_MODEL) };
+  return { endpoint, apiKey: cleanEnvVar(process.env.TAU_STT_KEY), model: cleanEnvVar(process.env.TAU_STT_MODEL) };
 }
 
 /**

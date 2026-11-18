@@ -1,7 +1,7 @@
 /**
  * In-app view history for Navigate back / Navigate forward.
  *
- * omp-web deliberately keeps its own stack instead of the browser History
+ * tau deliberately keeps its own stack instead of the browser History
  * API: the app replaces (never pushes) `?session=` URLs, and the mobile
  * back-gesture machinery (`useSidebarHistory` + the popstate bridge) already
  * owns the real history stack. Entries are the main chat views only — a

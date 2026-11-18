@@ -231,5 +231,5 @@ export function publishNotification(event: NotificationEvent): void {
 export async function sendTestPush(deviceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const device = getDevice(deviceId);
   if (!device) return { ok: false, error: "unknown device" };
-  return sendPush(device, { type: "test", sessionId: "", sessionName: "omp web" });
+  return sendPush(device, { type: "test", sessionId: "", sessionName: "tau" });
 }

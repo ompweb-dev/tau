@@ -9,7 +9,7 @@ const MAX_LABEL_LENGTH = 100;
 const noStore = { "cache-control": "no-store" };
 
 const fail = (error: string, status: number) => Response.json({ error }, { status, headers: noStore });
-const poolStorageFailure = () => fail("The pool registry (omp-web/pools.json) cannot be read or written; fix it before changing pools", 503);
+const poolStorageFailure = () => fail("The pool registry (tau/pools.json) cannot be read or written; fix it before changing pools", 503);
 
 function hasOnlyKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   return isRecord(value) && Object.keys(value).every((key) => keys.includes(key));
@@ -17,7 +17,7 @@ function hasOnlyKeys(value: unknown, keys: readonly string[]): value is Record<s
 
 function failFor(error: unknown) {
   if (error instanceof HostRegistryUnreadableError) {
-    return fail("The linked-hosts registry (omp-web/hosts.json) cannot be read; fix or remove it before changing hosts", 503);
+    return fail("The linked-hosts registry (tau/hosts.json) cannot be read; fix or remove it before changing hosts", 503);
   }
   if (error instanceof UnknownHostError) return fail("Unknown host", 404);
   throw error;
@@ -130,7 +130,7 @@ export async function POST(req: Request) {
       {
         host: listHosts().find((h) => h.id === host.id),
         token,
-        command: `ompweb host login --url ${requestOrigin(req)}`,
+        command: `tau host login --url ${requestOrigin(req)}`,
       },
       { headers: noStore },
     );

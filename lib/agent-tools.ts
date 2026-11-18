@@ -8,9 +8,9 @@ import { GITHUB_TOOL_DEFINITIONS, GITHUB_TOOL_NAMES, executeGithubTool, type Git
 
 /**
  * Server-side agent tools for issue #275: tools an agent running inside
- * omp-web can call to reach *other* top-level omp-web sessions. omp's own
+ * tau can call to reach *other* top-level tau sessions. omp's own
  * `task` tool and `write agent://<id>` only work inside one omp process,
- * so cross-session work has to be answered by the omp-web server itself —
+ * so cross-session work has to be answered by the tau server itself —
  * never by an attached browser tab (the issue's key requirement: these
  * tools keep working with no tab open).
  *
@@ -18,7 +18,7 @@ import { GITHUB_TOOL_DEFINITIONS, GITHUB_TOOL_NAMES, executeGithubTool, type Git
  * the session registry, or the session files. The caller (lib/rpc-manager)
  * supplies those through AgentToolSessionOps, which keeps the validation,
  * gating, attribution and loop-guard logic unit-testable without a live
- * omp child. The only omp-web surface this module touches is the
+ * omp child. The only tau surface this module touches is the
  * HostToolDefinition shape omp already understands for set_host_tools.
  */
 
@@ -29,13 +29,13 @@ export const AGENT_TOOL_DEFINITIONS: HostToolDefinition[] = [
   {
     name: "list_sessions",
     description:
-      "List omp-web sessions on every host (ID, name, working directory, host, running or idle) so send_to_session can address one without the user copying IDs.",
+      "List tau sessions on every host (ID, name, working directory, host, running or idle) so send_to_session can address one without the user copying IDs.",
     parameters: { type: "object", properties: {} },
   },
   {
     name: "new_session",
     description:
-      "Start an independent omp-web session. Registered pooled projects receive an isolated worktree on an eligible worker. Set shareWorkspace to keep unpublished parent workspace dependencies on the calling session's owner. Returns its session ID.",
+      "Start an independent tau session. Registered pooled projects receive an isolated worktree on an eligible worker. Set shareWorkspace to keep unpublished parent workspace dependencies on the calling session's owner. Returns its session ID.",
     parameters: {
       type: "object",
       properties: {
@@ -53,7 +53,7 @@ export const AGENT_TOOL_DEFINITIONS: HostToolDefinition[] = [
   {
     name: "send_to_session",
     description:
-      "Send a message to another omp-web session by ID. If the target is not running it is resumed first, as when a user opens it. Delivered messages carry trusted source metadata and explicitly tell the receiving agent they were not typed by the user.",
+      "Send a message to another tau session by ID. If the target is not running it is resumed first, as when a user opens it. Delivered messages carry trusted source metadata and explicitly tell the receiving agent they were not typed by the user.",
     parameters: {
       type: "object",
       properties: {
@@ -361,7 +361,7 @@ export async function executeAgentTool(
   ctx: AgentToolContext,
 ): Promise<unknown> {
   if (!ctx.enabled) {
-    throw new Error("Agent tools are disabled. Enable \"Agent tools\" in omp-web Settings (System) first.");
+    throw new Error("Agent tools are disabled. Enable \"Agent tools\" in tau Settings (System) first.");
   }
   if (!AGENT_TOOL_NAMES.has(toolName)) throw new Error(`Unknown agent tool: ${toolName}.`);
   const record = asRecord(args);

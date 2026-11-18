@@ -71,7 +71,7 @@ function resolveBunBinary(packageDir, env = process.env) {
   if (onPath && versionAtLeast(onPath, MIN_BUN_VERSION)) return "bun";
 
   const found = onPath ? ` (bun ${onPath} on PATH is older than ${MIN_BUN_VERSION})` : "";
-  throw new Error(`Bun runtime not found${found}. Reinstall ompweb with: ${REINSTALL}`);
+  throw new Error(`Bun runtime not found${found}. Reinstall tau with: ${REINSTALL}`);
 }
 
 module.exports = { MIN_BUN_VERSION, PLATFORM_PACKAGES, resolveBunBinary };

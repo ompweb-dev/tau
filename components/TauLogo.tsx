@@ -1,7 +1,7 @@
 import { useId } from "react";
 
 // tau brand mark: a rounded τ inside an open orbit on its midnight tile.
-export default function OmpWebLogo({
+export default function TauLogo({
   size = 20,
   label = "tau logo",
 }: {

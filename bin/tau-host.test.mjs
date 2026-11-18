@@ -7,15 +7,15 @@ import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const bin = fileURLToPath(new URL("./omp-web.js", import.meta.url));
+const bin = fileURLToPath(new URL("./tau.js", import.meta.url));
 
 // Windows has no signals: child.kill("SIGTERM") terminates the process outright, so the daemon's handler never runs.
-test("SIGTERM to `ompweb host` stops the daemon itself, leaving no orphan", { skip: process.platform === "win32" && "Windows kills on SIGTERM without running handlers" }, async (t) => {
-  const scratch = mkdtempSync(join(tmpdir(), "omp-web-host-cli-"));
+test("SIGTERM to `tau host` stops the daemon itself, leaving no orphan", { skip: process.platform === "win32" && "Windows kills on SIGTERM without running handlers" }, async (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "tau-host-cli-"));
   const agentDir = join(scratch, "agent");
-  mkdirSync(join(agentDir, "omp-web"), { recursive: true });
+  mkdirSync(join(agentDir, "tau"), { recursive: true });
   // Nothing listens on this loopback port: the daemon redials until it is stopped.
-  writeFileSync(join(agentDir, "omp-web", "host.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t" }), { mode: 0o600 });
+  writeFileSync(join(agentDir, "tau", "host.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t" }), { mode: 0o600 });
   const child = spawn("node", [bin, "host"], {
     env: { ...process.env, HOME: scratch, USERPROFILE: scratch, PI_CODING_AGENT_DIR: agentDir },
     stdio: ["ignore", "pipe", "pipe"],
@@ -43,9 +43,9 @@ test("SIGTERM to `ompweb host` stops the daemon itself, leaving no orphan", { sk
   assert.deepEqual(stopped, { code: 0, signal: null }, "the daemon's own stop handled the signal");
 });
 
-/** Run `ompweb host login` with `input` on stdin (left open unless `end`). */
+/** Run `tau host login` with `input` on stdin (left open unless `end`). */
 async function login(t, input, { end = true } = {}) {
-  const scratch = mkdtempSync(join(tmpdir(), "omp-web-host-login-"));
+  const scratch = mkdtempSync(join(tmpdir(), "tau-host-login-"));
   const agentDir = join(scratch, "agent");
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const child = spawn("node", [bin, "host", "login", "--url", "http://127.0.0.1:9"], {
@@ -59,17 +59,17 @@ async function login(t, input, { end = true } = {}) {
   child.stdin.write(input);
   if (end) child.stdin.end();
   const code = await Promise.race([closed, sleep(10_000, "timeout", { ref: false })]);
-  const file = join(agentDir, "omp-web", "host.json");
+  const file = join(agentDir, "tau", "host.json");
   return { code, stderr, saved: existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null };
 }
 
-test("`ompweb host login` saves the first stdin line as the token", async (t) => {
+test("`tau host login` saves the first stdin line as the token", async (t) => {
   const { code, saved } = await login(t, " tok-123 \nignored\n");
   assert.equal(code, 0);
   assert.equal(saved?.token, "tok-123");
 });
 
-test("`ompweb host login` refuses a token line over 4096 bytes without waiting for more input", async (t) => {
+test("`tau host login` refuses a token line over 4096 bytes without waiting for more input", async (t) => {
   const { code, stderr, saved } = await login(t, "a".repeat(5000), { end: false });
   assert.equal(code, 1);
   assert.match(stderr, /4096 bytes/);
@@ -90,7 +90,7 @@ async function hostCommand(env, ...args) {
 }
 
 function controlFixture(t, { url, longRoot = false } = {}) {
-  const scratch = mkdtempSync(join(tmpdir(), "omp-web-host-control-cli-"));
+  const scratch = mkdtempSync(join(tmpdir(), "tau-host-control-cli-"));
   const agentDir = join(scratch, ...(longRoot ? ["long-agent-directory-".repeat(10), "agent"] : ["agent"]));
   const omp = join(scratch, "fixture-omp");
   writeFileSync(omp, `#!${process.execPath}\nconsole.log("18.0.0-cli-fixture");\n`, { mode: 0o700 });
@@ -98,10 +98,10 @@ function controlFixture(t, { url, longRoot = false } = {}) {
     ...process.env, HOME: scratch, USERPROFILE: scratch, PI_CODING_AGENT_DIR: agentDir,
     XDG_CONFIG_HOME: join(scratch, "config"), XDG_DATA_HOME: join(scratch, "data"),
     XDG_STATE_HOME: join(scratch, "state"), XDG_CACHE_HOME: join(scratch, "cache"),
-    OMP_WEB_OMP_BIN: omp, OMP_WEB_DISABLE_AUTOUPDATE: "1",
+    TAU_OMP_BIN: omp, TAU_DISABLE_AUTOUPDATE: "1",
   };
-  mkdirSync(join(agentDir, "omp-web"), { recursive: true, mode: 0o700 });
-  writeFileSync(join(agentDir, "omp-web", "host.json"), JSON.stringify({ url: url ?? "http://127.0.0.1:9", token: "private-cli-fixture-token" }), { mode: 0o600 });
+  mkdirSync(join(agentDir, "tau"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(agentDir, "tau", "host.json"), JSON.stringify({ url: url ?? "http://127.0.0.1:9", token: "private-cli-fixture-token" }), { mode: 0o600 });
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   return { scratch, agentDir, env };
 }
@@ -220,7 +220,7 @@ test("Windows: status/drain/resume reach the real daemon over its pipe; a duplic
 
 test("worker maintenance startup is drained before linking and can be explicitly resumed", async (t) => {
   const f = controlFixture(t);
-  const daemon = launchHost(t, { ...f.env, OMP_WEB_HOST_DRAINED: "1" });
+  const daemon = launchHost(t, { ...f.env, TAU_HOST_DRAINED: "1" });
   if (process.platform !== "win32") {
     const { hostControlPath } = await import("../lib/hosts/host-control.ts");
     t.after(() => rmSync(join(hostControlPath(f.agentDir), ".."), { recursive: true, force: true }));
@@ -233,11 +233,11 @@ test("worker maintenance startup is drained before linking and can be explicitly
   assert.equal(JSON.parse(resumed.stdout).drained, false);
 });
 
-test("`ompweb host login --add` and logout change only the selected URL without argv tokens", async (t) => {
-  const scratch = mkdtempSync(join(tmpdir(), "omp-web-host-multi-login-"));
+test("`tau host login --add` and logout change only the selected URL without argv tokens", async (t) => {
+  const scratch = mkdtempSync(join(tmpdir(), "tau-host-multi-login-"));
   const agentDir = join(scratch, "agent");
-  const file = join(agentDir, "omp-web", "host.json");
-  mkdirSync(join(agentDir, "omp-web"), { recursive: true });
+  const file = join(agentDir, "tau", "host.json");
+  mkdirSync(join(agentDir, "tau"), { recursive: true });
   const primary = { url: "https://production.example", token: "production-secret" };
   const staging = { url: "http://127.0.0.1:40000", token: "staging-secret" };
   writeFileSync(file, JSON.stringify(primary));

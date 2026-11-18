@@ -202,7 +202,7 @@ const SETTING_INDEX: SettingIndexEntry[] = [
   { id: "cache-savings", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.cacheSavings", descKey: "usageConfig.costQuality", fallbackSection: "Usage", fallbackLabel: "Cache Savings", fallbackDesc: "Prompt caching savings and cost quality breakdown", scope: "UI" },
   { id: "model-breakdown", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.breakdown", descKey: "usageConfig.model", fallbackSection: "Usage", fallbackLabel: "Model Breakdown", fallbackDesc: "Historical token usage and cost per model, day, and project", scope: "UI" },
   // Windows Background Service & System Tray
-  { id: "auto-resume-sessions", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.autoResumeSessions", descKey: "settingsConfig.autoResumeSessionsDesc", fallbackSection: "System", fallbackLabel: "Resume running sessions after a restart", fallbackDesc: "When omp-web restarts while agents are working, restart those sessions and tell each agent: \"Session interrupted and resumed. Continue as you would have done without the interruption.\" Work in progress at the moment of the restart, such as a running command, is lost." },
+  { id: "auto-resume-sessions", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.autoResumeSessions", descKey: "settingsConfig.autoResumeSessionsDesc", fallbackSection: "System", fallbackLabel: "Resume running sessions after a restart", fallbackDesc: "When tau restarts while agents are working, restart those sessions and tell each agent: \"Session interrupted and resumed. Continue as you would have done without the interruption.\" Work in progress at the moment of the restart, such as a running command, is lost." },
   { id: "agent-tools-cross-session", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.agentTools", descKey: "settingsConfig.agentToolsDesc", fallbackSection: "System", fallbackLabel: "Agent tools (cross-session)", fallbackDesc: "Allow cross-session tools and GitHub tools for watching and reading issues and pull requests, writing comments and threads, and managing Actions workflow runs. Requires the GitHub CLI (gh) installed and logged in on this server." },
   { id: "github-writes-unasked", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.githubWritesUnasked", descKey: "settingsConfig.githubWritesUnaskedDesc", fallbackSection: "System", fallbackLabel: "Allow agent GitHub writes without asking", fallbackDesc: "Let agents post comments, reply in review threads and resolve threads through this server's gh login without a confirmation each time. Off: each of those comment and thread writes asks in the session first." },
   { id: "github-actions-dispatch", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.githubActionsDispatch", descKey: "settingsConfig.githubActionsDispatchDesc", fallbackSection: "System", fallbackLabel: "Dispatch workflows", fallbackDesc: "Choose whether agents may start GitHub Actions workflows." },
@@ -218,7 +218,7 @@ const SETTING_INDEX: SettingIndexEntry[] = [
   { id: "notifications-input", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeInput", descKey: "notifications.typeInputDesc", fallbackSection: "Notifications", fallbackLabel: "Waiting for input", fallbackDesc: "The agent asks a question or needs an approval.", scope: "UI" },
   { id: "notifications-error", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeError", descKey: "notifications.typeErrorDesc", fallbackSection: "Notifications", fallbackLabel: "Run failed", fallbackDesc: "A run stops with an error after retries and fallbacks, or the omp process exits.", scope: "UI" },
   { id: "notifications-modelSwitch", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeModelSwitch", descKey: "notifications.typeModelSwitchDesc", fallbackSection: "Notifications", fallbackLabel: "Model switched automatically", fallbackDesc: "omp switches models on its own: a fallback after a refusal, rate limit, or usage limit, or a prewalk / plan hand-off.", scope: "UI" },
-  { id: "notifications-when-active", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.whenActive", descKey: "notifications.whenActiveDesc", fallbackSection: "Notifications", fallbackLabel: "When I'm using omp-web in another tab", fallbackDesc: "Nothing is shown for the session you are viewing.", scope: "UI" },
+  { id: "notifications-when-active", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.whenActive", descKey: "notifications.whenActiveDesc", fallbackSection: "Notifications", fallbackLabel: "When I'm using tau in another tab", fallbackDesc: "Nothing is shown for the session you are viewing.", scope: "UI" },
 ];
 
 function SearchResultsList({ results, query, onSelect }: { results: SearchResult[]; query: string; onSelect: (result: SearchResult) => void }) {
@@ -275,7 +275,7 @@ function SearchResultsList({ results, query, onSelect }: { results: SearchResult
   );
 }
 
-/** Server-side omp-web setting (lib/web-settings.ts), loaded on mount. */
+/** Server-side tau setting (lib/web-settings.ts), loaded on mount. */
 function AutoResumeSessionsSetting() {
   const { t } = useI18n();
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -309,7 +309,7 @@ function AutoResumeSessionsSetting() {
   );
 }
 
-/** Server-side omp-web setting (issue #275): cross-session agent tools.
+/** Server-side tau setting (issue #275): cross-session agent tools.
  * Off by default; mirrors AutoResumeSessionsSetting above. */
 function AgentToolsSetting() {
   const { t } = useI18n();
@@ -465,7 +465,7 @@ function GithubActionsPermissionsSetting() {
 
 const UPLOAD_RETENTION_CHOICES: readonly (number | null)[] = [null, 7, 30, 90];
 
-/** Server-side omp-web setting (lib/web-settings.ts): every host's daemon applies it to its own sessions' uploads. */
+/** Server-side tau setting (lib/web-settings.ts): every host's daemon applies it to its own sessions' uploads. */
 function UploadRetentionSetting() {
   const { t, tn } = useI18n();
   // undefined until loaded; null is "Never".
@@ -518,7 +518,7 @@ const BROWSER_TRANSPORT_LABELS: Record<BrowserTransport, string> = {
   ws: "settingsConfig.browserTransportWs",
 };
 
-/** Server-side omp-web setting (lib/web-settings.ts): every open browser follows a save within a few seconds. */
+/** Server-side tau setting (lib/web-settings.ts): every open browser follows a save within a few seconds. */
 function BrowserTransportSetting() {
   const { t } = useI18n();
   const [transport, setTransport] = useState<BrowserTransport | null>(null);
@@ -569,7 +569,7 @@ function BrowserTransportSetting() {
   );
 }
 
-/** Server-side omp-web setting (issue #104): KEY=VALUE text injected into the
+/** Server-side tau setting (issue #104): KEY=VALUE text injected into the
  * `omp` child process. Parsing/validation lives in lib/omp/agent-env.ts; this only
  * feeds it localized messages and renders the result. `cluster`: the members run it too (spec K1). */
 function AgentEnvSetting({ cluster }: { cluster: boolean }) {
@@ -755,7 +755,7 @@ function NotificationSettingsPanel() {
 
   // With push, the server sends a real push; otherwise this tab shows one itself.
   const sendTest = async () => {
-    const testNotification = renderNotification({ type: "test", sessionId: "", sessionName: "omp web" }, t);
+    const testNotification = renderNotification({ type: "test", sessionId: "", sessionName: "tau" }, t);
     try {
       if (pushActive) {
         const res = await fetch("/api/notifications/test", {
@@ -1948,7 +1948,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
 
                 <AgentEnvSetting cluster={cluster} />
 
-                {/* ompweb app update card */}
+                {/* tau app update card */}
                 <section style={{ padding: 14, border: appUpdateIsAvailable ? "1px solid color-mix(in srgb, var(--accent) 45%, var(--border))" : "1px solid var(--border)", borderRadius: "var(--radius-card)", background: "var(--bg-panel)", display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                     <div>

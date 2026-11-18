@@ -42,7 +42,7 @@ export class ChannelLifecycle {
     this.clock = options.now ?? Date.now;
     this.later = options.setTimeout ?? ((fn, ms) => { const t = setTimeout(fn, ms); t.unref?.(); return t; });
     this.cancel = options.clearTimeout ?? clearTimeout;
-    const configured = Number(process.env.OMP_WEB_DISCONNECT_DESTROY_MS ?? 120000);
+    const configured = Number(process.env.TAU_DISCONNECT_DESTROY_MS ?? 120000);
     this.abandonedMs = options.abandonedMs ?? (Number.isFinite(configured) && configured >= 0 ? configured : 120000);
     this.idleMs = options.idleMs ?? 600000;
     this.graceMs = options.graceMs ?? 120000;

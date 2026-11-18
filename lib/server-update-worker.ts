@@ -1,6 +1,6 @@
 // The detached worker of an application update: it replaces the installation the web server (and, when it runs from
 // the same installation, this machine's host) runs from, so it runs from outside it: a copy of the compiled binary
-// (`ompweb server-update-worker <descriptor>`), or a Node bundle of this file built by the server before the cutover
+// (`tau server-update-worker <descriptor>`), or a Node bundle of this file built by the server before the cutover
 // (`node worker.mjs --server-update-descriptor <descriptor>`). Node-compatible: node:* and shared host modules only,
 // never the Bun server or the hub. self-update.ts prepares everything the worker uses and verifies the result.
 import { execFile } from "node:child_process";
@@ -86,11 +86,11 @@ export const defaultServerUpdateDeps: ServerUpdateDeps = {
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-export const serverBinaryName = (): string => (process.platform === "win32" ? "ompweb.exe" : "ompweb");
+export const serverBinaryName = (): string => (process.platform === "win32" ? "tau.exe" : "tau");
 
-/** Siblings of the installation, so a rename never crosses a filesystem. Named apart from the host updater's `.ompweb-*` artifacts, which its pruning owns. */
+/** Siblings of the installation, so a rename never crosses a filesystem. Named apart from the host updater's `.tau-*` artifacts, which its pruning owns. */
 export function serverArtifact(installDir: string, kind: "staging" | "backup" | "failed", attemptId: string): string {
-  return join(dirname(installDir), `.ompweb-server-${kind}-${attemptId}`);
+  return join(dirname(installDir), `.tau-server-${kind}-${attemptId}`);
 }
 
 /** `path` lies inside `installDir` (resolved through links; a missing path is not inside). */
@@ -116,7 +116,7 @@ export async function probeLocalHost(control: typeof requestHostControl = reques
   }
 }
 
-/** How the host starts in this installation: the compiled `ompweb host`, or the package's host entrypoint on a Node runtime (the daemon's own, when one runs). Never from inside the installation: a cwd there blocks the next replacement on Windows. */
+/** How the host starts in this installation: the compiled `tau host`, or the package's host entrypoint on a Node runtime (the daemon's own, when one runs). Never from inside the installation: a cwd there blocks the next replacement on Windows. */
 export function launchFor(d: Pick<ServerUpdateDescriptor, "installMethod" | "installDir" | "runtime" | "hostArgs" | "localHost">): UpgradeLaunch {
   const runtime = d.localHost.kind === "shared" ? d.localHost.process.executable : d.runtime;
   return hostLaunch({ installMethod: d.installMethod, installDir: d.installDir, runtime, hostArgs: d.hostArgs, cwd: homedir() });
@@ -241,18 +241,18 @@ async function verifyStagedRelease(d: ServerUpdateDescriptor): Promise<void> {
   if (!existsSync(join(d.release, "dist", "index.html"))) throw new Error("The staged release is incomplete (no dist/index.html)");
   if (d.installMethod === "binary") {
     const binary = join(d.release, serverBinaryName());
-    const { stdout } = await exec(binary, ["--version"], { timeout: 10000, env: { ...process.env, OMP_WEB_PACKAGE_DIR: d.release }, maxBuffer: 1024 * 1024, windowsHide: true });
+    const { stdout } = await exec(binary, ["--version"], { timeout: 10000, env: { ...process.env, TAU_PACKAGE_DIR: d.release }, maxBuffer: 1024 * 1024, windowsHide: true });
     if (!stdout.trim().split(/\s+/).some((token) => token.replace(/^v/, "") === d.targetVersion)) throw new Error("The staged server binary reports a different version");
     return;
   }
   const metadata: unknown = JSON.parse(readFileSync(join(d.release, "package.json"), "utf8"));
-  if (!isRecord(metadata) || metadata.name !== "@ompweb-dev/tau" || metadata.version !== d.targetVersion || !existsSync(join(d.release, "bin", "omp-web.js")) || !existsSync(join(d.release, "server", "main.ts"))) throw new Error("The staged package does not match the requested version");
+  if (!isRecord(metadata) || metadata.name !== "@ompweb-dev/tau" || metadata.version !== d.targetVersion || !existsSync(join(d.release, "bin", "tau.js")) || !existsSync(join(d.release, "server", "main.ts"))) throw new Error("The staged package does not match the requested version");
 }
 
-/** Mirrors progress into the plan the server persisted (agent/omp-web/server-upgrades/<id>/plan.json): the worker only ever sets `state`, `error` and the local participant's stage. Advisory: status.json is the durable result. */
+/** Mirrors progress into the plan the server persisted (agent/tau/server-upgrades/<id>/plan.json): the worker only ever sets `state`, `error` and the local participant's stage. Advisory: status.json is the durable result. */
 export function reportPlan(attemptId: string, participantId: string | null, state: UpgradePlan["state"], error?: string, participant?: { stage: UpgradeParticipant["stage"]; error?: string }): void {
   try {
-    const file = join(getAgentDir(), "omp-web", "server-upgrades", attemptId, "plan.json");
+    const file = join(getAgentDir(), "tau", "server-upgrades", attemptId, "plan.json");
     assertOwnedPath(dirname(file), true);
     assertOwnedPath(file);
     const plan: unknown = JSON.parse(readFileSync(file, "utf8"));
@@ -401,7 +401,7 @@ export async function runServerUpdateWorker(descriptorPath: string, deps: Server
   try {
     stage("preparing");
     reportPlan(id, d.participantId, "updating-server");
-    if (["1", "true", "yes", "on"].includes((process.env.OMP_WEB_DISABLE_AUTOUPDATE || "").trim().toLowerCase())) throw new Error("Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE");
+    if (["1", "true", "yes", "on"].includes((process.env.TAU_DISABLE_AUTOUPDATE || "").trim().toLowerCase())) throw new Error("Updates are disabled by TAU_DISABLE_AUTOUPDATE");
     await verifyStagedRelease(d);
     // Nothing stops while an unknown process still runs from the installation: the server's tree and the shared host (and its sessions) are expected.
     const owned = [...d.server.pids, ...(hostProcess ? [hostProcess.pid] : [])];

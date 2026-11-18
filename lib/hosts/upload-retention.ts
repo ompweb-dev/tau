@@ -1,5 +1,5 @@
 // Retention of sent uploads, the daemon's side (docs/specs/2026-11-02-file-uploads-design.md, U6): main sends the
-// `uploadRetentionDays` setting (op `setUploadRetention`), the daemon keeps it in `<agent dir>/omp-web/upload-retention.json`
+// `uploadRetentionDays` setting (op `setUploadRetention`), the daemon keeps it in `<agent dir>/tau/upload-retention.json`
 // and deletes files older than that from every session's `local://uploads/`, at start and every 24 h.
 // Loaded by the daemon through jiti: no `@/` imports and no Bun APIs.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -35,7 +35,7 @@ async function subdirs(dir: string): Promise<string[]> {
   try {
     return (await readdir(dir, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => join(dir, entry.name));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(`[ompweb host] upload retention: cannot read ${dir}: ${(error as Error).message}`);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(`[tau host] upload retention: cannot read ${dir}: ${(error as Error).message}`);
     return [];
   }
 }
@@ -56,7 +56,7 @@ async function sweepDir(dir: string, cutoff: () => number | null): Promise<boole
   try {
     names = await readdir(dir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(`[ompweb host] upload retention: cannot read ${dir}: ${(error as Error).message}`);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") console.error(`[tau host] upload retention: cannot read ${dir}: ${(error as Error).message}`);
     return true;
   }
   for (const name of names) {
@@ -130,7 +130,7 @@ export class UploadRetention {
   busy(): boolean { return this.active > 0; }
 
   constructor(
-    private readonly file: string = join(getAgentDir(), "omp-web", "upload-retention.json"),
+    private readonly file: string = join(getAgentDir(), "tau", "upload-retention.json"),
     private readonly roots: RetentionRoots = defaultRoots(),
   ) {
     this.days = readStored(file);

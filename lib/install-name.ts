@@ -1,12 +1,12 @@
 import { isIP } from "node:net";
 
 const DEFAULT_NAME = "tau";
-// OMP_WEB_NAME values (case-insensitive) that derive the name from the request.
+// TAU_NAME values (case-insensitive) that derive the name from the request.
 const FROM_REQUEST = ["url", "host", "domain"];
 
 /**
  * Display-only label shared by installation metadata and browser titles.
- * `OMP_WEB_NAME` decides it: unset or blank keeps `tau`; `url`, `host` or
+ * `TAU_NAME` decides it: unset or blank keeps `tau`; `url`, `host` or
  * `domain` derives it from the request's Host header; anything else is used
  * verbatim.
  */
@@ -14,7 +14,7 @@ export function getInstallName(
   headers: Pick<Headers, "get">,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const name = env.OMP_WEB_NAME?.trim();
+  const name = env.TAU_NAME?.trim();
   if (!name) return DEFAULT_NAME;
   return FROM_REQUEST.includes(name.toLowerCase()) ? nameFromHost(headers.get("host")) : name;
 }

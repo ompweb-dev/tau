@@ -9,7 +9,7 @@ import { isRecord } from "../type-guards";
 import { HOST_VERSION_PATTERN, validateApprovedReleasePin } from "./update-worker";
 import type { ApprovedReleasePin } from "./update-types";
 
-/** The server's published release whose binary carries the recovery CLI (`ompweb recover-host`). `tag` names that exact
+/** The server's published release whose binary carries the recovery CLI (`tau recover-host`). `tag` names that exact
  * release when it is not the stable `v<version>` (a prerelease build of the same package version). */
 export interface LegacyRecoveryRelease {
   version: string;
@@ -33,12 +33,12 @@ export interface LegacyRecoveryInput {
 }
 
 /** What the helper binary embeds (lib/hosts/recovery.ts), encoded so this module, bundled into every release, does not:
- * a release without the recovery CLI must not match. An old ompweb given an unknown subcommand starts the web server. */
-export const RECOVERY_CLI_MARKER_BASE64 = "b21wd2ViLXJlY292ZXJ5LWNsaS12MQ==";
+ * a release without the recovery CLI must not match. An old tau given an unknown subcommand starts the web server. */
+export const RECOVERY_CLI_MARKER_BASE64 = "dGF1LXJlY292ZXJ5LWNsaS12MQ==";
 const RECOVERY_CLI_MARKER = Buffer.from(RECOVERY_CLI_MARKER_BASE64, "base64").toString();
-export const RECOVERY_PIN_CLI_MARKER_BASE64 = "b21wd2ViLXJlY292ZXJ5LXBpbi1jbGktdjE=";
+export const RECOVERY_PIN_CLI_MARKER_BASE64 = "dGF1LXJlY292ZXJ5LXBpbi1jbGktdjE=";
 const RECOVERY_PIN_CLI_MARKER = Buffer.from(RECOVERY_PIN_CLI_MARKER_BASE64, "base64").toString();
-export const RECOVERY_PHASED_CLI_MARKER_BASE64 = "b21wd2ViLXJlY292ZXJ5LXBoYXNlZC1jbGktdjE=";
+export const RECOVERY_PHASED_CLI_MARKER_BASE64 = "dGF1LXJlY292ZXJ5LXBoYXNlZC1jbGktdjE=";
 const RECOVERY_PHASED_CLI_MARKER = Buffer.from(RECOVERY_PHASED_CLI_MARKER_BASE64, "base64").toString();
 
 const GITHUB = "https://github.com";
@@ -96,7 +96,7 @@ function validate(input: LegacyRecoveryInput): Plan {
   const { os, extension, architectures } = PLATFORMS[platform as keyof typeof PLATFORMS];
   const digests = new Map<string, string>();
   for (const architecture of architectures) {
-    const name = `ompweb-${os}-${architecture}${extension}`;
+    const name = `tau-${os}-${architecture}${extension}`;
     const matches = helper.assets.filter((asset) => asset.name === name);
     if (matches.length > 1) refuse(`duplicate asset ${name}`);
     if (matches.length === 0) continue;
@@ -108,7 +108,7 @@ function validate(input: LegacyRecoveryInput): Plan {
   return { operationId, platform: platform as keyof typeof PLATFORMS, repo: helper.repo, tag, targetVersion, min, max, force, digests, releasePin, phase };
 }
 
-/** The arguments of `ompweb recover-host` (runHostRecoveryCli's strict flags), identical on every platform. */
+/** The arguments of `tau recover-host` (runHostRecoveryCli's strict flags), identical on every platform. */
 function recoverArguments(plan: Plan): string[] {
   return ["recover-host", "--operation", plan.operationId, "--version", plan.targetVersion, "--min-protocol", String(plan.min), "--max-protocol", String(plan.max), ...(plan.force ? ["--force"] : []), ...(plan.releasePin ? ["--release-pin", plan.releasePin] : []), ...(plan.phase ? ["--phase", plan.phase] : [])];
 }
@@ -121,7 +121,7 @@ const TMP_DIR = "${TMPDIR:-/tmp}";
 /**
  * POSIX shell for `sh -c`. Needs curl, tar and one of sha256sum/shasum/openssl; a missing tool fails visibly. Every
  * step is its own checked command (no pipeline whose status could be lost): download under a size limit, digest
- * against the pinned value, exactly one `<root>/ompweb` member, streamed with `tar -O` to a private scratch file (the
+ * against the pinned value, exactly one `<root>/tau` member, streamed with `tar -O` to a private scratch file (the
  * archive's paths never reach the filesystem), the recovery marker found in its bytes before it is ever run.
  */
 function posixCommand(plan: Plan, base: string): string {
@@ -134,7 +134,7 @@ function posixCommand(plan: Plan, base: string): string {
     }).join("\n");
   const script = String.raw`set -eu
 umask 077
-fail() { printf 'ompweb recovery bootstrap: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'tau recovery bootstrap: %s\n' "$*" >&2; exit 1; }
 [ "$(uname -s)" = ${shellQuote(plan.platform === "darwin" ? "Darwin" : "Linux")} ] || fail 'this bootstrap was built for ${plan.platform === "darwin" ? "macOS" : "Linux"}'
 command -v curl >/dev/null 2>&1 || fail 'curl is required'
 case "$(uname -m)" in
@@ -142,18 +142,18 @@ ${branches(["x64"], "x86_64|amd64")}
 ${branches(["arm64"], "aarch64|arm64")}
 *) fail "unsupported CPU architecture $(uname -m)" ;;
 esac
-asset="ompweb-${os}-$arch${extension}"
-entry="ompweb-${os}-$arch/ompweb"
+asset="tau-${os}-$arch${extension}"
+entry="tau-${os}-$arch/tau"
 url=${shellQuote(`${base}/${plan.repo}/releases/download/${plan.tag}/`)}"$asset"
 marker=${shellQuote(plan.phase ? RECOVERY_PHASED_CLI_MARKER : plan.releasePin ? RECOVERY_PIN_CLI_MARKER : RECOVERY_CLI_MARKER)}
 digest_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d ' ' -f 1
   elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d ' ' -f 1
   elif command -v openssl >/dev/null 2>&1; then openssl dgst -sha256 "$1" | sed 's/^.*= //'
-  else echo 'ompweb recovery bootstrap: sha256sum, shasum or openssl is required' >&2
+  else echo 'tau recovery bootstrap: sha256sum, shasum or openssl is required' >&2
   fi
 }
-work=$(mktemp -d "${TMP_DIR}/ompweb-recovery-${plan.operationId}-XXXXXX") || fail 'cannot create a private scratch directory'
+work=$(mktemp -d "${TMP_DIR}/tau-recovery-${plan.operationId}-XXXXXX") || fail 'cannot create a private scratch directory'
 keep=
 trap '[ -n "$keep" ] || rm -rf "$work"' EXIT
 trap 'exit 1' HUP INT TERM
@@ -161,14 +161,14 @@ trap 'exit 1' HUP INT TERM
 [ "$(digest_of "$work/archive")" = "$want" ] || fail 'release archive digest mismatch'
 tar -tzf "$work/archive" > "$work/entries" || fail 'cannot list the release archive'
 [ "$(grep -Fxc -- "$entry" "$work/entries" || true)" = 1 ] || fail "release archive must contain exactly one $entry"
-( ulimit -f ${MAX_BYTES / 512} && tar -xzOf "$work/archive" "$entry" > "$work/ompweb" ) || fail 'cannot extract the ompweb binary'
-[ -s "$work/ompweb" ] || fail 'the ompweb binary is empty'
-grep -aqF -- "$marker" "$work/ompweb" || fail ${shellQuote(plan.phase ? "the pinned ompweb release has no phased recovery support" : plan.releasePin ? "the pinned ompweb release has no approved release pin support" : "the pinned ompweb release has no recovery support")}
-chmod 700 "$work/ompweb"
+( ulimit -f ${MAX_BYTES / 512} && tar -xzOf "$work/archive" "$entry" > "$work/tau" ) || fail 'cannot extract the tau binary'
+[ -s "$work/tau" ] || fail 'the tau binary is empty'
+grep -aqF -- "$marker" "$work/tau" || fail ${shellQuote(plan.phase ? "the pinned tau release has no phased recovery support" : plan.releasePin ? "the pinned tau release has no approved release pin support" : "the pinned tau release has no recovery support")}
+chmod 700 "$work/tau"
 rm -f "$work/archive" "$work/entries"
-if "$work/ompweb" ${recoverArguments(plan).map(shellQuote).join(" ")} </dev/null; then keep=1; else status=$?; printf 'ompweb recovery bootstrap: recover-host exited with %s\n' "$status" >&2; exit "$status"; fi
+if "$work/tau" ${recoverArguments(plan).map(shellQuote).join(" ")} </dev/null; then keep=1; else status=$?; printf 'tau recovery bootstrap: recover-host exited with %s\n' "$status" >&2; exit "$status"; fi
 `;
-  return `sh -c ${shellQuote(script)} ompweb-recovery`;
+  return `sh -c ${shellQuote(script)} tau-recovery`;
 }
 
 /**
@@ -180,7 +180,7 @@ if "$work/ompweb" ${recoverArguments(plan).map(shellQuote).join(" ")} </dev/null
 function windowsScript(plan: Plan, base: string): string {
   const digest = plan.digests.get("x64");
   if (!digest) return refuse("the helper release has no windows asset with a digest");
-  const entry = "ompweb-windows-x64/ompweb.exe";
+  const entry = "tau-windows-x64/tau.exe";
   const argumentList = recoverArguments(plan).map(powershellQuote).join(",");
   return String.raw`$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -191,8 +191,8 @@ try {
   Add-Type -AssemblyName System.IO.Compression
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-  if ($arch -ne 'AMD64') { throw "ompweb has no Windows $arch release" }
-  $url = ${powershellQuote(`${base}/${plan.repo}/releases/download/${plan.tag}/ompweb-windows-x64.zip`)}
+  if ($arch -ne 'AMD64') { throw "tau has no Windows $arch release" }
+  $url = ${powershellQuote(`${base}/${plan.repo}/releases/download/${plan.tag}/tau-windows-x64.zip`)}
   $want = ${powershellQuote(digest)}
   $entry = ${powershellQuote(entry)}
   $marker = ${powershellQuote(plan.phase ? RECOVERY_PHASED_CLI_MARKER : plan.releasePin ? RECOVERY_PIN_CLI_MARKER : RECOVERY_CLI_MARKER)}
@@ -201,7 +201,7 @@ try {
   $acl = New-Object Security.AccessControl.DirectorySecurity
   $acl.SetAccessRuleProtection($true, $false)
   $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
-  $dir = Join-Path ([IO.Path]::GetTempPath()) ('ompweb-recovery-' + ${powershellQuote(plan.operationId)} + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+  $dir = Join-Path ([IO.Path]::GetTempPath()) ('tau-recovery-' + ${powershellQuote(plan.operationId)} + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
   [void][IO.Directory]::CreateDirectory($dir, $acl)
   $zip = Join-Path $dir 'release.zip'
   $buffer = New-Object byte[] 1048576
@@ -229,7 +229,7 @@ try {
   $file = [IO.File]::OpenRead($zip)
   try { $got = ([BitConverter]::ToString($sha.ComputeHash($file)) -replace '-', '').ToLowerInvariant() } finally { $file.Dispose() }
   if ($got -ne $want) { throw 'release archive digest mismatch' }
-  $exe = Join-Path $dir 'ompweb.exe'
+  $exe = Join-Path $dir 'tau.exe'
   $archive = New-Object IO.Compression.ZipArchive([IO.File]::OpenRead($zip), [IO.Compression.ZipArchiveMode]::Read)
   try {
     $hits = @($archive.Entries | Where-Object { $_.FullName -ieq $entry })
@@ -240,11 +240,11 @@ try {
       $total = 0
       while (($n = $src.Read($buffer, 0, $buffer.Length)) -gt 0) {
         $total += $n
-        if ($total -gt $cap) { throw 'the ompweb binary is too large' }
+        if ($total -gt $cap) { throw 'the tau binary is too large' }
         $dst.Write($buffer, 0, $n)
       }
     } finally { $dst.Dispose(); $src.Dispose() }
-    if ($total -le 0) { throw 'the ompweb binary is empty' }
+    if ($total -le 0) { throw 'the tau binary is empty' }
   } finally { $archive.Dispose() }
   Remove-Item -LiteralPath $zip -Force
   $latin1 = [Text.Encoding]::GetEncoding(28591)
@@ -258,13 +258,13 @@ try {
       $tail = $text.Substring([Math]::Max(0, $text.Length - $marker.Length + 1))
     }
   } finally { $file.Dispose() }
-  if (-not $found) { throw ${powershellQuote(plan.phase ? "the pinned ompweb release has no phased recovery support" : plan.releasePin ? "the pinned ompweb release has no approved release pin support" : "the pinned ompweb release has no recovery support")} }
+  if (-not $found) { throw ${powershellQuote(plan.phase ? "the pinned tau release has no phased recovery support" : plan.releasePin ? "the pinned tau release has no approved release pin support" : "the pinned tau release has no recovery support")} }
   $arguments = @(${argumentList})
   & $exe @arguments
   $code = $LASTEXITCODE
-  if ($code -ne 0) { [Console]::Error.WriteLine("ompweb recovery bootstrap: recover-host exited with $code") }
+  if ($code -ne 0) { [Console]::Error.WriteLine("tau recovery bootstrap: recover-host exited with $code") }
 } catch {
-  [Console]::Error.WriteLine('ompweb recovery bootstrap: ' + $_.Exception.Message)
+  [Console]::Error.WriteLine('tau recovery bootstrap: ' + $_.Exception.Message)
   $code = 1
 }
 if ($code -ne 0 -and $dir -and (Test-Path -LiteralPath $dir)) { Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue }

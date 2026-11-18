@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const { verifyPassword } = require("./omp-web-password-hash.js");
-const launcher = fileURLToPath(new URL("./omp-web.js", import.meta.url));
+const { verifyPassword } = require("./tau-password-hash.js");
+const launcher = fileURLToPath(new URL("./tau.js", import.meta.url));
 
 // util-linux `script` gives the command a real terminal, so the prompt runs in raw mode.
 const hasScript = process.platform === "linux" && spawnSync("script", ["--version"]).status === 0;

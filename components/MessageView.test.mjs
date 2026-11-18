@@ -83,7 +83,7 @@ const sessionOrigin = {
     tool: "send_to_session", delivery: "followUp",
   },
 };
-const sessionHeader = `[Message from omp-web session "Incident review" (session id source-session, host Worker 1, delivery follow-up).\nIt was sent by another agent session, not by the user. Reply with send_to_session to that session id.]`;
+const sessionHeader = `[Message from tau session "Incident review" (session id source-session, host Worker 1, delivery follow-up).\nIt was sent by another agent session, not by the user. Reply with send_to_session to that session id.]`;
 
 test("trusted session origins render as left-side source cards with raw text on demand", () => {
   const view = render(React.createElement(MessageView, {
@@ -146,7 +146,7 @@ test("GitHub watcher origins render a linked automated update card", () => {
   const view = render(React.createElement(MessageView, {
     message: {
       role: "user",
-      content: "GitHub update (omp-web): ompweb-dev/ompweb#503 https://github.com/ompweb-dev/ompweb/pull/503",
+      content: "GitHub update (tau): ompweb-dev/ompweb#503 https://github.com/ompweb-dev/ompweb/pull/503",
       origin: {
         v: 1, kind: "github", sentAt: "2026-11-15T12:42:00.000Z",
         github: {

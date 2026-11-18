@@ -48,7 +48,7 @@ async function renderPreview(filePath, opened) {
   return view;
 }
 
-test("preview links never navigate omp-web away, and unservable images show their alt text", async () => {
+test("preview links never navigate tau away, and unservable images show their alt text", async () => {
   const opened = [];
   const { container, getByText } = await renderPreview("/var/tmp/out/docs/guide.md", opened);
 

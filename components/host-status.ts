@@ -11,10 +11,10 @@ export function hostName(t: Translate, host: Pick<HostRow, "id" | "label">): str
 
 export const isLocalRow = (host: HostRow): host is LocalHostRow => host.id === "local";
 
-/** The command that installs the ompweb-host service on the server's platform (`LocalHostRow.serverPlatform`). */
+/** The command that installs the tau-host service on the server's platform (`LocalHostRow.serverPlatform`). */
 export function localInstallCommand(platform: string): string {
-  if (platform === "darwin") return "ompweb launchd install";
-  return platform === "win32" ? "ompweb-tray install" : "ompweb systemd install";
+  if (platform === "darwin") return "tau launchd install";
+  return platform === "win32" ? "tau-tray install" : "tau systemd install";
 }
 
 export function hostStatusText(t: Translate, host: HostRow): string {

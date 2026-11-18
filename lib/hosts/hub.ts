@@ -1,4 +1,4 @@
-// Main-server end of the host link (spec "Link protocol"): accepts `ompweb
+// Main-server end of the host link (spec "Link protocol"): accepts `tau
 // host` daemons on /api/hosts/link and exposes each linked machine as a
 // `RemoteHost`. Everything a daemon sends is untrusted input.
 // No `next/*` or `@/` imports.
@@ -155,7 +155,7 @@ interface Link {
   /** v10: a `config_state` arrived since the link came up: from then on reports, never op answers, set `configState`. */
   configReported: boolean;
   ompVersion: string | null;
-  ompwebVersion: string | null;
+  tauVersion: string | null;
   workspaceOps: Set<string>;
   platform: string | null;
   lastSeenAt: string | null;
@@ -290,7 +290,7 @@ function linkFor(id: string): Link {
       configOps: 0,
       configReported: false,
       ompVersion: null,
-      ompwebVersion: null,
+      tauVersion: null,
       workspaceOps: new Set(),
       platform: null,
       lastSeenAt: null,
@@ -446,7 +446,7 @@ export function flushLinkSamples(): void {
   try {
     appendTransportSamples(batch.samples.splice(0), null, batch.file);
   } catch (error) {
-    console.warn(`[omp-web] could not write host link samples: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] could not write host link samples: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -480,7 +480,7 @@ function recordDropped(link: Link): void {
 function applyStats(link: Link, message: Extract<UpMessage, { type: "stats" }>): void {
   if (message.invalid && !link.statsWarned) {
     link.statsWarned = true;
-    console.warn(`[omp-web] ${labelOf(link.id)}: dropped ${message.invalid} malformed link samples (not logged again for this host)`);
+    console.warn(`[tau] ${labelOf(link.id)}: dropped ${message.invalid} malformed link samples (not logged again for this host)`);
   }
   const window = link.statsWindow;
   const now = performance.now();
@@ -566,13 +566,13 @@ function authenticate(req: Request): HostRecord | Response {
   } catch (error) {
     if (!(error instanceof HostRegistryUnreadableError)) throw error;
     // Never 401 here: a daemon told its token is unknown stops every omp child.
-    console.error(`[omp-web] host link refused: ${error.message}`);
+    console.error(`[tau] host link refused: ${error.message}`);
     return json({ error: "The host registry cannot be read" }, 503);
   }
 }
 
 // The daemon retries a 503: what it sends lands on the next server instead.
-const stopping = () => json({ error: "omp-web is shutting down" }, 503);
+const stopping = () => json({ error: "tau is shutting down" }, 503);
 
 /**
  * This server is shutting down. From here on nothing reaches a daemon (sendDown
@@ -588,7 +588,7 @@ export function freezeHostLinks(): void {
   for (const link of hub().links.values()) {
     link.capacity = null;
     recordDropped(link);
-    link.socket?.close(LINK_CLOSE.goingAway, "omp-web is restarting");
+    link.socket?.close(LINK_CLOSE.goingAway, "tau is restarting");
   }
   // The process exits next: keep what was measured.
   flushLinkSamples();
@@ -604,7 +604,7 @@ export function handleLinkUpgrade(req: Request, upgrade: (data: LinkSocketData) 
 }
 
 /** POST /api/hosts/link: only a daemon from before the WebSocket (v3) sends one, its hello. It gets the 426 that tells
- * it to update ompweb on its host. */
+ * it to update tau on its host. */
 export async function handleOutdatedLinkPost(req: Request): Promise<Response> {
   const record = authenticate(req);
   if (record instanceof Response) return record;
@@ -684,7 +684,7 @@ function guarded(ws: LinkSocket, handle: () => void): void {
     handle();
   } catch (error) {
     failedSockets.add(ws);
-    console.error(`[omp-web] host link of ${ws.data.hostId} failed; closing it: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+    console.error(`[tau] host link of ${ws.data.hostId} failed; closing it: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     ws.close();
   }
 }
@@ -766,7 +766,7 @@ function openLink(link: Link, ws: LinkSocket, hello: Hello): void {
   link.awaitingDrain = false;
   flush(link);
   link.ompVersion = hello.ompVersion;
-  link.ompwebVersion = hello.ompwebVersion ?? null;
+  link.tauVersion = hello.tauVersion ?? null;
   link.workspaceOps = new Set(upgradeOnly(link) ? [] : hello.workspaceOps ?? []);
   endWorkspaceWatches(link.id);
   link.platform = hello.platform;
@@ -897,7 +897,7 @@ function reattach(link: Link, listed: HelloChannel[], refreshExisting = true): v
           [...(spawned.pending ?? []), ...(spawned.streaming ? [spawned.streaming] : [])], spawned, owned?.creationId);
       } catch (error) {
         if (!owned) child.close();
-        console.warn(`[omp-web] could not join session ${sessionId} on ${labelOf(link.id)}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tau] could not join session ${sessionId} on ${labelOf(link.id)}: ${error instanceof Error ? error.message : String(error)}`);
         return false;
       }
     })();
@@ -918,11 +918,11 @@ async function adopt(link: Link, child: RemoteRpcTransport, sessionId: string, c
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     if (creationId !== undefined) {
-      console.warn(`[omp-web] retained creation ${creationId} on ${labelOf(link.id)} for owner reconciliation: ${reason}`);
+      console.warn(`[tau] retained creation ${creationId} on ${labelOf(link.id)} for owner reconciliation: ${reason}`);
       return false;
     }
     child.close();
-    console.warn(`[omp-web] left the shared omp child of session ${sessionId} on ${labelOf(link.id)} running: this server could not adopt it (${reason})`);
+    console.warn(`[tau] left the shared omp child of session ${sessionId} on ${labelOf(link.id)} running: this server could not adopt it (${reason})`);
     return false;
   }
 }
@@ -969,7 +969,7 @@ function applyUp(link: Link, message: UpMessage | UnknownMessage, whole?: UpMess
     // A newer daemon's message, or one only the server sends: skipped, but its seq is applied so it is acked and never resent.
     if (message.seq !== null) link.up.applied(message.seq);
     const note = link.unknownLog.note(message);
-    if (note) console.warn(`[omp-web] ${labelOf(link.id)}: ${note}`);
+    if (note) console.warn(`[tau] ${labelOf(link.id)}: ${note}`);
     return;
   }
   // Already applied before a resend.
@@ -1063,7 +1063,7 @@ function settle(link: Link, message: Res): void {
 function request(hostId: string, op: HostOpName, args: Record<string, unknown>, timeoutMs = linkTimings.opTimeoutMs, accept?: (value: unknown) => unknown, recoveryId?: string): Promise<unknown> {
   const link = linkFor(hostId);
   const label = labelOf(hostId);
-  if (hub().frozen) return Promise.reject(new HostOpError(503, "server_stopping", "omp-web is shutting down"));
+  if (hub().frozen) return Promise.reject(new HostOpError(503, "server_stopping", "tau is shutting down"));
   if (upgradeOnly(link) && !upgradeOp(op) && !(recoveryId && recoveryId === link.recovery?.id)) {
     return Promise.reject(new HostOpError(426, "host_upgrade_required", "Update this host before using its application protocol"));
   }
@@ -1233,7 +1233,7 @@ function remoteWorkspaceOps(hostId: string): WorkspaceOps {
     ops[op] = async (...args) => {
       const link = linkFor(hostId);
       if (link.socket && !link.workspaceOps?.has(op)) {
-        throw new HostOpError(501, "workspace_unsupported", `Update or restart the ompweb host daemon on ${labelOf(hostId)} to use workspace files`);
+        throw new HostOpError(501, "workspace_unsupported", `Update or restart the tau host daemon on ${labelOf(hostId)} to use workspace files`);
       }
       const result = await request(hostId, op, Object.fromEntries(params.map((name, i) => [name, args[i]])), op === "publishUpload" ? UPLOAD_ATTACH_TIMEOUT_MS : linkTimings.opTimeoutMs);
       if (!validWorkspaceResult(op, result)) throw new HostOpError(502, "host_bad_result", `${labelOf(hostId)} sent an invalid ${op} result`);
@@ -1296,7 +1296,7 @@ export class RemoteRpcTransport implements RpcTransport {
   write(line: string, callback: (error?: Error | null) => void): void {
     if (this.exitInfo || this.closed) return callback(new Error("RPC process is not running"));
     // sendDown would drop it: a command waiting on it fails now instead of at its timeout.
-    if (hub().frozen) return callback(new Error("omp-web is shutting down"));
+    if (hub().frozen) return callback(new Error("tau is shutting down"));
     try {
       // Kept in the link outbox until the daemon acks it, across reconnects; queued per channel, in order.
       sendDown(linkFor(this.hostId), { type: "stdin", ch: this.ch, line }, this.ch);
@@ -1424,7 +1424,7 @@ export class RemoteRpcTransport implements RpcTransport {
       // A redial's hello reattaches this channel and retries its snapshot.
       if (error instanceof HostOpError && error.code === "host_offline") return;
       this.close();
-      console.warn(`[omp-web] closed shared channel ${this.ch}: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] closed shared channel ${this.ch}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       this.refreshing = false;
     }
@@ -1672,7 +1672,7 @@ function softwareUpdate(value: unknown): value is HostSoftwareUpdate & Record<st
 
 function updateOperation(value: unknown): value is HostUpdateOperation {
   return isRecord(value) && typeof value.id === "string" && value.id.length > 0 && value.id.length <= 128
-    && (value.target === "ompweb" || value.target === "omp") && typeof value.version === "string"
+    && (value.target === "tau" || value.target === "omp") && typeof value.version === "string"
     && ["running", "succeeded", "failed"].includes(String(value.state))
     && (value.error === undefined || typeof value.error === "string")
     && (value.prepared === undefined || value.prepared === true);
@@ -1724,19 +1724,19 @@ export async function getHostSoftwareUpdates(id: string, force = false, compatib
   const current = updateCompatibility();
   const targetCompatibility = compatibility.min === current.min && compatibility.max === current.max ? {} : { targetCompatibility: compatibility };
   const result = await requestHostUpdate(id, "checkUpdates", { compatibility: current, force, ...targetCompatibility, ...(releasePin ? { releasePin } : {}) });
-  if (!isRecord(result) || !softwareUpdate(result.ompweb) || !isRecord(result.omp) || !nullableString(result.omp.currentVersion)
-    || !["npm", "bun", "binary"].includes(String(result.ompweb.installMethod))
-    || !(result.ompweb.protocolVersion === null || (Number.isSafeInteger(result.ompweb.protocolVersion) && Number(result.ompweb.protocolVersion) > 0))
+  if (!isRecord(result) || !softwareUpdate(result.tau) || !isRecord(result.omp) || !nullableString(result.omp.currentVersion)
+    || !["npm", "bun", "binary"].includes(String(result.tau.installMethod))
+    || !(result.tau.protocolVersion === null || (Number.isSafeInteger(result.tau.protocolVersion) && Number(result.tau.protocolVersion) > 0))
     || !(result.operation === null || updateOperation(result.operation))) {
     throw new HostOpError(502, "host_bad_result", "The host returned an invalid update status");
   }
-  // A daemon from before omp updated with ompweb reports a full update status for omp: keep only its version.
+  // A daemon from before omp updated with tau reports a full update status for omp: keep only its version.
   const info = { ...result, omp: { currentVersion: result.omp.currentVersion } } as unknown as HostUpdateInfo;
-  const protocol = info.ompweb.protocolVersion;
-  if ((!releasePin || info.ompweb.supportsReleasePin === true) && info.ompweb.updateAvailable && (protocol === null || protocol < compatibility.min || protocol > compatibility.max)) {
-    return { ...info, ompweb: { ...info.ompweb, canUpdate: false, canForceUpdate: false, blockedReason: protocol === null
+  const protocol = info.tau.protocolVersion;
+  if ((!releasePin || info.tau.supportsReleasePin === true) && info.tau.updateAvailable && (protocol === null || protocol < compatibility.min || protocol > compatibility.max)) {
+    return { ...info, tau: { ...info.tau, canUpdate: false, canForceUpdate: false, blockedReason: protocol === null
       ? "The target release's link protocol could not be verified. Update is blocked."
-      : `Update ompweb on this server first: this host update uses link protocol v${protocol}; the server supports v${compatibility.min}–v${compatibility.max}.` } };
+      : `Update tau on this server first: this host update uses link protocol v${protocol}; the server supports v${compatibility.min}–v${compatibility.max}.` } };
   }
   const recovery = observeLegacyUpgrade(id, info);
   if (recovery && (recovery.state === "running" || info.operation?.id === recovery.id || !info.operation)) info.operation = recovery;
@@ -1747,31 +1747,31 @@ export async function getHostSoftwareUpdates(id: string, force = false, compatib
       .catch(() => {}).finally(() => { if (linkFor(id).recovery === activeRecovery) linkFor(id).recovery = undefined; });
   }
   // Old daemons have no force contract. Only explicitly approved recovery may use their execution channel.
-  if (id === LOCAL_HOST_ID && info.ompweb.canForceUpdate === undefined && !info.operation) info.operation = getHostUpdateOperation(); // an old daemon cannot report the recovery that is replacing it
-  if (info.ompweb.canForceUpdate === undefined && info.ompweb.updateAvailable && info.operation?.state !== "running") {
+  if (id === LOCAL_HOST_ID && info.tau.canForceUpdate === undefined && !info.operation) info.operation = getHostUpdateOperation(); // an old daemon cannot report the recovery that is replacing it
+  if (info.tau.canForceUpdate === undefined && info.tau.updateAvailable && info.operation?.state !== "running") {
     if (id === LOCAL_HOST_ID) {
       // This machine's daemon is recovered through its private control endpoint, never through its runner or a downloaded helper.
       try {
-        await checkHostRecovery({ version: releasePin?.version ?? info.ompweb.availableVersion ?? "", compatibility });
-        info.ompweb.canForceUpdate = true;
-        info.ompweb.forceMethod = "recovery";
+        await checkHostRecovery({ version: releasePin?.version ?? info.tau.availableVersion ?? "", compatibility });
+        info.tau.canForceUpdate = true;
+        info.tau.forceMethod = "recovery";
       } catch (error) {
-        info.ompweb.canForceUpdate = false;
-        if (!info.ompweb.canUpdate && error instanceof Error) info.ompweb.blockedReason = error.message;
+        info.tau.canForceUpdate = false;
+        if (!info.tau.canUpdate && error instanceof Error) info.tau.blockedReason = error.message;
       }
     } else {
       const link = linkFor(id);
       if (link.socket && link.recoveryHome && ["linux", "darwin", "win32"].includes(link.platform || "")) {
         try {
           const helper = await recoveryHelperRelease();
-          info.ompweb.canForceUpdate = helper.assets.some((asset) => asset.name.startsWith(`ompweb-${link.platform === "win32" ? "windows" : link.platform}-`));
-          info.ompweb.forceMethod = "recovery";
-        } catch { info.ompweb.canForceUpdate = false; }
+          info.tau.canForceUpdate = helper.assets.some((asset) => asset.name.startsWith(`tau-${link.platform === "win32" ? "windows" : link.platform}-`));
+          info.tau.forceMethod = "recovery";
+        } catch { info.tau.canForceUpdate = false; }
       }
     }
   }
-  if (releasePin && (info.ompweb.supportsReleasePin !== true || requireTwoPhase && info.ompweb.supportsTwoPhaseUpdate !== true) && info.ompweb.updateAvailable && info.operation?.state !== "running") {
-    const candidate = info.ompweb;
+  if (releasePin && (info.tau.supportsReleasePin !== true || requireTwoPhase && info.tau.supportsTwoPhaseUpdate !== true) && info.tau.updateAvailable && info.operation?.state !== "running") {
+    const candidate = info.tau;
     const prohibited = candidate.blockers?.some((blocker) => !blocker.forceable);
     const eligible = !prohibited && (candidate.canUpdate || candidate.canForceUpdate);
     candidate.canUpdate = false;
@@ -1788,7 +1788,7 @@ export async function getHostSoftwareUpdates(id: string, force = false, compatib
         if (link.socket && link.recoveryHome && (link.platform === "win32" ? win32.isAbsolute(link.recoveryHome) : posix.isAbsolute(link.recoveryHome)) && ["linux", "darwin", "win32"].includes(link.platform || "")) {
           try {
             const helper = await recoveryHelperRelease();
-            candidate.canForceUpdate = helper.assets.some((asset) => asset.name.startsWith(`ompweb-${link.platform === "win32" ? "windows" : link.platform}-`));
+            candidate.canForceUpdate = helper.assets.some((asset) => asset.name.startsWith(`tau-${link.platform === "win32" ? "windows" : link.platform}-`));
           } catch { /* No verified helper means no pinned recovery. */ }
         }
       }
@@ -1872,7 +1872,7 @@ export interface LinkedHostRow {
   label: string;
   status: HostStatus;
   ompVersion: string | null;
-  ompwebVersion?: string | null;
+  tauVersion?: string | null;
   /** A connected maintenance API or legacy shim can update an incompatible application peer. */
   upgradeOnly?: boolean;
   apiVersion?: number;
@@ -1908,7 +1908,7 @@ export function listHosts(): LinkedHostRow[] {
       label: record.label,
       ...hostConnectionFields(link, maintenance),
       ompVersion: maintenance?.ompVersion ?? link?.ompVersion ?? null,
-      ompwebVersion: maintenance?.ompwebVersion ?? link?.ompwebVersion ?? null,
+      tauVersion: maintenance?.tauVersion ?? link?.tauVersion ?? null,
       platform: maintenance?.platform ?? link?.platform ?? null,
       lastSeenAt: link?.lastSeenAt ?? record.lastSeenAt,
       allowAgentStart: record.allowAgentStart,
@@ -1940,7 +1940,7 @@ export async function masterConfigVersion(): Promise<string> {
   } finally {
     // A state kept from before `error` existed (`bun --hot`) lacks it.
     const errorChanged = JSON.stringify(master.error ?? null) !== JSON.stringify(failure);
-    if (failure && errorChanged) console.warn(`[omp-web] cluster members cannot get this machine's configuration (${failure.code}: ${failure.message})`);
+    if (failure && errorChanged) console.warn(`[tau] cluster members cannot get this machine's configuration (${failure.code}: ${failure.message})`);
     if (master.version !== version || errorChanged) {
       // A new version reaches the members now, not at the next 30 s round (spec K3); the sync piles no op on another.
       const changed = master.version !== null && version !== null && master.version !== version;
@@ -2030,7 +2030,7 @@ export interface LocalHostRow {
   label: string;
   status: HostStatus;
   ompVersion: string | null;
-  ompwebVersion?: string | null;
+  tauVersion?: string | null;
   upgradeOnly?: boolean;
   apiVersion?: number;
   platform: string | null;
@@ -2057,7 +2057,7 @@ export function hostsSnapshot(): { hosts: HostRow[]; pools?: HostPool[]; masterC
     label: customLocalLabel(),
     ...hostConnectionFields(link, maintenance),
     ompVersion: maintenance?.ompVersion ?? link?.ompVersion ?? null,
-    ompwebVersion: maintenance?.ompwebVersion ?? link?.ompwebVersion ?? null,
+    tauVersion: maintenance?.tauVersion ?? link?.tauVersion ?? null,
     platform: maintenance?.platform ?? link?.platform ?? null,
     lastSeenAt: null,
     hostVersion: link?.hostVersion ?? maintenance?.protocolVersion ?? null,

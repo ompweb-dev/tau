@@ -61,7 +61,7 @@ function findPiOnPath(): string | null {
 }
 
 function probePiBin(): string | null {
-  const override = process.env.TAU_PI_BIN || process.env.OMP_WEB_OMP_BIN;
+  const override = process.env.TAU_PI_BIN || process.env.TAU_OMP_BIN;
   if (override) return existsSync(override) ? override : null;
   return findPiOnPath();
 }
@@ -69,7 +69,7 @@ function probePiBin(): string | null {
 /** What every caller that needs pi reports when resolveOmpBin finds none. */
 export const OMP_NOT_FOUND = "pi binary not found. Install @earendil-works/pi-coding-agent or set TAU_PI_BIN.";
 
-/** Resolve the `pi` binary: TAU_PI_BIN (or OMP_WEB_OMP_BIN) override, else `pi` on PATH.
+/** Resolve the `pi` binary: TAU_PI_BIN (or TAU_OMP_BIN) override, else `pi` on PATH.
  * Returns null when none exists. A hit is cached while the file exists; a miss is
  * re-probed after MISS_TTL_MS, or at once with `fresh`. */
 export function resolveOmpBin(fresh = false): string | null {

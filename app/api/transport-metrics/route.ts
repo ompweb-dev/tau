@@ -10,7 +10,7 @@ export function GET() {
   return Response.json({ now: Date.now() }, { headers: { "cache-control": "no-store" } });
 }
 
-// POST /api/transport-metrics { samples } — appended to <agent dir>/omp-web/transport-metrics.jsonl.
+// POST /api/transport-metrics { samples } — appended to <agent dir>/tau/transport-metrics.jsonl.
 export async function POST(req: Request) {
   let body: unknown;
   try {

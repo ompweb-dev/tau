@@ -2,7 +2,7 @@
 import type { HtmlFormData, RpcAskDialogQuestion, TodoPhase } from "./pi-types";
 import type { MessageOrigin, SessionOriginRef } from "./message-origin";
 
-// omp-web cannot import the Bun-only @oh-my-pi packages, so the on-disk
+// tau cannot import the Bun-only @oh-my-pi packages, so the on-disk
 // shapes are re-declared here. Legacy pi v1/v2 fields are kept optional.
 
 export type SessionTitleSource = "auto" | "user";
@@ -256,7 +256,7 @@ export type UiDialogValue = string | boolean | UiAskDialogResult | UiFormDialogR
 
 /**
  * A dialog the runner opened: `method` is omp's `ExtensionUIContext` method, `args` its positional
- * arguments. omp-web's own confirms carry string ids. `expiresAt` (epoch ms) is set when it times out.
+ * arguments. tau's own confirms carry string ids. `expiresAt` (epoch ms) is set when it times out.
  */
 export type UiDialogRequest = { type: "ui_request"; id: number | string; expiresAt?: number } & (
   | { method: "select"; args: [title: string, options: UiSelectItem[], dialogOptions?: UiDialogOptionsArg] }
@@ -571,7 +571,7 @@ export interface ExitedRpcSession {
 /** How a held message goes to omp (docs/specs/2026-11-04-message-outbox-design.md O3). */
 export type OutboxMode = "prompt" | "followUp" | "steer";
 
-/** A message omp-web holds for a session until omp has it (the web server's outbox, lib/message-outbox.ts). */
+/** A message tau holds for a session until omp has it (the web server's outbox, lib/message-outbox.ts). */
 export interface OutboxEntry {
   id: string;
   sessionId: string;

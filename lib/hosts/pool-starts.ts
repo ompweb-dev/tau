@@ -75,7 +75,7 @@ export class PoolStartError extends HostOpError {
   }
 }
 
-function journalPath(): string { return join(getAgentDir(), "omp-web", "pool-starts.json"); }
+function journalPath(): string { return join(getAgentDir(), "tau", "pool-starts.json"); }
 function unavailable(): PoolStartError { return new PoolStartError(503, "pool_starts_unavailable", "The durable creation journal is unreadable; no new sessions can be admitted"); }
 function conflict(): PoolStartError { return new PoolStartError(409, "creation_conflict", "This creation ID already belongs to a different session intent"); }
 function unknown(start: PoolStart): PoolStartError { return new PoolStartError(503, "pool_start_unknown", "The original worker may have started this session; its outcome must be reconciled on that worker", start, true); }
@@ -88,7 +88,7 @@ function canonical(value: unknown): string {
   if (isRecord(value)) return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
   throw new PoolStartError(400, "invalid_creation_intent", "Creation intent must contain only JSON values");
 }
-function fingerprint(value: unknown): string { return createHash("sha256").update("ompweb:pool-creation:v1:").update(canonical(value)).digest("hex"); }
+function fingerprint(value: unknown): string { return createHash("sha256").update("tau:pool-creation:v1:").update(canonical(value)).digest("hex"); }
 function absolute(path: unknown): path is string { return typeof path === "string" && !path.includes("\0") && pathApi(path).isAbsolute(path) && pathApi(path).normalize(path) === path; }
 function creationCwd(cloneRoot: string, creationId: string): string {
   const path = pathApi(cloneRoot);

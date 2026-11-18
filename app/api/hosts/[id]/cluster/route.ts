@@ -21,7 +21,7 @@ const MAX_ORIGIN_PATHS = 500;
 const MAX_ORIGIN_PATH_LENGTH = 4096;
 const noStore = { "cache-control": "no-store" };
 const fail = (error: string, code: string, status: number) => Response.json({ error, code }, { status, headers: noStore });
-const storageFailure = () => fail("The pool registry (omp-web/pools.json) cannot be read or written; fix it before changing the cluster", "pool_storage_unavailable", 503);
+const storageFailure = () => fail("The pool registry (tau/pools.json) cannot be read or written; fix it before changing the cluster", "pool_storage_unavailable", 503);
 function errorResponse(error: unknown): Response {
   if (error instanceof HostOpError) return fail(error.message, error.code, error.status);
   if (error instanceof ClusterError) return fail(error.message, error.code, 409);
@@ -53,8 +53,8 @@ function requireReady(host: Host): void {
   if (block === "omp-old") throw new HostOpError(409, "host_omp_too_old", `Update omp on ${host.label} to ${MIN_SHARED_CREDENTIALS_OMP} or newer first`);
   if (block !== "upgrade") throw new HostOpError(409, "host_offline", `${host.label} is offline`);
   throw host.id === LOCAL_HOST_ID
-    ? new HostOpError(409, "host_restart_required", "Restart this machine's ompweb host daemon to join the cluster")
-    : new HostOpError(409, "host_upgrade_required", `Update ompweb on ${host.label} to join the cluster`);
+    ? new HostOpError(409, "host_restart_required", "Restart this machine's tau host daemon to join the cluster")
+    : new HostOpError(409, "host_upgrade_required", `Update tau on ${host.label} to join the cluster`);
 }
 
 /** The host's projects in its own order (mergeProjects: the order the user sees), then its hidden registry entries, which move too. */

@@ -23,8 +23,8 @@ const STT_TIMEOUT_MS = 6 * 60_000;
 const STT_POLL_INTERVAL_MS = 500;
 const STT_POLL_REQUEST_TIMEOUT_MS = 10_000;
 const STT_ADOPT_INTERVAL_MS = 4_000;
-const STT_OWNER_TOKEN_KEY = "omp-web:stt-owner-token";
-const STT_MOVED_JOB_PREFIX = "omp-web:stt-moved-job:";
+const STT_OWNER_TOKEN_KEY = "tau:stt-owner-token";
+const STT_MOVED_JOB_PREFIX = "tau:stt-moved-job:";
 const STT_RECOVERY_STORAGE_ERROR = "Transcription recovery could not be saved; keep this tab open to recover the recording.";
 
 interface MovedSttJob {

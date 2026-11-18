@@ -161,7 +161,7 @@ function formatReleaseNotes({
 
     for (const c of commits) {
       const s = c.subject.trim();
-      if (/^(?:chore: )?release( ompweb)? v?[0-9]/i.test(s) || /^v?[0-9]+\.[0-9]+\.[0-9]+$/i.test(s)) {
+      if (/^(?:chore: )?release( tau)? v?[0-9]/i.test(s) || /^v?[0-9]+\.[0-9]+\.[0-9]+$/i.test(s)) {
         continue;
       }
 

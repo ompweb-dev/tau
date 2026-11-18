@@ -108,9 +108,9 @@ interface WorkerPort {
 
 // Content-hashed at build time (server/client-env.ts) so a new worker version gets
 // a new SharedWorker instead of old tabs' copy speaking a stale protocol.
-const WORKER_URL = `/event-stream-worker.js?v=${process.env.OMP_WEB_PUBLIC_EVENT_STREAM_WORKER_VERSION ?? "dev"}`;
+const WORKER_URL = `/event-stream-worker.js?v=${process.env.TAU_PUBLIC_EVENT_STREAM_WORKER_VERSION ?? "dev"}`;
 
-const CLIENT_ID_KEY = "omp-web:transport-client-id";
+const CLIENT_ID_KEY = "tau:transport-client-id";
 let clientId: string | null = null;
 
 /** This browser's id in transport samples: stored once, or one per page load where storage throws. */
@@ -286,7 +286,7 @@ class Transport {
     for (const resolve of this.commands.values()) {
       resolve({
         status: 503,
-        body: { error: "The connection to omp-web dropped before the answer arrived; the command may have run.", code: "transport_lost" },
+        body: { error: "The connection to tau dropped before the answer arrived; the command may have run.", code: "transport_lost" },
         via: "ws",
         recvAt: null,
         repliedAt: null,
@@ -310,7 +310,7 @@ class Transport {
   private holdLifetimeLock(): void {
     const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
     if (!locks) return;
-    const name = `omp-web-event-stream:${randomUUID()}`;
+    const name = `tau-event-stream:${randomUUID()}`;
     void locks.request(name, () => {
       this.port.postMessage({ op: "lock", name });
       return new Promise<never>(() => {});
@@ -397,7 +397,7 @@ function postOutboxOnExit(): void {
 
 function connectTransport(): Transport {
   if (typeof SharedWorker === "function") {
-    const worker = new SharedWorker(WORKER_URL, { name: "omp-web-event-stream" });
+    const worker = new SharedWorker(WORKER_URL, { name: "tau-event-stream" });
     const shared = new Transport(worker.port);
     worker.onerror = () => shared.fail();
     worker.port.start();
@@ -464,9 +464,9 @@ function supportsOutboxSync(worker: ServiceWorker | null): Promise<boolean> {
       resolve(supported);
     };
     const timer = setTimeout(() => finish(false), 1_000);
-    channel.port1.onmessage = ({ data }) => finish(data?.type === "omp-outbox-capability" && data.version === 2);
+    channel.port1.onmessage = ({ data }) => finish(data?.type === "tau-outbox-capability" && data.version === 2);
     try {
-      worker.postMessage({ type: "omp-outbox-capability" }, [channel.port2]);
+      worker.postMessage({ type: "tau-outbox-capability" }, [channel.port2]);
     } catch {
       finish(false);
     }
@@ -512,14 +512,14 @@ async function registerOutboxSync(): Promise<void> {
     // A proven active worker works offline; a pre-outbox registration must go through the normal update flow.
     const existing = await navigator.serviceWorker.getRegistration();
     if (existing?.active && await supportsOutboxSync(existing.active)) {
-      await (existing as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync?.register("omp-outbox");
+      await (existing as ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }).sync?.register("tau-outbox");
       return;
     }
     const registration = await registerNotificationWorker() as (ServiceWorkerRegistration & { sync?: { register(tag: string): Promise<void> } }) | null;
     // Re-registering a recently checked URL can return the old worker without fetching changed script bytes.
     if (registration?.sync && registration.active === existing?.active) await registration.update();
     if (registration?.sync && await waitForOutboxWorker(registration)) {
-      await registration.sync.register("omp-outbox");
+      await registration.sync.register("tau-outbox");
     }
   } catch {
     // Refused (no permission, private window): the next page that opens sends it.

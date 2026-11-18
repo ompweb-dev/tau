@@ -1,11 +1,11 @@
-// omp-web service worker: shows notifications and opens their session on click, and sends the message outbox a closed
+// tau service worker: shows notifications and opens their session on click, and sends the message outbox a closed
 // tab left (Background Sync). It does not cache anything; the app stays online-only.
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "omp-outbox-capability") event.ports[0]?.postMessage({ type: "omp-outbox-capability", version: 2 });
+  if (event.data?.type === "tau-outbox-capability") event.ports[0]?.postMessage({ type: "tau-outbox-capability", version: 2 });
 });
 
 self.addEventListener("push", (event) => {
@@ -17,7 +17,7 @@ self.addEventListener("push", (event) => {
   }
   const shown = {
     type: data.type === "error" ? "error" : "info",
-    title: data.title || "omp web",
+    title: data.title || "tau",
     body: data.body || "",
     tag: data.tag || "",
     sessionId: data.sessionId || "",
@@ -70,7 +70,7 @@ self.addEventListener("notificationclick", (event) => {
 // Background Sync (docs/specs/2026-11-04-message-outbox-design.md O2): the browser fires it once online, even with no
 // tab open. The event-stream worker's IndexedDB outbox (lib/event-stream-worker.ts) is sent like the worker sends it.
 self.addEventListener("sync", (event) => {
-  if (event.tag === "omp-outbox") event.waitUntil(flushOutbox());
+  if (event.tag === "tau-outbox") event.waitUntil(flushOutbox());
 });
 
 const done = (request) =>
@@ -219,7 +219,7 @@ function acceptedOutboxEntry(reply, id) {
 
 
 async function flushOutbox() {
-  const open = indexedDB.open("omp-web-outbox", 1);
+  const open = indexedDB.open("tau-outbox", 1);
   open.onupgradeneeded = () => open.result.createObjectStore("entries", { keyPath: "id" });
   const db = await done(open);
   try {
@@ -269,7 +269,7 @@ async function flushOutbox() {
       } else if (status === 0 || status === 401 || status === 408 || status === 429 || status >= 500) waiting.add(sessionId);
       else await markOutboxFailed(db, id, error || `HTTP ${status}`);
     }
-    if (waiting.size > 0) throw new Error("omp-outbox: entries left to send");
+    if (waiting.size > 0) throw new Error("tau-outbox: entries left to send");
   } finally {
     db.close();
   }

@@ -54,7 +54,7 @@ async function candidateIdentity(version: string, includeNpm = true): Promise<{ 
   }
   const assets: Record<string, string> = {};
   for (const asset of release.assets) {
-    if (!isRecord(asset) || typeof asset.name !== "string" || !/^ompweb-(?:(?:linux|darwin)-(?:x64|arm64)\.tar\.gz|windows-x64\.zip|omp-(?:(?:linux|darwin)-(?:x64|arm64)|windows-x64\.exe))$/.test(asset.name)) continue;
+    if (!isRecord(asset) || typeof asset.name !== "string" || !/^tau-(?:(?:linux|darwin)-(?:x64|arm64)\.tar\.gz|windows-x64\.zip|omp-(?:(?:linux|darwin)-(?:x64|arm64)|windows-x64\.exe))$/.test(asset.name)) continue;
     if (typeof asset.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(asset.digest)) throw new UpgradePlanError("release_integrity", "A candidate release asset has no verified digest");
     if (Object.hasOwn(assets, asset.name)) throw new UpgradePlanError("release_integrity", "The candidate release has duplicate platform assets");
     assets[asset.name] = asset.digest.slice(7);
@@ -77,7 +77,7 @@ async function candidateIdentity(version: string, includeNpm = true): Promise<{ 
 
 function planDirectory(id: string, create = false): string {
   if (!ID.test(id)) throw new UpgradePlanError("invalid_plan", "Invalid upgrade plan identity", 400);
-  const parent = join(getAgentDir(), "omp-web", "server-upgrades");
+  const parent = join(getAgentDir(), "tau", "server-upgrades");
   if (create) { mkdirSync(parent, { recursive: true, mode: 0o700 }); assertOwnedPath(parent, true); }
   const directory = join(parent, id);
   if (existsSync(directory)) assertOwnedPath(directory, true);
@@ -160,7 +160,7 @@ export function getApprovedReleasePin(attemptId: string): ApprovedReleasePin {
 
 function inventoryIdentity(inventory: HostUpgradeInventory[]) {
   return inventory.map(({ host, sessionProcesses, sessionIds }) => ({
-    id: host.id, version: host.ompwebVersion ?? null, protocol: host.hostVersion,
+    id: host.id, version: host.tauVersion ?? null, protocol: host.hostVersion,
     maintenance: host.apiVersion ?? null, sessions: sessionIds, processes: sessionProcesses,
   })).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -186,8 +186,8 @@ export function buildUpgradePlan(input: { id: string; fromVersion: string; targe
     const blockedReason = needsUpgrade && !missing && (host.status === "offline" && !maintenance || recovery === "none")
       ? `${host.label || host.id}: host compatibility and recovery could not be established; reconnect it before upgrading the server` : null;
     return {
-      id: host.id, label: host.label || host.id, currentVersion: missing ? null : host.ompwebVersion ?? null,
-      protocolVersion: host.hostVersion, targetVersion: needsUpgrade ? input.targetVersion : host.ompwebVersion ?? null,
+      id: host.id, label: host.label || host.id, currentVersion: missing ? null : host.tauVersion ?? null,
+      protocolVersion: host.hostVersion, targetVersion: needsUpgrade ? input.targetVersion : host.tauVersion ?? null,
       needsUpgrade, recovery, sessionProcesses: missing ? 0 : sessionProcesses, activeTurns: missing ? 0 : activeTurns,
       blockedReason, stage: needsUpgrade ? "pending" : "unchanged",
     };
@@ -208,18 +208,18 @@ export async function prepareUpgradePlan(attemptId: string, targetVersion: strin
     return existing;
   }
   const [candidate, inventory] = await Promise.all([candidateIdentity(targetVersion), getHostUpgradeInventory()]);
-  const serverMethod = typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "binary" : detectInstallMethod(resolve(process.env.OMP_WEB_PACKAGE_DIR || process.cwd()));
+  const serverMethod = typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "binary" : detectInstallMethod(resolve(process.env.TAU_PACKAGE_DIR || process.cwd()));
   if (serverMethod !== "binary" && !candidate.pin.npm) throw new UpgradePlanError("release_integrity", "The official npm release required by this server could not be pinned");
   let needsNpm = serverMethod !== "binary";
   let sharedLocal = false, localMissing = false;
   try {
     const local = await requestHostControl("status");
-    sharedLocal = inside(resolve(process.env.OMP_WEB_PACKAGE_DIR || process.cwd()), local.executable)
-      || inside(resolve(process.env.OMP_WEB_PACKAGE_DIR || process.cwd()), local.entrypoint);
-    const packageHost = /[\\/]bin[\\/]omp-web(?:-host)?\.js$/.test(local.entrypoint);
+    sharedLocal = inside(resolve(process.env.TAU_PACKAGE_DIR || process.cwd()), local.executable)
+      || inside(resolve(process.env.TAU_PACKAGE_DIR || process.cwd()), local.entrypoint);
+    const packageHost = /[\\/]bin[\\/]tau(?:-host)?\.js$/.test(local.entrypoint);
     await inspectUpgradeProcess({
       pid: local.pid, role: "host", installDir: packageHost ? dirname(dirname(local.entrypoint)) : dirname(local.executable),
-      launch: { command: local.executable, args: packageHost ? [local.entrypoint, ...(local.entrypoint.endsWith("omp-web.js") ? ["host"] : [])] : ["host"], cwd: process.env.HOME || process.cwd() },
+      launch: { command: local.executable, args: packageHost ? [local.entrypoint, ...(local.entrypoint.endsWith("tau.js") ? ["host"] : [])] : ["host"], cwd: process.env.HOME || process.cwd() },
     });
   } catch (error) {
     if (["ENOENT", "ECONNREFUSED"].includes(String((error as NodeJS.ErrnoException).code))) localMissing = true;
@@ -229,14 +229,14 @@ export async function prepareUpgradePlan(attemptId: string, targetVersion: strin
   await Promise.all(plan.hosts.filter((host) => host.needsUpgrade && host.recovery !== "shared-local" && !(host.id === "local" && localMissing) && !host.blockedReason).map(async (host) => {
     try {
       const status = await getHostSoftwareUpdates(host.id, true, plan.compatibility, candidate.pin, true);
-      if (status.ompweb.installMethod !== "binary") needsNpm = true;
-      if (status.ompweb.installMethod !== "binary" && !candidate.pin.npm) {
+      if (status.tau.installMethod !== "binary") needsNpm = true;
+      if (status.tau.installMethod !== "binary" && !candidate.pin.npm) {
         host.blockedReason = "The official npm release required by this host could not be pinned";
         return;
       }
-      if (!status.ompweb.updateAvailable || status.ompweb.availableVersion !== targetVersion || !status.ompweb.canUpdate && !status.ompweb.canForceUpdate) {
-        host.blockedReason = status.ompweb.blockedReason || "This host has no verified update/recovery path to the candidate server version";
-      } else if (!status.ompweb.canUpdate || status.ompweb.forceMethod === "recovery" || host.recovery === "legacy") plan.requiresForce = true;
+      if (!status.tau.updateAvailable || status.tau.availableVersion !== targetVersion || !status.tau.canUpdate && !status.tau.canForceUpdate) {
+        host.blockedReason = status.tau.blockedReason || "This host has no verified update/recovery path to the candidate server version";
+      } else if (!status.tau.canUpdate || status.tau.forceMethod === "recovery" || host.recovery === "legacy") plan.requiresForce = true;
     } catch (error) { host.blockedReason = error instanceof Error ? error.message : "The host update path could not be checked"; }
   }));
   if (!needsNpm && candidate.pin.npm) {
@@ -314,8 +314,8 @@ async function coordinateHosts(attemptId: string): Promise<UpgradePlan> {
       if (participant.commitRequested || participant.stage === "ready") {
         const status = await getHostSoftwareUpdates(host.id, true, plan.compatibility, releasePin);
         if (!status.operation || status.operation.id !== participant.operationId || status.operation.version !== plan.targetVersion
-          || status.operation.target !== "ompweb" || status.operation.state !== "succeeded"
-          || status.ompweb.currentVersion !== plan.targetVersion || host.protocol === null
+          || status.operation.target !== "tau" || status.operation.state !== "succeeded"
+          || status.tau.currentVersion !== plan.targetVersion || host.protocol === null
           || host.protocol < plan.compatibility.min || host.protocol > plan.compatibility.max) {
           throw new UpgradePlanError("plan_changed", `${participant.label}: the committed participant no longer has its approved release receipt`, 412);
         }
@@ -332,22 +332,22 @@ async function coordinateHosts(attemptId: string): Promise<UpgradePlan> {
       renewLease(attemptId);
       try {
         const status = await getHostSoftwareUpdates(host.id, true, plan.compatibility, releasePin);
-        const matches = status.operation !== null && status.operation.id === host.operationId && status.operation.version === plan.targetVersion && status.operation.target === "ompweb";
+        const matches = status.operation !== null && status.operation.id === host.operationId && status.operation.version === plan.targetVersion && status.operation.target === "tau";
         if (matches && (status.operation!.state === "failed" || status.operation!.recoveryRequired)) {
           recoveryRequired ||= status.operation!.recoveryRequired === true;
           throw new UpgradePlanError("host_upgrade_failed", `${host.label}: ${status.operation!.error || "Host update failed"}`);
         }
-        if (matches && status.operation!.state === "succeeded" && status.ompweb.currentVersion === plan.targetVersion) {
+        if (matches && status.operation!.state === "succeeded" && status.tau.currentVersion === plan.targetVersion) {
           if (!host.commitRequested) throw new UpgradePlanError("plan_changed", `${host.label} changed release before its coordinated commit`, 412);
           return;
         }
         if (phase === "prepare" && matches && status.operation!.prepared === true) return;
-        if (status.ompweb.currentVersion === plan.targetVersion && !matches) {
+        if (status.tau.currentVersion === plan.targetVersion && !matches) {
           throw new UpgradePlanError("plan_changed", `${host.label} reached the target without this plan's receipt`, 412);
         }
         // A restarted coordinator may resend once; do not launch a bootstrap on every status poll.
         if (!dispatched) {
-          const accepted = await updateHostSoftware(host.id, "ompweb", plan.targetVersion, options(host, phase));
+          const accepted = await updateHostSoftware(host.id, "tau", plan.targetVersion, options(host, phase));
           if (accepted.operation.id !== host.operationId) throw new UpgradePlanError("host_operation_changed", `${host.label} accepted a different update operation`);
           dispatched = true;
         }
@@ -390,7 +390,7 @@ async function coordinateHosts(attemptId: string): Promise<UpgradePlan> {
   } catch (error) {
     // Cancel only preparations; an uncertain commit may already be replacing its installation.
     for (const host of required.filter((item) => item.operationId && !item.commitRequested)) {
-      try { await updateHostSoftware(host.id, "ompweb", plan.targetVersion, options(host, "cancel")); }
+      try { await updateHostSoftware(host.id, "tau", plan.targetVersion, options(host, "cancel")); }
       catch { /* The prepared worker expires without committing; never authorize a stop to clean it up. */ }
     }
     plan.error = error instanceof Error ? error.message : "The coordinated host update failed";

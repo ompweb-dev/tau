@@ -140,7 +140,7 @@ const execFileAsync = promisify(execFile);
 const ok = <T>(value: T): OpResult<T> => ({ ok: true, value });
 const fail = (status: number, code: string, error: string): OpResult<never> => ({ ok: false, status, code, error });
 const sessionNotFound = () => fail(404, "session_not_found", "Session not found");
-const sessionTooLarge = () => fail(413, "session_file_too_large", "Session file is too large to open in omp-web");
+const sessionTooLarge = () => fail(413, "session_file_too_large", "Session file is too large to open in tau");
 
 /** This daemon process, as restore claims see it. Fresh per process, never stored: the token sets below die with the process,
  * so a claim reserved under another value was reserved by a process this one cannot speak for. */
@@ -623,7 +623,7 @@ export const sessionOps: SessionOps = {
   async exportSession(id) {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
-    const tempDir = join(tmpdir(), "omp-web-export");
+    const tempDir = join(tmpdir(), "tau-export");
     mkdirSync(tempDir, { recursive: true });
     const fileName = `omp-session-${basename(filePath, ".jsonl")}.html`;
     const outputPath = join(tempDir, `${randomUUID()}.html`);

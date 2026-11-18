@@ -9,10 +9,10 @@ import type { ItemKind } from "./api";
 import type { WatchCursor } from "./events";
 
 /**
- * Server-only persistent GitHub watch state in omp-web's data directory: which
+ * Server-only persistent GitHub watch state in tau's data directory: which
  * session watches which item, the cursor each watch has reported up to, the
  * update a watch is about to post (so a crash re-adds the same outbox entry),
- * the comments the agent posted, and the read grants. Every omp-web instance
+ * the comments the agent posted, and the read grants. Every tau instance
  * sharing the agent directory shares it; SQLite serializes their writes.
  */
 
@@ -81,7 +81,7 @@ function transaction<T>(db: Database, run: () => T): T {
   }
 }
 
-const storeDir = (): string => join(getAgentDir(), "omp-web");
+const storeDir = (): string => join(getAgentDir(), "tau");
 const storePath = (): string => join(storeDir(), "github-watches.sqlite");
 
 /** The store for the current agent directory; reopened when PI_CODING_AGENT_DIR changes. */
@@ -117,7 +117,7 @@ function open(dir: string, path: string): Database {
   const database = new Database(path);
   try {
     database.exec("PRAGMA busy_timeout = 5000");
-    // Switching a new database to WAL takes an exclusive lock that ignores busy_timeout; another omp-web may hold it.
+    // Switching a new database to WAL takes an exclusive lock that ignores busy_timeout; another tau may hold it.
     for (let attempt = 0; ; attempt++) {
       try {
         database.exec("PRAGMA journal_mode = WAL");
@@ -385,7 +385,7 @@ export async function whilePosting<T>(itemKey: string, post: () => Promise<T>): 
     try {
       d.prepare("UPDATE active_posts SET lease_until = ? WHERE item_key = ? AND token = ?").run(Date.now() + POST_LEASE_MS, itemKey, token);
     } catch (error) {
-      console.warn(`[omp-web] github watcher: post lease renewal failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] github watcher: post lease renewal failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, POST_RENEW_MS);
   renew.unref?.();
@@ -401,7 +401,7 @@ export async function whilePosting<T>(itemKey: string, post: () => Promise<T>): 
       try {
         d.prepare("DELETE FROM active_posts WHERE item_key = ? AND token = ?").run(itemKey, token);
       } catch (error) {
-        console.warn(`[omp-web] github watcher: post lease release failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tau] github watcher: post lease release failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }

@@ -26,7 +26,7 @@ const PLAIN_PATH = /^\/v1\/[A-Za-z0-9/_-]*$/;
 
 /** Never a token, a query, a body or an error message: a broker failure names only its class. */
 function log(hostId: string, method: string, path: string, status: number, reason?: string) {
-  console.log(`[omp-web] broker ${hostId} ${method} ${path} ${status}${reason ? ` ${reason}` : ""}`);
+  console.log(`[tau] broker ${hostId} ${method} ${path} ${status}${reason ? ` ${reason}` : ""}`);
 }
 
 function only(source: Headers, names: readonly string[]): Headers {

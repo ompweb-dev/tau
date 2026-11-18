@@ -9,7 +9,7 @@ import { isRecord } from "./type-guards";
  * inline base64, so big screenshots never sit in the chat's React state. The
  * hash is omp's own blob address (sha256 of the image bytes): history entries
  * already carry it as `blob:sha256:<hash>`, and live output is hashed here and
- * copied into omp-web's media directory until omp writes its own blob.
+ * copied into tau's media directory until omp writes its own blob.
  */
 
 const HASH_RE = /^[a-f0-9]{64}$/;
@@ -20,7 +20,7 @@ const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 declare global {
-  var __ompWebMediaSweptAt: number | undefined;
+  var __tauMediaSweptAt: number | undefined;
 }
 
 function mediaDir(): string {
@@ -47,8 +47,8 @@ function writeAtomic(file: string, data: Uint8Array): void {
 /** Daily: drop copies omp now holds as complete blobs, and anything older than 30 days (previews regenerate on demand). */
 function sweepMediaCache(): void {
   const now = Date.now();
-  if (now - (globalThis.__ompWebMediaSweptAt ?? 0) < SWEEP_EVERY_MS) return;
-  globalThis.__ompWebMediaSweptAt = now;
+  if (now - (globalThis.__tauMediaSweptAt ?? 0) < SWEEP_EVERY_MS) return;
+  globalThis.__tauMediaSweptAt = now;
   let names: string[];
   try {
     names = readdirSync(mediaDir());
@@ -176,7 +176,7 @@ export function eventWithToolResultImageUrls<E extends { type: string; [key: str
 }
 
 /**
- * File holding a stored image: omp's blob, else omp-web's copy. omp writes
+ * File holding a stored image: omp's blob, else tau's copy. omp writes
  * blobs in place, so a blob that differs in size from our copy is still being
  * written and the copy is served instead.
  */

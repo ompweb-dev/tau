@@ -238,7 +238,7 @@ function HostCard({ host, cluster, onRename, onRevoke, onShare, onJoin, onLeave 
             {t("hostsConfig.localOfflineHint")}
             <CopyField label={t("hostsConfig.command")} value={localInstallCommand(host.serverPlatform)} />
             {t("hostsConfig.localForegroundHint")}
-            <CopyField label={t("hostsConfig.command")} value="ompweb host" />
+            <CopyField label={t("hostsConfig.command")} value="tau host" />
           </div>
         )}
       </div>

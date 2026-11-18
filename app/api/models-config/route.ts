@@ -40,7 +40,7 @@ export async function PUT(req: Request) {
     } catch (error) {
       if (error instanceof ModelsConfigParseError) {
         return Response.json(
-          { error: `${error.message} — fix it by hand; omp-web will not overwrite it`, code: "models_config_unparseable" },
+          { error: `${error.message} — fix it by hand; tau will not overwrite it`, code: "models_config_unparseable" },
           { status: 409 },
         );
       }

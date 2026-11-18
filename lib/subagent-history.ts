@@ -1,4 +1,4 @@
-// On-disk subagent history + transcript reading for omp-web.
+// On-disk subagent history + transcript reading for tau.
 //
 // omp writes each subagent's session transcript to the PARENT session's
 // sibling artifacts directory: `<session-dir>/<subagent-id>.jsonl` (plus

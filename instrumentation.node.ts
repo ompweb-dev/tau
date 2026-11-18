@@ -16,7 +16,7 @@ export async function register(): Promise<void> {
   try {
     const { getAgentDir } = await import("@/lib/session-reader");
     console.log(
-      `[omp-web] starting (agent-dir ${getAgentDir()})`,
+      `[tau] starting (agent-dir ${getAgentDir()})`,
     );
   } catch {
     // Diagnostics are best-effort.
@@ -29,9 +29,9 @@ export async function register(): Promise<void> {
     try {
       const { webPasswordConfigurationProblem } = await import("@/lib/web-auth");
       const problem = webPasswordConfigurationProblem();
-      if (problem) console.error(`[omp-web] password configuration error:\n${problem}`);
+      if (problem) console.error(`[tau] password configuration error:\n${problem}`);
     } catch (error) {
-      console.warn(`[omp-web] password configuration check failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] password configuration check failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   })();
 
@@ -47,15 +47,15 @@ export async function register(): Promise<void> {
       await runUtilityCommand({ type: "get_state" });
       const { getOmpVersion } = await import("@/lib/omp/omp-cli");
       const version = await getOmpVersion();
-      console.log(`[omp-web] omp utility ready (${version ?? "version unknown"})`);
+      console.log(`[tau] omp utility ready (${version ?? "version unknown"})`);
     } catch (error) {
       const { resolveOmpBin } = await import("@/lib/omp/omp-cli");
       const bin = resolveOmpBin();
       const detail = error instanceof Error ? error.message : String(error);
       const hint = bin
         ? `resolved ${bin}; repair with: omp update (or: bun install -g @oh-my-pi/pi-coding-agent@latest)`
-        : "omp binary not found; install oh-my-pi or set OMP_WEB_OMP_BIN";
-      console.warn(`[omp-web] omp utility warm-up failed (routes will retry on demand): ${detail} — ${hint}`);
+        : "omp binary not found; install oh-my-pi or set TAU_OMP_BIN";
+      console.warn(`[tau] omp utility warm-up failed (routes will retry on demand): ${detail} — ${hint}`);
     }
   })();
 
@@ -66,10 +66,10 @@ export async function register(): Promise<void> {
       try {
         const { ensureLocalHostDaemon } = await import("@/lib/hosts/local-daemon-start");
         const result = await ensureLocalHostDaemon();
-        if (result.skipped) console.warn(`[omp-web] local daemon not started: ${result.skipped}`);
-        else console.log(`[omp-web] local daemon ${result.started ? "started" : "already running"} (pid ${result.pid ?? "unknown"})`);
+        if (result.skipped) console.warn(`[tau] local daemon not started: ${result.skipped}`);
+        else console.log(`[tau] local daemon ${result.started ? "started" : "already running"} (pid ${result.pid ?? "unknown"})`);
       } catch (error) {
-        console.warn(`[omp-web] local daemon not started: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tau] local daemon not started: ${error instanceof Error ? error.message : String(error)}`);
       }
     })();
   }
@@ -79,7 +79,7 @@ export async function register(): Promise<void> {
     const { startUploadRetentionSync } = await import("@/lib/hosts/upload-retention-sync");
     startUploadRetentionSync();
   } catch (error) {
-    console.warn(`[omp-web] upload retention sync not started: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] upload retention sync not started: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Cluster members run on this machine's omp configuration: every 30 s a member that is behind gets it (lib/hosts/hub.ts).
@@ -87,26 +87,26 @@ export async function register(): Promise<void> {
     const { startClusterConfigSync } = await import("@/lib/hosts/hub");
     startClusterConfigSync();
   } catch (error) {
-    console.warn(`[omp-web] cluster configuration sync not started: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] cluster configuration sync not started: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  // Resume sessions that were mid-run when omp-web last stopped (opt-in
+  // Resume sessions that were mid-run when tau last stopped (opt-in
   // setting). Fire-and-forget: resuming must not block boot.
   void (async () => {
     try {
       const { resumeInterruptedSessions } = await import("@/lib/rpc-manager");
       await resumeInterruptedSessions();
     } catch (error) {
-      console.warn(`[omp-web] session auto-resume failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] session auto-resume failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   })();
 
-  // Messages the outbox held when omp-web last stopped go once their hosts link (lib/message-outbox.ts).
+  // Messages the outbox held when tau last stopped go once their hosts link (lib/message-outbox.ts).
   try {
     const { startOutbox } = await import("@/lib/message-outbox");
     startOutbox();
   } catch (error) {
-    console.warn(`[omp-web] message outbox not started: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] message outbox not started: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // GitHub watches post their updates through that outbox, so they start after it (lib/github/watcher.ts).
@@ -114,7 +114,7 @@ export async function register(): Promise<void> {
     const { startGithubWatcher } = await import("@/lib/github/watcher");
     startGithubWatcher();
   } catch (error) {
-    console.warn(`[omp-web] github watcher not started: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] github watcher not started: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Crash/stall journal: a long-running server that dies or wedges while the

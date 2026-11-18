@@ -2,7 +2,7 @@ import { isApiRequestOriginAllowed, shouldCheckApiRequestOrigin } from "@/lib/re
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { restartAllRpcSessions } from "@/lib/rpc-manager";
 
-/** Restarts every running omp session. omp itself updates with ompweb: its release ships the runner. */
+/** Restarts every running omp session. omp itself updates with tau: its release ships the runner. */
 export async function POST(request: Request) {
   if (shouldCheckApiRequestOrigin(request) && !isApiRequestOriginAllowed(request)) {
     return Response.json({ error: "Cross-origin API requests are not allowed", code: "cross_origin_forbidden" }, { status: 403 });

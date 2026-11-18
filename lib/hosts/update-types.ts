@@ -1,6 +1,6 @@
 import type { NpmUpdateStatus } from "../npm-update";
 
-export type HostUpdateTarget = "ompweb" | "omp";
+export type HostUpdateTarget = "tau" | "omp";
 
 /** The running web server's supported daemon protocol range. Supplied by the hub, never by the browser. */
 export interface HostUpdateCompatibility {
@@ -53,7 +53,7 @@ export interface HostSoftwareUpdate {
 export interface HostUpdateOperation {
   /** The operation id the caller supplied (HostUpdateRequest.operationId), else a generated one; the same id names the attempt, its worker and every acknowledgement. */
   id: string;
-  /** "omp": an `omp update` a host recorded before omp updated with ompweb. */
+  /** "omp": an `omp update` a host recorded before omp updated with tau. */
   target: HostUpdateTarget | "omp";
   version: string;
   state: "running" | "succeeded" | "failed";
@@ -87,7 +87,7 @@ export interface HostUpdateRequest {
 }
 
 export interface HostUpdateInfo {
-  ompweb: HostSoftwareUpdate & Pick<NpmUpdateStatus, "installMethod"> & { protocolVersion: number | null; activeSessions?: number };
+  tau: HostSoftwareUpdate & Pick<NpmUpdateStatus, "installMethod"> & { protocolVersion: number | null; activeSessions?: number };
   omp: HostSoftwareUpdate;
   operation: HostUpdateOperation | null;
 }

@@ -39,10 +39,10 @@ const {
 } = require("./service-env.js");
 
 test("sanitizePort accepts valid ports and falls back otherwise", () => {
-  assert.equal(sanitizePort("30177"), 30177);
+  assert.equal(sanitizePort("30187"), 30187);
   assert.equal(sanitizePort(8080), 8080);
-  assert.equal(sanitizePort("nope"), 30177);
-  assert.equal(sanitizePort("70000"), 30177);
+  assert.equal(sanitizePort("nope"), 30187);
+  assert.equal(sanitizePort("70000"), 30187);
   assert.equal(sanitizePort(undefined, 4000), 4000);
 });
 
@@ -53,7 +53,7 @@ test("sanitizeHostname trims strings and rejects empties", () => {
 });
 
 test("readTrayConfig prefers CLI overrides over the service config file", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "ompweb-tray-"));
+  const home = mkdtempSync(path.join(tmpdir(), "tau-tray-"));
   try {
     const agentDir = path.join(home, ".omp", "agent");
     mkdirSync(agentDir, { recursive: true });
@@ -73,10 +73,10 @@ test("readTrayConfig prefers CLI overrides over the service config file", () => 
 });
 
 test("readTrayConfig falls back to defaults without a config file", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "ompweb-tray-"));
+  const home = mkdtempSync(path.join(tmpdir(), "tau-tray-"));
   try {
     const config = readTrayConfig({}, {}, home);
-    assert.equal(config.port, 30177);
+    assert.equal(config.port, 30187);
     assert.equal(config.hostname, "127.0.0.1");
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -108,7 +108,7 @@ test("buildMenuItems reflects running state and service availability", () => {
   assert.equal(itemById(noDialog, 13).enabled, false);
   assert.equal(itemById(noDialog, 14).enabled, false);
 
-  // The ompweb-host daemon state sits under the web status.
+  // The tau-host daemon state sits under the web status.
   assert.equal(itemById(running, 19).label, "  Daemon: Not installed");
   assert.equal(itemById(running, 19).enabled, false);
   const withDaemon = buildMenuItems({ running: true, version: "0.4.2", autostart: false, hasService: true, exposed: false, hasDialogTool: true, daemon: "running" });
@@ -152,9 +152,9 @@ test("buildLayout nests all items under the root with the given revision", () =>
 });
 
 test("autostart desktop file references the tray script", () => {
-  const desktop = buildAutostartDesktop("/usr/bin/node /opt/ompweb/bin/linux-tray.js --start");
+  const desktop = buildAutostartDesktop("/usr/bin/node /opt/tau/bin/linux-tray.js --start");
   assert.match(desktop, /^\[Desktop Entry\]/);
-  assert.match(desktop, /^Exec=\/usr\/bin\/node \/opt\/ompweb\/bin\/linux-tray\.js --start$/m);
+  assert.match(desktop, /^Exec=\/usr\/bin\/node \/opt\/tau\/bin\/linux-tray\.js --start$/m);
   assert.match(desktop, /^Terminal=false$/m);
   assert.match(desktop, /^X-KDE-autostart-after=panel$/m);
 });
@@ -169,7 +169,7 @@ test("buildAutostartExec quotes paths containing spaces", () => {
 });
 
 test("terminal candidates honor explicit env overrides first", () => {
-  const candidates = terminalCandidates({ OMP_WEB_TERMINAL: "foot", TERMINAL: "wezterm" });
+  const candidates = terminalCandidates({ TAU_TERMINAL: "foot", TERMINAL: "wezterm" });
   assert.deepEqual(candidates.slice(0, 2), ["foot", "wezterm"]);
   assert.ok(candidates.includes("konsole"));
 });
@@ -223,10 +223,10 @@ test("buildIconPixmap returns sized structs with matching byte counts", () => {
 
 test("service env file round-trips quoted and escaped values", () => {
   const entries = {
-    PORT: "30177",
-    OMP_WEB_HOSTNAME: "0.0.0.0",
-    OMP_WEB_PASSWORD: 'pa"ss\\word',
-    OMP_WEB_OMP_BIN: "/home/u/.bun/bin/omp",
+    PORT: "30187",
+    TAU_HOSTNAME: "0.0.0.0",
+    TAU_PASSWORD: 'pa"ss\\word',
+    TAU_OMP_BIN: "/home/u/.bun/bin/omp",
   };
   const parsed = parseServiceEnv(serializeServiceEnv(entries));
   assert.deepEqual(parsed, entries);
@@ -238,24 +238,24 @@ test("parseServiceEnv tolerates comments, blanks, and unquoted values", () => {
 ; also a comment
 PORT=40001
 
-OMP_WEB_HOSTNAME="0.0.0.0"
+TAU_HOSTNAME="0.0.0.0"
 broken line without equals
 1BAD=skipped
 `);
-  assert.deepEqual(parsed, { PORT: "40001", OMP_WEB_HOSTNAME: "0.0.0.0" });
+  assert.deepEqual(parsed, { PORT: "40001", TAU_HOSTNAME: "0.0.0.0" });
 });
 
 test("writeServiceEnv writes atomically with mode 600 and readServiceEnv round-trips", () => {
-  const dir = mkdtempSync(path.join(tmpdir(), "ompweb-env-"));
+  const dir = mkdtempSync(path.join(tmpdir(), "tau-env-"));
   try {
     const file = path.join(dir, "web-service.env");
-    writeServiceEnv({ PORT: "40100", OMP_WEB_PASSWORD: "s3cret" }, file);
+    writeServiceEnv({ PORT: "40100", TAU_PASSWORD: "s3cret" }, file);
     // Windows has no Unix permission bits (chmod is best-effort there), so
     // the mode assertion only applies elsewhere.
     if (process.platform !== "win32") {
       assert.equal(statSync(file).mode & 0o777, 0o600);
     }
-    assert.deepEqual(readServiceEnv(file), { PORT: "40100", OMP_WEB_PASSWORD: "s3cret" });
+    assert.deepEqual(readServiceEnv(file), { PORT: "40100", TAU_PASSWORD: "s3cret" });
     assert.ok(escapeEnvValue("a\nb").includes(" "));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -263,12 +263,12 @@ test("writeServiceEnv writes atomically with mode 600 and readServiceEnv round-t
 });
 
 test("readTrayConfig prefers the env file over the JSON config", () => {
-  const home = mkdtempSync(path.join(tmpdir(), "ompweb-tray-"));
+  const home = mkdtempSync(path.join(tmpdir(), "tau-tray-"));
   try {
     const agentDir = path.join(home, ".omp", "agent");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(path.join(agentDir, "web-service.json"), JSON.stringify({ port: 40001, hostname: "0.0.0.0" }));
-    writeFileSync(path.join(agentDir, "web-service.env"), serializeServiceEnv({ PORT: "40200", OMP_WEB_HOSTNAME: "127.0.0.1" }));
+    writeFileSync(path.join(agentDir, "web-service.env"), serializeServiceEnv({ PORT: "40200", TAU_HOSTNAME: "127.0.0.1" }));
 
     const config = readTrayConfig({}, {}, home);
     assert.equal(config.port, 40200);
@@ -281,7 +281,7 @@ test("readTrayConfig prefers the env file over the JSON config", () => {
 
 test("dialog candidates put kdialog first and resolve via override", () => {
   assert.deepEqual(dialogCandidates(), ["kdialog", "zenity"]);
-  assert.equal(resolveDialogTool({ OMP_WEB_DIALOG: "definitely-not-on-path-xyz" }), null);
+  assert.equal(resolveDialogTool({ TAU_DIALOG: "definitely-not-on-path-xyz" }), null);
 });
 
 test("dialogPrompt returns null on cancel and text on success", async () => {
@@ -289,10 +289,10 @@ test("dialogPrompt returns null on cancel and text on success", async () => {
     if (args.includes("--password")) {
       throw new Error("cancelled");
     }
-    return { stdout: "30178\n" };
+    return { stdout: "30188\n" };
   };
   const tool = "/usr/bin/kdialog";
-  assert.equal(await dialogPrompt({ tool, title: "t", text: "port", value: "1" }, fakeRun), "30178");
+  assert.equal(await dialogPrompt({ tool, title: "t", text: "port", value: "1" }, fakeRun), "30188");
   assert.equal(await dialogPrompt({ tool, title: "t", text: "pw", password: true }, fakeRun), null);
   assert.equal(await dialogPrompt({ tool: null, title: "t", text: "x" }, fakeRun), null);
 });
@@ -318,7 +318,7 @@ test("ensureDbusInstalled reports failure without throwing when the installer fa
 });
 
 test("tray --start fails gracefully with an install hint when dbus-next is absent (#268)", { skip: dbusIsInstalled() || process.platform !== "linux" }, () => {
-  const home = mkdtempSync(path.join(tmpdir(), "ompweb-tray-nodbus-"));
+  const home = mkdtempSync(path.join(tmpdir(), "tau-tray-nodbus-"));
   try {
     const script = path.join(path.dirname(fileURLToPath(import.meta.url)), "linux-tray.js");
     const res = spawnSync("node", [script, "--start"], {

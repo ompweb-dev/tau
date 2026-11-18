@@ -1,4 +1,4 @@
-// Wire format between the main omp-web server and the `ompweb host` daemon.
+// Wire format between the main tau server and the `tau host` daemon.
 // Pure: no I/O and no Next or `@/` imports, so both sides share it. The browser link (lib/browser-link.ts and the
 // worker it talks to, lib/event-stream-worker.ts) reuses its transport pieces: LINK_LIMITS' piece, window and liveness
 // values, LinkSender, PartJoiner, SeqWindow, Outbox, queuedLine and withSeq.
@@ -166,7 +166,7 @@ export type UpMessage =
       v: number;
       ompVersion: string | null;
       /** Running daemon's application version; absent on older hosts. */
-      ompwebVersion?: string;
+      tauVersion?: string;
       link?: { id: string; notifier: boolean };
       workspaceOps?: string[];
       platform: string;
@@ -496,7 +496,7 @@ export function decodeUp(line: string): UpMessage | UnknownMessage {
         type: "hello",
         v: int(o, "v"),
         ompVersion: nullable(o, "ompVersion", str),
-        ...(o.ompwebVersion === undefined ? {} : { ompwebVersion: str(o, "ompwebVersion") }),
+        ...(o.tauVersion === undefined ? {} : { tauVersion: str(o, "tauVersion") }),
         ...(o.workspaceOps === undefined ? {} : { workspaceOps: strings(o, "workspaceOps").slice(0, Object.keys(WORKSPACE_OP_PARAMS).length).filter(isWorkspaceOp) }),
         ...(o.link === undefined ? {} : { link: helloLink(o.link) }),
         platform: str(o, "platform"),

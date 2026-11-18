@@ -1,11 +1,11 @@
 "use strict";
 
-// `ompweb hash-password` plus the password prompt the launcher and the service
+// `tau hash-password` plus the password prompt the launcher and the service
 // installers use. The password is read from stdin, never from argv, so it
 // stays out of shell history and out of `ps` output (issue #239).
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { hashPassword, isPasswordHash } = require("./omp-web-password-hash");
+const { hashPassword, isPasswordHash } = require("./tau-password-hash");
 
 /** Key sent when the user presses Ctrl+C at a prompt. */
 const INTERRUPT_KEY = Buffer.from([0x03]);
@@ -109,7 +109,7 @@ async function promptPassword(options = {}) {
 }
 
 /**
- * `ompweb hash-password`: print the `OMP_WEB_PASSWORD_HASH` value for the
+ * `tau hash-password`: print the `TAU_PASSWORD_HASH` value for the
  * password read from stdin.
  * @returns {Promise<number>} process exit code
  */
@@ -136,21 +136,21 @@ async function runHashPasswordCommand(options = {}) {
 
 /**
  * Resolve the password hash an installer should write: an existing
- * `OMP_WEB_PASSWORD_HASH`, or a plaintext `OMP_WEB_PASSWORD` hashed here.
+ * `TAU_PASSWORD_HASH`, or a plaintext `TAU_PASSWORD` hashed here.
  * Reading a plaintext password is allowed on this side only — the hash is what
  * gets stored, and the plaintext never reaches a service definition or a child
  * process. Returns null when neither is configured, and throws when a hash was
  * given but is unusable (silently dropping it would disable auth).
  */
 function resolvePasswordHash(env = process.env) {
-  const existing = typeof env.OMP_WEB_PASSWORD_HASH === "string" ? env.OMP_WEB_PASSWORD_HASH.trim() : "";
+  const existing = typeof env.TAU_PASSWORD_HASH === "string" ? env.TAU_PASSWORD_HASH.trim() : "";
   if (existing) {
     if (!isPasswordHash(existing)) {
-      throw new Error("OMP_WEB_PASSWORD_HASH is not a valid password hash; generate one with: ompweb hash-password");
+      throw new Error("TAU_PASSWORD_HASH is not a valid password hash; generate one with: tau hash-password");
     }
     return existing;
   }
-  const plaintext = env.OMP_WEB_PASSWORD;
+  const plaintext = env.TAU_PASSWORD;
   return typeof plaintext === "string" && plaintext.length > 0 ? hashPassword(plaintext) : null;
 }
 

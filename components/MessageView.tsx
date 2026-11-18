@@ -536,7 +536,7 @@ const heldActionStyle = {
   fontSize: 11, whiteSpace: "nowrap",
 } as const;
 
-/** A message omp-web holds until omp has it (docs/specs/2026-11-04-message-outbox-design.md O1): dimmed, after the
+/** A message tau holds until omp has it (docs/specs/2026-11-04-message-outbox-design.md O1): dimmed, after the
  * live turn, naming the leg it waits on. Delete only while nothing of it can have reached omp; Retry a failed one. */
 export function HeldMessageView({ held, hostLabel, onDelete, onRetry }: {
   held: HeldMessage;

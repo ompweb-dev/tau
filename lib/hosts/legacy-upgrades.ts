@@ -30,7 +30,7 @@ export interface LegacyUpgradeTransport {
 
 function directory(hostId: string, create = false): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(hostId)) throw new HostOpError(400, "invalid_host", "Invalid host recovery identity");
-  const parent = join(getAgentDir(), "omp-web", "legacy-updates");
+  const parent = join(getAgentDir(), "tau", "legacy-updates");
   const root = join(parent, hostId);
   if (create) {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
@@ -52,7 +52,7 @@ function writeState(state: LegacyUpgradeState): void {
 
 function validState(value: unknown, hostId: string): value is LegacyUpgradeState {
   if (!isRecord(value) || value.hostId !== hostId || !isRecord(value.operation) || typeof value.operation.id !== "string"
-    || !/^[a-f0-9-]{36}$/.test(value.operation.id) || value.operation.target !== "ompweb"
+    || !/^[a-f0-9-]{36}$/.test(value.operation.id) || value.operation.target !== "tau"
     || typeof value.operation.version !== "string" || !HOST_VERSION_PATTERN.test(value.operation.version)
     || !["running", "succeeded", "failed"].includes(String(value.operation.state))
     || (value.operation.error !== undefined && typeof value.operation.error !== "string")
@@ -107,7 +107,7 @@ export function observeLegacyUpgrade(hostId: string, info: HostUpdateInfo): Host
   const state = readLegacyUpgrade(hostId);
   if (!state) return null;
   const receipt = info.operation;
-  const matches = receipt?.id === state.operation.id && receipt.target === "ompweb" && receipt.version === state.operation.version;
+  const matches = receipt?.id === state.operation.id && receipt.target === "tau" && receipt.version === state.operation.version;
   if (matches && receipt) {
     if (receipt.state === "running") {
       state.operation = receipt;
@@ -115,7 +115,7 @@ export function observeLegacyUpgrade(hostId: string, info: HostUpdateInfo): Host
       writeState(state);
       return receipt;
     }
-    if (receipt.state === "failed" || (receipt.state === "succeeded" && info.ompweb.currentVersion === state.operation.version)) {
+    if (receipt.state === "failed" || (receipt.state === "succeeded" && info.tau.currentVersion === state.operation.version)) {
       state.operation = receipt;
       state.confirmedTerminal = true;
       writeState(state);
@@ -216,7 +216,7 @@ export async function startLegacyUpgrade(input: {
     throw error;
   }
   const state: LegacyUpgradeState = {
-    hostId: input.hostId, operation: { id, target: "ompweb", version: input.version, state: "running" },
+    hostId: input.hostId, operation: { id, target: "tau", version: input.version, state: "running" },
     helper, compatibility: input.compatibility, platform: input.platform, startedAt: Date.now(),
     releasePin, requireReleasePin: input.requireReleasePin, ...(input.phase ? { phased: true as const } : {}),
   };

@@ -39,7 +39,7 @@ export { getAgentDir };
 
 /**
  * `header.parentSession` has two forms in omp: a session FILE PATH (branch /
- * createBranchedSession, the RPC path omp-web drives) and a bare SESSION ID
+ * createBranchedSession, the RPC path tau drives) and a bare SESSION ID
  * (SessionManager.fork, reached from the TUI /fork, `omp --fork` and /tan).
  * Resolve the path form first, then fall back to an id match, so TUI-forked
  * sessions are not rendered as unrelated roots.
@@ -437,7 +437,7 @@ function loadEntriesOrThrowTooLarge(filePath: string): SessionEntry[] {
 export class SessionFileTooLargeError extends Error {
   readonly code = "session_file_too_large" as const;
   constructor(filePath: string) {
-    super(`Session file is too large to open in omp-web: ${filePath}`);
+    super(`Session file is too large to open in tau: ${filePath}`);
     this.name = "SessionFileTooLargeError";
   }
 }

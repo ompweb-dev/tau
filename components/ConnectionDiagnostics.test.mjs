@@ -253,8 +253,8 @@ test("turning the setting on in another tab adds the Connection tab here", async
   render(createElement(Harness));
   assert.equal(screen.queryByRole("tab", { name: "Connection" }), null);
   act(() => {
-    localStorage.setItem("omp-web:connection-diagnostics", "on");
-    window.dispatchEvent(Object.assign(new Event("storage"), { key: "omp-web:connection-diagnostics" }));
+    localStorage.setItem("tau:connection-diagnostics", "on");
+    window.dispatchEvent(Object.assign(new Event("storage"), { key: "tau:connection-diagnostics" }));
   });
   assert.ok(await screen.findByRole("tab", { name: "Connection" }));
 });

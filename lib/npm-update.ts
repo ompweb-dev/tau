@@ -24,7 +24,7 @@ let cached: { checkedAt: number; status: NpmUpdateStatus } | null = null;
 
 export async function checkNpmUpdate(force = false): Promise<NpmUpdateStatus> {
   const currentVersion = packageJson.version;
-  const packageDir = process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd();
+  const packageDir = process.env.TAU_PACKAGE_DIR ?? process.cwd();
   const installMethod = typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "binary" : detectInstallMethod(packageDir);
   const updateCommand = installMethod === "binary" ? `https://github.com/${releaseRepo()}/releases/latest` : installMethod === "bun" ? "bun add -g @ompweb-dev/tau" : "npm install -g @ompweb-dev/tau";
 

@@ -31,7 +31,7 @@ export const KEEP_DELIVERED_MS = 8 * 24 * 60 * 60 * 1000;
 export const RETRY_MS = 5_000;
 /** Fixed snapshot budget below the browser link's 32 MiB backlog; per-entry error margin and frame envelope included. */
 export const MAX_OUTBOX_BYTES = 16 * 1024 * 1024;
-export const GITHUB_WATCH_OUTBOX_OWNER = "omp-web:github-watch";
+export const GITHUB_WATCH_OUTBOX_OWNER = "tau:github-watch";
 const MAX_GLOBAL_OUTBOX_BYTES = 256 * 1024 * 1024;
 const MAX_GLOBAL_OUTBOX_ENTRIES = 1000;
 
@@ -106,7 +106,7 @@ function outbox(): NonNullable<typeof globalThis.__ompOutbox> {
 
 /** The store for the current agent directory; reopened when PI_CODING_AGENT_DIR changes. */
 function db(): Database {
-  const dir = join(getAgentDir(), "omp-web");
+  const dir = join(getAgentDir(), "tau");
   const path = join(dir, "outbox.db");
   const cached = globalThis.__ompOutboxStore;
   // A `bun --hot` reload keeps a connection the previous code migrated: reopen when the migration changed.
@@ -366,7 +366,7 @@ function pruneDelivered(database: Database, cutoff: number): void {
 
 /** Retry mappings are content-free but needed while stale browser copies may replay this session. */
 export function forgetSessionReplacementMappings(sessionId: string): void {
-  if (!existsSync(join(getAgentDir(), "omp-web", "outbox.db"))) return;
+  if (!existsSync(join(getAgentDir(), "tau", "outbox.db"))) return;
   const database = db();
   const keys = sessionKeys(sessionId);
   const pinned = receiptPinCondition(database);
@@ -442,7 +442,7 @@ function notifyListeners(sessionId: string): void {
         const nextRetry = now + RETRY_MS;
         progress.set(listener, { revision: previous?.revision, retryAt: nextRetry });
         retryAt = Math.min(retryAt, nextRetry);
-        console.warn(`[omp-web] outbox notification failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tau] outbox notification failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     state.notifiedRevisions.set(sessionId, revision);
@@ -451,7 +451,7 @@ function notifyListeners(sessionId: string): void {
   } catch (error) {
     state.notifiedRevisions.delete(sessionId);
     state.pendingNotifications.set(sessionId, now + RETRY_MS);
-    console.warn(`[omp-web] outbox notification failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] outbox notification failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -474,7 +474,7 @@ const invalid = (error: string) => Response.json({ error, code: "invalid_outbox_
 export function outboxScope(): string {
   const secret = resolveWebAuthSecret();
   return createHmac("sha256", Buffer.from(secret.key, "base64url"))
-    .update(`omp-web-outbox-scope-v1\0${secret.salt}\0${(process.env.OMP_WEB_PASSWORD_HASH ?? "").trim()}\0${(process.env.OMP_WEB_TRUSTED_HEADER_SHA256 ?? "").trim()}`)
+    .update(`tau-outbox-scope-v1\0${secret.salt}\0${(process.env.TAU_PASSWORD_HASH ?? "").trim()}\0${(process.env.TAU_TRUSTED_HEADER_SHA256 ?? "").trim()}`)
     .digest("base64url");
 }
 
@@ -494,7 +494,7 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
   const scope = outboxScope();
   if (command.type === "outbox_add" && command.scope !== scope) {
     return Response.json({
-      error: "This message belongs to another omp-web installation or sign-in configuration.",
+      error: "This message belongs to another tau installation or sign-in configuration.",
       code: "outbox_scope_changed",
     }, { status: 409 });
   }
@@ -698,7 +698,7 @@ export function pumpOutbox(sessionId: string): void {
     if (db().prepare(`SELECT 1 FROM entries WHERE session_id IN (${slots(keys)}) AND state = 'delivering'`).get(...keys)) return;
     next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(...keys) as Row | null;
   } catch (error) {
-    console.warn(`[omp-web] outbox: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
   if (!next) return;
@@ -722,7 +722,7 @@ export function pumpOutbox(sessionId: string): void {
   }).catch((error: unknown) => {
     release();
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[omp-web] outbox delivery failed: ${message}`);
+    console.warn(`[tau] outbox delivery failed: ${message}`);
     try {
       // Thrown before the claim, it is not sent and nothing else would pump it again.
       const state = row(next.id)?.state;
@@ -741,7 +741,7 @@ function pumpAll(): void {
     const rows = db().prepare("SELECT DISTINCT session_id FROM entries WHERE state IN ('held', 'waiting_host', 'delivering')").all() as { session_id: string }[];
     for (const { session_id } of rows) pumpOutbox(session_id);
   } catch (error) {
-    console.warn(`[omp-web] outbox: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -758,7 +758,7 @@ export function startOutbox(): void {
     pruneDelivered(db(), Date.now() - KEEP_DELIVERED_MS);
     db().prepare("DELETE FROM completed_uploads WHERE at < ?").run(Date.now() - STAGED_MAX_AGE_MS);
   } catch (error) {
-    console.warn(`[omp-web] outbox startup failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] outbox startup failed: ${error instanceof Error ? error.message : String(error)}`);
     state.startupRetry = setTimeout(() => {
       state.startupRetry = undefined;
       if (globalThis.__ompOutbox === state) startOutbox();
@@ -854,7 +854,7 @@ export function startOutbox(): void {
       const rows = db().prepare("SELECT DISTINCT session_id FROM entries WHERE state = 'delivering'").all() as { session_id: string }[];
       for (const { session_id } of rows) pumpOutbox(session_id);
     } catch (error) {
-      console.warn(`[omp-web] outbox maintenance failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] outbox maintenance failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, RETRY_MS);
   state.maintenance = maintenance;
@@ -881,7 +881,7 @@ export function startOutbox(): void {
         if (now >= retryAt) notifyListeners(sessionId);
       }
     } catch (error) {
-      console.warn(`[omp-web] outbox change check failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] outbox change check failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, 250);
   state.changes = changes;
@@ -907,7 +907,7 @@ function recoverDelivering(sessionId?: string, startup = false): void {
     }
     // The orphaned claim exactly as inspected: a row that moved on since then is left alone.
     const orphaned = db().prepare("UPDATE entries SET state = 'failed', error = ?, may_have_been_sent = 1, previous_entry_ids = NULL WHERE id = ? AND state = 'delivering' AND dispatch_pid IS ?")
-      .run("omp-web restarted while this message was being delivered", entry.id, entry.dispatch_pid);
+      .run("tau restarted while this message was being delivered", entry.id, entry.dispatch_pid);
     if (orphaned.changes) publish(entry.session_id);
   }
 }
@@ -957,7 +957,7 @@ async function deliver(entry: Row): Promise<Outcome> {
       if (await wrapper.clearMessageProofTaintIfSettled()) return "next";
     } catch (error) {
       // Nothing of this entry was written: a failed or timed-out read leaves it unsent, so it is tried again.
-      console.warn(`[omp-web] outbox: settle read failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] outbox: settle read failed: ${error instanceof Error ? error.message : String(error)}`);
       return retry(current);
     }
   }
@@ -1036,7 +1036,7 @@ async function deliver(entry: Row): Promise<Outcome> {
     }
     handedOn = true;
   } catch (error) {
-    console.warn(`[omp-web] outbox: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
     return retry(current);
   } finally {
     if (!handedOn) preparing.delete(current.id);

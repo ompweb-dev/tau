@@ -146,7 +146,7 @@ async function prepare(input: {
   const name = sessionWorktreeName(cloneRoot, creationId);
   const cwd = join(sessionRoot, name);
   const branch = `session/${name}`;
-  const metadataKey = `branch.${branch}.ompwebPoolProject`;
+  const metadataKey = `branch.${branch}.tauPoolProject`;
   if (!await directoryExists(parent)) throw new PreparationError("invalid_clone_root", "Clone parent does not exist", 400);
   const existingWorktree = await directoryExists(cwd);
   const existingClone = await directoryExists(cloneRoot);

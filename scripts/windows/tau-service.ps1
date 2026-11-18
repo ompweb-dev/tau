@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Headless omp-web background service (no System Tray UI).
+    Headless tau background service (no System Tray UI).
     Used by Task Scheduler for reliable autostart without desktop-heap issues.
 #>
 param(
@@ -21,13 +21,13 @@ $LaunchWorkingDirectory = $env:USERPROFILE
 # An empty value would make the child inherit the process's own directory, which is the
 # installation; refuse instead of silently reintroducing the lock.
 if ([string]::IsNullOrWhiteSpace($LaunchWorkingDirectory)) {
-    throw "USERPROFILE is empty: refusing to start omp-web from inside its installation directory."
+    throw "USERPROFILE is empty: refusing to start tau from inside its installation directory."
 }
 $PkgVersion = "0.0.0"
 if (Test-Path $PkgJsonPath) {
     try { $pkg = Get-Content $PkgJsonPath -Raw | ConvertFrom-Json; if ($pkg.version) { $PkgVersion = $pkg.version } } catch { }
 }
-$DefaultPort = 30177
+$DefaultPort = 30187
 $DefaultHostname = "127.0.0.1"
 $DefaultMode = "start"
 $DefaultAutoRestart = $true
@@ -43,12 +43,12 @@ $EffectiveAutoRestart = if ($Config -and ($null -ne $Config.autoRestart)) { [boo
 $BuildIndex = Join-Path $RepoRoot "dist\index.html"
 if ($EffectiveMode -eq "start" -and !(Test-Path $BuildIndex)) {
     $EffectiveMode = "dev"
-    if ($EffectivePort -eq 30177) { $EffectivePort = 30178 }
+    if ($EffectivePort -eq 30187) { $EffectivePort = 30188 }
 }
 $ServerUrl = if ($EffectiveHostname -eq "0.0.0.0" -or $EffectiveHostname -eq "::" -or [string]::IsNullOrWhiteSpace($EffectiveHostname)) { "http://localhost:$EffectivePort" } else { "http://${EffectiveHostname}:$EffectivePort" }
 
 # Mutex to prevent duplicate service instances
-$MutexName = "Local\OmpWebService_Instance_Mutex"
+$MutexName = "Local\TauService_Instance_Mutex"
 $createdNew = $false
 try { $script:AppMutex = New-Object System.Threading.Mutex($true, $MutexName, [ref]$createdNew) } catch { $createdNew = $true }
 if (!$createdNew) { Exit 0 }
@@ -56,8 +56,8 @@ if (!$createdNew) { Exit 0 }
 # Logging
 $LogDir = Join-Path $env:USERPROFILE ".omp\agent\logs"
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
-$LogFile = Join-Path $LogDir "omp-web-service.log"
-$OldLogFile = Join-Path $LogDir "omp-web-service.old.log"
+$LogFile = Join-Path $LogDir "tau-service.log"
+$OldLogFile = Join-Path $LogDir "tau-service.old.log"
 if (Test-Path $LogFile) {
     try {
         $logItem = Get-Item $LogFile
@@ -73,7 +73,7 @@ function Write-ServiceLog([string]$message) {
     finally { [System.Threading.Monitor]::Exit($script:LogLock) }
 }
 Write-ServiceLog "=========================================="
-Write-ServiceLog "omp-web Service v$PkgVersion starting (headless)"
+Write-ServiceLog "tau Service v$PkgVersion starting (headless)"
 Write-ServiceLog "Repository Root: $RepoRoot"
 Write-ServiceLog "Target: $ServerUrl (Mode: $EffectiveMode, Port: $EffectivePort)"
 Write-ServiceLog "=========================================="
@@ -106,7 +106,7 @@ function Test-ServerHealth {
     } catch { return $false }
 }
 
-# Copy an omp-web credential from the user (then system) environment into the
+# Copy an tau credential from the user (then system) environment into the
 # child, or remove it there. This launcher's own environment was captured at
 # logon, so a value changed or removed with `setx` since then must not survive
 # a server restart: the old password would keep working after rotation.
@@ -123,7 +123,7 @@ function Start-WebServer {
     # Child output goes to a file through cmd; the async OutputDataReceived
     # callbacks run on a thread-pool thread with no runspace and terminate this
     # supervisor the moment the child prints anything (see the tray script).
-    $childOutLog = Join-Path $LogDir "omp-web-server.log"
+    $childOutLog = Join-Path $LogDir "tau-server.log"
     if ((Test-Path $childOutLog) -and ((Get-Item $childOutLog).Length -gt 5MB)) {
         Move-Item -Path $childOutLog -Destination "$childOutLog.old" -Force -ErrorAction SilentlyContinue
     }
@@ -135,7 +135,7 @@ function Start-WebServer {
     $psi.RedirectStandardOutput = $false
     $psi.RedirectStandardError = $false
     if ($EffectiveMode -eq "start") {
-        $launcherJs = Join-Path $RepoRoot "bin\omp-web.js"
+        $launcherJs = Join-Path $RepoRoot "bin\tau.js"
         $inner = "`"$NodeExe`" `"$launcherJs`" -p $EffectivePort -H $EffectiveHostname --no-open"
     } else {
         # The working directory is outside the installation, so both the dev entry and the config
@@ -144,20 +144,20 @@ function Start-WebServer {
     }
     $psi.FileName = $env:ComSpec
     $psi.Arguments = "/d /s /c `"$inner >> `"$childOutLog`" 2>&1`""
-    $psi.EnvironmentVariables["OMP_WEB_PORT"] = [string]$EffectivePort
+    $psi.EnvironmentVariables["TAU_PORT"] = [string]$EffectivePort
     # The child runs outside the installation, so name it explicitly (dev mode derives its root from this).
-    $psi.EnvironmentVariables["OMP_WEB_PACKAGE_DIR"] = $RepoRoot
-    $psi.EnvironmentVariables["OMP_WEB_HOSTNAME"] = [string]$EffectiveHostname
-    $psi.EnvironmentVariables["OMP_WEB_SERVICE"] = "1"
+    $psi.EnvironmentVariables["TAU_PACKAGE_DIR"] = $RepoRoot
+    $psi.EnvironmentVariables["TAU_HOSTNAME"] = [string]$EffectiveHostname
+    $psi.EnvironmentVariables["TAU_SERVICE"] = "1"
     $psi.EnvironmentVariables["PORT"] = [string]$EffectivePort
-    # bin/omp-web.js refuses a non-loopback bind without a password hash. A
-    # plaintext OMP_WEB_PASSWORD is passed through only so the server can refuse
-    # it with instructions; generate a hash with `ompweb hash-password`.
-    $childHash = Set-ChildCredential $psi "OMP_WEB_PASSWORD_HASH"
-    $null = Set-ChildCredential $psi "OMP_WEB_PASSWORD"
-    $null = Set-ChildCredential $psi "OMP_WEB_TRUSTED_HEADER_SHA256"
+    # bin/tau.js refuses a non-loopback bind without a password hash. A
+    # plaintext TAU_PASSWORD is passed through only so the server can refuse
+    # it with instructions; generate a hash with `tau hash-password`.
+    $childHash = Set-ChildCredential $psi "TAU_PASSWORD_HASH"
+    $null = Set-ChildCredential $psi "TAU_PASSWORD"
+    $null = Set-ChildCredential $psi "TAU_TRUSTED_HEADER_SHA256"
     if ([string]::IsNullOrEmpty($childHash)) {
-        Write-ServiceLog "WARN: OMP_WEB_PASSWORD_HASH not found in the user or system environment; a non-loopback bind will be refused by bin/omp-web.js (generate one with: ompweb hash-password)"
+        Write-ServiceLog "WARN: TAU_PASSWORD_HASH not found in the user or system environment; a non-loopback bind will be refused by bin/tau.js (generate one with: tau hash-password)"
     }
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi

@@ -1,12 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Native Windows System Tray Manager and Background Service for omp-web.
+    Native Windows System Tray Manager and Background Service for tau.
 .DESCRIPTION
-    Runs omp-web in the background without a terminal window, monitors server health,
+    Runs tau in the background without a terminal window, monitors server health,
     provides a system tray context menu, auto-restarts on crash, and manages Windows startup.
 .PARAMETER Port
-    HTTP port to bind (default 30177 for start mode, 30178 for dev mode).
+    HTTP port to bind (default 30187 for start mode, 30188 for dev mode).
 .PARAMETER Hostname
     Bind address (default 127.0.0.1).
 .PARAMETER Mode
@@ -46,7 +46,7 @@ $LaunchWorkingDirectory = $env:USERPROFILE
 # An empty value would make the child inherit the process's own directory, which is the
 # installation; refuse instead of silently reintroducing the lock.
 if ([string]::IsNullOrWhiteSpace($LaunchWorkingDirectory)) {
-    throw "USERPROFILE is empty: refusing to start omp-web from inside its installation directory."
+    throw "USERPROFILE is empty: refusing to start tau from inside its installation directory."
 }
 $PkgVersion = "0.0.0"
 if (Test-Path $PkgJsonPath) {
@@ -57,7 +57,7 @@ if (Test-Path $PkgJsonPath) {
 }
 
 # Defaults
-$DefaultPort = 30177
+$DefaultPort = 30187
 $DefaultHostname = "127.0.0.1"
 $DefaultMode = "start"
 $DefaultAutostart = $true
@@ -90,8 +90,8 @@ if ($OpenBrowser) {
 $BuildIndex = Join-Path $RepoRoot "dist\index.html"
 if ($EffectiveMode -eq "start" -and !(Test-Path $BuildIndex)) {
     $EffectiveMode = "dev"
-    if ($EffectivePort -eq 30177) {
-        $EffectivePort = 30178
+    if ($EffectivePort -eq 30187) {
+        $EffectivePort = 30188
     }
 }
 
@@ -104,7 +104,7 @@ $ServerUrl = if ($EffectiveHostname -eq "0.0.0.0" -or $EffectiveHostname -eq "::
 # -----------------------------------------------------------------------------
 # 2. Single-Instance Enforcement via Mutex
 # -----------------------------------------------------------------------------
-$MutexName = "Local\OmpWebTray_Instance_Mutex"
+$MutexName = "Local\TauTray_Instance_Mutex"
 $createdNew = $false
 try {
     $script:AppMutex = New-Object System.Threading.Mutex($true, $MutexName, [ref]$createdNew)
@@ -130,8 +130,8 @@ $LogDir = Join-Path $env:USERPROFILE ".omp\agent\logs"
 if (!(Test-Path $LogDir)) {
     New-Item -Path $LogDir -ItemType Directory -Force | Out-Null
 }
-$LogFile = Join-Path $LogDir "omp-web-service.log"
-$OldLogFile = Join-Path $LogDir "omp-web-service.old.log"
+$LogFile = Join-Path $LogDir "tau-service.log"
+$OldLogFile = Join-Path $LogDir "tau-service.old.log"
 
 # Rotate log file if > 5MB
 if (Test-Path $LogFile) {
@@ -157,7 +157,7 @@ function Write-ServiceLog([string]$message) {
 }
 
 Write-ServiceLog "=========================================="
-Write-ServiceLog "omp-web System Tray Manager v$PkgVersion starting"
+Write-ServiceLog "tau System Tray Manager v$PkgVersion starting"
 Write-ServiceLog "Repository Root: $RepoRoot"
 Write-ServiceLog "Target: $ServerUrl (Mode: $EffectiveMode, Port: $EffectivePort)"
 Write-ServiceLog "=========================================="
@@ -165,7 +165,7 @@ Write-ServiceLog "=========================================="
 # -----------------------------------------------------------------------------
 # 4. Icon Loading & Rendering
 # -----------------------------------------------------------------------------
-$IcoPath = Join-Path $RepoRoot "public\omp-web.ico"
+$IcoPath = Join-Path $RepoRoot "public\tau.ico"
 $PngPath = Join-Path $RepoRoot "public\icon.png"
 $script:AppIcon = $null
 
@@ -213,7 +213,7 @@ function Find-NodeExecutable {
 
 $NodeExe = Find-NodeExecutable
 
-# Copy an omp-web credential from the user (then system) environment into the
+# Copy an tau credential from the user (then system) environment into the
 # child, or remove it there. This launcher's own environment was captured at
 # logon, so a value changed or removed with `setx` since then must not survive
 # a server restart: the old password would keep working after rotation.
@@ -239,7 +239,7 @@ function Start-WebServer {
     # block there terminates this host process, so the supervisor dies as soon as
     # the child prints its first line and leaves an unsupervised server holding
     # the port (no tray icon, no auto-restart, mutex already released).
-    $childOutLog = Join-Path $LogDir "omp-web-server.log"
+    $childOutLog = Join-Path $LogDir "tau-server.log"
     if ((Test-Path $childOutLog) -and ((Get-Item $childOutLog).Length -gt 5MB)) {
         Move-Item -Path $childOutLog -Destination "$childOutLog.old" -Force -ErrorAction SilentlyContinue
     }
@@ -253,7 +253,7 @@ function Start-WebServer {
     $psi.RedirectStandardError = $false
 
     if ($EffectiveMode -eq "start") {
-        $launcherJs = Join-Path $RepoRoot "bin\omp-web.js"
+        $launcherJs = Join-Path $RepoRoot "bin\tau.js"
         $inner = "`"$NodeExe`" `"$launcherJs`" -p $EffectivePort -H $EffectiveHostname --no-open"
     } else {
         # The working directory is outside the installation, so both the dev entry and the config
@@ -264,21 +264,21 @@ function Start-WebServer {
     $psi.Arguments = "/d /s /c `"$inner >> `"$childOutLog`" 2>&1`""
 
     # Environment variables
-    $psi.EnvironmentVariables["OMP_WEB_PORT"] = [string]$EffectivePort
+    $psi.EnvironmentVariables["TAU_PORT"] = [string]$EffectivePort
     # The child runs outside the installation, so name it explicitly (dev mode derives its root from this).
-    $psi.EnvironmentVariables["OMP_WEB_PACKAGE_DIR"] = $RepoRoot
-    $psi.EnvironmentVariables["OMP_WEB_HOSTNAME"] = [string]$EffectiveHostname
-    $psi.EnvironmentVariables["OMP_WEB_SERVICE"] = "1"
+    $psi.EnvironmentVariables["TAU_PACKAGE_DIR"] = $RepoRoot
+    $psi.EnvironmentVariables["TAU_HOSTNAME"] = [string]$EffectiveHostname
+    $psi.EnvironmentVariables["TAU_SERVICE"] = "1"
     $psi.EnvironmentVariables["PORT"] = [string]$EffectivePort
 
-    # bin/omp-web.js refuses a non-loopback bind without a password hash. A
-    # plaintext OMP_WEB_PASSWORD is passed through only so the server can refuse
-    # it with instructions; generate a hash with `ompweb hash-password`.
-    $childHash = Set-ChildCredential $psi "OMP_WEB_PASSWORD_HASH"
-    $null = Set-ChildCredential $psi "OMP_WEB_PASSWORD"
-    $null = Set-ChildCredential $psi "OMP_WEB_TRUSTED_HEADER_SHA256"
+    # bin/tau.js refuses a non-loopback bind without a password hash. A
+    # plaintext TAU_PASSWORD is passed through only so the server can refuse
+    # it with instructions; generate a hash with `tau hash-password`.
+    $childHash = Set-ChildCredential $psi "TAU_PASSWORD_HASH"
+    $null = Set-ChildCredential $psi "TAU_PASSWORD"
+    $null = Set-ChildCredential $psi "TAU_TRUSTED_HEADER_SHA256"
     if ([string]::IsNullOrEmpty($childHash)) {
-        Write-ServiceLog "WARN: OMP_WEB_PASSWORD_HASH not found in the user or system environment; a non-loopback bind will be refused by bin/omp-web.js (generate one with: ompweb hash-password)"
+        Write-ServiceLog "WARN: TAU_PASSWORD_HASH not found in the user or system environment; a non-loopback bind will be refused by bin/tau.js (generate one with: tau hash-password)"
     }
 
     $proc = New-Object System.Diagnostics.Process
@@ -344,7 +344,7 @@ function Test-ServerHealth {
         $req = [System.Net.WebRequest]::Create($probeUrl)
         $req.Method = "GET"
         $req.Timeout = 2000
-        $req.Headers.Add("User-Agent", "omp-web-tray-probe")
+        $req.Headers.Add("User-Agent", "tau-tray-probe")
         $resp = $req.GetResponse()
         $resp.Close()
         return $true
@@ -360,13 +360,13 @@ function Test-ServerHealth {
 
 function Check-AutostartShortcut {
     $startupDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Startup)
-    $startupLnk = Join-Path $startupDir "omp-web-tray.lnk"
+    $startupLnk = Join-Path $startupDir "tau-tray.lnk"
     return (Test-Path $startupLnk)
 }
 
 function Set-AutostartShortcut([bool]$enable) {
     $startupDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Startup)
-    $startupLnk = Join-Path $startupDir "omp-web-tray.lnk"
+    $startupLnk = Join-Path $startupDir "tau-tray.lnk"
     $launchVbs = Join-Path $RepoRoot "scripts\windows\launch-tray.vbs"
 
     if ($enable) {
@@ -381,7 +381,7 @@ function Set-AutostartShortcut([bool]$enable) {
             if (Test-Path $IcoPath) {
                 $shortcut.IconLocation = "$IcoPath,0"
             }
-            $shortcut.Description = "omp-web Background Tray Service"
+            $shortcut.Description = "tau Background Tray Service"
             $shortcut.Save()
             Write-ServiceLog "Enabled Windows startup shortcut: $startupLnk"
         } catch {
@@ -426,14 +426,14 @@ function Set-AutostartShortcut([bool]$enable) {
 # -----------------------------------------------------------------------------
 $script:NotifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $script:NotifyIcon.Icon = $script:AppIcon
-$script:NotifyIcon.Text = "omp-web (Starting...)"
+$script:NotifyIcon.Text = "tau (Starting...)"
 $script:NotifyIcon.Visible = $true
 
 $contextMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
 # Item 1: App Header
 $script:MenuItemHeader = New-Object System.Windows.Forms.ToolStripMenuItem
-$script:MenuItemHeader.Text = "omp-web (v$PkgVersion)"
+$script:MenuItemHeader.Text = "tau (v$PkgVersion)"
 $script:MenuItemHeader.Font = New-Object System.Drawing.Font($script:MenuItemHeader.Font, [System.Drawing.FontStyle]::Bold)
 $script:MenuItemHeader.Enabled = $false
 $contextMenu.Items.Add($script:MenuItemHeader) | Out-Null
@@ -444,7 +444,7 @@ $script:MenuItemStatus.Text = "  Status: Starting (Port $EffectivePort)"
 $script:MenuItemStatus.Enabled = $false
 $contextMenu.Items.Add($script:MenuItemStatus) | Out-Null
 
-# Item 2b: Host daemon indicator (`ompweb host`, registered as the omp-web-host task)
+# Item 2b: Host daemon indicator (`tau host`, registered as the tau-host task)
 $script:MenuItemDaemon = New-Object System.Windows.Forms.ToolStripMenuItem
 $script:MenuItemDaemon.Text = "  Daemon: Checking..."
 $script:MenuItemDaemon.Enabled = $false
@@ -467,7 +467,7 @@ $script:MenuItemCopy.Text = "Copy Web URL"
 $script:MenuItemCopy.add_Click({
     try {
         [System.Windows.Forms.Clipboard]::SetText($ServerUrl)
-        $script:NotifyIcon.ShowBalloonTip(1500, "omp-web", "URL copied: $ServerUrl", [System.Windows.Forms.ToolTipIcon]::Info)
+        $script:NotifyIcon.ShowBalloonTip(1500, "tau", "URL copied: $ServerUrl", [System.Windows.Forms.ToolTipIcon]::Info)
     } catch { }
 })
 $contextMenu.Items.Add($script:MenuItemCopy) | Out-Null
@@ -561,16 +561,16 @@ $script:NotifyIcon.add_DoubleClick({
     try { [System.Diagnostics.Process]::Start($ServerUrl) | Out-Null } catch { }
 })
 
-# The supervisor (omp-web-host.ps1) holds a named mutex while it runs: opening it is an in-process
+# The supervisor (tau-host.ps1) holds a named mutex while it runs: opening it is an in-process
 # check. Only when it is not held do we shell out to schtasks to tell "Stopped" from "Not installed".
 function Get-HostDaemonState {
     try {
         $held = $null
-        if ([System.Threading.Mutex]::TryOpenExisting("Local\OmpWebHostDaemon_Instance_Mutex", [ref]$held)) {
+        if ([System.Threading.Mutex]::TryOpenExisting("Local\TauHostDaemon_Instance_Mutex", [ref]$held)) {
             $held.Dispose()
             return "Running"
         }
-        schtasks.exe /query /tn "omp-web-host" 2>$null | Out-Null
+        schtasks.exe /query /tn "tau-host" 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { return "Not installed" }
         return "Stopped"
     } catch { return "Unknown" }
@@ -591,7 +591,7 @@ function Update-TrayUI {
     $script:MenuItemDaemon.Text = "  Daemon: $($script:DaemonState)"
 
     # Limit tooltip text length (Windows NotifyIcon.Text max 63 characters)
-    $tipText = "omp-web ($statusText)"
+    $tipText = "tau ($statusText)"
     if ($tipText.Length -gt 63) { $tipText = $tipText.Substring(0, 63) }
     $script:NotifyIcon.Text = $tipText
 
@@ -644,7 +644,7 @@ $script:Timer.add_Tick({
             if ($script:CrashTimestamps.Count -ge 3) {
                 $script:State = "Error"
                 Write-ServiceLog "Server crashed repeatedly (3 times in 60s). Auto-restart suspended."
-                $script:NotifyIcon.ShowBalloonTip(3000, "omp-web Service Error", "Server crashed repeatedly. Check logs for details.", [System.Windows.Forms.ToolTipIcon]::Error)
+                $script:NotifyIcon.ShowBalloonTip(3000, "tau Service Error", "Server crashed repeatedly. Check logs for details.", [System.Windows.Forms.ToolTipIcon]::Error)
             } else {
                 Write-ServiceLog "Auto-restarting server (crash attempt $($script:CrashTimestamps.Count) of 3)..."
                 Start-WebServer

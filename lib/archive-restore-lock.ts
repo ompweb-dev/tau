@@ -45,7 +45,7 @@ export async function withArchiveRestoreLock<T>(
   restore: (claim: RestoreClaim) => Promise<T>,
   confirmStopped?: (held: HeldRestore) => Promise<void>,
 ): Promise<T> {
-  const dir = join(getAgentDir(), "omp-web");
+  const dir = join(getAgentDir(), "tau");
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
   const path = join(dir, "archive-restore-locks.sqlite");

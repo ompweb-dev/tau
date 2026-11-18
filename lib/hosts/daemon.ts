@@ -32,7 +32,7 @@ import { createWorkspaceService, type WorkspaceService } from "./workspace-ops";
 import { grantWorkspaceRoot, invalidateWorkspaceRoots } from "./workspace-roots";
 export { nextRedialDelay };
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
-const log = (message: string) => console.error("[ompweb host] " + message);
+const log = (message: string) => console.error("[tau host] " + message);
 /** realpath of the longest existing prefix; null when a component is a dangling symlink. */
 function canonicalPath(path: string): string | null {
   try {
@@ -99,7 +99,7 @@ type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?:
 export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const explicit = options.url !== undefined && options.token !== undefined ? [{ url: options.url, token: options.token }] : options.links;
   const initial = explicit ?? readHostLinks();
-  for (const link of initial) if (!dialable(link.url, options.allowHttp)) throw new Error("ompweb host needs an https:// server URL (http:// only for loopback, or with --allow-http)");
+  for (const link of initial) if (!dialable(link.url, options.allowHttp)) throw new Error("tau host needs an https:// server URL (http:// only for loopback, or with --allow-http)");
   const primaryUrl = (explicit?.[0]?.url ?? readHostLogin()?.url ?? initial[0]?.url)?.replace(/\/+$/, "");
   const links = new Map<string, DaemonLink>();
   const maintenanceLinks = new Map<string, DaemonMaintenance>();
@@ -113,7 +113,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   let stopping: Promise<void> | undefined;
   let updateStateWarningLogged = false;
   let reloadTimer: NodeJS.Timeout | undefined;
-  let drained = process.env.OMP_WEB_HOST_DRAINED === "1";
+  let drained = process.env.TAU_HOST_DRAINED === "1";
   let preparationsInFlight = 0, operationsInFlight = 0, nativeUpdatesInFlight = 0;
   const executable = realpathSync(process.execPath);
   const entrypoint = canonicalPath(process.argv[1] || process.execPath) || resolve(process.argv[1] || process.execPath);
@@ -122,7 +122,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   // Each link is told whether the configuration this host holds is its server's.
   const config = createClusterConfig({
     roots: () => ({ agent: getAgentDir(), home: homedir() }),
-    stateDir: () => join(getAgentDir(), "omp-web"),
+    stateDir: () => join(getAgentDir(), "tau"),
     fetch: async (serverUrl, path, signal) => {
       const login = links.get(serverUrl)?.login;
       const pending = login && serverFetch(login, CONFIG_API, path.slice(CONFIG_API.length), { signal });
@@ -148,7 +148,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       let operation: HostUpdateOperation | null = null;
       try { operation = getHostUpdateOperation(); }
       catch (error) { if (!updateStateWarningLogged) log("could not read host update status: " + reason(error)); updateStateWarningLogged = true; }
-      if (operation?.target === "ompweb" && hostUpdateBlocksNewWork(operation)) throw new HostOpError(409, "host_updating", "This host is updating its daemon; new sessions must wait");
+      if (operation?.target === "tau" && hostUpdateBlocksNewWork(operation)) throw new HostOpError(409, "host_updating", "This host is updating its daemon; new sessions must wait");
       const resolved = launch.creationId === undefined ? resolveSpawnCwdResult(launch.recordedCwd ?? launch.cwd) : { cwd: launch.cwd, fellBack: false };
       // A sharing session never starts on this host's own logins: no link, or no usable broker, refuses.
       if (launch.credentialsServer !== undefined && !links.has(launch.credentialsServer)) throw new HostOpError(409, "credentials_link_gone", "The web server that shares its credentials with this session is no longer linked to this host");
@@ -190,7 +190,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   const startupSweep = sweepUploads();
   const sweepTimer = setInterval(sweepUploads, UPLOAD_SWEEP_INTERVAL_MS); sweepTimer.unref?.();
-  const configDir = join(getAgentDir(), "omp-web"); mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  const configDir = join(getAgentDir(), "tau"); mkdirSync(configDir, { recursive: true, mode: 0o700 });
   const watcher = watch(configDir, (_event, name) => {
     if (name !== null && String(name) !== "host.json") return;
     clearTimeout(reloadTimer); reloadTimer = setTimeout(() => reconcile(), 200); reloadTimer.unref?.();
@@ -270,7 +270,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   function makeLink(login: HostLink, primary: boolean): DaemonLink {
     const link = new DaemonLink(login, "l" + ++linkId, { allowHttp: options.allowHttp, primary, log, keepOnVersionMismatch: true,
-      hello: (link, replay) => encodeLine({ type: "hello", v: link.version, ompVersion, ompwebVersion: packageJson.version,
+      hello: (link, replay) => encodeLine({ type: "hello", v: link.version, ompVersion, tauVersion: packageJson.version,
         workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), platform: process.platform, home: homedir(), autoApproveExtension: localHost.autoApproveExtension(),
         ack: link.ackedDown, channels: channels.listing(link, replay),
         link: { id: link.id, notifier: notifierId === link.id } }),
@@ -309,7 +309,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     links.set(login.url, link);
     const maintenance = new DaemonMaintenance(login, {
       hello: () => ({ type: "hello", apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        ompwebVersion: packageJson.version, ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, ompVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"] }),
       handleRequest: (op, args) => runMaintenance(link, op, args),
       // A staged candidate that awaits its server's cutover acknowledges its operation here, not on the application link.
@@ -358,7 +358,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     try {
       if (op === "status") return {
         apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        ompwebVersion: packageJson.version, ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, ompVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"],
         workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), sessionProcesses: channels.size,
         activeTurns: channels.activeTurns, sessions: channels.maintenanceSessions(),
@@ -455,7 +455,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         return checkHostUpdates(updateCompatibility(args.compatibility), args.force === true, args.targetCompatibility === undefined ? undefined : updateCompatibility(args.targetCompatibility), releasePin);
       }
       case "updateSoftware":
-        if (args.target !== "ompweb" || typeof args.version !== "string") throw new HostOpError(400, "invalid_request", "Invalid host update");
+        if (args.target !== "tau" || typeof args.version !== "string") throw new HostOpError(400, "invalid_request", "Invalid host update");
         return startHostUpdate(args.target, args.version, updateCompatibility(args.compatibility), updateRequest(args));
       case "preparePoolProject": {
         if (hostUpdateBlocksNewWork(getHostUpdateOperation())) throw new HostUpdateError("host_updating", "This host is updating; new project preparation must wait");

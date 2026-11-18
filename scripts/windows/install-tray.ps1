@@ -1,9 +1,9 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs the Windows Background Service, System Tray shortcuts, and autostart registration for omp-web.
+    Installs the Windows Background Service, System Tray shortcuts, and autostart registration for tau.
 .PARAMETER Port
-    Default port to configure (default 30177).
+    Default port to configure (default 30187).
 .PARAMETER Hostname
     Default hostname to configure (default 127.0.0.1).
 .PARAMETER Mode
@@ -17,7 +17,7 @@
 #>
 
 param(
-    [int]$Port = 30177,
+    [int]$Port = 30187,
     [string]$Hostname = "127.0.0.1",
     [string]$Mode = "start",
     [switch]$NoAutostart,
@@ -26,7 +26,7 @@ param(
 )
 
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
-$IcoPath = Join-Path $RepoRoot "public\omp-web.ico"
+$IcoPath = Join-Path $RepoRoot "public\tau.ico"
 $PngPath = Join-Path $RepoRoot "public\icon.png"
 $LaunchVbs = Join-Path $RepoRoot "scripts\windows\launch-tray.vbs"
 
@@ -37,7 +37,7 @@ $ShortcutWorkingDirectory = $env:USERPROFILE
 # A shortcut with an empty working directory starts in its target's directory, which is the
 # installation; refuse instead of silently reintroducing the lock.
 if ([string]::IsNullOrWhiteSpace($ShortcutWorkingDirectory)) {
-    throw "USERPROFILE is empty: refusing to create omp-web shortcuts that start inside the installation."
+    throw "USERPROFILE is empty: refusing to create tau shortcuts that start inside the installation."
 }
 
 function Log-Message([string]$msg) {
@@ -127,7 +127,7 @@ function Ensure-IconFile {
     }
 }
 
-Log-Message "Installing omp-web Windows System Tray & Background Service..."
+Log-Message "Installing tau Windows System Tray & Background Service..."
 Ensure-IconFile
 
 # -----------------------------------------------------------------------------
@@ -168,11 +168,11 @@ $wscriptExe = Join-Path $env:SystemRoot "System32\wscript.exe"
 if (!(Test-Path $wscriptExe)) {
     $wscriptExe = "wscript.exe"
 }
-$nativeExe = Join-Path $RepoRoot "bin\omp-web-tray.exe"
+$nativeExe = Join-Path $RepoRoot "bin\tau-tray.exe"
 $useNative = Test-Path $nativeExe
 # Desktop Shortcut
 $desktopDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-$desktopLnk = Join-Path $desktopDir "omp-web.lnk"
+$desktopLnk = Join-Path $desktopDir "tau.lnk"
 try {
     $sc = $wsh.CreateShortcut($desktopLnk)
     if ($useNative) {
@@ -184,7 +184,7 @@ try {
     }
     $sc.WorkingDirectory = $ShortcutWorkingDirectory
     if (Test-Path $IcoPath) { $sc.IconLocation = "$IcoPath,0" }
-    $sc.Description = "Open omp-web AI Coding Agent Web Interface"
+    $sc.Description = "Open tau AI Coding Agent Web Interface"
     $sc.Save()
     Log-Message "  [OK] Desktop shortcut created: $desktopLnk $(if ($useNative) { '(native tray)' } else { '' })"
 } catch {
@@ -193,7 +193,7 @@ try {
 
 # Start Menu Shortcut
 $programsDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Programs)
-$startMenuLnk = Join-Path $programsDir "omp-web.lnk"
+$startMenuLnk = Join-Path $programsDir "tau.lnk"
 try {
     $sc = $wsh.CreateShortcut($startMenuLnk)
     if ($useNative) {
@@ -205,7 +205,7 @@ try {
     }
     $sc.WorkingDirectory = $ShortcutWorkingDirectory
     if (Test-Path $IcoPath) { $sc.IconLocation = "$IcoPath,0" }
-    $sc.Description = "omp-web System Tray & Web Interface"
+    $sc.Description = "tau System Tray & Web Interface"
     $sc.Save()
     Log-Message "  [OK] Start Menu shortcut created: $startMenuLnk $(if ($useNative) { '(native tray)' } else { '' })"
 } catch {
@@ -214,7 +214,7 @@ try {
 
 # Startup Shortcut (if autostart enabled)
 $startupDir = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Startup)
-$startupLnk = Join-Path $startupDir "omp-web-tray.lnk"
+$startupLnk = Join-Path $startupDir "tau-tray.lnk"
 if (!$NoAutostart) {
     try {
         $sc = $wsh.CreateShortcut($startupLnk)
@@ -227,7 +227,7 @@ if (!$NoAutostart) {
         }
         $sc.WorkingDirectory = $ShortcutWorkingDirectory
         if (Test-Path $IcoPath) { $sc.IconLocation = "$IcoPath,0" }
-        $sc.Description = "omp-web Background Tray Service"
+        $sc.Description = "tau Background Tray Service"
         $sc.Save()
         Log-Message "  [OK] Windows Startup shortcut created: $startupLnk $(if ($useNative) { '(native tray)' } else { '' })"
     } catch {
@@ -246,10 +246,10 @@ Log-Message "Tray Launcher   : $LaunchVbs"
 # -----------------------------------------------------------------------------
 # 3b. Register Scheduled Task for headless service (robust, no desktop heap)
 # -----------------------------------------------------------------------------
-$ServicePs1 = Join-Path $RepoRoot "scripts\windows\omp-web-service.ps1"
+$ServicePs1 = Join-Path $RepoRoot "scripts\windows\tau-service.ps1"
 if (!$NoAutostart -and (Test-Path $ServicePs1)) {
     try {
-        $taskName = "omp-web"
+        $taskName = "tau"
         $actionArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ServicePs1`""
         # Use schtasks for compatibility (no admin required for current user ONLOGON)
         $createArgs = "/create /tn `"$taskName`" /tr `"powershell $actionArg`" /sc onlogon /f"
@@ -274,27 +274,27 @@ if (!$NoAutostart -and (Test-Path $ServicePs1)) {
         Log-Message "  [WARN] Scheduled Task creation failed: $($_.Exception.Message)"
     }
 } elseif ($NoAutostart) {
-    try { schtasks /delete /tn "omp-web" /f 2>$null | Out-Null } catch { }
+    try { schtasks /delete /tn "tau" /f 2>$null | Out-Null } catch { }
 }
 
-# The host daemon (`ompweb host`) runs next to the web service. It starts at logon like the web
+# The host daemon (`tau host`) runs next to the web service. It starts at logon like the web
 # service; with -NoAutostart it is still registered and started, but not at logon.
-$HostPs1 = Join-Path $RepoRoot "scripts\windows\omp-web-host.ps1"
+$HostPs1 = Join-Path $RepoRoot "scripts\windows\tau-host.ps1"
 if (Test-Path $HostPs1) {
     try {
         $hostArg = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$HostPs1`""
         $hostAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $hostArg
         $hostTrigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
         $hostPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-        # omp-web-host.ps1 restarts the daemon itself; the scheduler only has to survive battery and a missed logon.
+        # tau-host.ps1 restarts the daemon itself; the scheduler only has to survive battery and a missed logon.
         $hostSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero)
-        $hostTask = @{ TaskName = "omp-web-host"; Action = $hostAction; Principal = $hostPrincipal; Settings = $hostSettings; Force = $true; ErrorAction = "Stop" }
+        $hostTask = @{ TaskName = "tau-host"; Action = $hostAction; Principal = $hostPrincipal; Settings = $hostSettings; Force = $true; ErrorAction = "Stop" }
         if (!$NoAutostart) { $hostTask.Trigger = $hostTrigger }
         Register-ScheduledTask @hostTask | Out-Null
-        Log-Message "  [OK] Scheduled Task created: omp-web-host"
-        schtasks.exe /run /tn "omp-web-host" 2>$null | Out-Null
+        Log-Message "  [OK] Scheduled Task created: tau-host"
+        schtasks.exe /run /tn "tau-host" 2>$null | Out-Null
     } catch {
-        Log-Message "  [WARN] Failed to create the omp-web-host Scheduled Task: $($_.Exception.Message)"
+        Log-Message "  [WARN] Failed to create the tau-host Scheduled Task: $($_.Exception.Message)"
     }
 }
 

@@ -10,7 +10,7 @@ import { reconcileOutboxHandoffs } from "@/lib/outbox-handoff";
 import type { MessageOrigin } from "@/lib/message-origin";
 
 // Commands that ride whatever child is alive and never spawn or replace one:
-// keystroke predictions, and the side-question reads/cancel omp-web sends in
+// keystroke predictions, and the side-question reads/cancel tau sends in
 // the background (SSE connect, reconcile). Without a live process there is no
 // ghost text, no running side question and nothing to cancel, so the reply is
 // known without omp. Asking (`btw`) and opening the history start omp first.
@@ -19,7 +19,7 @@ export const NO_SPAWN_REPLIES: Record<string, unknown> = {
   btw_cancel: { cancelled: false },
 };
 
-/** omp-web's own failures carry a stable code the client can localize; omp's
+/** tau's own failures carry a stable code the client can localize; omp's
  * errors stay opaque English text. */
 export function commandErrorResponse(error: unknown): Response {
   if (error instanceof RequestBodyTooLargeError) {

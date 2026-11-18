@@ -172,7 +172,7 @@ function formatAddressBanner({
 
   const lines = [];
   lines.push("");
-  lines.push(`  ${bold("ompweb")} ${dim(`v${version}`)} ${green("is ready")}`);
+  lines.push(`  ${bold("tau")} ${dim(`v${version}`)} ${green("is ready")}`);
   lines.push("");
 
   const maxLabelLen = Math.max(...entries.map((e) => e.label.length), hint ? 7 : 5);
@@ -188,12 +188,12 @@ function formatAddressBanner({
 
   if (passwordEnabled) {
     lines.push("");
-    lines.push(`  ${dim("🔒 Password protection enabled (OMP_WEB_PASSWORD_HASH)")}`);
+    lines.push(`  ${dim("🔒 Password protection enabled (TAU_PASSWORD_HASH)")}`);
   }
 
-  if (process.platform === "win32" && !process.env.OMP_WEB_SERVICE) {
+  if (process.platform === "win32" && !process.env.TAU_SERVICE) {
     lines.push("");
-    lines.push(`  ${dim("💡 Windows Tray: Run 'ompweb --install-tray' to enable background startup & Desktop shortcut.")}`);
+    lines.push(`  ${dim("💡 Windows Tray: Run 'tau --install-tray' to enable background startup & Desktop shortcut.")}`);
   }
 
   lines.push("");

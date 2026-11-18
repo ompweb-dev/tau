@@ -23,7 +23,7 @@ afterEach(() => {
   globalThis.Worker = originalWorker;
 });
 
-const member = (hostId) => ({ hostId, projectsRoot: `/srv/${hostId}/ompweb-cluster`, provisioned: true, draining: false });
+const member = (hostId) => ({ hostId, projectsRoot: `/srv/${hostId}/tau-cluster`, provisioned: true, draining: false });
 const cluster = (...hostIds) => [{ id: "cluster", label: "Cluster", enabled: true, members: hostIds.map(member), projects: [] }];
 const hostRow = (overrides = {}) => ({
   id: "local", label: "", status: "online", ompVersion: "omp/15.13.1", platform: "linux",
@@ -48,7 +48,7 @@ async function showHosts(t, { hosts, pools = [], home = "/home/andre", respond =
       calls.push({ method, url: String(url) });
       return home === null ? Response.json({ error: "Host offline" }, { status: 409 }) : Response.json({ home });
     }
-    if (String(url).includes("/updates")) return Response.json({ ompweb: null, omp: null, operation: null });
+    if (String(url).includes("/updates")) return Response.json({ tau: null, omp: null, operation: null });
     calls.push({ method, url: String(url), body: init?.body === undefined ? undefined : JSON.parse(init.body) });
     return respond(url, init);
   });
@@ -112,12 +112,12 @@ test("once this machine is a member, its own readiness no longer blocks a join",
 
 for (const [label, row, reason] of [
   ["offline", { status: "offline" }, "The host is offline"],
-  ["no gitOrigins operation", { workspaceOps: [] }, "Update ompweb on this host first"],
-  ["flagged needs-upgrade by the hub", { status: "needs-upgrade", hostVersion: 9 }, "Update ompweb on this host first"],
+  ["no gitOrigins operation", { workspaceOps: [] }, "Update tau on this host first"],
+  ["flagged needs-upgrade by the hub", { status: "needs-upgrade", hostVersion: 9 }, "Update tau on this host first"],
   // Members always share credentials; the daemon refuses that below omp 15.13.1, and on an omp it cannot read.
   ["on an omp too old to share credentials", { ompVersion: "omp/15.13.0" }, "Update omp on Laptop to 15.13.1 or newer first"],
   ["on an unknown omp", { ompVersion: "omp/next" }, "Update omp on Laptop to 15.13.1 or newer first"],
-  ["on an outdated daemon and an old omp (the daemon first)", { workspaceOps: [], ompVersion: "omp/15.13.0" }, "Update ompweb on this host first"],
+  ["on an outdated daemon and an old omp (the daemon first)", { workspaceOps: [], ompVersion: "omp/15.13.0" }, "Update tau on this host first"],
   ["without omp (its own status text is the reason)", { status: "omp-missing" }, "omp not installed"],
 ]) {
   test(`a host that is ${label} cannot join and says why`, async (t) => {
@@ -166,7 +166,7 @@ test("joining asks for the folder, prefilled from the host's home, and sends it"
   await user.click(clusterSwitch("Laptop"));
   const dialog = await screen.findByRole("dialog", { name: "Add Laptop to the cluster?" });
   const folder = within(dialog).getByLabelText("Folder on Laptop for the cluster's checkouts");
-  await waitFor(() => assert.equal(folder.value, "/home/andre/ompweb-cluster"));
+  await waitFor(() => assert.equal(folder.value, "/home/andre/tau-cluster"));
   assert.deepEqual(calls.filter((call) => call.url.startsWith("/api/home")), [{ method: "GET", url: "/api/home?hostId=h1" }]);
   assert.ok(within(dialog).getByText(/Its Git projects that match a cluster repository or can be added as one become cluster projects, unless they are inside or contain the cluster folder/));
   assert.ok(within(dialog).getByText(/Laptop will use this machine's provider logins/));
@@ -174,7 +174,7 @@ test("joining asks for the folder, prefilled from the host's home, and sends it"
   assert.equal(calls.some((call) => call.method === "PUT"), false);
 
   await user.click(within(dialog).getByRole("button", { name: "Add to cluster" }));
-  await waitFor(() => assert.deepEqual(calls.find((call) => call.method === "PUT"), { method: "PUT", url: "/api/hosts/h1/cluster", body: { projectsRoot: "/home/andre/ompweb-cluster" } }));
+  await waitFor(() => assert.deepEqual(calls.find((call) => call.method === "PUT"), { method: "PUT", url: "/api/hosts/h1/cluster", body: { projectsRoot: "/home/andre/tau-cluster" } }));
   await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
 });
 
@@ -185,7 +185,7 @@ for (const [label, pools, says] of [["no cluster", [], true], ["a first pool wit
     const dialog = await screen.findByRole("dialog", { name: "Add Laptop to the cluster?" });
     const note = within(dialog).queryByText(/^This machine joins too: its Git projects that match a cluster repository or can be added as one become cluster projects/);
     assert.equal(note !== null, says);
-    if (says) assert.match(note.textContent, /unless they are inside or contain the ompweb-cluster folder in its home folder.*any member with capacity \(currently Linux hosts only\)/);
+    if (says) assert.match(note.textContent, /unless they are inside or contain the tau-cluster folder in its home folder.*any member with capacity \(currently Linux hosts only\)/);
   });
 }
 
@@ -253,7 +253,7 @@ test("a relative folder is refused in the dialog without a request", async (t) =
   const folder = within(dialog).getByLabelText(/Folder on Laptop/);
   await waitFor(() => assert.notEqual(folder.value, ""));
   await user.clear(folder);
-  await user.type(folder, "ompweb-cluster");
+  await user.type(folder, "tau-cluster");
   await user.click(within(dialog).getByRole("button", { name: "Add to cluster" }));
   assert.equal(calls.some((call) => call.method === "PUT"), false);
   assert.ok(within(dialog).getByRole("alert"));
@@ -280,22 +280,22 @@ test("a leave whose own configuration could not be put back says so and why", as
   t.mock.method(toast, "error", (message) => { errors.push(message); });
   const { user } = await showHosts(t, {
     hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local", "h1"),
-    respond: async () => Response.json({ pools: cluster("local"), restoreError: "omp-web/own-config/agent is not readable" }),
+    respond: async () => Response.json({ pools: cluster("local"), restoreError: "tau/own-config/agent is not readable" }),
   });
   await user.click(clusterSwitch("Laptop"));
   await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
-  await waitFor(() => assert.deepEqual(errors, ["Laptop left the cluster, but its own omp configuration could not be put back: omp-web/own-config/agent is not readable. It is retried automatically while the host is linked."]));
+  await waitFor(() => assert.deepEqual(errors, ["Laptop left the cluster, but its own omp configuration could not be put back: tau/own-config/agent is not readable. It is retried automatically while the host is linked."]));
 });
 
 const configState = (fields = {}) => ({ version: "a".repeat(64), files: "current", plugins: "current", error: null, missingCommands: [], owned: true, current: true, ...fields });
-const configLines = (name) => within(rowOf(name)).queryAllByText(/^(Configuration:|Not installed on this host:|Update ompweb on this host first)/).map((line) => line.textContent);
+const configLines = (name) => within(rowOf(name)).queryAllByText(/^(Configuration:|Not installed on this host:|Update tau on this host first)/).map((line) => line.textContent);
 
 for (const [label, overrides, lines] of [
   ["current", { clusterConfig: configState() }, ["Configuration: same as the master"]],
   ["updating", { clusterConfig: configState({ plugins: "pending", current: false }) }, ["Configuration: updating…"]],
   ["not reported yet", {}, ["Configuration: updating…"]],
   ["failed", { clusterConfig: configState({ files: "failed", error: "the master answered 500 for the manifest", current: false }) }, ["Configuration: failed — the master answered 500 for the manifest"]],
-  ["held by another server", { clusterConfig: configState({ owned: false, current: false }) }, ["Configuration: held by another ompweb server; remove it from that server's cluster first"]],
+  ["held by another server", { clusterConfig: configState({ owned: false, current: false }) }, ["Configuration: held by another tau server; remove it from that server's cluster first"]],
   ["current, with commands it lacks", { clusterConfig: configState({ missingCommands: ["uvx", "docker"] }) }, ["Configuration: same as the master", "Not installed on this host: uvx, docker"]],
   ["offline, with its last report", { status: "offline", clusterConfig: configState({ missingCommands: ["uvx"] }) }, []],
   ["offline, never reported", { status: "offline" }, []],

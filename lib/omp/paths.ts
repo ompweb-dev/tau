@@ -40,11 +40,11 @@ function isDefaultAgentDir(): boolean {
   return true;
 }
 
-/** tau's crash/stall journal directory: ~/.pi/omp-web, or
- * <agent dir>/omp-web when PI_CODING_AGENT_DIR points elsewhere, so isolated
+/** tau's crash/stall journal directory: ~/.pi/tau, or
+ * <agent dir>/tau when PI_CODING_AGENT_DIR points elsewhere, so isolated
  * runs (tests, dev servers) never write the real journal. */
 export function getDiagnosticsDir(): string {
-  return path.join(isDefaultAgentDir() ? getConfigRoot() : getAgentDir(), "omp-web");
+  return path.join(isDefaultAgentDir() ? getConfigRoot() : getAgentDir(), "tau");
 }
 
 /** ~/.pi/agent/sessions */

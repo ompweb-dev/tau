@@ -4,11 +4,11 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require("./node-version").exitIfUnsupportedNode();
 
-// Install ompweb as a macOS launchd user agent (starts at login, restarts on crash).
+// Install tau as a macOS launchd user agent (starts at login, restarts on crash).
 //
-// Usage (installed as the `ompweb-launchd` bin, or run via npx / node directly):
-//   ompweb-launchd [install [package-spec]|uninstall|status]
-//   npx -p @ompweb-dev/tau@latest ompweb-launchd install
+// Usage (installed as the `tau-launchd` bin, or run via npx / node directly):
+//   tau-launchd [install [package-spec]|uninstall|status]
+//   npx -p @ompweb-dev/tau@latest tau-launchd install
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { spawnSync } = require("node:child_process");
@@ -19,15 +19,15 @@ const os = require("node:os");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require("node:path");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { resolvePasswordHash } = require("./omp-web-hash-password");
+const { resolvePasswordHash } = require("./tau-hash-password");
 
-const LABEL = "com.kahme247.ompweb";
-// The host daemon links this machine to an omp-web (`ompweb host`); it runs next to the web agent.
-const HOST_LABEL = "com.kahme247.ompweb-host";
+const LABEL = "dev.ompweb.tau";
+// The host daemon links this machine to an tau (`tau host`); it runs next to the web agent.
+const HOST_LABEL = "dev.ompweb.tau-host";
 const HOME = os.homedir();
 const PLIST = path.join(HOME, "Library", "LaunchAgents", `${LABEL}.plist`);
 const HOST_PLIST = path.join(HOME, "Library", "LaunchAgents", `${HOST_LABEL}.plist`);
-const LOG_DIR = path.join(HOME, "Library", "Logs", "ompweb");
+const LOG_DIR = path.join(HOME, "Library", "Logs", "tau");
 const DOMAIN = `gui/${process.getuid?.() ?? 0}`;
 
 function fail(message) {
@@ -97,7 +97,7 @@ ${envXml}
 function buildHostEnv({ svcPath, ompBin, agentDir }) {
   return {
     PATH: svcPath,
-    ...(ompBin ? { OMP_WEB_OMP_BIN: ompBin } : {}),
+    ...(ompBin ? { TAU_OMP_BIN: ompBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
 }
@@ -107,31 +107,31 @@ function install(pkgArg) {
   const siblingNpx = path.join(path.dirname(nodeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
-  // Only an explicit override: ompweb runs its own omp (ompweb-omp). A stock omp on PATH cannot run its sessions.
-  const ompBin = process.env.OMP_WEB_OMP_BIN || null;
+  // Only an explicit override: tau runs its own omp (tau-omp). A stock omp on PATH cannot run its sessions.
+  const ompBin = process.env.TAU_OMP_BIN || null;
   if (ompBin) {
     try {
       fs.accessSync(ompBin, fs.constants.X_OK);
     } catch {
-      fail(`OMP_WEB_OMP_BIN=${ompBin} is not executable`);
+      fail(`TAU_OMP_BIN=${ompBin} is not executable`);
     }
   }
 
-  const pkg = pkgArg ?? process.env.OMP_WEB_PKG ?? "@ompweb-dev/tau@latest";
-  const port = process.env.PORT ?? "30177";
-  const hostname = process.env.OMP_WEB_HOSTNAME ?? "127.0.0.1";
-  const noOpen = process.env.OMP_WEB_NO_OPEN ?? "1";
-  const disableAutoUpdate = process.env.OMP_WEB_DISABLE_AUTOUPDATE;
-  const installName = process.env.OMP_WEB_NAME;
-  // Only a hash is stored in the plist: omp-web never forwards a plaintext
-  // password, and `OMP_WEB_PASSWORD` set for this install is hashed here.
+  const pkg = pkgArg ?? process.env.TAU_PKG ?? "@ompweb-dev/tau@latest";
+  const port = process.env.PORT ?? "30187";
+  const hostname = process.env.TAU_HOSTNAME ?? "127.0.0.1";
+  const noOpen = process.env.TAU_NO_OPEN ?? "1";
+  const disableAutoUpdate = process.env.TAU_DISABLE_AUTOUPDATE;
+  const installName = process.env.TAU_NAME;
+  // Only a hash is stored in the plist: tau never forwards a plaintext
+  // password, and `TAU_PASSWORD` set for this install is hashed here.
   let passwordHash;
   try {
     passwordHash = resolvePasswordHash();
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
-  const trustedHeaderDigest = process.env.OMP_WEB_TRUSTED_HEADER_SHA256;
+  const trustedHeaderDigest = process.env.TAU_TRUSTED_HEADER_SHA256;
   const agentDir = process.env.PI_CODING_AGENT_DIR?.replace(/^~(?=\/|$)/, HOME);
 
   const asdfBin = which("asdf");
@@ -149,21 +149,21 @@ function install(pkgArg) {
   const env = {
     PATH: svcPath,
     PORT: port,
-    OMP_WEB_HOSTNAME: hostname,
-    OMP_WEB_NO_OPEN: noOpen,
-    ...(disableAutoUpdate ? { OMP_WEB_DISABLE_AUTOUPDATE: disableAutoUpdate } : {}),
-    ...(installName ? { OMP_WEB_NAME: installName } : {}),
-    ...(passwordHash ? { OMP_WEB_PASSWORD_HASH: passwordHash } : {}),
-    ...(trustedHeaderDigest ? { OMP_WEB_TRUSTED_HEADER_SHA256: trustedHeaderDigest } : {}),
-    ...(ompBin ? { OMP_WEB_OMP_BIN: ompBin } : {}),
+    TAU_HOSTNAME: hostname,
+    TAU_NO_OPEN: noOpen,
+    ...(disableAutoUpdate ? { TAU_DISABLE_AUTOUPDATE: disableAutoUpdate } : {}),
+    ...(installName ? { TAU_NAME: installName } : {}),
+    ...(passwordHash ? { TAU_PASSWORD_HASH: passwordHash } : {}),
+    ...(trustedHeaderDigest ? { TAU_TRUSTED_HEADER_SHA256: trustedHeaderDigest } : {}),
+    ...(ompBin ? { TAU_OMP_BIN: ompBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
-  const web = buildPlist({ label: LABEL, args: [npxBin, "--yes", pkg], env, logName: "ompweb" });
+  const web = buildPlist({ label: LABEL, args: [npxBin, "--yes", pkg], env, logName: "tau" });
   const host = buildPlist({
     label: HOST_LABEL,
     args: [npxBin, "--yes", pkg, "host"],
     env: buildHostEnv({ svcPath, ompBin, agentDir }),
-    logName: "ompweb-host",
+    logName: "tau-host",
     // host.json does not exist until the web server first starts; the daemon exits until then.
     throttleInterval: 10,
   });
@@ -184,7 +184,7 @@ function install(pkgArg) {
   console.log(`installed: ${HOST_PLIST}`);
   console.log(`package:   ${pkg} (via npx --yes)`);
   console.log(`url:       http://${hostname}:${port}`);
-  console.log(`logs:      ${path.join(LOG_DIR, "ompweb.log")}, ${path.join(LOG_DIR, "ompweb-host.log")}`);
+  console.log(`logs:      ${path.join(LOG_DIR, "tau.log")}, ${path.join(LOG_DIR, "tau-host.log")}`);
   if (passwordHash) console.log("note:      the password hash is stored in the plist (mode 600)");
 }
 
@@ -220,7 +220,7 @@ function main() {
   else if (command === "uninstall") uninstall();
   else if (command === "status") status();
   else {
-    console.error("usage: ompweb-launchd [install [package-spec]|uninstall|status]");
+    console.error("usage: tau-launchd [install [package-spec]|uninstall|status]");
     process.exit(2);
   }
 }

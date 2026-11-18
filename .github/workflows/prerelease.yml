@@ -50,9 +50,9 @@ jobs:
           echo "RELEASE_TAG=$(date -u -d "@$now" +%Y%m%dT%H%M%SZ)-$(git rev-parse --short=10 "$SHA")" >> "$GITHUB_ENV"
       - name: Build the release binaries
         env:
-          OMP_WEB_RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          TAU_RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: sh scripts/build-release-binaries.sh
-      - run: npm run smoke -- --binary release/ompweb-linux-x64/ompweb
+      - run: npm run smoke -- --binary release/tau-linux-x64/tau
 
       - name: Publish the prerelease
         env:
@@ -62,7 +62,7 @@ jobs:
           tag="$RELEASE_TAG"
           subject=$(git log -1 --format=%s "$SHA")
           # A draft first, so a failed upload never leaves a published prerelease missing archives.
-          gh release create "$tag" release/ompweb-*.tar.gz release/ompweb-*.zip \
+          gh release create "$tag" release/tau-*.tar.gz release/tau-*.zip \
             --repo "$GITHUB_REPOSITORY" --target "$SHA" --draft --prerelease --title "$title" \
             --notes "Binaries built from $GITHUB_REPOSITORY@$SHA ($subject), tested with pi $PI_VERSION. Not a release: no npm package, no update notice."
           gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false

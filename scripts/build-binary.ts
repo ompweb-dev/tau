@@ -1,6 +1,6 @@
 // `npm run build:binary [-- --target bun-<os>-<arch>]` (after the client build): compiles server/binary.ts into
-// release/ompweb-<os>-<arch>/ompweb (ompweb.exe for Windows) next to the files it serves and the licenses of what it
-// redistributes, then archives that directory as release/ompweb-<os>-<arch>.tar.gz (.zip for Windows). Default
+// release/tau-<os>-<arch>/tau (tau.exe for Windows) next to the files it serves and the licenses of what it
+// redistributes, then archives that directory as release/tau-<os>-<arch>.tar.gz (.zip for Windows). Default
 // target: this machine.
 import { cpSync, existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -13,7 +13,7 @@ const { values } = parseArgs({ args: Bun.argv.slice(2), options: { target: { typ
 const target = (values.target ?? `bun-${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`) as Bun.Build.CompileTarget;
 const windows = target.startsWith("bun-windows-");
 // A -baseline target (x64 without AVX2, what releases ship) keeps the plain name, which the README and the update notice use.
-const name = `ompweb-${target.replace(/^bun-/, "").replace(/-baseline$/, "")}`;
+const name = `tau-${target.replace(/^bun-/, "").replace(/-baseline$/, "")}`;
 const release = path.join(root, "release");
 const out = path.join(release, name);
 rmSync(out, { recursive: true, force: true });
@@ -32,8 +32,8 @@ if (!existsSync(bunLicense)) {
 
 const result = await Bun.build({
   entrypoints: [path.join(root, "server", "binary.ts")],
-  // A .env or bunfig.toml in the directory ompweb is started from belongs to the user's project, not to ompweb.
-  compile: { target, outfile: path.join(out, windows ? "ompweb.exe" : "ompweb"), autoloadDotenv: false, autoloadBunfig: false },
+  // A .env or bunfig.toml in the directory tau is started from belongs to the user's project, not to tau.
+  compile: { target, outfile: path.join(out, windows ? "tau.exe" : "tau"), autoloadDotenv: false, autoloadBunfig: false },
   // What `bun build --compile --production` sets. Without the define the bundle reads NODE_ENV as "development", and
   // the server never writes the local daemon link (instrumentation.node.ts), so no session ever lists.
   minify: true,
@@ -48,7 +48,7 @@ if (!result.success) process.exit(1);
 // resolves the katex package), and the licenses of what ships. pi is not shipped: the binary spawns the one on PATH.
 const copy = (from: string, to: string) => cpSync(from, path.join(out, to), { recursive: true });
 for (const file of ["dist", "public", "LICENSE"]) copy(path.join(root, file), file);
-const releaseTag = process.env.OMP_WEB_RELEASE_TAG || (process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined);
+const releaseTag = process.env.TAU_RELEASE_TAG || (process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined);
 if (releaseTag) {
   if (!/^(?:v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?|\d{8}T\d{6}Z-[a-f0-9]{7,40})$/.test(releaseTag)) throw new Error("Invalid binary release tag");
   writeFileSync(path.join(out, "build-info.json"), JSON.stringify({ version: packageJson.version, releaseTag }) + "\n");

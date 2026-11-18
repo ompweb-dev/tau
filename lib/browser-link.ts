@@ -182,7 +182,7 @@ function guarded(ws: BrowserSocket, handle: () => void): void {
 }
 
 function fail(ws: BrowserSocket, error: unknown): void {
-  console.error(`[omp-web] browser link failed; closing it: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+  console.error(`[tau] browser link failed; closing it: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
   const link = ws.data.link;
   // Nothing half-applied is resumed: the browser resyncs.
   if (link) dispose(link, CLOSE.failed);
@@ -548,7 +548,7 @@ function apply(link: BrowserLink, ws: BrowserSocket, message: Record<string, unk
       if (typeof id !== "string" || !UPLOAD_ID_RE.test(id)) return ws.close(CLOSE.invalidData, "Invalid upload id");
       // The worker sends nothing of it after this line, so no chunk of it can follow.
       link.uploads.delete(id);
-      abortUpload(id, link.owner, typeof host === "string" && host.length <= 128 ? host : undefined).catch((error: unknown) => console.error(`[omp-web] upload abort failed: ${error instanceof Error ? error.message : String(error)}`));
+      abortUpload(id, link.owner, typeof host === "string" && host.length <= 128 ? host : undefined).catch((error: unknown) => console.error(`[tau] upload abort failed: ${error instanceof Error ? error.message : String(error)}`));
       return;
     }
     case "cmd":
@@ -576,7 +576,7 @@ function onUploadStart(link: BrowserLink, ws: BrowserSocket, message: Record<str
     queue(link, key, JSON.stringify({ type: "up_ack", id, received, done: received >= size, start: n, ...(proof ? { proof } : {}) }));
   }, (error: unknown) => {
     if (error instanceof HostOpError) return sink.error(error.status, error.code, error.message);
-    console.error(`[omp-web] upload start failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+    console.error(`[tau] upload start failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     sink.error(500, "upload_failed", "The upload could not start");
   });
 }

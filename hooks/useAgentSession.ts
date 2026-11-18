@@ -914,7 +914,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setActiveGoal(null);
       return;
     }
-    setActiveGoal(parseActiveGoal(sessionStorage.getItem(`omp-web:goal:${sid}`)));
+    setActiveGoal(parseActiveGoal(sessionStorage.getItem(`tau:goal:${sid}`)));
   }, [session?.id]);
 
   // A plan request is in progress only for its current agent turn.
@@ -1740,7 +1740,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setServerOutbox(serverOutboxRef.current);
     }
     void reconcileConfirmedLocalOutbox(sid, localOutbox, serverOutboxRef.current.seen)
-      .catch((error) => console.warn(`[omp-web] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
     // Held messages open the session channel even without a wrapper: subscribe to follow them.
     if (entries.length > 0 && !eventSourceRef.current) void connectEvents(sid, "connected");
   };
@@ -1754,7 +1754,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setServerOutbox(serverOutboxRef.current);
       const sid = sessionIdRef.current;
       if (sid) void reconcileConfirmedLocalOutbox(sid, event.entries, serverOutboxRef.current.seen)
-        .catch((error) => console.warn(`[omp-web] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
+        .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
       return;
     }
     const { stored } = event;
@@ -1771,7 +1771,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }), [connectEvents, markOutboxRepresented]);
 
   // ---------------------------------------------------------------------
-  // Host-tool bridge: omp-web registers tools the AGENT can call. The server
+  // Host-tool bridge: tau registers tools the AGENT can call. The server
   // emits host_tool_call frames; this UI executes them and answers with
   // host_tool_result (lib/rpc-manager routes registered tools to listeners).
   // The built-in `ask` tool already covers user questions via the extension
@@ -1908,7 +1908,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           await respondHostUri(sid, id, { content: text || "(clipboard is empty)", contentType: "text/plain" });
         } catch {
           // Permission denied / document not focused: surface a readable error.
-          await respondHostUri(sid, id, { isError: true, error: "Clipboard read was denied. Click into the omp-web window and try again." });
+          await respondHostUri(sid, id, { isError: true, error: "Clipboard read was denied. Click into the tau window and try again." });
         }
         return;
       }
@@ -2345,8 +2345,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
   }, [agentRunning, isCompacting, catchUp, reconcileAgentState, reconcileBtw]);
 
-  // A session can be mid-run without omp-web owning the process (someone is
-  // driving it from a terminal, or from another omp-web window). Nothing
+  // A session can be mid-run without tau owning the process (someone is
+  // driving it from a terminal, or from another tau window). Nothing
   // streams in that case, so derive activity from the transcript tail and poll
   // the sync endpoint for the duration — otherwise the current turn sits folded
   // and frozen while the agent works (#136).
@@ -2497,7 +2497,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setServerOutbox(serverOutboxRef.current);
           const sid = sessionIdRef.current;
           if (sid) void reconcileConfirmedLocalOutbox(sid, localOutboxRef.current, serverOutboxRef.current.seen)
-            .catch((error) => console.warn(`[omp-web] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
+            .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
           // Retire only confirmations the server has listed or settled; an older empty snapshot can overtake an ACK.
           setStoredOutbox((current) => current.filter((entry) => !serverOutboxRef.current.seen.has(entry.id)));
         }
@@ -3254,7 +3254,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   };
 
   /** Holds a message in the outbox (docs/specs/2026-11-04-message-outbox-design.md): true once this browser has
-   * stored it, after which omp-web delivers it whatever this tab does next. It shows as a held bubble until omp has it. */
+   * stored it, after which tau delivers it whatever this tab does next. It shows as a held bubble until omp has it. */
   const holdMessage = useCallback(async (sid: string, mode: OutboxMode, message: string, images?: Pick<AttachedImage, "data" | "mimeType">[], uploads?: string[], uploadProofs?: Record<string, string>, replaces?: string) => {
     try {
       await addToOutbox({
@@ -4246,7 +4246,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             const goal = createActiveGoal(args);
             setActiveGoal(goal);
             const activeSessionId = sessionIdRef.current;
-            if (activeSessionId) sessionStorage.setItem(`omp-web:goal:${activeSessionId}`, JSON.stringify(goal));
+            if (activeSessionId) sessionStorage.setItem(`tau:goal:${activeSessionId}`, JSON.stringify(goal));
           }
           return { handled: true };
         }

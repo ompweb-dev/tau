@@ -6,7 +6,7 @@ import { Popover } from "@base-ui/react/popover";
 import { useI18n } from "@/lib/i18n";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { AlertTriangle, Check } from "lucide-react";
-import OmpWebLogo from "./OmpWebLogo";
+import TauLogo from "./TauLogo";
 /**
  * Path label that ellipsizes on the LEFT, keeping the (most relevant) trailing
  * segments visible: "…orkspace/pi-web". Shows as much of the path as fits
@@ -328,18 +328,18 @@ function useScramble(target: string, running: boolean, reducedMotion: boolean): 
 
   return display;
 }
-function OmpWebTitle() {
+function TauTitle() {
   const [showVersion, setShowVersion] = useState(false);
   const [scrambling, setScrambling] = useState(false);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrambleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reducedMotion = usePrefersReducedMotion();
-  const commitHash = process.env.OMP_WEB_PUBLIC_COMMIT_HASH;
-  const commitDate = process.env.OMP_WEB_PUBLIC_COMMIT_DATE;
+  const commitHash = process.env.TAU_PUBLIC_COMMIT_HASH;
+  const commitDate = process.env.TAU_PUBLIC_COMMIT_DATE;
   const hasCommitDetails = Boolean(commitHash && commitDate);
   const VersionTrigger = hasCommitDetails ? Popover.Trigger : "button";
 
-  const target = showVersion ? `v${process.env.OMP_WEB_PUBLIC_APP_VERSION ?? "0.0.0"}` : "tau";
+  const target = showVersion ? `v${process.env.TAU_PUBLIC_APP_VERSION ?? "0.0.0"}` : "tau";
   const display = useScramble(target, scrambling, reducedMotion);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -380,7 +380,7 @@ function OmpWebTitle() {
         }}
         title={showVersion ? "Show tau name" : "Show tau version"}
       >
-        <OmpWebLogo size={20} />
+        <TauLogo size={20} />
         {!scrambling && !showVersion ? (
           <span>
             <span style={{ color: "var(--accent)" }}>tau</span>
@@ -502,7 +502,7 @@ function UnreadSessionIndicator({ size = 14 }: { size?: number }) {
   );
 }
 export {
-  OmpWebTitle,
+  TauTitle,
   PathLabel,
   ExitedSessionIndicator,
   RunningSessionIndicator,

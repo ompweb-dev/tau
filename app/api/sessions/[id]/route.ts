@@ -140,7 +140,7 @@ export async function DELETE(
     try {
       forgetSessionReplacementMappings(id);
     } catch (error) {
-      console.warn(`[omp-web] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
     }
     invalidateHostSessionList(resolved.host.id);
     clearExitedRpcSession(id);
@@ -148,7 +148,7 @@ export async function DELETE(
       removeSessionWatches(id);
     } catch (error) {
       // The delete succeeded; a watch left behind ends at the outbox's 404 for this session.
-      console.warn(`[omp-web] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
     }
     return Response.json({ ok: true, ...result.value });
   } catch (error) {

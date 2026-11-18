@@ -51,7 +51,7 @@ import {
   type WorktreeState,
   hostsCameOnline,
 } from "./SessionSidebar-helpers";
-import { OmpWebTitle, SIDEBAR_BUTTON_TRANSITION, SidebarIconButton, SidebarPortalMenu } from "./SessionSidebar-chrome";
+import { TauTitle, SIDEBAR_BUTTON_TRANSITION, SidebarIconButton, SidebarPortalMenu } from "./SessionSidebar-chrome";
 import { HostGroup, ProjectRow } from "./SessionSidebar-rows";
 
 /** Deadline for one /api/sessions fetch. A wedged-but-listening server never
@@ -97,7 +97,7 @@ interface Props {
   usageVisible?: boolean;
   /** Opens the app settings (pinned sidebar footer row). */
   onOpenSettings?: () => void;
-  /** True when an omp/ompweb update is available — shows a badge on the gear. */
+  /** True when an omp/tau update is available — shows a badge on the gear. */
   updateAvailable?: boolean;
   /** Opens the archived sessions browser. */
   onOpenArchive?: () => void;
@@ -132,7 +132,7 @@ const projectRequestTarget = (project: ManagedProject) => project.poolId && proj
   ? { poolId: project.poolId, projectId: project.projectId }
   : { cwd: project.path, hostId: remoteHostId(project.hostId) };
 const THIS_MACHINE = { id: LOCAL_HOST_ID, label: "" };
-const COLLAPSED_HOSTS_STORAGE_KEY = "omp-web:collapsed-hosts";
+const COLLAPSED_HOSTS_STORAGE_KEY = "tau:collapsed-hosts";
 
 function loadCollapsedHosts(): Set<string> {
   try {
@@ -1513,7 +1513,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
                 <X size={16} strokeWidth={1.8} aria-hidden="true" />
               </button>
             )}
-            <OmpWebTitle />
+            <TauTitle />
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {navigation && (

@@ -123,7 +123,7 @@ test("Enter during a run queues a follow-up with the attached image and text fil
 });
 
 test("a stored Steer preference still steers Enter during a run", async () => {
-  localStorage.setItem("omp-web:submit-during-run", "steer");
+  localStorage.setItem("tau:submit-during-run", "steer");
   const user = userEvent.setup();
   const calls = await renderRunningWithAttachments();
   await user.type(screen.getByRole("textbox"), "look at this");
@@ -142,7 +142,7 @@ test("attachments alone turn Stop into Queue, which queues them as a follow-up",
 });
 
 test("a stored Steer preference turns the primary button into Steer, which steers like Enter", async () => {
-  localStorage.setItem("omp-web:submit-during-run", "steer");
+  localStorage.setItem("tau:submit-during-run", "steer");
   const user = userEvent.setup();
   const calls = await renderRunningWithAttachments();
   await user.type(screen.getByRole("textbox"), "look at this");

@@ -1,4 +1,4 @@
-// Main-server end of the maintenance API (maintenance-protocol.ts): accepts `ompweb host` daemons on
+// Main-server end of the maintenance API (maintenance-protocol.ts): accepts `tau host` daemons on
 // /api/hosts/maintenance and carries the server's requests to them. Independent of the application link (hub.ts): its own
 // sockets, lifecycle and version, so a host whose application protocol differs stays reachable for upgrades.
 // Everything a daemon sends is untrusted input. No `next/*` or `@/` imports.
@@ -34,7 +34,7 @@ export interface MaintenanceSocketData {
 /** The server's software, as discovery reports it for the host to inspect. */
 export interface MaintenanceServerInfo {
   protocolVersion: number;
-  ompwebVersion: string;
+  tauVersion: string;
 }
 
 /** The part of Bun's ServerWebSocket the hub uses, so tests drive it with a plain object. */
@@ -90,7 +90,7 @@ export function handleMaintenanceUpgrade(request: Request, upgrade: (data: Maint
   const host = hostFromBearer(request);
   if (host instanceof Response) return host;
   // The daemon retries a 503: it lands on the next server instead.
-  if (hub().frozen) return refuse("omp-web is shutting down", 503);
+  if (hub().frozen) return refuse("tau is shutting down", 503);
   if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
     return Response.json({ ...server, apiVersion: MAINTENANCE_API_VERSION, capabilities: [...MAINTENANCE_OPS] }, { headers: { "cache-control": "no-store" } });
   }
@@ -130,7 +130,7 @@ function guarded(ws: MaintenanceSocket, handle: () => void): void {
   try {
     handle();
   } catch (error) {
-    console.error(`[omp-web] maintenance link of ${ws.data.hostId} failed; closing it: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+    console.error(`[tau] maintenance link of ${ws.data.hostId} failed; closing it: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     ws.close();
   }
 }
@@ -237,7 +237,7 @@ function changed(): void {
     try {
       listener();
     } catch (error) {
-      console.error(`[omp-web] maintenance listener failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      console.error(`[tau] maintenance listener failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
     }
   }
 }
@@ -253,7 +253,7 @@ export function getMaintenanceHost(id: string): MaintenanceHello | null {
  * 501 `unsupported_op` (the host did not advertise it), 413 `too_large`, 429 `busy`, and whatever the host reports.
  */
 export async function requestMaintenance(id: string, op: MaintenanceOp, args: Record<string, unknown>, timeoutMs: number = maintenanceTimings.requestMs): Promise<unknown> {
-  if (hub().frozen) throw new MaintenanceError(503, "frozen", "omp-web is shutting down");
+  if (hub().frozen) throw new MaintenanceError(503, "frozen", "tau is shutting down");
   const link = hub().links.get(id);
   if (!link) throw new MaintenanceError(503, "no_link", "The host has no maintenance link");
   if (!link.hello.capabilities.includes(op)) throw new MaintenanceError(501, "unsupported_op", `The host does not support ${op}`);
@@ -287,12 +287,12 @@ export function onMaintenanceChange(listener: () => void): () => void {
 /** Close a host's maintenance link (a revoked or deleted host); its daemon redials and its token check decides. */
 export function closeMaintenanceHost(id: string): void {
   const link = hub().links.get(id);
-  if (link) closeLink(link, MAINTENANCE_CLOSE.policy, "The host's maintenance link was closed by omp-web");
+  if (link) closeLink(link, MAINTENANCE_CLOSE.policy, "The host's maintenance link was closed by tau");
 }
 
 /** This server is shutting down: from here on no request or upgrade is accepted and every link closes 1001, so its
  * daemon redials the next server. Host children are untouched. */
 export function freezeMaintenance(): void {
   hub().frozen = true;
-  for (const link of [...hub().links.values()]) closeLink(link, MAINTENANCE_CLOSE.goingAway, "omp-web is restarting");
+  for (const link of [...hub().links.values()]) closeLink(link, MAINTENANCE_CLOSE.goingAway, "tau is restarting");
 }

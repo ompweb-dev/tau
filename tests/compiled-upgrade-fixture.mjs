@@ -1,12 +1,12 @@
 // Build entrypoint of the scratch binaries in lib/compiled-upgrade.integration.test.mjs; never shipped or imported by
-// product code. Only delivery is replaced: when OMPWEB_UPGRADE_FIXTURE names a fixture map, the npm registry,
+// product code. Only delivery is replaced: when TAU_UPGRADE_FIXTURE names a fixture map, the npm registry,
 // raw-GitHub, release-metadata and release-asset requests are answered from it before the real server/binary.ts
 // (server, host, update worker, preflight, GUI API) is loaded. The map is read per request/process, so its path in the
 // environment survives every restart the update performs.
 import { readFileSync } from "node:fs";
 import packageJson from "../package.json";
 
-const mapPath = process.env.OMPWEB_UPGRADE_FIXTURE;
+const mapPath = process.env.TAU_UPGRADE_FIXTURE;
 if (mapPath) {
   const map = () => JSON.parse(readFileSync(mapPath, "utf8"));
   // A candidate whose web server cannot start: the real update worker must put the previous release back.

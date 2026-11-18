@@ -214,7 +214,7 @@ function move(view, from, to) {
 }
 
 function associations() {
-  return Object.keys(sessionStorage).filter((key) => key.startsWith("omp-web:stt-moved-job:"));
+  return Object.keys(sessionStorage).filter((key) => key.startsWith("tau:stt-moved-job:"));
 }
 
 test("an uploaded job survives Edit, navigation, and a fresh B hook without appearing in A or an unrelated scope", async () => {
@@ -481,7 +481,7 @@ test("claim transport retries keep one claim token, and a foreign owner still wa
   const job = await upload(original.view, "followup");
   move(original.view, "A", "B");
   original.view.unmount();
-  sessionStorage.setItem("omp-web:stt-owner-token", "different-tab-owner");
+  sessionStorage.setItem("tau:stt-owner-token", "different-tab-owner");
   complete(job);
   const restored = mount("B");
   await flush();
@@ -710,7 +710,7 @@ for (const detached of [false, true]) {
     const storagePrototype = Object.getPrototypeOf(sessionStorage);
     const setItem = storagePrototype.setItem;
     override(storagePrototype, "setItem", function (key, value) {
-      if (key.startsWith("omp-web:stt-moved-job:")) throw new DOMException("Storage denied or full", "QuotaExceededError");
+      if (key.startsWith("tau:stt-moved-job:")) throw new DOMException("Storage denied or full", "QuotaExceededError");
       return setItem.call(this, key, value);
     });
     move(original.view, "A", "B");
@@ -746,7 +746,7 @@ test("an in-memory unresolved Discard still closes the late upload when recovery
   const storagePrototype = Object.getPrototypeOf(sessionStorage);
   const setItem = storagePrototype.setItem;
   override(storagePrototype, "setItem", function (key, value) {
-    if (key.startsWith("omp-web:stt-moved-job:")) throw new DOMException("Storage unavailable", "SecurityError");
+    if (key.startsWith("tau:stt-moved-job:")) throw new DOMException("Storage unavailable", "SecurityError");
     return setItem.call(this, key, value);
   });
   move(original.view, "A", "B");

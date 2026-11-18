@@ -616,7 +616,7 @@ export async function restoreArchivedSession(key: string, sessionsRoot = getSess
   await mkdir(path.dirname(destination), { recursive: true });
   await validateRestorePath(activeRoot, destination);
   await validateRestorePath(activeRoot, destinationArtifacts);
-  const tempDir = await mkdtemp(path.join(path.dirname(destination), ".omp-web-restore-"));
+  const tempDir = await mkdtemp(path.join(path.dirname(destination), ".tau-restore-"));
   const tempFile = path.join(tempDir, path.basename(destination));
   // Same filesystem as the archive, independent of the sessions filesystem. Reading this private hard link pins exactly
   // the source generation staged here, even if another restorer consumes and later re-archives the same pathname.

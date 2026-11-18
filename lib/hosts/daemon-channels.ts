@@ -259,9 +259,9 @@ export class ChannelTable {
   private async create(launch: SpawnRequest, identity: string | null, preparingLinkId?: string): Promise<Channel> {
     this.spawningCount++;
     try {
-      if (this.stopped) throw new HostOpError(503, "host_stopping", "ompweb host is stopping");
+      if (this.stopped) throw new HostOpError(503, "host_stopping", "tau host is stopping");
       const spawned = await this.deps.spawn(launch);
-      if (this.stopped) { spawned.transport.killTree(true); throw new HostOpError(503, "host_stopping", "ompweb host is stopping"); }
+      if (this.stopped) { spawned.transport.killTree(true); throw new HostOpError(503, "host_stopping", "tau host is stopping"); }
       const ch = randomUUID();
       const channel: Channel = { ...spawned, ch, launch, pending: new PendingRequests(LINK_LIMITS.pendingBytes, identity), snapshot: new StreamSnapshot(),
         members: new Map(), aliases: new Set(identity ? [identity] : []), files: new Set(launch.sessionFile ? [launch.sessionFile] : []),

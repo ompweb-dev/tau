@@ -83,7 +83,7 @@ export function HostUpdates({ host }: { host: HostRow }) {
         }
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         // A successful status read, not POST acceptance, establishes the result.
-        if (!data.ompweb || !data.omp) throw new Error(t("hostUpdates.invalidResponse"));
+        if (!data.tau || !data.omp) throw new Error(t("hostUpdates.invalidResponse"));
         const next = data as HostUpdateInfo;
         setInfo(next);
         setError(null);
@@ -179,10 +179,10 @@ export function HostUpdates({ host }: { host: HostRow }) {
           <RefreshCw size={13} aria-hidden="true" />{t(loading ? "hostUpdates.checking" : error || needsStatus ? "hostUpdates.retry" : "hostUpdates.check")}
         </button>
       </div>
-      {(["ompweb", "omp"] as const).map((target) => {
+      {(["tau", "omp"] as const).map((target) => {
         const software = info?.[target];
         const label = t(`hostUpdates.${target}`);
-        const fallbackVersion = target === "ompweb" ? host.ompwebVersion : host.ompVersion?.replace(/^(?:omp|pi)\//, "");
+        const fallbackVersion = target === "tau" ? host.tauVersion : host.ompVersion?.replace(/^(?:omp|pi)\//, "");
         const updateDisabled = disabled || needsStatus || operation?.recoveryRequired === true || !software?.canUpdate;
         const forceable = operation?.recoveryRequired !== true && software?.updateAvailable === true && !software.canUpdate && software.canForceUpdate === true;
         return (

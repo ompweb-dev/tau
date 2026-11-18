@@ -1,5 +1,5 @@
 // Composer file uploads, the daemon's side (docs/specs/2026-11-02-file-uploads-design.md, U3 and U5): an upload is
-// staged as `<agent dir>/omp-web/uploads/<id>.part` plus `<id>.json`, written in order at the part's length, and on
+// staged as `<agent dir>/tau/uploads/<id>.part` plus `<id>.json`, written in order at the part's length, and on
 // attach hard-linked (or copied) into the session's `local://uploads/`.
 // Loaded by the daemon through jiti: no `@/` imports and no Bun APIs.
 import { createHash, randomUUID } from "node:crypto";
@@ -147,7 +147,7 @@ export class StagedUploads {
 
   constructor(
     private readonly send: (ack: UploadAck) => void,
-    readonly dir: string = join(getAgentDir(), "omp-web", "uploads"),
+    readonly dir: string = join(getAgentDir(), "tau", "uploads"),
   ) {}
   /** Includes accepted controls before their first await, queued writes and still-open transfers. */
   busy(): boolean {
@@ -202,7 +202,7 @@ export class StagedUploads {
         await rm(receipt.candidate);
       }
     } catch (error) {
-      if (errno(error) !== "ENOENT") console.error("[ompweb host] could not clean workspace upload candidate", error);
+      if (errno(error) !== "ENOENT") console.error("[tau host] could not clean workspace upload candidate", error);
     }
   }
   private async remove(id: string): Promise<void> {
@@ -222,7 +222,7 @@ export class StagedUploads {
       } catch (error) {
         // Its files could not be removed (a .part replaced by a directory, EPERM): the upload is closed already, and
         // the file scan below tries them again on every sweep.
-        console.error(`[ompweb host] could not delete staged upload ${id}: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`[tau host] could not delete staged upload ${id}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     let names: string[];
@@ -453,7 +453,7 @@ export class StagedUploads {
         try { await this.saveMeta(id, meta); }
         catch { throw uncertainPublication(); }
         await this.removeCandidate(receipt);
-        await rm(part, { force: true }).catch((error) => console.error("[ompweb host] could not remove published staging", error));
+        await rm(part, { force: true }).catch((error) => console.error("[tau host] could not remove published staging", error));
         return receipt.result;
       } catch (error) {
         if (owned) await this.removeCandidate({ directory, canonical, name, conflict, candidate, identity: owned, parent });

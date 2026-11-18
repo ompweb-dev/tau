@@ -16,7 +16,7 @@ import { SubagentTranscriptDialog } from "./SubagentTranscriptDialog";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ComposerPanels } from "./ComposerPanels";
 import { BtwHistoryDialog, type BtwPanelProps } from "./BtwPanel";
-import OmpWebLogo from "./OmpWebLogo";
+import TauLogo from "./TauLogo";
 import { CHAT_COLUMN_MAX_WIDTH, MINIMAP_WIDTH } from "@/lib/chat-layout";
 import { WorkspaceState } from "./AppShell-layout";
 import { useAgentSession, type AgentPhase, type NoticeItem, type SubagentInfo } from "@/hooks/useAgentSession";
@@ -345,7 +345,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
     // With "Hide tool activity while working" on (the default) the running turn
     // folds like a finished one; off restores the flat tail.
     if (hideToolActivity) return false;
-    // `sessionBusy` only goes true for a run omp-web owns, so a session driven
+    // `sessionBusy` only goes true for a run tau owns, so a session driven
     // by another `omp` process would never get a live tail; the transcript-tail
     // heuristic supplies that missing case.
     return (sessionBusy || externalRunActive || isStreaming) && row.endIndex === messages.length && row.userIndex === lastAnchorIdx;
@@ -1184,12 +1184,12 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
-                <OmpWebLogo size={26} />
-                <span className="omp-wordmark" style={{ fontSize: 18, color: "var(--text)", fontWeight: 600, letterSpacing: "0.02em", flexShrink: 0, whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>omp web</span>
+                <TauLogo size={26} />
+                <span className="omp-wordmark" style={{ fontSize: 18, color: "var(--text)", fontWeight: 600, letterSpacing: "0.02em", flexShrink: 0, whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>tau</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  web <span style={{ color: "var(--text)" }}>v{process.env.OMP_WEB_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
+                  web <span style={{ color: "var(--text)" }}>v{process.env.TAU_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
                 </span>
                 <OmpRuntimeVersion />
               </div>

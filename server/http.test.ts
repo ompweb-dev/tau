@@ -109,7 +109,7 @@ test("serveFile refuses traversal and sets the cache policy", async () => {
 });
 
 test("serveFile never follows a symlink out of its directory", { skip: process.platform === "win32" }, async (t) => {
-  const packageDir = mkdtempSync(path.join(os.tmpdir(), "omp-web-serve-link-"));
+  const packageDir = mkdtempSync(path.join(os.tmpdir(), "tau-serve-link-"));
   t.after(() => rmSync(packageDir, { recursive: true, force: true }));
   const outside = path.join(packageDir, "outside");
   mkdirSync(outside);
@@ -152,7 +152,7 @@ test("serveFile sends Last-Modified and a weak ETag, and answers a match with 30
 });
 
 test("serveFile marks hashed assets immutable", async () => {
-  const packageDir = mkdtempSync(path.join(os.tmpdir(), "omp-web-serve-file-"));
+  const packageDir = mkdtempSync(path.join(os.tmpdir(), "tau-serve-file-"));
   try {
     await Bun.write(path.join(packageDir, "dist", "assets", "app-1234.js"), "x");
     const response = await serveFile(new Request("http://localhost/assets/app-1234.js"), packageDir, false);
@@ -164,7 +164,7 @@ test("serveFile marks hashed assets immutable", async () => {
 });
 
 test("serveFile skips a missing directory and serves from it once it exists", async (t) => {
-  const packageDir = mkdtempSync(path.join(os.tmpdir(), "omp-web-serve-missing-"));
+  const packageDir = mkdtempSync(path.join(os.tmpdir(), "tau-serve-missing-"));
   t.after(() => rmSync(packageDir, { recursive: true, force: true }));
   const get = () => serveFile(new Request("http://localhost/late.txt"), packageDir, false);
   assert.equal(await get(), null);
@@ -174,7 +174,7 @@ test("serveFile skips a missing directory and serves from it once it exists", as
 
 test("serveFile follows a static directory swapped while it runs", async (t) => {
   // A release swapped in place: public/ is a link (a junction on Windows) that moves to a new directory.
-  const packageDir = mkdtempSync(path.join(os.tmpdir(), "omp-web-serve-swap-"));
+  const packageDir = mkdtempSync(path.join(os.tmpdir(), "tau-serve-swap-"));
   t.after(() => rmSync(packageDir, { recursive: true, force: true }));
   for (const release of ["old", "new"]) await Bun.write(path.join(packageDir, release, "page.txt"), release);
   const link = path.join(packageDir, "public");
@@ -188,22 +188,22 @@ test("serveFile follows a static directory swapped while it runs", async (t) => 
 
 test("renderIndex escapes the install name into the titles and adds the manifest link", () => {
   const html = '<html><head><title>tau</title><meta name="apple-mobile-web-app-title" content="tau" /></head><body></body></html>';
-  const previous = process.env.OMP_WEB_NAME;
-  process.env.OMP_WEB_NAME = "<script>";
+  const previous = process.env.TAU_NAME;
+  process.env.TAU_NAME = "<script>";
   try {
     const rendered = renderIndex(html, new Request("http://localhost/"));
     assert.match(rendered, /<title>&lt;script&gt;<\/title>/);
     assert.match(rendered, /<meta name="apple-mobile-web-app-title" content="&lt;script&gt;"/);
     assert.match(rendered, /<link rel="manifest" href="\/api\/manifest" crossorigin="use-credentials"><\/head>/);
   } finally {
-    if (previous === undefined) delete process.env.OMP_WEB_NAME;
-    else process.env.OMP_WEB_NAME = previous;
+    if (previous === undefined) delete process.env.TAU_NAME;
+    else process.env.TAU_NAME = previous;
   }
 });
 
 test("renderIndex puts the remembered theme color into the manifest link, and nothing else", () => {
   const link = (cookie: string) => /<link rel="manifest" href="([^"]*)"/.exec(renderIndex("<head></head>", new Request("http://localhost/", { headers: { cookie } })))?.[1];
   // Chrome refreshes an installed app's manifest without cookies, so the color has to be in the link.
-  assert.equal(link("a=1; omp-theme-color=F2F0EA"), "/api/manifest?theme=F2F0EA");
-  for (const value of ["zzzzzz", "%22%3E%3Cscript%3E", "abcdef0"]) assert.equal(link(`omp-theme-color=${value}`), "/api/manifest", value);
+  assert.equal(link("a=1; tau-theme-color=F2F0EA"), "/api/manifest?theme=F2F0EA");
+  for (const value of ["zzzzzz", "%22%3E%3Cscript%3E", "abcdef0"]) assert.equal(link(`tau-theme-color=${value}`), "/api/manifest", value);
 });

@@ -52,7 +52,7 @@ for (const isStreaming of [false, true]) {
 
 for (const behavior of ["queue", "steer"]) {
   test(`/btw offers Send during a run regardless of the ${behavior} preference`, async () => {
-    localStorage.setItem("omp-web:submit-during-run", behavior);
+    localStorage.setItem("tau:submit-during-run", behavior);
     const user = userEvent.setup();
     const { calls } = renderComposer({ isStreaming: true });
     await user.type(screen.getByRole("textbox"), "/btw what is 2+2");
@@ -63,7 +63,7 @@ for (const behavior of ["queue", "steer"]) {
 }
 
 test("without builtin dispatch, /btw during a run keeps the Queue button and queues as ordinary text", async () => {
-  localStorage.setItem("omp-web:submit-during-run", "queue");
+  localStorage.setItem("tau:submit-during-run", "queue");
   const user = userEvent.setup();
   const { calls } = renderComposer({ isStreaming: true, onBuiltinCommand: undefined });
   await user.type(screen.getByRole("textbox"), "/btw what is 2+2");

@@ -160,7 +160,7 @@ test("an entry whose session no longer exists still renders and opens by id", ()
 });
 
 test("an entry without a session is not focusable or clickable", () => {
-  act(() => { notificationHistory.add({ type: "completed", sessionId: "", sessionName: "omp web" }); });
+  act(() => { notificationHistory.add({ type: "completed", sessionId: "", sessionName: "tau" }); });
   const row = render(React.createElement(NotificationList)).container.querySelector("li");
   assert.equal(row.hasAttribute("tabindex"), false);
   assert.equal(row.style.cursor, "");

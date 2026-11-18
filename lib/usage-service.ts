@@ -21,7 +21,7 @@ import type {
  * Version of the rules `parseSessionUsage` applies. Bump it whenever those
  * rules change what a transcript yields: records from other rules are never
  * reused. It is stored per synced file in usage.db — per file, not per
- * database, because several omp-web builds can share one usage.db, so a file
+ * database, because several tau builds can share one usage.db, so a file
  * last synced by any other rule set is re-parsed — and on every in-memory
  * cache entry, since the cache lives on globalThis and outlives a dev hot
  * reload that brings in new rules.

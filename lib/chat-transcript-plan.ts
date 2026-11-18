@@ -128,7 +128,7 @@ export function planTurnSegments(
 
 /**
  * True when the tail of the transcript looks mid-run, without asking the owning
- * process. omp-web receives SSE frames only for runs it spawned itself, so a
+ * process. tau receives SSE frames only for runs it spawned itself, so a
  * session driven by a separate `omp` process had no signal at all and its
  * in-progress turn was always folded into "Process details" (#136).
  *

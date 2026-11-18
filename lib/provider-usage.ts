@@ -220,7 +220,7 @@ async function fetchProviderUsage(refresh = false): Promise<string> {
       maxBuffer: USAGE_MAX_BUFFER,
       windowsHide: true,
       // No `env` option would inherit the server's full environment,
-      // including omp-web's own secrets, into this child.
+      // including tau's own secrets, into this child.
       env: createChildProcessEnvironment(),
     });
   }

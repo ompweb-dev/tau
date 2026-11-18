@@ -1,4 +1,4 @@
-// `ompweb recover-host` and the web server's local recovery: replace a host that cannot update itself (a daemon whose
+// `tau recover-host` and the web server's local recovery: replace a host that cannot update itself (a daemon whose
 // updater refuses its sessions, its supervisor or its protocol, or one that has no force) with an official release. The
 // caller needs nothing from the old host but its private control endpoint (status, and drain to prove it idle): not its
 // updater, not its runner. The CLI runs from a helper binary a legacy bootstrap staged in a scratch directory, never from
@@ -26,11 +26,11 @@ import type { ApprovedReleasePin, HostUpdateCompatibility, HostUpdateOperation }
 import { candidateProtocol, claimHostUpdate, getHostUpdateOperation, HostUpdateError, launchHostUpdateWorker, releaseHostUpdateClaim, resolvePackageManager } from "./updates";
 import { assertOwnedPath, finishHostUpdate, HOST_INSTALL_SHARED, HOST_VERSION_PATTERN, hostLaunch, hostUpdateRoot, installedHostVersionMatches, requireHostUpdateRecovery, sharedHostInstallReason, validateApprovedReleasePin, writeHostUpdateDecision, writeHostUpdateJson, type HostUpdateDescriptor } from "./update-worker";
 
-/** A legacy bootstrap refuses a helper binary without this literal: an older `ompweb` takes the unknown subcommand for a positional and starts a web server. */
-export const RECOVERY_CLI_MARKER = "ompweb-recovery-cli-v1";
-export const RECOVERY_PIN_CLI_MARKER = "ompweb-recovery-pin-cli-v1";
-export const RECOVERY_PHASED_CLI_MARKER = "ompweb-recovery-phased-cli-v1";
-const USAGE = `${RECOVERY_CLI_MARKER} ${RECOVERY_PIN_CLI_MARKER} ${RECOVERY_PHASED_CLI_MARKER}: ompweb recover-host --operation <uuid> --version <semver> --min-protocol <n> --max-protocol <n> [--phase prepare|commit|cancel] [--force] [--release-pin <base64url>]`;
+/** A legacy bootstrap refuses a helper binary without this literal: an older `tau` takes the unknown subcommand for a positional and starts a web server. */
+export const RECOVERY_CLI_MARKER = "tau-recovery-cli-v1";
+export const RECOVERY_PIN_CLI_MARKER = "tau-recovery-pin-cli-v1";
+export const RECOVERY_PHASED_CLI_MARKER = "tau-recovery-phased-cli-v1";
+const USAGE = `${RECOVERY_CLI_MARKER} ${RECOVERY_PIN_CLI_MARKER} ${RECOVERY_PHASED_CLI_MARKER}: tau recover-host --operation <uuid> --version <semver> --min-protocol <n> --max-protocol <n> [--phase prepare|commit|cancel] [--force] [--release-pin <base64url>]`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface HostRecoveryInput {
@@ -80,10 +80,10 @@ interface OldHostInstall {
 }
 /** The old host's installation from what its control endpoint reports (its executable and entrypoint): a complete binary release directory or an installed npm/bun package; anything else is not guessed at. */
 function oldHostInstall(status: HostControlStatus): OldHostInstall {
-  const binaryName = process.platform === "win32" ? "ompweb.exe" : "ompweb";
+  const binaryName = process.platform === "win32" ? "tau.exe" : "tau";
   if (basename(status.executable) === binaryName && existsSync(join(dirname(status.executable), "dist", "index.html"))) return { installMethod: "binary", installDir: dirname(status.executable), runtime: status.executable };
   const packageDir = dirname(dirname(status.entrypoint));
-  if (["omp-web.js", "omp-web-host.js"].includes(basename(status.entrypoint)) && existsSync(join(packageDir, "package.json")) && JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).name === "@ompweb-dev/tau") return { installMethod: detectInstallMethod(packageDir), installDir: packageDir, runtime: status.executable };
+  if (["tau.js", "tau-host.js"].includes(basename(status.entrypoint)) && existsSync(join(packageDir, "package.json")) && JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).name === "@ompweb-dev/tau") return { installMethod: detectInstallMethod(packageDir), installDir: packageDir, runtime: status.executable };
   throw new Error("The running host is neither a complete binary release nor an installed npm/bun package; recover it manually");
 }
 
@@ -120,7 +120,7 @@ interface PreparedRecovery {
 /** Every precondition short of claiming the operation or touching the host: what the old host is, whether its installation is replaced or only restarted, and what supervises it. */
 async function prepare({ version, compatibility, releasePin }: Pick<HostRecoveryInput, "version" | "compatibility" | "releasePin">, deps: HostRecoveryDependencies, refresh: boolean): Promise<PreparedRecovery> {
   // Never bypassed, force or not.
-  if (isUpdateDisabled()) throw new HostRecoveryRefusal("blocked", "updates_disabled", "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE", false, 403);
+  if (isUpdateDisabled()) throw new HostRecoveryRefusal("blocked", "updates_disabled", "Updates are disabled by TAU_DISABLE_AUTOUPDATE", false, 403);
   let status: HostControlStatus;
   try { status = await deps.control("status"); }
   catch (error) { throw new HostRecoveryRefusal("failed", "no_host", `No host answers on this machine's private control endpoint: ${error instanceof Error ? error.message : String(error)}`); }
@@ -235,10 +235,10 @@ export async function startHostRecovery(input: HostRecoveryInput, deps: HostReco
         throw new HostRecoveryRefusal("blocked", busy ? "host_busy" : "drain_failed", error instanceof Error ? error.message : String(error), busy);
       }
     }
-    const operation: HostUpdateOperation = { id: operationId, target: "ompweb", version, state: "running", ...(force ? { force: true as const } : {}) };
+    const operation: HostUpdateOperation = { id: operationId, target: "tau", version, state: "running", ...(force ? { force: true as const } : {}) };
     writeHostUpdateJson(join(root, "status.json"), { operation, startedAt: Date.now(), daemonPid: status.pid });
     recorded = true;
-    const descriptor: HostUpdateDescriptor = { id: operationId, target: "ompweb", version, fromVersion: status.version, ...layout, daemonPid: status.pid, process: supervised, managerPath, releaseRepo: deps.repo(), restartOnly: restartOnly || undefined, prepareOnly: input.phase === "prepare" || undefined, force: force || undefined, receipt: compatibility, recovery: { drained } };
+    const descriptor: HostUpdateDescriptor = { id: operationId, target: "tau", version, fromVersion: status.version, ...layout, daemonPid: status.pid, process: supervised, managerPath, releaseRepo: deps.repo(), restartOnly: restartOnly || undefined, prepareOnly: input.phase === "prepare" || undefined, force: force || undefined, receipt: compatibility, recovery: { drained } };
     descriptor.releasePin = input.releasePin;
     descriptor.requireReleasePin = input.requireReleasePin;
     await deps.launchWorker(root, descriptor, typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "compiled" : "script");
@@ -257,7 +257,7 @@ export async function startHostRecovery(input: HostRecoveryInput, deps: HostReco
         }
       } catch (cleanupError) {
         detail += `; maintenance state could not be released: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`;
-        if (!recorded) writeHostUpdateJson(join(root, "status.json"), { operation: { id: operationId, target: "ompweb", version, state: "running", ...(force ? { force: true as const } : {}) }, startedAt: Date.now(), daemonPid: status.pid });
+        if (!recorded) writeHostUpdateJson(join(root, "status.json"), { operation: { id: operationId, target: "tau", version, state: "running", ...(force ? { force: true as const } : {}) }, startedAt: Date.now(), daemonPid: status.pid });
         requireHostUpdateRecovery(operationId, detail);
         throw new HostRecoveryRefusal("failed", "recovery_required", `Recovery required: ${detail}`, false, 500);
       }
@@ -317,7 +317,7 @@ export function parseHostRecoveryArgs(argv: string[]): HostRecoveryInput {
   return { operationId: operation.toLowerCase(), version, compatibility: { min: Number(min), max: Number(max) }, force, ...(phase ? { phase: phase as HostRecoveryInput["phase"] } : {}), ...(releasePin ? { releasePin, requireReleasePin: true } : {}) };
 }
 
-/** `ompweb recover-host <argv>`: the exit code; one JSON line on stdout says what happened. 0 only once the detached worker was launched (or the host already runs the release). */
+/** `tau recover-host <argv>`: the exit code; one JSON line on stdout says what happened. 0 only once the detached worker was launched (or the host already runs the release). */
 export async function runHostRecoveryCli(argv: string[]): Promise<number> {
   let input: HostRecoveryInput;
   try { input = parseHostRecoveryArgs(argv); }

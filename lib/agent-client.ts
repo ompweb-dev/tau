@@ -16,7 +16,7 @@ import { formatApiError } from "@/lib/i18n/api-error";
 // decision happens inside the route, which only sees id + query string.
 const advisorSpawnSessions = new Set<string>();
 
-const OUTBOX_SCOPE_KEY = "omp-web:outbox-scope";
+const OUTBOX_SCOPE_KEY = "tau:outbox-scope";
 let outboxScope: string | null = null;
 
 /** Nonsecret installation/auth fingerprint, not a cookie: reuse it offline, but never rebind a stored entry. */
@@ -31,7 +31,7 @@ export async function getOutboxScope(sessionId: string): Promise<string> {
   }
   if (!outboxScope) {
     const result = await sendAgentCommand<{ scope: string }>(sessionId, { type: "outbox_scope" });
-    if (!result?.scope) throw new Error("The message cannot be saved until omp-web has confirmed this installation.");
+    if (!result?.scope) throw new Error("The message cannot be saved until tau has confirmed this installation.");
     rememberOutboxScope(result.scope);
     return result.scope;
   }

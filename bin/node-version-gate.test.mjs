@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const { bin } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 // Pretend to be Node 22 before the entry point runs.
-const preload = join(mkdtempSync(join(tmpdir(), "ompweb-node-gate-")), "old-node.cjs");
+const preload = join(mkdtempSync(join(tmpdir(), "tau-node-gate-")), "old-node.cjs");
 writeFileSync(preload, `Object.defineProperty(process, "versions", { value: { ...process.versions, node: "22.19.0" } });\n`);
 
 for (const [name, script] of Object.entries(bin)) {

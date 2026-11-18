@@ -10,7 +10,7 @@ import { loadWebServerSettings } from "./web-settings";
 
 /** How long a session whose omp process died stays recorded. A stop signal
  *  reaches every process in the service at once, so a child can die just
- *  before omp-web's own shutdown handler runs; a crash while omp-web keeps
+ *  before tau's own shutdown handler runs; a crash while tau keeps
  *  running is dropped after this window instead of resumed on the next start. */
 export const EXIT_GRACE_MS = 2_000;
 
@@ -42,12 +42,12 @@ function tracker(): TrackerState {
   return globalThis.__ompResumeTracker;
 }
 
-// Each omp-web instance keeps its own list, named by pid, so two instances
+// Each tau instance keeps its own list, named by pid, so two instances
 // sharing an agent dir never overwrite or resume each other's running sessions.
 // The unsuffixed name is the list written before per-instance lists existed.
-const LIST_NAME = /^omp-web-interrupted-sessions(?:-(\d+))?\.json$/;
+const LIST_NAME = /^tau-interrupted-sessions(?:-(\d+))?\.json$/;
 
-/** True when the list at `path`, written by `pid`, belongs to a running omp-web. */
+/** True when the list at `path`, written by `pid`, belongs to a running tau. */
 // ponytail: pid liveness only; same-boot pid reuse (or an unreaped zombie
 // writer) leaves that list unresumed, and hosts sharing an agent dir are not detected.
 function ownedByLiveInstance(path: string, pid: number): boolean {
@@ -109,7 +109,7 @@ function readLeftover(): InterruptibleSession[] {
 }
 
 function interruptedPath(): string {
-  return resolve(getAgentDir(), `omp-web-interrupted-sessions-${process.pid}.json`);
+  return resolve(getAgentDir(), `tau-interrupted-sessions-${process.pid}.json`);
 }
 
 function writeInterrupted(sessions: InterruptibleSession[]): void {
@@ -124,14 +124,14 @@ function writeInterrupted(sessions: InterruptibleSession[]): void {
     writeFileSync(temp, `${JSON.stringify({ sessions }, null, 2)}\n`, "utf8");
     renameSync(temp, path);
   } catch (error) {
-    console.warn(`[omp-web] could not record running sessions for resume: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] could not record running sessions for resume: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
  * Keep the on-disk list of running sessions current. A session leaves the list
  * when its run ends normally (its process is still alive), or EXIT_GRACE_MS
- * after its process died unless omp-web is shutting down by then.
+ * after its process died unless tau is shutting down by then.
  */
 export function recordRunningSessions(running: InterruptibleSession[], isAlive: (id: string) => boolean): void {
   const state = tracker();

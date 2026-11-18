@@ -1,5 +1,5 @@
 // `local://` URLs as omp's own local-protocol.ts reads them (`extractRelativePath` + `validateRelativePath`, omp
-// 18.3.1+ and the installed 18.15): the file an agent wrote with `local://x` is the one ompweb opens, and nothing omp
+// 18.3.1+ and the installed 18.15): the file an agent wrote with `local://x` is the one tau opens, and nothing omp
 // refuses is accepted here. Stricter in a few ways, all on the safe side: a NUL byte and an empty path are refused; a
 // backslash is always a separator, so a leading one is absolute and `a\..b` is refused off Windows (omp reads it there
 // as one file name); on Windows a drive letter is absolute and an interior `..`-name (`a/..b`) is refused, which omp's

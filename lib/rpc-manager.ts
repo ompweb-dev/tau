@@ -1,5 +1,5 @@
 // The "rpc" in this file's name (and in RpcProcess/RpcTransport, lib/omp/rpc-*.ts) is a leftover: sessions no
-// longer use omp's RPC mode. They run on ompweb's own omp runner channel (docs/specs/2026-11-12-omp-runner-design.md).
+// longer use omp's RPC mode. They run on tau's own omp runner channel (docs/specs/2026-11-12-omp-runner-design.md).
 import { createHash, randomUUID } from "crypto";
 import { validateAgentImages } from "./image-attachments";
 import { hasVisibleAssistantContent } from "./assistant-response";
@@ -90,13 +90,13 @@ const IDLE_DESTROY_MS = 10 * 60 * 1000;
  * browser retries with capped backoff (`EVENT_STREAM_RETRY_MAX_MS` = 30s in
  * `hooks/useAgentSession-stream.ts`), and a backgrounded tab clamps its timers
  * to ~1/min. A window anywhere near 60s therefore races the reconnect and turns
- * a returning tab into a 409 "Session is not managed by omp-web" plus a cold
+ * a returning tab into a 409 "Session is not managed by tau" plus a cold
  * respawn. 120s keeps ~2x the retry ceiling and still reclaims 5x faster than
- * the idle backstop. Set `OMP_WEB_DISCONNECT_DESTROY_MS=0` to disable reaping
+ * the idle backstop. Set `TAU_DISCONNECT_DESTROY_MS=0` to disable reaping
  * and fall back to IDLE_DESTROY_MS alone.
  */
-const DISCONNECT_DESTROY_MS = process.env.OMP_WEB_DISCONNECT_DESTROY_MS !== undefined
-  ? Math.max(0, Number(process.env.OMP_WEB_DISCONNECT_DESTROY_MS) || 0)
+const DISCONNECT_DESTROY_MS = process.env.TAU_DISCONNECT_DESTROY_MS !== undefined
+  ? Math.max(0, Number(process.env.TAU_DISCONNECT_DESTROY_MS) || 0)
   : 120_000;
 const READY_TIMEOUT_MS = 120_000;
 const MCP_LIST_TIMEOUT_MS = 15_000;
@@ -126,13 +126,13 @@ const NON_TERMINAL_CONTINUATION_GRACE_MS = 2_000;
 const AWAITING_AGENT_START_TIMEOUT_MS = 10_000;
 const RESTARTING_MESSAGE = "This session is restarting — retry in a moment.";
 /** Answer to a replayed server agent tool call that changes things: it may have run before the restart. */
-const AGENT_TOOL_UNKNOWN_OUTCOME = "omp-web restarted while this ran; the outcome is unknown, check with list_sessions before retrying";
-const GITHUB_UNKNOWN_OUTCOME = "omp-web restarted while this ran; the outcome is unknown. Inspect workflow runs with github_run_list or github_read; inspect comments or threads with github_read for other writes. Do not automatically repeat a dispatch or rerun.";
+const AGENT_TOOL_UNKNOWN_OUTCOME = "tau restarted while this ran; the outcome is unknown, check with list_sessions before retrying";
+const GITHUB_UNKNOWN_OUTCOME = "tau restarted while this ran; the outcome is unknown. Inspect workflow runs with github_run_list or github_read; inspect comments or threads with github_read for other writes. Do not automatically repeat a dispatch or rerun.";
 /** A GitHub write is checked on GitHub, not in the session list. */
 const unknownOutcome = (toolName: unknown) => (typeof toolName === "string" && GITHUB_TOOL_NAMES.has(toolName) ? GITHUB_UNKNOWN_OUTCOME : AGENT_TOOL_UNKNOWN_OUTCOME);
 
 /**
- * Failure raised by omp-web itself (not by omp) carrying a stable snake_case
+ * Failure raised by tau itself (not by omp) carrying a stable snake_case
  * code. API routes forward `{ error, code }` so the client dictionary can
  * localize it via `errors.<code>` while unknown codes fall back to the text.
  */
@@ -213,7 +213,7 @@ function patchEstimatedTokensAfter(result: unknown): void {
 
 // ============================================================================
 // AgentSessionWrapper
-// Wraps one session's ompweb-omp runner (its channel, runner/src/channel.ts) with the interface the rest of
+// Wraps one session's tau-omp runner (its channel, runner/src/channel.ts) with the interface the rest of
 // the app expects (same command surface pi-web's in-process wrapper offered).
 // ============================================================================
 
@@ -411,7 +411,7 @@ export class AgentSessionWrapper {
   private listeners: EventListener[] = [];
   private pendingUiRequests = new Map<string, UnsequencedAgentEvent>();
   private uiExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Dialogs omp-web itself raised (confirmFromServer): answered here, never forwarded to omp. */
+  /** Dialogs tau itself raised (confirmFromServer): answered here, never forwarded to omp. */
   private serverUiRequests = new Map<string, (confirmed: boolean) => void>();
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
@@ -501,7 +501,7 @@ export class AgentSessionWrapper {
   private serverToolCalls = new Map<string, AbortController>();
   /** Own host calls no tab has seen yet (see parkHostTool), with their deadlines. */
   private parkedHostTools = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Listeners omp-web attaches itself (waitForTurnEnd), not tabs: a parked host call waits for a tab. */
+  /** Listeners tau attaches itself (waitForTurnEnd), not tabs: a parked host call waits for a tab. */
   private readonly internalListeners = new WeakSet<EventListener>();
   /** URI schemes the web UI registered via set_host_uri_schemes. */
   private hostUriSchemes: Map<string, { writable?: boolean }> = new Map();
@@ -708,7 +708,7 @@ export class AgentSessionWrapper {
       this.armReap();
       return;
     }
-    console.info("[omp-web] automatic-session-cleanup", JSON.stringify({ sessionId: this._sessionId, reason: "disconnected-idle", at: new Date().toISOString() }));
+    console.info("[tau] automatic-session-cleanup", JSON.stringify({ sessionId: this._sessionId, reason: "disconnected-idle", at: new Date().toISOString() }));
     this.destroy("disconnected-idle");
   }
 
@@ -1107,7 +1107,7 @@ export class AgentSessionWrapper {
         await this.generateTitle({ quiet: true });
       })
       .catch((error) => {
-        console.warn(`[omp-web] could not title session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tau] could not title session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
       })
       .finally(() => {
         this.autoTitleInFlight = false;
@@ -1286,7 +1286,7 @@ export class AgentSessionWrapper {
         // Each run's end may lift the taint, so a user who only sends during runs is not stuck with it.
         if (this.hasPendingMessageCommands()) {
           void this.clearMessageProofTaintIfSettled().catch((error) => {
-            console.warn(`[omp-web] could not read whether session ${this._sessionId} settled: ${error instanceof Error ? error.message : String(error)}`);
+            console.warn(`[tau] could not read whether session ${this._sessionId} settled: ${error instanceof Error ? error.message : String(error)}`);
           });
         }
         break;
@@ -1362,7 +1362,7 @@ export class AgentSessionWrapper {
               result: {
                 content: [{
                   type: "text",
-                  text: "Agent tools are disabled. Enable \"Agent tools\" in omp-web Settings (System) first.",
+                  text: "Agent tools are disabled. Enable \"Agent tools\" in tau Settings (System) first.",
                 }],
               },
             });
@@ -1372,7 +1372,7 @@ export class AgentSessionWrapper {
         }
         // Route REGISTERED host tools to an attached UI (the browser answers
         // via host_tool_result). With no tab on this session, hand the call to
-        // any open omp-web tab (the user switched sessions mid-run). Otherwise
+        // any open tau tab (the user switched sessions mid-run). Otherwise
         // reject immediately so the agent never hangs on a tool nobody will
         // answer.
         if (id && toolName && (this.hostToolNames.has(toolName) || this.hostToolsUnknown)) {
@@ -1434,7 +1434,7 @@ export class AgentSessionWrapper {
           type: "host_uri_result",
           id,
           isError: true,
-          error: `URI scheme \"${scheme}\" is not registered by omp-web`,
+          error: `URI scheme \"${scheme}\" is not registered by tau`,
         });
         return;
       }
@@ -1493,7 +1493,7 @@ export class AgentSessionWrapper {
    */
   confirmFromServer(title: string, payload?: AgentConfirmPayload, signal?: AbortSignal): Promise<boolean> {
     if (!this._alive || signal?.aborted) return Promise.resolve(false);
-    const id = `omp-web:${randomUUID()}`;
+    const id = `tau:${randomUUID()}`;
     const { promise, resolve } = Promise.withResolvers<boolean>();
     const finish = (confirmed: boolean) => {
       signal?.removeEventListener("abort", abort);
@@ -1584,7 +1584,7 @@ export class AgentSessionWrapper {
       result: {
         content: [{
           type: "text",
-          text: `Host tool \"${toolName}\" is not available in omp-web. Use OMP's built-in tools within the selected workspace.`,
+          text: `Host tool \"${toolName}\" is not available in tau. Use OMP's built-in tools within the selected workspace.`,
         }],
       },
     });
@@ -1641,7 +1641,7 @@ export class AgentSessionWrapper {
         type: "host_tool_result",
         id,
         isError: true,
-        result: { content: [{ type: "text", text: "No omp-web tab reconnected to answer this host tool" }] },
+        result: { content: [{ type: "text", text: "No tau tab reconnected to answer this host tool" }] },
       });
       notifyRunningChange();
     }, this.disconnectDestroyMs);
@@ -1845,7 +1845,7 @@ export class AgentSessionWrapper {
         this.resetIdleTimer(true);
         return;
       }
-      console.info("[omp-web] automatic-session-cleanup", JSON.stringify({ sessionId: this._sessionId, reason: "idle-timeout", at: new Date().toISOString() }));
+      console.info("[tau] automatic-session-cleanup", JSON.stringify({ sessionId: this._sessionId, reason: "idle-timeout", at: new Date().toISOString() }));
       this.destroy("idle-timeout");
     }, IDLE_DESTROY_MS);
     // A cleanup deadline must not keep the process alive; the registry's
@@ -1853,7 +1853,7 @@ export class AgentSessionWrapper {
     this.idleTimer.unref?.();
   }
 
-  /** `internal`: omp-web's own listener (waitForTurnEnd), never handed a parked host call. */
+  /** `internal`: tau's own listener (waitForTurnEnd), never handed a parked host call. */
   onEvent(listener: EventListener, { internal = false }: { internal?: boolean } = {}): () => void {
     if (internal) this.internalListeners.add(listener);
     this.listeners.push(listener);
@@ -2321,7 +2321,7 @@ export class AgentSessionWrapper {
   }
 
   /** Full restart of the child process against the same session file. This is
-   * omp-web's `reload`: extensions, skills, prompts, and tools are rediscovered
+   * tau's `reload`: extensions, skills, prompts, and tools are rediscovered
    * on boot, matching a fresh CLI launch. */
   private async restart(): Promise<void> {
     if (this.restarting) throw new WebRpcError(RESTARTING_MESSAGE, "session_restarting");
@@ -2590,7 +2590,7 @@ export class AgentSessionWrapper {
     if (command.origin !== undefined) throw new WebRpcError("Message origin is server-owned.", "origin_not_allowed");
     const trustedCommand = options?.origin ? { ...command, origin: options.origin } : command;
     if (typeof command.type === "string" && command.type.startsWith("abort")) {
-      console.info("[omp-web] cancellation-command", JSON.stringify({ sessionId: this._sessionId, type: command.type, at: new Date().toISOString() }));
+      console.info("[tau] cancellation-command", JSON.stringify({ sessionId: this._sessionId, type: command.type, at: new Date().toISOString() }));
     }
     const mutatesHistory = HISTORY_MUTATING_COMMANDS.has(command.type as string);
     if (mutatesHistory && this.historyEditInFlight) {
@@ -2735,7 +2735,7 @@ export class AgentSessionWrapper {
           } catch (error) {
             // The withdrawn texts exist only in this answer: return them, and let state reconciliation show the run.
             if (!withdrawn) throw error;
-            console.warn(`[omp-web] abort after clear_queue failed for ${this._sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+            console.warn(`[tau] abort after clear_queue failed for ${this._sessionId}: ${error instanceof Error ? error.message : String(error)}`);
           }
           const entries = (texts: unknown) => (Array.isArray(texts) ? texts : []).filter((text) => typeof text === "string").map((text) => ({ text }));
           const response = withdrawn && { steering: entries(withdrawn.steering), followUp: entries(withdrawn.followUp) };
@@ -2764,7 +2764,7 @@ export class AgentSessionWrapper {
           if (error instanceof RpcCommandTimeoutError) {
             // This is only an observer poll. A busy event loop or delayed RPC
             // response is not authority to stop generation or a pending tool.
-            console.warn("[omp-web] status-query-timeout", JSON.stringify({ sessionId: this._sessionId, timeoutMs: GET_STATE_TIMEOUT_MS, running: this.isRunning(), action: "preserved", at: new Date().toISOString() }));
+            console.warn("[tau] status-query-timeout", JSON.stringify({ sessionId: this._sessionId, timeoutMs: GET_STATE_TIMEOUT_MS, running: this.isRunning(), action: "preserved", at: new Date().toISOString() }));
             throw new WebRpcError("The OMP status query timed out. The session was left running; retry shortly.", "session_state_timeout");
           }
           throw error;
@@ -2884,7 +2884,7 @@ export class AgentSessionWrapper {
         if (typeof id !== "number" && typeof id !== "string") throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const key = String(id);
         const serverRequest = this.serverUiRequests.get(key);
-        // The runner numbers its dialogs and ignores any other id; only ompweb's own confirms keep string ids.
+        // The runner numbers its dialogs and ignores any other id; only tau's own confirms keep string ids.
         const runnerId = serverRequest ? undefined : /^\d+$/.test(key) ? Number(key) : NaN;
         if (runnerId !== undefined && !Number.isSafeInteger(runnerId)) throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const method = this.pendingUiRequests.get(key)?.method;
@@ -3063,7 +3063,7 @@ export class AgentSessionWrapper {
   }
 
   /**
-   * Degrade a prompt/steer frame into omp's follow-up queue while omp-web's own
+   * Degrade a prompt/steer frame into omp's follow-up queue while tau's own
    * `!!` shell command owns the child (`bashRunning`, set for the whole `bash`
    * RPC). omp would refuse a prompt then — and aborting or erroring loses the
    * user's message mid-task — so the message is forwarded as `follow_up`
@@ -3097,7 +3097,7 @@ export class AgentSessionWrapper {
     // can overlap the old child's shutdown (see startRpcSession).
     if (this.destroyPromise) return untilHostDown(this.host, this.destroyPromise);
     if (!this._alive) return;
-    console.info("[omp-web] session-dispose", JSON.stringify({ sessionId: this._sessionId, reason, running: this.isRunning(), pendingDialogs: this.pendingUiRequests.size, at: new Date().toISOString(), caller: new Error().stack?.split("\n").slice(2, 5).map((line) => line.trim()) }));
+    console.info("[tau] session-dispose", JSON.stringify({ sessionId: this._sessionId, reason, running: this.isRunning(), pendingDialogs: this.pendingUiRequests.size, at: new Date().toISOString(), caller: new Error().stack?.split("\n").slice(2, 5).map((line) => line.trim()) }));
     this.abortServerToolCalls();
     this._alive = false;
     this.reportInterest();
@@ -3336,7 +3336,7 @@ export function onSessionMove(listener: (from: string, to: string) => void): () 
 // Cross-session host tool calls
 //
 // A registered host tool called while no tab watches its session goes to every
-// open omp-web tab (over the `host-tools` event-stream channel) instead of being rejected.
+// open tau tab (over the `host-tools` event-stream channel) instead of being rejected.
 // ----------------------------------------------------------------------------
 
 function getHostToolListeners(): Set<(call: CrossSessionHostToolEvent) => void> {
@@ -3390,7 +3390,7 @@ export function syncInterruptibleSessions(): void {
 }
 
 /**
- * Restart the sessions that were mid-run when omp-web last stopped and ask
+ * Restart the sessions that were mid-run when tau last stopped and ask
  * each to continue. Only runs when the auto-resume setting is on. Each session,
  * this machine's included, waits for its host's hello: a child its daemon still
  * runs is adopted there, and only a dead one resumes, after its orphan's exit.
@@ -3408,9 +3408,9 @@ async function resumeSession({ id, advisor, hostId }: InterruptibleSession): Pro
     if (!host || !target) return;
     const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, advisor, target.recordedCwd, undefined, host);
     await session.send({ type: "prompt", message: RESUME_PROMPT });
-    console.log(`[omp-web] resumed interrupted session ${id}`);
+    console.log(`[tau] resumed interrupted session ${id}`);
   } catch (error) {
-    console.warn(`[omp-web] could not resume session ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] could not resume session ${id}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -3489,7 +3489,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
         const binding = bindings?.get(comparableProjectPath(input.cwd === source.sourceCwd
           ? origin?.projectRoot ?? origin?.cwd ?? source.sourceCwd : input.cwd));
         if (binding) {
-          const creationId = createHash("sha256").update("ompweb:agent-creation:v1:")
+          const creationId = createHash("sha256").update("tau:agent-creation:v1:")
             .update(JSON.stringify([source.sourceSessionId, source.sourceRequestId])).digest("hex");
           const result = await startPooledSession({
             creationId,
@@ -3502,7 +3502,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
             const { session, realSessionId } = started.value;
             await onStarted(realSessionId);
             const promptId = input.prompt
-              ? createHash("sha256").update(`ompweb:agent-prompt:v1:${creationId}`).digest("hex")
+              ? createHash("sha256").update(`tau:agent-prompt:v1:${creationId}`).digest("hex")
               : undefined;
             await session.withPendingCommand(() => initialize(session, true, promptId), true);
             return { sessionId: realSessionId, sessionName: input.name ?? null };

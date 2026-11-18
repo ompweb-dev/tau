@@ -73,7 +73,7 @@ const VALID_PREFERENCES: Record<string, true> = {
   system: true,
 };
 
-const STORAGE_KEY = "omp-theme";
+const STORAGE_KEY = "tau-theme";
 const listeners = new Set<() => void>();
 
 function subscribe(cb: () => void): () => void {

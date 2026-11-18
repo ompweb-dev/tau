@@ -211,7 +211,7 @@ export function resolveMcpConfig(cwd: string): { root: string; path: string } {
 export function readMcpConfig(cwd: string): { root: string; path: string; config: McpFile; exists: boolean } {
   const resolved = resolveMcpConfig(cwd);
   if (!existsSync(resolved.path)) return { ...resolved, config: { mcpServers: {} }, exists: false };
-  if (statSync(resolved.path).size > MAX_MCP_CONFIG_BYTES) throw new Error("MCP configuration is too large to edit in omp-web");
+  if (statSync(resolved.path).size > MAX_MCP_CONFIG_BYTES) throw new Error("MCP configuration is too large to edit in tau");
   let config: unknown;
   try {
     config = JSON.parse(readFileSync(resolved.path, "utf8"));
@@ -251,7 +251,7 @@ export function validateMcpServer(name: unknown, server: unknown): asserts serve
 }
 
 // Cross-process mutex for MCP config read-modify-write cycles. The dev server
-// (30178) and the installed production app (30177) can edit the same project's
+// (30188) and the installed production app (30187) can edit the same project's
 // mcp.json at the same time; without a lock the later rename would silently
 // overwrite the earlier mutation (add vs delete lost update). A lockfile with
 // exclusive create (`wx`) is atomic on every platform; the holder writes its

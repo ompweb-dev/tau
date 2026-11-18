@@ -58,7 +58,7 @@ test("System keeps web-server updates but never checks or updates the host runti
   assert.ok(!requests.includes("/api/omp-update"), requests.join(", "));
 });
 
-test("a binary install's ompweb update links the release page instead of showing a command", async (t) => {
+test("a binary install's tau update links the release page instead of showing a command", async (t) => {
   const releases = "https://github.com/ompweb-dev/ompweb/releases/latest";
   const appUpdate = { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, selfUpdateSupported: false };
   const { container: binary } = await renderSystemTab(t, { appUpdate: { ...appUpdate, installMethod: "binary", updateCommand: releases } });
@@ -91,7 +91,7 @@ test("a host's omp row is its own update target: its version, its candidate and 
   const { HostUpdates } = await import("./HostUpdates");
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
-    ompweb: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 10 },
+    tau: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 10 },
     omp: { currentVersion: "18.20.0-int.202611130355.gd2c2eff", availableVersion: "18.21.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @earendil-works/pi-coding-agent" },
     operation: null,
   });
@@ -104,11 +104,11 @@ test("a host's omp row is its own update target: its version, its candidate and 
     globalThis.fetch = originalFetch;
   });
   await act(async () => {
-    root.render(createElement(HostUpdates, { host: { id: "box", label: "Box", status: "online", ompVersion: "omp/18.20.0-int.202611130355.gd2c2eff", ompwebVersion: "0.6.0" } }));
+    root.render(createElement(HostUpdates, { host: { id: "box", label: "Box", status: "online", ompVersion: "omp/18.20.0-int.202611130355.gd2c2eff", tauVersion: "0.6.0" } }));
   });
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   assert.ok(container.textContent.includes("18.20.0-int.202611130355.gd2c2eff"), container.textContent);
   assert.ok(container.textContent.includes("Available: 18.21.0"), container.textContent);
-  assert.ok(!container.textContent.includes("Updated with ompweb"), container.textContent);
-  assert.deepEqual(buttonLabels(container).filter((label) => label === "Update"), ["Update", "Update"], "ompweb and omp each have an update button");
+  assert.ok(!container.textContent.includes("Updated with tau"), container.textContent);
+  assert.deepEqual(buttonLabels(container).filter((label) => label === "Update"), ["Update", "Update"], "tau and omp each have an update button");
 });

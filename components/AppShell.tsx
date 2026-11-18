@@ -111,15 +111,15 @@ const RightPanel = dynamic(() => import("./RightPanel").then((m) => m.RightPanel
   loading: () => null,
 });
 
-const TOOL_CALLS_COLLAPSED_STORAGE_KEY = "omp-web:tool-calls-collapsed";
-const HIDE_TOOL_ACTIVITY_STORAGE_KEY = "omp-web:hide-tool-activity";
-const NEVER_FOLD_ACTIVITY_STORAGE_KEY = "omp-web:never-fold-activity";
-const SHOW_TOOL_CALLS_UNFOLDED_STORAGE_KEY = "omp-web:show-tool-calls-unfolded";
+const TOOL_CALLS_COLLAPSED_STORAGE_KEY = "tau:tool-calls-collapsed";
+const HIDE_TOOL_ACTIVITY_STORAGE_KEY = "tau:hide-tool-activity";
+const NEVER_FOLD_ACTIVITY_STORAGE_KEY = "tau:never-fold-activity";
+const SHOW_TOOL_CALLS_UNFOLDED_STORAGE_KEY = "tau:show-tool-calls-unfolded";
 // Off by default, so the transcript keeps collapsing reasoning until asked.
-const EXPAND_THINKING_STORAGE_KEY = "omp-web:expand-thinking";
-const PROVIDER_USAGE_VISIBLE_STORAGE_KEY = "omp-web:provider-usage-visible";
-const NATIVE_SELECT_ALL_STORAGE_KEY = "omp-web:scope-native-select-all";
-const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "omp-web:open-url-automatically";
+const EXPAND_THINKING_STORAGE_KEY = "tau:expand-thinking";
+const PROVIDER_USAGE_VISIBLE_STORAGE_KEY = "tau:provider-usage-visible";
+const NATIVE_SELECT_ALL_STORAGE_KEY = "tau:scope-native-select-all";
+const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 
 
 type AutoNameStatus =
@@ -1719,7 +1719,7 @@ export function AppShell({ appName }: { appName: string }) {
     }
     setPendingOpens((queue) => [...queue, { kind: "url", target: url, name: url, sessionId, crossSession }]);
     return crossSession
-      ? `Asked the user to confirm opening ${url}; they are viewing another omp-web session.`
+      ? `Asked the user to confirm opening ${url}; they are viewing another tau session.`
       : `Asked the user to confirm opening ${url}.`;
   }, [openUrlAutomatically]);
   const handleSessionOpenUrl = useCallback((url: string) => requestOpenUrl(url, selectedSession?.id ?? "", false), [requestOpenUrl, selectedSession?.id]);
@@ -1739,7 +1739,7 @@ export function AppShell({ appName }: { appName: string }) {
           const source = owner ? { ...call, sessionId: owner } : call;
           if (viewing()) return handleOpenFile(path, name, source);
           setPendingOpens((queue) => [...queue, { kind: "file", target: path, name, sessionId: call.sessionId, source, crossSession: true }]);
-          return `Asked the user to confirm opening ${path}; they are viewing another omp-web session.`;
+          return `Asked the user to confirm opening ${path}; they are viewing another tau session.`;
         },
       }, call.sessionId, controller.signal);
       if (controller.signal.aborted) return;

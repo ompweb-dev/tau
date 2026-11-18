@@ -1,4 +1,4 @@
-/* Keep Tailwind's content scan inside the omp-web package. This is important
+/* Keep Tailwind's content scan inside the tau package. This is important
    on Windows, where a parent user-profile package can make the scanner walk
    protected junctions such as "My Documents" during production builds. */
 @import "tailwindcss" source(none);
@@ -5151,12 +5151,12 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
 
 /* Sidebar search hits in the chat (CSS Custom Highlight API, set by
    useChatSearchHighlights) and in the sidebar's match list. */
-::highlight(omp-search),
+::highlight(tau-search),
 .session-search-match-hit {
   background-color: color-mix(in srgb, var(--status-warning) 32%, transparent);
   color: inherit;
 }
-::highlight(omp-search-current) {
+::highlight(tau-search-current) {
   background-color: var(--status-warning);
   color: var(--bg);
 }

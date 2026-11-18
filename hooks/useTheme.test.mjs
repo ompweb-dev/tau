@@ -65,7 +65,7 @@ test("browser chrome follows the selected theme and only follows OS changes in s
   const root = document.documentElement;
   const originalClass = root.getAttribute("class");
   const originalTheme = root.getAttribute("data-theme");
-  const originalPreference = localStorage.getItem("omp-theme");
+  const originalPreference = localStorage.getItem("tau-theme");
   const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
   const meta = document.createElement("meta");
   meta.name = "theme-color";
@@ -76,7 +76,7 @@ test("browser chrome follows the selected theme and only follows OS changes in s
   manifest.href = "/api/manifest";
   document.head.append(manifest);
   root.className = "keep-layout dark theme-nord";
-  localStorage.setItem("omp-theme", "dracula");
+  localStorage.setItem("tau-theme", "dracula");
 
   const media = Object.assign(new window.EventTarget(), { matches: false });
   Object.defineProperty(window, "matchMedia", {
@@ -92,8 +92,8 @@ test("browser chrome follows the selected theme and only follows OS changes in s
       if (value === null) root.removeAttribute(attribute);
       else root.setAttribute(attribute, value);
     }
-    if (originalPreference === null) localStorage.removeItem("omp-theme");
-    else localStorage.setItem("omp-theme", originalPreference);
+    if (originalPreference === null) localStorage.removeItem("tau-theme");
+    else localStorage.setItem("tau-theme", originalPreference);
     if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
     else delete window.matchMedia;
   });
@@ -106,10 +106,10 @@ test("browser chrome follows the selected theme and only follows OS changes in s
     assert.equal(root.getAttribute("data-theme"), theme);
     assert.deepEqual([...root.classList].sort(), ["keep-layout", ...classes].sort());
     assert.equal(meta.getAttribute("content"), color);
-    assert.match(document.cookie, new RegExp(`(^|; )omp-theme-color=${color.slice(1)}(;|$)`));
+    assert.match(document.cookie, new RegExp(`(^|; )tau-theme-color=${color.slice(1)}(;|$)`));
     // A new href makes Chrome drop its cached manifest and refetch the new color.
     assert.equal(manifest.getAttribute("href"), `/api/manifest?theme=${color.slice(1)}`);
-    assert.equal(localStorage.getItem("omp-theme"), preference);
+    assert.equal(localStorage.getItem("tau-theme"), preference);
   };
   const changeOS = async (dark) => {
     await act(() => {

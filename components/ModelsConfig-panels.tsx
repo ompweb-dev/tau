@@ -347,7 +347,7 @@ export function ModelRolesDetail({ models }: { models: RuntimeModelEntry[] }) {
 }
 // ── API Key detail ────────────────────────────────────────────────────────────
 // omp keeps API keys in its own encrypted credential store (agent.db), which
-// omp-web never reads or writes — this panel is status-only.
+// tau never reads or writes — this panel is status-only.
 
 export function ApiKeyDetail({ provider }: { provider: ApiKeyProvider }) {
   const { t, tn } = useI18n();

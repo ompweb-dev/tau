@@ -26,7 +26,7 @@ export const AgentLinkContext = createContext<((candidateIds: string[]) => void)
  * Keeps `agent://` hrefs, which react-markdown's default transform blanks,
  * except the write-only broadcast address, and drops (rather than blanks) any
  * other href the default transform rejects: the sanitizer now admits `agent:`,
- * and `href=""` would link to omp-web itself.
+ * and `href=""` would link to tau itself.
  */
 export const agentAwareUrlTransform: UrlTransform = (url) => {
   const match = AGENT_HREF_RE.exec(url);

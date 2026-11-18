@@ -1,4 +1,4 @@
-// omp-web live-event multiplexer.
+// tau live-event multiplexer.
 //
 // Runs as a SharedWorker (one per browser profile) — or a dedicated Worker where SharedWorker is unavailable — and
 // carries every tab's stream (lib/event-stream.ts) as a subscription on its one connection, so opening more tabs no
@@ -13,7 +13,7 @@
 // it in node:vm with fake browser globals.
 //
 // It also owns the browser's message outbox (docs/specs/2026-11-04-message-outbox-design.md O2): IndexedDB
-// `omp-web-outbox`, sent as `outbox_add` agent commands until the server has stored each (public/sw.js reads it too).
+// `tau-outbox`, sent as `outbox_add` agent commands until the server has stored each (public/sw.js reads it too).
 //
 // Tab -> worker:  { op: "open", id, channel } | { op: "close", id }
 //                 { op: "lock", name }  (tab holds this Web Lock while alive)
@@ -101,8 +101,8 @@ const ABORT_RETRY_MS = [5_000, 15_000, 60_000];
 const ABORT_DELETE_TIMEOUT_MS = 40_000;
 /** Marks an up_abort's line in the sender (a command's `rid` is the tab's request id). */
 const ABORT_RID = "abort:";
-const TRANSPORT_UNAVAILABLE = { error: "Not sent: no connection to omp-web.", code: "transport_unavailable" };
-const TRANSPORT_LOST = { error: "The connection to omp-web dropped before the answer arrived; the command may have run.", code: "transport_lost" };
+const TRANSPORT_UNAVAILABLE = { error: "Not sent: no connection to tau.", code: "transport_unavailable" };
+const TRANSPORT_LOST = { error: "The connection to tau dropped before the answer arrived; the command may have run.", code: "transport_lost" };
 // Transport samples (spec D6 of the experiment): POSTed in batches to the metrics route, whose GET is the SSE clock probe.
 const METRICS_PATH = "/api/transport-metrics";
 const METRICS_FLUSH_MS = 30000;
@@ -1692,7 +1692,7 @@ function diagnostics(): ConnectionDiagnostics {
 // IndexedDB before the tab's composer clears, then goes as `outbox_add` over the current transport until the server
 // has stored it. Each session's entries go one at a time, oldest first: the server queues them in arrival order. ----
 
-const OUTBOX_DB = "omp-web-outbox";
+const OUTBOX_DB = "tau-outbox";
 const OUTBOX_STORE = "entries";
 /** The server keeps delivered ids 8 days: an older entry is never sent again, or a resend could deliver it twice. */
 const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

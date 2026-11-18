@@ -1,9 +1,9 @@
 // Head-of-line load on one host link, for the link samples (metric "link", lib/hosts/hub.ts and daemon.ts):
 //
-//   OMP_WEB_TRUSTED_HEADER_SECRET=<secret> bun scripts/link-hol-probe.ts --host <host id> --model <provider/modelId> \
+//   TAU_TRUSTED_HEADER_SECRET=<secret> bun scripts/link-hol-probe.ts --host <host id> --model <provider/modelId> \
 //     [--server http://127.0.0.1:30185] [--cwd /tmp] [--seconds 60 (at most 600)]
 //
-// Against a running omp-web whose server and host both record link samples, it starts three sessions in --cwd on
+// Against a running tau whose server and host both record link samples, it starts three sessions in --cwd on
 // --host (the directory must exist there) and runs two phases of --seconds, each with
 //   (c) session C answering get_state every 200 ms: small lines both ways, whose ack times are the signal;
 // plus, in the `down` phase,
@@ -20,7 +20,7 @@
 // daemon reports every 30 s, the server then writes every 30 s) before the next one starts, then the probe prints the
 // summary command for its window. It deletes the three sessions it made, and nothing else, at the end (also on
 // Ctrl-C, SIGTERM or SIGHUP). The images stay in the host's blob store (omp's content-addressed `blobs/`, ~5 MB of
-// noise; no API deletes them). OMP_WEB_TRUSTED_HEADER_SECRET goes in `x-omp-web-auth` (as pr-watcher sends it); leave
+// noise; no API deletes them). TAU_TRUSTED_HEADER_SECRET goes in `x-tau-auth` (as pr-watcher sends it); leave
 // it unset for a server without a password.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -62,7 +62,7 @@ if (!values.host || !values.model || slash <= 0 || !(seconds > 0 && seconds <= M
 const hostId = values.host;
 const model = { provider: values.model.slice(0, slash), modelId: values.model.slice(slash + 1) };
 
-const secret = process.env.OMP_WEB_TRUSTED_HEADER_SECRET;
+const secret = process.env.TAU_TRUSTED_HEADER_SECRET;
 const stop = new AbortController();
 let signalled = false;
 // Ctrl-C, a kill or a dropped ssh session end the load, the waits and any call in flight; the sessions are still
@@ -82,7 +82,7 @@ async function api(path: string, init: { method?: string; body?: unknown; allow?
   const method = init.method ?? (init.body === undefined ? "GET" : "POST");
   const response = await fetch(`${server}${path}`, {
     method,
-    headers: { ...(secret ? { "x-omp-web-auth": secret } : {}), ...(init.body === undefined ? {} : { "content-type": "application/json" }) },
+    headers: { ...(secret ? { "x-tau-auth": secret } : {}), ...(init.body === undefined ? {} : { "content-type": "application/json" }) },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     signal: init.cleanup ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : AbortSignal.any([stop.signal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]),
   });
@@ -142,13 +142,13 @@ const png = noisePng(IMAGE_SIDE, true);
 // The server refuses an image over 5 MiB (lib/image-attachments.ts).
 assert(png.byteLength <= 5 * 1024 * 1024 && png.byteLength > 4_000_000, `the probe image is ${png.byteLength} bytes`);
 const asImage = (bytes: Buffer) => ({ type: "image", data: bytes.toString("base64"), mimeType: "image/png" });
-const largePrompt = { type: "prompt", message: "omp-web link probe: ignore this image.", images: [asImage(png)] };
+const largePrompt = { type: "prompt", message: "tau link probe: ignore this image.", images: [asImage(png)] };
 // omp stores every image re-encoded as a JPEG of a few hundred KB (the 4.8 MB one comes back ~0.4 MB), so one image
 // cannot make B large: B gets ten, 1-bit noise of the same size (~0.2 MB each as PNG, 2 MB together).
 // A short answer with no tool call: the model's own time stays small next to the transport's.
 const storedPrompt = {
   type: "prompt",
-  message: "omp-web link probe: these images are test noise. Do not call any tool. Reply with exactly: ok",
+  message: "tau link probe: these images are test noise. Do not call any tool. Reply with exactly: ok",
   images: Array.from({ length: 10 }, () => asImage(noisePng(IMAGE_SIDE, false))),
 };
 

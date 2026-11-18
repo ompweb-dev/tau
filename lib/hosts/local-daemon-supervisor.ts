@@ -5,9 +5,9 @@ import { basename, isAbsolute, join, relative, resolve, sep, win32 } from "node:
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const SYSTEMD_UNIT = "ompweb-host.service";
-const LAUNCHD_LABEL = "com.kahme247.ompweb-host";
-const WINDOWS_TASK = "omp-web-host";
+const SYSTEMD_UNIT = "tau-host.service";
+const LAUNCHD_LABEL = "dev.ompweb.tau-host";
+const WINDOWS_TASK = "tau-host";
 
 export interface InstalledHostSupervisor {
   description: string;
@@ -148,7 +148,7 @@ export async function inspectInstalledHostSupervisor(options: SupervisorInspecti
   const pathApi = platform === "win32" ? win32 : { basename, isAbsolute, join, relative, resolve, sep };
   const agentDir = pathApi.resolve(env.PI_CODING_AGENT_DIR ?? pathApi.join(home, ".omp", "agent"));
   const defaultAgentDir = pathApi.resolve(pathApi.join(home, ".omp", "agent"));
-  const installDir = pathApi.resolve(env.OMP_WEB_PACKAGE_DIR ?? process.cwd());
+  const installDir = pathApi.resolve(env.TAU_PACKAGE_DIR ?? process.cwd());
   const inside = (value: string, directory: string) => {
     if (!pathApi.isAbsolute(value)) return false;
     const child = pathApi.relative(normal(directory, platform), normal(value, platform));
@@ -158,8 +158,8 @@ export async function inspectInstalledHostSupervisor(options: SupervisorInspecti
   const ownsCommand = (args: string[]) => args.some(ownedPath);
   const hostCommand = (args: string[]) => args.some((argument, index) => {
     const name = normal(pathApi.basename(argument), platform);
-    if (ownedPath(argument) && ["omp-web-host.js", "omp-web-host.ps1", "ompweb-host.ps1"].includes(name)) return true;
-    return ["ompweb", "ompweb.exe", "omp-web.js"].includes(name) && args[index + 1] === "host";
+    if (ownedPath(argument) && ["tau-host.js", "tau-host.ps1", "tau-host.ps1"].includes(name)) return true;
+    return ["tau", "tau.exe", "tau.js"].includes(name) && args[index + 1] === "host";
   });
   const root = options.root ?? "/";
   const uid = options.uid ?? process.getuid?.();
@@ -184,7 +184,7 @@ export async function inspectInstalledHostSupervisor(options: SupervisorInspecti
       for (const record of shown) {
         if (record.LoadState !== "loaded" || !record.FragmentPath || !record.Id) continue;
         const environmentPaths = commandArguments(record.Environment ?? "", platform).flatMap((entry) => {
-          const match = entry.match(/^(?:PI_CODING_AGENT_DIR|OMP_WEB_PACKAGE_DIR)=(.+)$/);
+          const match = entry.match(/^(?:PI_CODING_AGENT_DIR|TAU_PACKAGE_DIR)=(.+)$/);
           return match ? [match[1]] : [];
         });
         const exactUserUnit = user && record.Id === SYSTEMD_UNIT && resolve(record.FragmentPath) === resolve(join(home, ".config", "systemd", "user", SYSTEMD_UNIT));
@@ -240,7 +240,7 @@ export async function inspectInstalledHostSupervisor(options: SupervisorInspecti
         const program = contents.match(/<key>Program<\/key>\s*<string>([\s\S]*?)<\/string>/)?.[1];
         if (program) argumentsList.unshift(xmlValue(program));
         const environment = contents.match(/<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1] ?? "";
-        const ownershipEnvironment = [...environment.matchAll(/<key>(?:PI_CODING_AGENT_DIR|OMP_WEB_PACKAGE_DIR)<\/key>\s*<string>([\s\S]*?)<\/string>/g)].map((match) => xmlValue(match[1]));
+        const ownershipEnvironment = [...environment.matchAll(/<key>(?:PI_CODING_AGENT_DIR|TAU_PACKAGE_DIR)<\/key>\s*<string>([\s\S]*?)<\/string>/g)].map((match) => xmlValue(match[1]));
         const commands = [argumentsList];
         let ownershipKnown = ownershipEnvironment.some(ownedPath) || ownsCommand(argumentsList);
         for (const [index, argument] of argumentsList.entries()) {
@@ -278,7 +278,7 @@ export async function inspectInstalledHostSupervisor(options: SupervisorInspecti
       throw new Error(`Could not inspect Windows host supervisors: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (!inventory || typeof inventory.user !== "string" || !Array.isArray(inventory.tasks) || !Array.isArray(inventory.services)) throw new Error("Could not verify Windows host supervisor inventory");
-    const expectedScriptPath = win32.join(installDir, "scripts", "windows", "omp-web-host.ps1");
+    const expectedScriptPath = win32.join(installDir, "scripts", "windows", "tau-host.ps1");
     const expectedArguments = normal(`-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${expectedScriptPath}"`, platform);
     const currentUser = normal(inventory.user, platform);
     const recognizedTasks = inventory.tasks.filter((task) => {

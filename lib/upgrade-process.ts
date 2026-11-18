@@ -271,9 +271,9 @@ async function waitFrozen(pid: number, identity: string | null): Promise<void> {
   }
 }
 
-/** The process runs a host daemon (`ompweb host`, or the package's omp-web-host.js) or, for a server, anything else. */
+/** The process runs a host daemon (`tau host`, or the package's tau-host.js) or, for a server, anything else. */
 function isHostCommand(args: string[]): boolean {
-  return args.slice(0, 4).some((arg, index) => basename(arg.replaceAll("\\", "/")) === "omp-web-host.js" || (index > 0 && arg === "host"));
+  return args.slice(0, 4).some((arg, index) => basename(arg.replaceAll("\\", "/")) === "tau-host.js" || (index > 0 && arg === "host"));
 }
 function runsInstallScript(args: string[], installDir: string, script: string): boolean {
   return args.slice(0, 4).some((arg) => !arg.startsWith("-") && inside(join(installDir, script), isAbsolute(arg) ? arg : resolve(installDir, arg)));
@@ -293,8 +293,8 @@ export async function findUpgradeServerProcesses(installDir: string): Promise<nu
     if (row.state === "Z" || !belongsToInstall(row, root) || isHostCommand(row.args)) continue;
     const args = row.args.slice(1);
     if (args.some((arg) => ["recover-host", "host-update-worker", "server-update-worker", "preflight", "fetch-omp", "--version", "--help"].includes(arg) || /(?:^|[/\\])(?:host-update-worker|server-update-worker|recover-host)\.[cm]?[jt]s$/.test(arg))) continue;
-    const script = args.some((arg) => inside(root, arg) && [join(root, "bin", "omp-web.js"), join(root, "server", "main.ts")].some((path) => inside(path, arg)));
-    const compiled = [join(root, "ompweb"), join(root, "ompweb.exe")].some((path) => inside(path, row.exe));
+    const script = args.some((arg) => inside(root, arg) && [join(root, "bin", "tau.js"), join(root, "server", "main.ts")].some((path) => inside(path, arg)));
+    const compiled = [join(root, "tau"), join(root, "tau.exe")].some((path) => inside(path, row.exe));
     if (!script && !compiled) fail(`Cannot determine whether process ${row.pid} is a server in ${root}; refusing to assume its supervisor is independent`);
     servers.push(row.pid);
   }
@@ -327,7 +327,7 @@ function descendants(rows: ProcessInfo[], root: number, includeRoot: boolean): n
 /** The single new instance a supervisor started (not the one stopped), within the processes `within` allows; nulls when none or several qualify by the deadline. */
 async function waitForInstance(plan: UpgradeProcess, within: (rows: ProcessInfo[]) => number[] | Promise<number[]>, timeout: number, stillSupervised?: () => Promise<void>): Promise<UpgradeInstance> {
   const deadline = Date.now() + timeout;
-  const packageLauncher = plan.role === "server" && runsInstallScript(plan.args, plan.installDir, "bin/omp-web.js");
+  const packageLauncher = plan.role === "server" && runsInstallScript(plan.args, plan.installDir, "bin/tau.js");
   for (;;) {
     await stillSupervised?.();
     const rows = await listProcesses();
@@ -335,7 +335,7 @@ async function waitForInstance(plan: UpgradeProcess, within: (rows: ProcessInfo[
     const found: UpgradeInstance[] = [];
     for (const row of rows) {
       if (!allowed.has(row.pid) || row.state === "Z" || isHostCommand(row.args) !== (plan.role === "host") || !belongsToInstall(row, plan.installDir)) continue;
-      if (packageLauncher && !runsInstallScript(row.args, plan.installDir, "bin/omp-web.js")) continue;
+      if (packageLauncher && !runsInstallScript(row.args, plan.installDir, "bin/tau.js")) continue;
       const identity = await processStartIdentity(row.pid);
       if (identity && (row.pid !== plan.pid || identity !== plan.identity) && (row.pid !== plan.current.pid || identity !== plan.current.identity)) found.push({ pid: row.pid, identity });
     }
@@ -387,7 +387,7 @@ async function inspectSystemd(me: ProcessInfo, rows: ProcessInfo[], role: Upgrad
   const service = cgroupService(me.pid);
   if (!service) return null;
   if (!UNIT_NAME.test(service.unit)) fail(`Unsupported systemd unit name ${service.unit}`);
-  if (role === "host" && /^ompweb-api(?:[.@-]|$)/i.test(service.unit)) fail("Refusing to stop the web-server service; the host daemon needs its own service");
+  if (role === "host" && /^tau-api(?:[.@-]|$)/i.test(service.unit)) fail("Refusing to stop the web-server service; the host daemon needs its own service");
   const { props, execs, hash } = await systemdUnit(service.unit, service.user);
   // systemd forgets a transient (systemd-run) service once it stops, so nothing could start it again after the update.
   if (props.Transient === "yes") fail(`${service.unit} is a transient service: systemd discards its definition when it stops, so it could not be started again after the update`);
@@ -589,7 +589,7 @@ export async function secureUpgradeDirectory(path: string): Promise<void> {
 }
 
 async function launchWindows(launch: UpgradeLaunch): Promise<number> {
-  const dir = mkdtempSync(join(tmpdir(), "ompweb-launch-"));
+  const dir = mkdtempSync(join(tmpdir(), "tau-launch-"));
   const spec = join(dir, "spec.json");
   const pidTemp = join(dir, "pid.tmp");
   const pidFile = join(dir, "pid");
@@ -888,7 +888,7 @@ export async function stopUpgradeProcess(plan: UpgradeProcess): Promise<void> {
       let launcherFrozen = false, stopStarted = false;
       try {
         await waitFrozen(sup.pid, sup.identity);
-        if (pid !== null && plan.role === "server" && runsInstallScript(plan.args, plan.installDir, "bin/omp-web.js")) {
+        if (pid !== null && plan.role === "server" && runsInstallScript(plan.args, plan.installDir, "bin/tau.js")) {
           if (await runningInstance(plan) !== pid) fail("The package launcher exited before its server child could be stopped");
           // Freeze before discovery: a launcher waiting for its port can still spawn a child.
           await signalProcess(pid, "SIGSTOP");

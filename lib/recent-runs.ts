@@ -4,7 +4,7 @@ export interface RecentRunEntry {
 }
 
 export const MAX_RECENT_COMPLETED_RUNS = 10;
-export const RECENT_RUNS_STORAGE_KEY = "ompweb.recent-completed-runs";
+export const RECENT_RUNS_STORAGE_KEY = "tau.recent-completed-runs";
 
 export function loadRecentRuns(storage?: Storage, maxLimit = 100): RecentRunEntry[] {
   try {

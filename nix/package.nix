@@ -34,7 +34,7 @@ let
   version = (builtins.fromJSON (builtins.readFile ../package.json)).version;
 in
 buildNpmPackage (finalAttrs: {
-  pname = "ompweb";
+  pname = "tau";
   inherit src version;
 
   # Unverified: written without nix. Refresh npmDepsHash on a machine with nix (`nix build .#default` prints it).

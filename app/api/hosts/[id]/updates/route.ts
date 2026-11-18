@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: Context) {
   if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") return fail("Content-Type must be application/json", "unsupported_media_type", 415);
   try {
     const body = await parseJsonWithinLimit<unknown>(request, 4096);
-    if (!isRecord(body) || Object.keys(body).some((key) => !["target", "version", "force"].includes(key)) || body.target !== "ompweb"
+    if (!isRecord(body) || Object.keys(body).some((key) => !["target", "version", "force"].includes(key)) || body.target !== "tau"
       || (body.force !== undefined && typeof body.force !== "boolean")
       || typeof body.version !== "string" || body.version.length > 100 || !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(body.version)) {
       return fail("target and a release version are required", "invalid_host_update", 400);

@@ -14,12 +14,12 @@ const fs = require("fs");
 const path = require("path");
 
 function printHelp() {
-  console.log(`Usage: node bin/omp-web-tray.js [command] [options]
-       ompweb-tray [command] [options]
+  console.log(`Usage: node bin/tau-tray.js [command] [options]
+       tau-tray [command] [options]
 
 Platform notes:
   Windows  System Tray shortcuts and background service
-  Linux    StatusNotifierItem tray (KDE Plasma and compatible) — see ompweb-systemd
+  Linux    StatusNotifierItem tray (KDE Plasma and compatible) — see tau-systemd
            for the systemd user service this tray manages
 
 Commands:
@@ -32,7 +32,7 @@ Commands:
   --open, open            Open the background web service in default browser
 
 Options:
-  -p, --port <port>       Server port for background service (default 30177)
+  -p, --port <port>       Server port for background service (default 30187)
   -H, --hostname <host>   Bind address (default 127.0.0.1)
   -m, --mode <mode>       Execution mode: "start" or "dev" (default "start", Windows only)
       --no-autostart      Disable automatic startup on logon
@@ -144,7 +144,7 @@ async function runCli(argv = process.argv.slice(2)) {
   }
 
   if (isStart) {
-    console.log("Starting omp-web background system tray service...");
+    console.log("Starting tau background system tray service...");
     const res = await windowsService.startTrayService({ openBrowser: cliArgs.open });
     if (res.success) {
       console.log("Tray service launched in background.");
@@ -156,7 +156,7 @@ async function runCli(argv = process.argv.slice(2)) {
   }
 
   if (isStop) {
-    console.log("Stopping omp-web background system tray service...");
+    console.log("Stopping tau background system tray service...");
     const res = await windowsService.stopTrayService();
     if (res.success) {
       console.log("Background system tray service stopped.");
@@ -168,7 +168,7 @@ async function runCli(argv = process.argv.slice(2)) {
   }
 
   if (isRestart) {
-    console.log("Restarting omp-web background system tray service...");
+    console.log("Restarting tau background system tray service...");
     const res = await windowsService.restartTrayService();
     if (res.success) {
       console.log("Background system tray service restarted.");
@@ -201,7 +201,7 @@ async function runCli(argv = process.argv.slice(2)) {
     if (cliArgs.json) {
       console.log(JSON.stringify(status, null, 2));
     } else {
-      console.log("=== omp-web Windows Service Status ===");
+      console.log("=== tau Windows Service Status ===");
       console.log(`  Platform         : ${process.platform === "win32" ? "Windows" : process.platform}`);
       console.log(`  Version          : v${status.version}`);
       console.log(`  Installed        : ${status.isInstalled ? "Yes" : "No"}`);

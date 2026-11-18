@@ -7,7 +7,7 @@ import { browserTransportState, loadWebServerSettings, readWebServerSettingsFrom
 import { isRecord } from "@/lib/type-guards";
 import { isUploadRetentionDays } from "@/lib/upload-limits";
 
-/** GET/PUT /api/web-settings - omp-web's own server-side settings. */
+/** GET/PUT /api/web-settings - tau's own server-side settings. */
 export async function GET() {
   try {
     return Response.json(readSettings());

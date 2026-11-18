@@ -152,7 +152,7 @@ export function startServer(options: { port: number; hostname: string; dev: bool
     port: options.port,
     hostname: options.hostname,
     development: dev ? { hmr: true, console: true } : false,
-    // Bun turns SO_REUSEPORT on when development is false: a second omp-web would share the port instead of failing.
+    // Bun turns SO_REUSEPORT on when development is false: a second tau would share the port instead of failing.
     reusePort: false,
     idleTimeout: IDLE_TIMEOUT,
     routes,
@@ -220,19 +220,19 @@ export function startServer(options: { port: number; hostname: string; dev: bool
 export async function startProduction(listen: { port: number; hostname: string }): Promise<Bun.Server<ServerSocketData>> {
   let server: Bun.Server<ServerSocketData>;
   try {
-    server = startServer({ ...listen, dev: false, root: process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd() });
+    server = startServer({ ...listen, dev: false, root: process.env.TAU_PACKAGE_DIR ?? process.cwd() });
   } catch (error) {
     // The npm launcher checks the port first, but another process can take it before this bind.
     if (!(error instanceof Error && "code" in error && error.code === "EADDRINUSE")) throw error;
-    console.error(`Port ${listen.port} on ${listen.hostname} is already in use: is ompweb already running? Otherwise stop the process using it or start ompweb with --port ${listen.port + 1}.`);
+    console.error(`Port ${listen.port} on ${listen.hostname} is already in use: is tau already running? Otherwise stop the process using it or start tau with --port ${listen.port + 1}.`);
     process.exit(1);
   }
   // The local daemon link (local-bootstrap.ts, run by register) and the update worker dial this address; set it here
   // so `npm start` (server/main.ts) links the daemon like the launcher and the binary do.
-  Object.assign(process.env, { OMP_WEB_PORT: String(server.port), OMP_WEB_HOSTNAME: listen.hostname });
+  Object.assign(process.env, { TAU_PORT: String(server.port), TAU_HOSTNAME: listen.hostname });
   await register();
   acknowledgeSelfUpdateBoot();
-  void resumeCoordinatedSelfUpdate().catch((error: unknown) => console.error(`[omp-web] Could not resume the approved upgrade: ${error instanceof Error ? error.message : String(error)}`));
-  console.log(`[omp-web] Ready on ${server.url.origin}`);
+  void resumeCoordinatedSelfUpdate().catch((error: unknown) => console.error(`[tau] Could not resume the approved upgrade: ${error instanceof Error ? error.message : String(error)}`));
+  console.log(`[tau] Ready on ${server.url.origin}`);
   return server;
 }

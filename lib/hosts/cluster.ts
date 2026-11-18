@@ -10,7 +10,7 @@ import type { HostPool, PoolProject } from "./pools";
 
 export const CLUSTER_ID = "cluster";
 export const CLUSTER_LABEL = "Cluster";
-export const CLUSTER_PROJECTS_DIR = "ompweb-cluster";
+export const CLUSTER_PROJECTS_DIR = "tau-cluster";
 /** The first omp that honours the broker variables; an older one could start with the host's own logins. */
 export const MIN_SHARED_CREDENTIALS_OMP = "15.13.1";
 

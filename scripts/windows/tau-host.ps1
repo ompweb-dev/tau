@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Headless omp-web host daemon supervisor (`ompweb host`).
-    Registered next to the omp-web service by install-tray.ps1 as the "omp-web-host" scheduled task.
+    Headless tau host daemon supervisor (`tau host`).
+    Registered next to the tau service by install-tray.ps1 as the "tau-host" scheduled task.
 .NOTES
-    `ompweb host` exits when host.json does not exist yet (first install: the web server writes it
+    `tau host` exits when host.json does not exist yet (first install: the web server writes it
     at startup) and when the server revokes or outdates its token. This loop restarts it after a
     pause, so the daemon follows the web server instead of staying down.
 #>
@@ -13,7 +13,7 @@ param(
 )
 
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
-$LauncherJs = Join-Path $RepoRoot "bin\omp-web.js"
+$LauncherJs = Join-Path $RepoRoot "bin\tau.js"
 
 # The updater replaces this installation in place, and Windows refuses to rename a
 # directory that is a live process's working directory (ERROR_SHARING_VIOLATION).
@@ -22,17 +22,17 @@ $LaunchWorkingDirectory = $env:USERPROFILE
 # An empty value would make the child inherit the process's own directory, which is the
 # installation; refuse instead of silently reintroducing the lock.
 if ([string]::IsNullOrWhiteSpace($LaunchWorkingDirectory)) {
-    throw "USERPROFILE is empty: refusing to start omp-web from inside its installation directory."
+    throw "USERPROFILE is empty: refusing to start tau from inside its installation directory."
 }
 
 # One daemon supervisor per logon session.
 $createdNew = $false
-try { $script:AppMutex = New-Object System.Threading.Mutex($true, "Local\OmpWebHostDaemon_Instance_Mutex", [ref]$createdNew) } catch { $createdNew = $true }
+try { $script:AppMutex = New-Object System.Threading.Mutex($true, "Local\TauHostDaemon_Instance_Mutex", [ref]$createdNew) } catch { $createdNew = $true }
 if (!$createdNew) { Exit 0 }
 
 $LogDir = Join-Path $env:USERPROFILE ".omp\agent\logs"
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
-$LogFile = Join-Path $LogDir "omp-web-host.log"
+$LogFile = Join-Path $LogDir "tau-host.log"
 if ((Test-Path $LogFile) -and ((Get-Item $LogFile).Length -gt 5MB)) {
     Move-Item -Path $LogFile -Destination "$LogFile.old" -Force -ErrorAction SilentlyContinue
 }
@@ -53,7 +53,7 @@ $NodeExe = Find-NodeExecutable
 
 try {
     while ($true) {
-        # Output goes to a file through cmd, as in omp-web-service.ps1.
+        # Output goes to a file through cmd, as in tau-service.ps1.
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $env:ComSpec
         $psi.Arguments = "/d /s /c `"`"$NodeExe`" `"$LauncherJs`" host >> `"$LogFile`" 2>&1`""

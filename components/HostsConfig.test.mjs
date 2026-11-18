@@ -33,7 +33,7 @@ function mockHostRequests(t, respond) {
 test("the one-time host token survives Escape; only Done closes it", async (t) => {
   // The hosts list rides the shared event-stream worker; a silent one keeps it idle.
   globalThis.Worker = FakeWorker;
-  mockHostRequests(t, async () => Response.json({ host: { id: "h1", label: "Laptop" }, token: "tok-once", command: "ompweb host login --url https://omp.test" }));
+  mockHostRequests(t, async () => Response.json({ host: { id: "h1", label: "Laptop" }, token: "tok-once", command: "tau host login --url https://omp.test" }));
   render(createElement(HostsConfig));
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Add host" }));
@@ -90,23 +90,23 @@ test("an offline this-machine row says to start the service, with the server's i
   const send = (hosts) => act(() => workers[0].onmessage({ data: { id, type: "message", data: JSON.stringify({ hosts }) } }));
 
   send([row({})]);
-  const hint = await screen.findByText(/ompweb-host service/);
-  assert.deepEqual([...hint.closest("li").querySelectorAll("code")].map((code) => code.textContent), ["ompweb launchd install", "ompweb host"]);
+  const hint = await screen.findByText(/tau-host service/);
+  assert.deepEqual([...hint.closest("li").querySelectorAll("code")].map((code) => code.textContent), ["tau launchd install", "tau host"]);
   assert.match(hint.closest("li").textContent, /in a terminal or with npx/);
   // The commands are copyable; the local row still has no Revoke.
   assert.equal(within(hint.closest("li")).queryByRole("button", { name: "Revoke" }), null);
 
   send([row({ serverPlatform: "linux" })]);
-  assert.equal((await screen.findByText(/ompweb-host service/)).closest("li").querySelector("code").textContent, "ompweb systemd install");
+  assert.equal((await screen.findByText(/tau-host service/)).closest("li").querySelector("code").textContent, "tau systemd install");
   send([row({ serverPlatform: "win32" })]);
-  assert.equal((await screen.findByText(/ompweb-host service/)).closest("li").querySelector("code").textContent, "ompweb-tray install");
+  assert.equal((await screen.findByText(/tau-host service/)).closest("li").querySelector("code").textContent, "tau-tray install");
 
   // Dev mode: offline by design, nothing to install.
   send([row({ daemonManaged: false })]);
-  await waitFor(() => assert.equal(screen.queryByText(/ompweb-host service/), null));
+  await waitFor(() => assert.equal(screen.queryByText(/tau-host service/), null));
 
   send([row({ status: "online", hostVersion: 2, serverVersion: 3 })]);
-  await waitFor(() => assert.equal(screen.queryByText(/ompweb-host service/), null));
+  await waitFor(() => assert.equal(screen.queryByText(/tau-host service/), null));
   // The daemon's protocol on its row, the web app's in the header; a needs-upgrade status already names both.
   assert.match(screen.getByRole("button", { name: "Rename This machine" }).closest("li").textContent, /link protocol v2/);
   screen.getByText("This web app expects link protocol v3.");
@@ -133,7 +133,7 @@ const software = (overrides = {}) => ({
   canUpdate: true, blockedReason: null, updateCommand: "fixture update", ...overrides,
 });
 const updateInfo = (overrides = {}) => ({
-  ompweb: software({ installMethod: "npm", protocolVersion: 3 }),
+  tau: software({ installMethod: "npm", protocolVersion: 3 }),
   omp: { currentVersion: "2.0.0" },
   operation: null, ...overrides,
 });
@@ -155,16 +155,16 @@ test("local host shows both installed versions and a blocked candidate with its 
   mockHostRequests(t, async (url) => {
     urls.push(String(url));
     return Response.json(updateInfo({
-      ompweb: software({ installMethod: "npm", protocolVersion: 3, canUpdate: false, blockedReason: "Update the web server first: protocol 4 is not supported." }),
+      tau: software({ installMethod: "npm", protocolVersion: 3, canUpdate: false, blockedReason: "Update the web server first: protocol 4 is not supported." }),
     }));
   });
   await showHosts([hostRow()]);
   const row = screen.getByRole("button", { name: "Rename This machine" }).closest("li");
   await within(row).findByText(/Update the web server first: protocol 4 is not supported\./);
-  assert.ok(within(row).getByRole("button", { name: "Update ompweb host" }).disabled);
-  // omp is its own target: with no candidate it offers no update, and it no longer says it updates with ompweb.
+  assert.ok(within(row).getByRole("button", { name: "Update tau host" }).disabled);
+  // omp is its own target: with no candidate it offers no update, and it no longer says it updates with tau.
   assert.equal(within(row).queryByRole("button", { name: "Update omp runtime" }), null);
-  assert.equal(within(row).queryByText("Updated with ompweb"), null);
+  assert.equal(within(row).queryByText("Updated with tau"), null);
   assert.match(row.textContent, /Current: 1\.0\.0/);
   assert.match(row.textContent, /Current: 2\.0\.0/);
   assert.match(row.textContent, /Available: 1\.1\.0/);
@@ -177,24 +177,24 @@ test("remote daemon update requires closing host sessions and targets only that 
   mockHostRequests(t, async (url, init) => {
     if (init?.method === "POST") {
       posts.push([String(url), JSON.parse(init.body)]);
-      operation = { id: "op1", target: "ompweb", version: "1.1.0", state: "running" };
+      operation = { id: "op1", target: "tau", version: "1.1.0", state: "running" };
       return Response.json({ accepted: true, operation }, { status: 202 });
     }
     return Response.json(updateInfo({
       operation,
-      ...(operation?.state === "succeeded" ? { ompweb: software({ currentVersion: "1.1.0", availableVersion: null, updateAvailable: false, installMethod: "npm", protocolVersion: 3 }) } : {}),
+      ...(operation?.state === "succeeded" ? { tau: software({ currentVersion: "1.1.0", availableVersion: null, updateAvailable: false, installMethod: "npm", protocolVersion: 3 }) } : {}),
     }));
   });
   const view = await showHosts([hostRow({ id: "h/remote", label: "Laptop", allowAgentStart: false })]);
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Update ompweb host" }));
+  await user.click(await screen.findByRole("button", { name: "Update tau host" }));
   assert.equal(posts.length, 0);
   assert.match(screen.getByRole("dialog").textContent, /Close all sessions and stop subagents on Laptop first/i);
   assert.match(screen.getByRole("dialog").textContent, /restarts the host daemon/i);
   assert.match(screen.getByRole("dialog").textContent, /sessions will not resume automatically/i);
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Update" }));
-  await screen.findByText("Updating ompweb host to 1.1.0…");
-  assert.deepEqual(posts, [["/api/hosts/h%2Fremote/updates", { target: "ompweb", version: "1.1.0" }]]);
+  await screen.findByText("Updating tau host to 1.1.0…");
+  assert.deepEqual(posts, [["/api/hosts/h%2Fremote/updates", { target: "tau", version: "1.1.0" }]]);
   assert.equal(screen.queryByText("Update completed."), null);
   operation = { ...operation, state: "succeeded" };
   await screen.findByText("Update completed.", {}, { timeout: 3500 });
@@ -206,7 +206,7 @@ test("offline and protocol-incompatible hosts render unavailable rows without re
   const calls = [];
   mockHostRequests(t, async (url) => { calls.push(url); return Response.json({}); });
   await showHosts([hostRow({ status: "offline" }), hostRow({ id: "old", label: "Old", status: "needs-upgrade", allowAgentStart: false })]);
-  assert.equal(screen.getAllByText("ompweb host").length, 2);
+  assert.equal(screen.getAllByText("tau host").length, 2);
   assert.equal(screen.getAllByText("omp runtime").length, 2);
   screen.getByText("Updates unavailable while this host is offline.");
   screen.getByText("This host daemon does not support updates. Upgrade it manually first.");
@@ -229,7 +229,7 @@ test("a failed manual check keeps known versions but never claims up to date", a
   let fail = false;
   mockHostRequests(t, async () => fail
     ? Response.json({ error: "Registry unavailable" }, { status: 503 })
-    : Response.json(updateInfo({ ompweb: software({ updateAvailable: false, availableVersion: null, installMethod: "npm", protocolVersion: 3 }) })));
+    : Response.json(updateInfo({ tau: software({ updateAvailable: false, availableVersion: null, installMethod: "npm", protocolVersion: 3 }) })));
   await showHosts([hostRow()]);
   await screen.findAllByText("Up to date");
   fail = true;
@@ -251,14 +251,14 @@ for (const [lost, answer] of [
       calls.push(init?.method ?? "GET");
       if (init?.method === "POST") {
         // The host received the request and started the update; only its answer was lost.
-        operation = { id: "lost", target: "ompweb", version: "1.1.0", state: "failed", error: "Install failed; restored previous host" };
+        operation = { id: "lost", target: "tau", version: "1.1.0", state: "failed", error: "Install failed; restored previous host" };
         return answer();
       }
       return Response.json(updateInfo({ operation }));
     });
     await showHosts([hostRow()]);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Update ompweb host" }));
+    await user.click(await screen.findByRole("button", { name: "Update tau host" }));
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Update" }));
     await screen.findByText(/Install failed; restored previous host/, {}, { timeout: 3500 });
     assert.deepEqual(calls, ["GET", "POST", "GET"]);
@@ -280,8 +280,8 @@ test("an unknown update outcome keeps Update disabled until a status read succee
   });
   await showHosts([hostRow()]);
   const user = userEvent.setup();
-  const updateButton = () => screen.getByRole("button", { name: "Update ompweb host" });
-  assert.equal((await screen.findByRole("button", { name: "Update ompweb host" })).disabled, false);
+  const updateButton = () => screen.getByRole("button", { name: "Update tau host" });
+  assert.equal((await screen.findByRole("button", { name: "Update tau host" })).disabled, false);
   await user.click(updateButton());
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Update" }));
 
@@ -317,7 +317,7 @@ test("idle host checks stop, and a manual check bypasses cached release data", a
     return Response.json(updateInfo());
   });
   await showHosts([hostRow()]);
-  await screen.findByRole("button", { name: "Update ompweb host" });
+  await screen.findByRole("button", { name: "Update tau host" });
   await act(() => new Promise((resolve) => setTimeout(resolve, 1100)));
   assert.deepEqual(urls, ["/api/hosts/local/updates"]);
   await userEvent.setup().click(screen.getByRole("button", { name: "Check updates" }));
@@ -331,20 +331,20 @@ test("reconnect polling is bounded and requires a status check before any retry"
   let calls = 0;
   mockHostRequests(t, async () => {
     calls++;
-    return Response.json(updateInfo({ operation: { id: "running", target: "ompweb", version: "1.1.0", state: "running" } }));
+    return Response.json(updateInfo({ operation: { id: "running", target: "tau", version: "1.1.0", state: "running" } }));
   });
   await showHosts([hostRow()]);
-  await screen.findByText("Updating ompweb host to 1.1.0…");
+  await screen.findByText("Updating tau host to 1.1.0…");
   offset = 24 * 60 * 60 * 1000;
   await act(() => new Promise((resolve) => setTimeout(resolve, 1100)));
-  assert.ok(screen.getByRole("button", { name: "Update ompweb host" }).disabled);
+  assert.ok(screen.getByRole("button", { name: "Update tau host" }).disabled);
   assert.equal(calls, 1);
   assert.ok(screen.getByRole("button", { name: "Retry" }));
 });
 
 test("unavailable discovery retains versions advertised by the host", async (t) => {
   mockHostRequests(t, async () => Response.json({ error: "unknown_op", code: "unknown_op" }, { status: 501 }));
-  await showHosts([hostRow({ ompwebVersion: "0.6.7", ompVersion: "20.0.1" })]);
+  await showHosts([hostRow({ tauVersion: "0.6.7", ompVersion: "20.0.1" })]);
   await screen.findByText("This host daemon does not support updates. Upgrade it manually first.");
   screen.getByText("Current: 0.6.7");
   screen.getByText("Current: 20.0.1");
@@ -352,7 +352,7 @@ test("unavailable discovery retains versions advertised by the host", async (t) 
 
 test("per-software discovery failure or unknown installed version never claims up to date", async (t) => {
   mockHostRequests(t, async () => Response.json(updateInfo({
-    ompweb: software({ availableVersion: null, updateAvailable: false, canUpdate: false, blockedReason: "Registry metadata could not be loaded", installMethod: "npm", protocolVersion: 3 }),
+    tau: software({ availableVersion: null, updateAvailable: false, canUpdate: false, blockedReason: "Registry metadata could not be loaded", installMethod: "npm", protocolVersion: 3 }),
     omp: { currentVersion: null },
   })));
   await showHosts([hostRow()]);
@@ -362,7 +362,7 @@ test("per-software discovery failure or unknown installed version never claims u
 
 test("a registry version that is not newer is not shown as an available candidate", async (t) => {
   mockHostRequests(t, async () => Response.json(updateInfo({
-    ompweb: software({ currentVersion: "18.14.0", availableVersion: "18.14.0", updateAvailable: false, canUpdate: false, installMethod: "npm", protocolVersion: 3 }),
+    tau: software({ currentVersion: "18.14.0", availableVersion: "18.14.0", updateAvailable: false, canUpdate: false, installMethod: "npm", protocolVersion: 3 }),
     omp: { currentVersion: "20.1.0-beta.1" },
   })));
   await showHosts([hostRow()]);
@@ -370,18 +370,18 @@ test("a registry version that is not newer is not shown as an available candidat
   screen.getByText("Current: 20.1.0-beta.1");
   assert.equal(screen.getAllByText("Up to date").length, 2);
   assert.equal(screen.queryByText(/^Available:/), null);
-  assert.equal(screen.queryByRole("button", { name: /^Update (ompweb host|omp runtime)$/ }), null);
+  assert.equal(screen.queryByRole("button", { name: /^Update (tau host|omp runtime)$/ }), null);
 });
 
 test("resident-session blocking stays readable with a disabled daemon update; the omp row offers no update without a candidate", async (t) => {
   mockHostRequests(t, async () => Response.json(updateInfo({
-    ompweb: software({ canUpdate: false, blockedReason: "Close all sessions on Laptop before updating the host daemon.", installMethod: "npm", protocolVersion: 3 }),
+    tau: software({ canUpdate: false, blockedReason: "Close all sessions on Laptop before updating the host daemon.", installMethod: "npm", protocolVersion: 3 }),
   })));
   await showHosts([hostRow({ id: "laptop", label: "Laptop", allowAgentStart: false })]);
   await screen.findByText(/Close all sessions on Laptop before updating the host daemon/);
-  assert.ok(screen.getByRole("button", { name: "Update ompweb host" }).disabled);
+  assert.ok(screen.getByRole("button", { name: "Update tau host" }).disabled);
   assert.equal(screen.queryByRole("button", { name: "Update omp runtime" }), null);
-  assert.equal(screen.queryByText("Updated with ompweb"), null);
+  assert.equal(screen.queryByText("Updated with tau"), null);
 });
 
 test("sharing credentials is confirmed before it is turned on, and turned off at once", async (t) => {

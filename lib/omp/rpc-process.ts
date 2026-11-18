@@ -115,7 +115,7 @@ const requestId = (frame: RpcFrame) => {
 /** Locate the companion pi extension bundled with tau, if present on disk. */
 export function resolveTauExtensionPath(): string | null {
   if (process.env.TAU_NO_EXTENSION === "1") return null;
-  const packageRoot = process.env.OMP_WEB_PACKAGE_DIR;
+  const packageRoot = process.env.TAU_PACKAGE_DIR;
   if (packageRoot) {
     const candidate = join(packageRoot, "lib", "pi", "tau-extension.ts");
     if (existsSync(candidate)) return candidate;

@@ -9,7 +9,7 @@ const MAX_UA_CHARS = 200;
 const ROTATE_BYTES = 20 * 1024 * 1024;
 
 export function transportMetricsPath(): string {
-  return join(getAgentDir(), "omp-web", "transport-metrics.jsonl");
+  return join(getAgentDir(), "tau", "transport-metrics.jsonl");
 }
 
 /** Appends the valid samples (stamped with the server clock and user agent) as JSONL to `file`; returns how many were

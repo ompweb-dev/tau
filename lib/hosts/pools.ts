@@ -108,7 +108,7 @@ export function validatePools(value: unknown): asserts value is HostPool[] {
 export function loadPools(): HostPool[] {
   let text: string;
   try {
-    text = readFileSync(join(getAgentDir(), "omp-web", "pools.json"), "utf8");
+    text = readFileSync(join(getAgentDir(), "tau", "pools.json"), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -126,7 +126,7 @@ export function loadPools(): HostPool[] {
 
 export function savePools(pools: HostPool[]): void {
   validatePools(pools);
-  const file = join(getAgentDir(), "omp-web", "pools.json");
+  const file = join(getAgentDir(), "tau", "pools.json");
   mkdirSync(dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
   try {

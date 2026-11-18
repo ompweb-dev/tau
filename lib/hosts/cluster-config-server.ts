@@ -30,7 +30,7 @@ async function readPluginList(): Promise<PluginEntry[]> {
     plugins = { at: Date.now(), list: await listPlugins((args) => runOmpCli(args, 30_000)) };
   } catch {
     // Never omp's own output: it may name paths or settings.
-    console.log(`[omp-web] cluster-config the plugin list cannot be read${plugins ? "; serving the last one read" : ""}`);
+    console.log(`[tau] cluster-config the plugin list cannot be read${plugins ? "; serving the last one read" : ""}`);
     if (!plugins) throw new ClusterConfigError("unreadable", "the plugin list cannot be read (omp plugin list failed)");
     plugins = { at: Date.now(), list: plugins.list };
   }
@@ -135,9 +135,9 @@ export function admitClusterMember(request: Request): HostRecord | Response {
 /** A ClusterConfigError answers 409 with its code; anything else 500 without detail. Paths may be logged, never content. */
 export function configErrorResponse(hostId: string, error: unknown): Response {
   if (error instanceof ClusterConfigError) {
-    console.log(`[omp-web] cluster-config ${hostId} ${error.code} ${error.message}`);
+    console.log(`[tau] cluster-config ${hostId} ${error.code} ${error.message}`);
     return Response.json({ error: error.message, code: error.code }, { status: 409, headers: noStore });
   }
-  console.log(`[omp-web] cluster-config ${hostId} failed (${error instanceof Error ? error.name : "unknown"})`);
+  console.log(`[tau] cluster-config ${hostId} failed (${error instanceof Error ? error.name : "unknown"})`);
   return configFail("The configuration cannot be served", 500);
 }

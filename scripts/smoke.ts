@@ -1,9 +1,9 @@
-// `npm run smoke [-- --package <dir> | --binary <path>]`: starts ompweb (`node <dir>/bin/omp-web.js`, or the compiled
+// `npm run smoke [-- --package <dir> | --binary <path>]`: starts tau (`node <dir>/bin/tau.js`, or the compiled
 // binary) on a free port with a throwaway HOME, waits for its automatic local host, and checks the shipped
 // bundle, the SPA, a hashed asset, the API, a session listed through the daemon, a live session started through
 // `pi --mode rpc` (no model call) and the SSE stream, then stops both. pi comes from PATH unless --omp names one.
 // <dir>: the repo root (after `npm run build`) or a packed install;
-// <path>: release/ompweb-<os>-<arch>/ompweb, whose directory holds the static files.
+// <path>: release/tau-<os>-<arch>/tau, whose directory holds the static files.
 // Prints one `ok <step>` / `FAIL <step>: <detail>` line per step.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -16,7 +16,7 @@ import { isProcessAlive } from "../lib/process-identity";
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { package: { type: "string" }, binary: { type: "string" }, omp: { type: "string" }, "second-server": { type: "boolean" } } });
 const binary = values.binary && path.resolve(values.binary);
 const dir = binary ? path.dirname(binary) : path.resolve(values.package ?? path.join(import.meta.dir, ".."));
-const ompweb = binary ? [binary] : ["node", path.join(dir, "bin", "omp-web.js")];
+const tau = binary ? [binary] : ["node", path.join(dir, "bin", "tau.js")];
 
 let failed = false;
 async function step(name: string, run: () => unknown): Promise<boolean> {
@@ -66,7 +66,7 @@ const { port } = probe;
 probe.stop(true);
 const base = `http://127.0.0.1:${port}`;
 
-const temp = mkdtempSync(path.join(os.tmpdir(), "ompweb-smoke-"));
+const temp = mkdtempSync(path.join(os.tmpdir(), "tau-smoke-"));
 const home = path.join(temp, "home");
 const agentDir = path.join(home, ".omp", "agent");
 mkdirSync(agentDir, { recursive: true });
@@ -87,10 +87,10 @@ const env: Record<string, string | undefined> = {
   USERPROFILE: home,
   PI_CODING_AGENT_DIR: agentDir,
   // A smoke launched from an installed agent inherits its package root; test this install instead.
-  OMP_WEB_PACKAGE_DIR: dir,
+  TAU_PACKAGE_DIR: dir,
 };
-// TAU_PI_BIN / OMP_WEB_OMP_BIN: an agent shell points it at its own pi; test this install's pi instead unless --omp is passed.
-for (const name of ["OMP_WEB_PASSWORD", "OMP_WEB_PASSWORD_HASH", "OMP_WEB_OMP_BIN", "TAU_PI_BIN"]) delete env[name];
+// TAU_PI_BIN / TAU_OMP_BIN: an agent shell points it at its own pi; test this install's pi instead unless --omp is passed.
+for (const name of ["TAU_PASSWORD", "TAU_PASSWORD_HASH", "TAU_OMP_BIN", "TAU_PI_BIN"]) delete env[name];
 if (values.omp) env.TAU_PI_BIN = path.resolve(values.omp);
 
 let log = "";
@@ -104,7 +104,7 @@ const stop = (child: Bun.Subprocess) => {
 try {
   const ready = Promise.withResolvers<void>();
   const started = await step(`launcher prints Ready on port ${port}`, async () => {
-    const child = Bun.spawn([...ompweb, "-p", String(port), "-H", "127.0.0.1", "--no-open"], {
+    const child = Bun.spawn([...tau, "-p", String(port), "-H", "127.0.0.1", "--no-open"], {
       env,
       stdin: "ignore",
       stdout: "pipe",
@@ -158,7 +158,7 @@ try {
       const controlDeadline = Date.now() + 60_000;
       let result;
       for (;;) {
-        result = Bun.spawnSync([...ompweb, "host", "status"], { env, stdout: "pipe", stderr: "pipe" });
+        result = Bun.spawnSync([...tau, "host", "status"], { env, stdout: "pipe", stderr: "pipe" });
         if (result.exitCode === 0) break;
         assert(launcher?.exitCode === null, `server exited with ${launcher?.exitCode}`);
         assert(Date.now() < controlDeadline, `the automatic local host did not answer within 60 s: ${result.stderr.toString()}`);
@@ -167,7 +167,7 @@ try {
       const status: unknown = JSON.parse(result.stdout.toString());
       assert(status && typeof status === "object" && "pid" in status && typeof status.pid === "number" && status.pid > 1
         && "entrypoint" in status && typeof status.entrypoint === "string" && "executable" in status && typeof status.executable === "string");
-      const expected = binary ? [binary] : [path.join(dir, "bin", "omp-web-host.js"), path.join(dir, "bin", "omp-web.js")];
+      const expected = binary ? [binary] : [path.join(dir, "bin", "tau-host.js"), path.join(dir, "bin", "tau.js")];
       const actual = path.resolve(binary ? status.executable : status.entrypoint);
       assert(expected.some((file) => process.platform === "win32" ? path.resolve(file).toLowerCase() === actual.toLowerCase() : path.resolve(file) === actual), "the control endpoint belongs to another installation");
       daemonPid = status.pid;
@@ -195,7 +195,7 @@ try {
         const secondPort = probe.port;
         probe.stop(true);
         const secondBase = `http://127.0.0.1:${secondPort}`;
-        const child = Bun.spawn([...ompweb, "-p", String(secondPort), "-H", "127.0.0.1", "--no-open"], {
+        const child = Bun.spawn([...tau, "-p", String(secondPort), "-H", "127.0.0.1", "--no-open"], {
           env, stdin: "ignore", stdout: "pipe", stderr: "pipe",
         });
         secondLauncher = child;
@@ -218,7 +218,7 @@ try {
           assert(Date.now() < deadline, "both servers did not show the shared session within 30 s");
           await Bun.sleep(200);
         }
-        const saved = JSON.parse(readFileSync(path.join(agentDir, "omp-web", "host.json"), "utf8")) as { url: string };
+        const saved = JSON.parse(readFileSync(path.join(agentDir, "tau", "host.json"), "utf8")) as { url: string };
         assert.equal(saved.url, base, "starting staging changed the primary daemon URL");
       });
     }
@@ -296,5 +296,5 @@ try {
   await step("temp dirs removed", () => rmSync(temp, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
 }
 
-if (failed && log) console.log(`--- ompweb output ---\n${log}`);
+if (failed && log) console.log(`--- tau output ---\n${log}`);
 process.exit(failed ? 1 : 0);

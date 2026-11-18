@@ -4,8 +4,8 @@ import {
   isValidWebSession,
   isWebPasswordEnabled,
   webPasswordConfigurationProblem,
-  OMP_WEB_SESSION_COOKIE,
-  OMP_WEB_TRUSTED_HEADER,
+  TAU_SESSION_COOKIE,
+  TAU_TRUSTED_HEADER,
 } from "@/lib/web-auth";
 
 // The sign-in screen still needs its JavaScript, CSS and fonts (/assets/, and
@@ -47,7 +47,7 @@ export function proxy(request: Request): Response | "public" | "authenticated" {
   // deliberately logs nothing — a doomed request loop must not flood the log.
   const passwordProblem = webPasswordConfigurationProblem();
   if (passwordProblem) {
-    return new Response(`omp-web password configuration error\n\n${passwordProblem}\n`, {
+    return new Response(`tau password configuration error\n\n${passwordProblem}\n`, {
       status: 503,
       headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
     });
@@ -56,8 +56,8 @@ export function proxy(request: Request): Response | "public" | "authenticated" {
     return pathname === "/login" ? redirect("/") : "authenticated";
   }
 
-  const hasSession = isTrustedProxyRequest(request.headers.get(OMP_WEB_TRUSTED_HEADER))
-    || isValidWebSession(new Bun.CookieMap(request.headers.get("cookie") ?? "").get(OMP_WEB_SESSION_COOKIE) ?? undefined);
+  const hasSession = isTrustedProxyRequest(request.headers.get(TAU_TRUSTED_HEADER))
+    || isValidWebSession(new Bun.CookieMap(request.headers.get("cookie") ?? "").get(TAU_SESSION_COOKIE) ?? undefined);
   if (pathname === "/login") {
     return hasSession ? redirect("/") : "public";
   }

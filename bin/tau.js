@@ -5,24 +5,24 @@
 require("./node-version").exitIfUnsupportedNode();
 
 // Forward service subcommands from the main bin. This makes both
-// `npx @ompweb-dev/tau@latest ompweb-launchd ...` and
-// `npx @ompweb-dev/tau@latest ompweb-systemd ...` work without requiring
+// `npx @ompweb-dev/tau@latest tau-launchd ...` and
+// `npx @ompweb-dev/tau@latest tau-systemd ...` work without requiring
 // callers to know the path of the secondary executable.
 const forwardedServiceScripts = {
-  launchd: "omp-web-launchd.js",
-  "tau-launchd": "omp-web-launchd.js",
-  "ompweb-launchd": "omp-web-launchd.js",
-  systemd: "omp-web-systemd.js",
-  "tau-systemd": "omp-web-systemd.js",
-  "ompweb-systemd": "omp-web-systemd.js",
+  launchd: "tau-launchd.js",
+  "tau-launchd": "tau-launchd.js",
+  "tau-launchd": "tau-launchd.js",
+  systemd: "tau-systemd.js",
+  "tau-systemd": "tau-systemd.js",
+  "tau-systemd": "tau-systemd.js",
 };
 
-// `ompweb hash-password` reads the password on stdin and prints the value for
-// OMP_WEB_PASSWORD_HASH. Handled first so it works with no build artifacts, no
+// `tau hash-password` reads the password on stdin and prints the value for
+// TAU_PASSWORD_HASH. Handled first so it works with no build artifacts, no
 // port, and no agent directory.
 if (process.argv[2] === "hash-password" || process.argv[2] === "hash_password") {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { runHashPasswordCommand } = require("./omp-web-hash-password");
+  const { runHashPasswordCommand } = require("./tau-hash-password");
   runHashPasswordCommand()
     .then((exitCode) => { process.exit(exitCode); })
     .catch((error) => {
@@ -34,9 +34,9 @@ if (process.argv[2] === "hash-password" || process.argv[2] === "hash_password") 
 }
 
 function startLauncher() {
-// `ompweb preflight` (lib/hosts/preflight.ts): what an updater runs on a candidate release; it prints "preflight ok: <omp> <version>".
+// `tau preflight` (lib/hosts/preflight.ts): what an updater runs on a candidate release; it prints "preflight ok: <omp> <version>".
 if (process.argv[2] === "preflight") {
-  process.env.OMP_WEB_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
+  process.env.TAU_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
   module.require("jiti").createJiti(__filename).import("../lib/hosts/preflight.ts").then(
     ({ runPreflight }) => runPreflight().then((code) => process.exit(code)),
     (error) => {
@@ -47,7 +47,7 @@ if (process.argv[2] === "preflight") {
   return;
 }
 if (process.argv[2] === "recover-host") {
-  process.env.OMP_WEB_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
+  process.env.TAU_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
   module.require("jiti").createJiti(__filename).import("../lib/hosts/recovery.ts").then(
     ({ runHostRecoveryCli }) => runHostRecoveryCli(process.argv.slice(3)).then((code) => process.exit(code)),
     (error) => {
@@ -57,11 +57,11 @@ if (process.argv[2] === "recover-host") {
   );
   return;
 }
-// `ompweb host` runs in this process: a supervisor's SIGTERM must reach the daemon, not a wrapper.
+// `tau host` runs in this process: a supervisor's SIGTERM must reach the daemon, not a wrapper.
 if (process.argv[2] === "host") {
   process.argv.splice(2, 1);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require("./omp-web-host.js");
+  require("./tau-host.js");
   return;
 }
 const forwardedServiceScript = forwardedServiceScripts[process.argv[2]];
@@ -85,7 +85,7 @@ const path = require("node:path");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require("node:fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { checkLaunchSecurity, parseLaunchOptions, serverWorkingDirectory } = require("./omp-web-options");
+const { checkLaunchSecurity, parseLaunchOptions, serverWorkingDirectory } = require("./tau-options");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { isPortAvailable } = require("./port-availability");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -108,7 +108,7 @@ if (launchOptions.error) {
 
 if (launchOptions.installTray || launchOptions.uninstallTray || launchOptions.tray) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { runCli } = require("./omp-web-tray");
+  const { runCli } = require("./tau-tray");
   const trayArgs = [];
   if (launchOptions.installTray) {
     trayArgs.push("--install");
@@ -178,16 +178,16 @@ function attachOutput(child) {
 function serverEnvironment() {
   return {
     ...process.env,
-    OMP_WEB_PACKAGE_DIR: pkgDir,
-    OMP_WEB_LAUNCHER_PID: String(process.pid),
-    OMP_WEB_NODE_BIN: process.execPath,
-    OMP_WEB_PORT: port,
-    OMP_WEB_HOSTNAME: hostname,
+    TAU_PACKAGE_DIR: pkgDir,
+    TAU_LAUNCHER_PID: String(process.pid),
+    TAU_NODE_BIN: process.execPath,
+    TAU_PORT: port,
+    TAU_HOSTNAME: hostname,
   };
 }
 
 function trackServer(child) {
-  child.once("error", (error) => console.error(`Could not start ompweb: ${error.message}`));
+  child.once("error", (error) => console.error(`Could not start tau: ${error.message}`));
   attachOutput(child);
   wireChildProcessLifecycle(child, process);
   return child;
@@ -197,7 +197,7 @@ function spawnServer(command) {
   return trackServer(spawn(command[0], command.slice(1), {
     // Never the installation: on Windows a working directory there blocks the rename an
     // in-place update performs, and the server needs no relative path (the entry point and
-    // OMP_WEB_PACKAGE_DIR below are absolute).
+    // TAU_PACKAGE_DIR below are absolute).
     cwd: serverWorkingDirectory(),
     stdio: ["inherit", "pipe", "inherit"],
     env: serverEnvironment(),
@@ -212,7 +212,7 @@ async function main() {
   }
   if (!await isPortAvailable(port, hostname)) {
     console.error(`Port ${port} on ${hostname} is already in use.`);
-    console.error(`If ompweb is already running, open ${browserUrl}. Otherwise, stop the process using it or run: ompweb --port ${Number(port) + 1}`);
+    console.error(`If tau is already running, open ${browserUrl}. Otherwise, stop the process using it or run: tau --port ${Number(port) + 1}`);
     process.exitCode = 1;
     return;
   }

@@ -10,9 +10,9 @@ export type GithubActionsOperation = "dispatch" | "cancel" | "rerun";
 export type GithubActionsPermission = "deny" | "ask" | "allow";
 export type GithubActionsPermissions = Record<GithubActionsOperation, GithubActionsPermission>;
 
-/** omp-web's own server-side settings (omp's config.yml stays omp's). */
+/** tau's own server-side settings (omp's config.yml stays omp's). */
 export interface WebServerSettings {
-  /** Resume sessions that were mid-run when omp-web stopped. */
+  /** Resume sessions that were mid-run when tau stopped. */
   autoResumeSessions: boolean;
   /**
    * Server-side agent tools (issue #275: list_sessions / new_session /
@@ -83,11 +83,11 @@ function readGithubActionsPermissions(value: unknown): GithubActionsPermissions 
 }
 
 function settingsPath(): string {
-  return resolve(getAgentDir(), "omp-web-settings.json");
+  return resolve(getAgentDir(), "tau-settings.json");
 }
 
 function settingsLockPath(): string {
-  return resolve(getAgentDir(), "omp-web-settings.lock.sqlite");
+  return resolve(getAgentDir(), "tau-settings.lock.sqlite");
 }
 
 function normalizeSettings(raw: Record<string, unknown>): WebServerSettings {
@@ -128,12 +128,12 @@ export function readWebServerSettingsFromDisk(): WebServerSettings {
 
 declare global {
   // Survives `bun --hot` re-evaluation, which creates fresh module instances.
-  var __ompWebSettingsCache: { path: string; settings: WebServerSettings } | undefined;
+  var __tauSettingsCache: { path: string; settings: WebServerSettings } | undefined;
 }
 
 export function loadWebServerSettings(): WebServerSettings {
   const path = settingsPath();
-  const cached = globalThis.__ompWebSettingsCache;
+  const cached = globalThis.__tauSettingsCache;
   if (cached?.path === path) return cached.settings;
   let settings = DEFAULTS;
   try {
@@ -141,7 +141,7 @@ export function loadWebServerSettings(): WebServerSettings {
   } catch {
     // Unreadable settings fall back to the defaults.
   }
-  globalThis.__ompWebSettingsCache = { path, settings };
+  globalThis.__tauSettingsCache = { path, settings };
   return settings;
 }
 
@@ -187,7 +187,7 @@ export function saveWebServerSettings(patch: WebServerSettingsPatch): WebServerS
     };
     writeFileSync(temp, `${JSON.stringify(settings, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temp, path);
-    globalThis.__ompWebSettingsCache = { path, settings };
+    globalThis.__tauSettingsCache = { path, settings };
     lock.exec("COMMIT");
     return settings;
   } catch (error) {
