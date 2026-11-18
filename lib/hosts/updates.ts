@@ -1,10 +1,11 @@
+import { execFile } from "node:child_process";
 import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import packageJson from "../../package.json";
-import { checkNpmUpdate, detectInstallMethod } from "../npm-update";
-import { getOmpVersion } from "../omp/omp-cli";
+import { checkNpmUpdate, checkPiRegistryVersion, detectInstallMethod } from "../npm-update";
+import { getOmpVersion, resolveOmpBin, wrapWindowsScript } from "../omp/omp-cli";
 import { createChildProcessEnvironment } from "../project-command-env";
 import { isUpdateDisabled } from "../update-policy";
 import { isNewerVersion } from "../version-compare";
@@ -197,14 +198,29 @@ async function evaluateHostUpdate(compatibility: HostUpdateCompatibility, refres
   if (targetCompatibility !== undefined) assertCompatibility(targetCompatibility);
   const operation = getHostUpdateOperation();
   const disabled = isUpdateDisabled() ? "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE" : null;
-  const [npm, ompVersion] = await Promise.all([targetVersion === undefined ? checkNpmUpdate(refresh).catch(() => null) : { currentVersion: packageJson.version, availableVersion: targetVersion, updateAvailable: isNewerVersion(targetVersion, packageJson.version) }, getOmpVersion()]);
+  const [npm, ompVersion, piLatest] = await Promise.all([targetVersion === undefined ? checkNpmUpdate(refresh).catch(() => null) : { currentVersion: packageJson.version, availableVersion: targetVersion, updateAvailable: isNewerVersion(targetVersion, packageJson.version) }, getOmpVersion(), checkPiRegistryVersion(refresh)]);
   const base: HostSoftwareUpdate = { currentVersion: null, availableVersion: null, updateAvailable: false, canUpdate: false, blockers: [], canForceUpdate: false, blockedReason: null, updateCommand: "" };
   base.supportsReleasePin = true;
   base.supportsTwoPhaseUpdate = true;
   const installMethod = typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "binary" : detectInstallMethod(installDirectory());
-  const ompweb: HostUpdateInfo["ompweb"] = { ...base, ...npm, currentVersion: packageJson.version, installMethod, protocolVersion: null, activeSessions: safetyState.sessions(), updateCommand: installMethod === "binary" ? `https://github.com/${releaseRepo()}/releases/latest` : installMethod === "bun" ? "bun add -g @kahme247/ompweb" : "npm install -g @kahme247/ompweb" };
-  // omp updates with ompweb (its runner ships inside each release): the row only reports the running version.
-  const runtime: HostUpdateInfo["omp"] = { currentVersion: ompVersion?.replace(/^omp\//, "") ?? null };
+  const ompweb: HostUpdateInfo["ompweb"] = { ...base, ...npm, currentVersion: packageJson.version, installMethod, protocolVersion: null, activeSessions: safetyState.sessions(), updateCommand: installMethod === "binary" ? `https://github.com/${releaseRepo()}/releases/latest` : installMethod === "bun" ? "bun add -g @ompweb-dev/tau" : "npm install -g @ompweb-dev/tau" };
+  const piCurrent = ompVersion?.replace(/^(?:omp|pi)\//, "") ?? null;
+  const piUpdateAvailable = Boolean(piCurrent && piLatest && isNewerVersion(piLatest, piCurrent));
+  const piBlockers: HostUpdateBlocker[] = [];
+  if (disabled) piBlockers.push({ code: "updates_disabled", message: disabled, forceable: false });
+  if (operation?.state === "running") piBlockers.push({ code: "update_in_progress", message: "Another host update is in progress", forceable: false });
+  const piBusy = safetyGuard?.();
+  if (piUpdateAvailable && piBusy) piBlockers.push({ code: safetyState.drained() ? "host_drained" : "host_busy", message: piBusy, forceable: !safetyState.drained() });
+  const runtime: HostUpdateInfo["omp"] = {
+    currentVersion: piCurrent,
+    availableVersion: piLatest,
+    updateAvailable: piUpdateAvailable,
+    canUpdate: piUpdateAvailable && piBlockers.length === 0,
+    canForceUpdate: piUpdateAvailable && piBlockers.length > 0 && piBlockers.every((b) => b.forceable),
+    blockers: piBlockers,
+    blockedReason: piBlockers[0]?.message ?? null,
+    updateCommand: "pi update pi",
+  };
   const blockers: HostUpdateBlocker[] = [];
   let plan: HostRestartPlan | null = null;
   let awaitsServerCutover = false;
@@ -375,7 +391,7 @@ export async function startHostUpdate(target: HostUpdateTarget, version: string,
   if (request.force !== undefined && typeof request.force !== "boolean") throw new HostUpdateError("invalid_request", "force must be a boolean", 400);
   if (request.phase !== undefined && !["prepare", "commit", "cancel"].includes(request.phase)) throw new HostUpdateError("invalid_request", "Invalid host update phase", 400);
   const force = request.force === true;
-  if (target !== "ompweb") throw new HostUpdateError("invalid_target", "Invalid host software target", 400);
+  if (target !== "ompweb" && target !== "omp") throw new HostUpdateError("invalid_target", "Invalid host software target", 400);
   if (typeof version !== "string" || version.length > 100 || !HOST_VERSION_PATTERN.test(version)) throw new HostUpdateError("invalid_version", "Invalid host update version", 400);
   if (request.operationId !== undefined && (typeof request.operationId !== "string" || !OPERATION_ID.test(request.operationId))) throw new HostUpdateError("invalid_request", "operationId must be a UUID", 400);
   if (request.phase && (!request.operationId || request.requireReleasePin !== true || !request.releasePin)) throw new HostUpdateError("invalid_request", "Phased host updates require an operationId and approved release pin", 400);
@@ -409,6 +425,22 @@ export async function startHostUpdate(target: HostUpdateTarget, version: string,
     const software = info[target];
     if (!software.updateAvailable || software.availableVersion !== version) throw new HostUpdateError("candidate_changed", "The available update candidate changed; refresh host updates");
     if (!software.canUpdate && !(force && software.canForceUpdate)) throw new HostUpdateError(software.canForceUpdate ? "host_busy" : "update_blocked", software.blockedReason || "This host update is blocked");
+    if (target === "omp") {
+      const piBin = resolveOmpBin(true);
+      if (!piBin) throw new HostUpdateError("update_blocked", "pi binary not found on this host");
+      if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE", 403);
+      const operation: HostUpdateOperation = { id, target, version, state: "running", ...(force ? { force: true as const } : {}) };
+      writeHostUpdateJson(join(root, "status.json"), { operation, startedAt: Date.now(), daemonPid: process.pid });
+      claimed = true;
+      const busy = safetyGuard?.() ?? null;
+      if (busy && (!force || safetyState.drained())) throw new HostUpdateError(safetyState.drained() ? "host_drained" : "host_busy", busy);
+      const cmd = wrapWindowsScript(piBin, ["update", "pi"]);
+      execFile(cmd.file, cmd.args, { cwd: dirname(piBin), timeout: 300_000, env: createChildProcessEnvironment(), windowsHide: true }, (error, stdout, stderr) => {
+        if (error) finishHostUpdate(id, (stderr || stdout || error.message).trim().slice(-500));
+        else finishHostUpdate(id);
+      });
+      return { accepted: true, operation };
+    }
     const method = info.ompweb.installMethod;
     if (!plan?.process) throw new HostUpdateError("update_blocked", "This host's process could not be verified");
     if (releasePin && plan?.restartOnly) throw new HostUpdateError("update_blocked", "An existing installation cannot be adopted as an approved release without artifact evidence");

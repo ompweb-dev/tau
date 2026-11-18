@@ -6,7 +6,7 @@
 // <path>: release/ompweb-<os>-<arch>/ompweb, whose directory holds the static files and the runner (ompweb-omp) unless
 // built --no-runner. Prints one `ok <step>` / `FAIL <step>: <detail>` line per step.
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
@@ -89,21 +89,9 @@ const env: Record<string, string | undefined> = {
   // A smoke launched from an installed agent inherits its package root; test this install instead.
   OMP_WEB_PACKAGE_DIR: dir,
 };
-// OMP_WEB_OMP_BIN: an agent shell points it at its own omp; test this install's runner instead.
-for (const name of ["OMP_WEB_PASSWORD", "OMP_WEB_PASSWORD_HASH", "OMP_WEB_OMP_BIN"]) delete env[name];
-// --omp <path>: a packed install, or a --no-runner binary, fetches its runner from its release, which a build under
-// test has not published yet (lib/omp/runner-fetch.ts).
-if (values.omp) env.OMP_WEB_OMP_BIN = path.resolve(values.omp);
-// A private Windows runner lets cleanup identify this smoke's detached brokers without killing other installs' images.
-let privateRunner: string | undefined;
-if (process.platform === "win32") {
-  const runner = env.OMP_WEB_OMP_BIN || (binary ? path.join(dir, "ompweb-omp.exe") : path.join(dir, "runner", "release", "ompweb-omp-windows-x64.exe"));
-  if (existsSync(runner)) {
-    privateRunner = path.join(temp, "ompweb-omp.exe");
-    copyFileSync(runner, privateRunner);
-    env.OMP_WEB_OMP_BIN = privateRunner;
-  }
-}
+// TAU_PI_BIN / OMP_WEB_OMP_BIN: an agent shell points it at its own pi; test this install's pi instead unless --omp is passed.
+for (const name of ["OMP_WEB_PASSWORD", "OMP_WEB_PASSWORD_HASH", "OMP_WEB_OMP_BIN", "TAU_PI_BIN"]) delete env[name];
+if (values.omp) env.TAU_PI_BIN = path.resolve(values.omp);
 
 let log = "";
 let launcher: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
@@ -304,14 +292,6 @@ try {
         await Bun.sleep(200);
       }
     });
-  }
-  // omp's shared brokers (daemon broker, LSP mux, embedding server) detach and outlive the session by design;
-  // on Windows they keep the throwaway HOME locked, so stop every runner process this smoke started.
-  if (privateRunner) {
-    const escaped = privateRunner.replaceAll("'", "''");
-    const cleanup = Bun.spawnSync(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-      `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq '${escaped}' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`]);
-    assert(cleanup.exitCode === 0, "could not stop the smoke's private runner processes");
   }
   await step("temp dirs removed", () => rmSync(temp, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 }));
 }

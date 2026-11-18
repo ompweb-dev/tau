@@ -179,16 +179,17 @@ export function HostUpdates({ host }: { host: HostRow }) {
           <RefreshCw size={13} aria-hidden="true" />{t(loading ? "hostUpdates.checking" : error || needsStatus ? "hostUpdates.retry" : "hostUpdates.check")}
         </button>
       </div>
-      {(["ompweb"] as const).map((target) => {
+      {(["ompweb", "omp"] as const).map((target) => {
         const software = info?.[target];
         const label = t(`hostUpdates.${target}`);
+        const fallbackVersion = target === "ompweb" ? host.ompwebVersion : host.ompVersion?.replace(/^(?:omp|pi)\//, "");
         const updateDisabled = disabled || needsStatus || operation?.recoveryRequired === true || !software?.canUpdate;
         const forceable = operation?.recoveryRequired !== true && software?.updateAvailable === true && !software.canUpdate && software.canForceUpdate === true;
         return (
           <div key={target} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <div style={{ minWidth: 0, flex: "1 1 200px", fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere" }}>
               <strong style={{ color: "var(--text)", fontWeight: 600 }}>{label}</strong>
-              <div style={{ marginTop: 3, fontFamily: "var(--font-mono)" }}>{t("hostUpdates.current", { version: software?.currentVersion ?? host.ompwebVersion ?? t("hostUpdates.unknown") })}</div>
+              <div style={{ marginTop: 3, fontFamily: "var(--font-mono)" }}>{t("hostUpdates.current", { version: software?.currentVersion ?? fallbackVersion ?? t("hostUpdates.unknown") })}</div>
               {software?.updateAvailable && software.availableVersion && <div style={{ color: "var(--accent)" }}>{t("hostUpdates.available", { version: software.availableVersion })}</div>}
               {software?.currentVersion && !software.updateAvailable && !software.blockedReason && !error && !busy && !unavailableReason && <div>{t("hostUpdates.upToDate")}</div>}
               {software?.blockedReason && <div style={{ marginTop: 3, color: "var(--status-warning)" }}>{t("hostUpdates.blocked", { reason: software.blockedReason })}</div>}
@@ -202,12 +203,6 @@ export function HostUpdates({ host }: { host: HostRow }) {
           </div>
         );
       })}
-      {/* omp updates with ompweb: each ompweb release ships its omp runner. */}
-      <div style={{ minWidth: 0, fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere" }}>
-        <strong style={{ color: "var(--text)", fontWeight: 600 }}>{t("hostUpdates.omp")}</strong>
-        <div style={{ marginTop: 3, fontFamily: "var(--font-mono)" }}>{t("hostUpdates.current", { version: info?.omp.currentVersion ?? host.ompVersion?.replace(/^omp\//, "") ?? t("hostUpdates.unknown") })}</div>
-        <div>{t("hostUpdates.ompWithOmpweb")}</div>
-      </div>
       <div aria-live="polite" style={{ fontSize: 12, color: "var(--text-muted)", overflowWrap: "anywhere" }}>
         {unavailableReason && <div>{unavailableReason}</div>}
         {monitoring && <div role="status">{operation?.state === "running" ? t("hostUpdates.updating", { software: t(`hostUpdates.${operation.target}`), version: operation.version }) : t("hostUpdates.reconnecting")}</div>}
