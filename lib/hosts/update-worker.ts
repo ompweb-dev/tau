@@ -613,14 +613,8 @@ export async function preflightHostRelease(d: HostReleasePreflightInput, release
   }
   const command = (args: string[], timeout: number) => exec(binary ? entry : d.runtime!, binary ? args : [entry, ...args], { cwd: release, timeout, env: workerEnvironment(), maxBuffer: 1024 * 1024, windowsHide: true });
   const detail = (error: unknown) => (String((error as { stderr?: unknown }).stderr ?? "").trim() || (error instanceof Error ? error.message : String(error))).slice(-500);
-  // A binary release with the preflight command and no runner beside it has `fetch-omp`; every npm one that has
-  // runner-fetch.ts does (an npm package never carries the runner).
-  if (!pin && (binary ? !existsSync(join(release, process.platform === "win32" ? "ompweb-omp.exe" : "ompweb-omp")) : existsSync(join(release, "lib", "omp", "runner-fetch.ts")))) {
-    try { await command(["fetch-omp"], DOWNLOAD_TIMEOUT_MS); }
-    catch (error) { throw new Error(`The new host release could not fetch its omp: ${detail(error)}`); }
-  }
   try {
-    // 120 s: the preflight itself can take 30 s for the hello, 7 s to stop omp and 30 s for the version probe.
+    // 120 s: the preflight itself can take 30 s for get_state, 7 s to stop pi and 30 s for the version probe.
     await command(["preflight"], 120000);
   } catch (error) {
     throw new Error(`The new host release cannot start a session: ${detail(error)}`);

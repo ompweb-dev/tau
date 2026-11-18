@@ -195,7 +195,7 @@ export function writeModelsConfig(config: ModelsFileConfig, options: WriteModels
   if (current.parseError && !options.overwriteUnparseable) {
     throw new ModelsConfigParseError(current.path, current.parseError);
   }
-  const text = serializeModelsConfig(sanitizeModelsConfig(config), current.parseError ? undefined : current.source);
+  const text = serializeModelsConfig(sanitizeModelsConfig(config));
   const dir = dirname(current.path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   // Write-then-rename: a crash mid-write must not leave models.yml truncated,
