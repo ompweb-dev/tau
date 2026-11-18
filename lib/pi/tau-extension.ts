@@ -4,7 +4,7 @@
  * Bridges tau-specific capabilities over pi's standard RPC + Extension UI protocol:
  *   1. Host tools the server registers (`/tau_host_tools`), called via `ctx.ui.input("__tau_host_tool__", ...)`
  *   2. Interactive `ask` tool via `ctx.ui.input("__tau_ask__", ...)`
- *   3. `clientMessageId` / `origin` tracking via `/tau_meta` + `input` / `message_start`
+ *   3. Message identity and origin (`/tau_meta`, `input`, `message_start`/`message_end`)
  *   4. `/btw` side questions (`/tau_btw`)
  *   5. History Edit (`/tau_edit`)
  * pi-subagents needs no bridge here: tau reads its tool progress and `subagent-async` widget (lib/omp/subagent-bridge.ts).
@@ -17,7 +17,7 @@ interface PiUI {
   setWidget(key: string, lines: string[] | undefined, options?: { placement?: "aboveEditor" | "belowEditor" }): void;
 }
 
-interface SessionEntry { type?: string; customType?: string; data?: unknown; message?: { role?: string; content?: unknown } }
+interface SessionEntry { id?: string; type?: string; customType?: string; data?: unknown; message?: { role?: string; content?: unknown } }
 
 /** The subset of pi's AssistantMessageEventStream the side questions read. */
 interface ModelStream extends AsyncIterable<{ type: string; delta?: string }> {
@@ -71,11 +71,6 @@ interface PiExtensionAPI {
     on(event: string, handler: (data: unknown) => void): () => void;
     emit(event: string, data: unknown): void;
   };
-}
-
-interface MessageMeta {
-  clientMessageId?: string;
-  origin?: string;
 }
 
 /** tau's side-question record (lib/btw.ts): the first turn, then any follow-ups. */
@@ -207,32 +202,122 @@ export default function tauExtension(pi: PiExtensionAPI): void {
     },
   });
 
-  // 3. clientMessageId / origin tracking
-  const pendingMeta: MessageMeta[] = [];
+  // 3. Message identity. pi keeps no client ids, so tau names each message just before sending it
+  //    (`/tau_meta {action: "name", clientMessageId, origin, text}`). The input handler binds the name to the message
+  //    pi admits with that text, tracking pi's steering and follow-up queues in their delivery order; message_start
+  //    announces it (`tau_message_identity`, ahead of pi's own event) and message_end journals it as tau's
+  //    `client-message-entry`, which the session reader joins to show origin cards.
+  interface Named { clientMessageId: string; text: string; origin?: unknown }
+  const named: Named[] = [];
+  let starting: Named | null = null;
+  let current: Named | null = null;
+  const queued: Record<"steering" | "followUp", Named[]> = { steering: [], followUp: [] };
+  const emitTau = (ctx: PiContext, frame: Record<string, unknown>) => ctx.ui.setWidget("tau", [JSON.stringify(frame)]);
+  const emitQueue = (ctx: PiContext) => emitTau(ctx, {
+    type: "tau_queue",
+    steering: queued.steering.map(({ clientMessageId, origin }) => ({ clientMessageId, origin })),
+    followUp: queued.followUp.map(({ clientMessageId, origin }) => ({ clientMessageId, origin })),
+  });
+  const textOf = (content: unknown) => typeof content === "string" ? content
+    : Array.isArray(content) ? content.filter((block) => block?.type === "text").map((block) => block.text).join("") : "";
+  /** The queued message pi starts: steering goes first; text tells the queues apart unless a skill or template expanded it. */
+  const takeQueued = (text: string): Named | null => {
+    for (const queue of [queued.steering, queued.followUp]) if (queue[0]?.text === text) return queue.shift()!;
+    for (const queue of [queued.steering, queued.followUp]) if (queue[0]?.text.startsWith("/")) return queue.shift()!;
+    return queued.steering.shift() ?? queued.followUp.shift() ?? null;
+  };
+  const journaled = (ctx: PiContext) => {
+    const ids = new Map<string, string>(), resolved = new Set<string>();
+    for (const entry of ctx.sessionManager?.getBranch?.() ?? []) {
+      const data = entry.data as { clientMessageId?: unknown; entryId?: unknown; clientMessageIds?: unknown } | undefined;
+      if (entry.type === "custom" && entry.customType === "client-message-entry" && typeof data?.clientMessageId === "string" && typeof data.entryId === "string") ids.set(data.clientMessageId, data.entryId);
+      if (entry.type === "custom" && entry.customType === "client-message-resolution" && Array.isArray(data?.clientMessageIds)) for (const id of data.clientMessageIds) resolved.add(String(id));
+    }
+    return { ids, resolved };
+  };
+
+  // Announced at start, so tau names the very first message (an adopted process proves itself by any reply).
+  pi.on("session_start", (_event, ctx) => emitTau(ctx, { type: "tau_hello" }));
 
   pi.registerCommand("tau_meta", {
-    description: "Attach clientMessageId/origin metadata to the next user message",
-    handler(args) {
+    description: "tau's message identity (name, status, clear)",
+    handler(args, ctx) {
+      let cmd: { action?: unknown; replyId?: unknown; clientMessageId?: unknown; text?: unknown; origin?: unknown; clientMessageIds?: unknown };
       try {
-        const parsed = JSON.parse(args) as MessageMeta;
-        if (parsed && (parsed.clientMessageId || parsed.origin)) {
-          pendingMeta.push({
-            ...(parsed.clientMessageId ? { clientMessageId: String(parsed.clientMessageId) } : {}),
-            ...(parsed.origin ? { origin: String(parsed.origin) } : {}),
-          });
-        }
+        cmd = JSON.parse(args);
       } catch {
-        // Ignore malformed metadata payloads.
+        return;
       }
+      const reply = (data: unknown) => emitTau(ctx, { type: "tau_reply", replyId: cmd.replyId, data });
+      if (cmd.action === "name" && typeof cmd.clientMessageId === "string" && typeof cmd.text === "string") {
+        named.push({ clientMessageId: cmd.clientMessageId, text: cmd.text, ...(cmd.origin !== undefined ? { origin: cmd.origin } : {}) });
+        return reply({ named: true });
+      }
+      if (cmd.action === "clear") {
+        // tau took pi's queue back (clear_queue): those messages will never start.
+        const withdrawn = [...queued.steering, ...queued.followUp].map((item) => item.clientMessageId);
+        queued.steering = []; queued.followUp = [];
+        if (withdrawn.length) pi.appendEntry("client-message-resolution", { clientMessageIds: withdrawn });
+        emitQueue(ctx);
+        return reply({ withdrawn });
+      }
+      if (cmd.action === "status" && Array.isArray(cmd.clientMessageIds)) {
+        const asked = cmd.clientMessageIds.filter((id): id is string => typeof id === "string");
+        const { ids, resolved } = journaled(ctx);
+        const pending = new Set([...named, ...queued.steering, ...queued.followUp, ...(starting ? [starting] : []), ...(current ? [current] : [])].map((item) => item.clientMessageId));
+        const messages = asked.flatMap((clientMessageId) => {
+          const entry = ids.has(clientMessageId) ? ctx.sessionManager?.getEntry?.(ids.get(clientMessageId)!) : undefined;
+          return entry?.message ? [{ clientMessageId, message: entry.message }] : [];
+        });
+        return reply({
+          messages,
+          queuedMessages: {
+            steering: queued.steering.map((item) => item.text), followUp: queued.followUp.map((item) => item.text),
+            clientMessageIds: { steering: queued.steering.map((item) => item.clientMessageId), followUp: queued.followUp.map((item) => item.clientMessageId) },
+          },
+          persistedClientMessageIds: asked.filter((id) => ids.has(id)),
+          resolvedClientMessageIds: asked.filter((id) => resolved.has(id)),
+          unresolvedClientMessageIds: asked.filter((id) => pending.has(id) && !ids.has(id) && !resolved.has(id)),
+        });
+      }
+      reply(null);
     },
   });
 
+  pi.on("input", (event, ctx) => {
+    const index = named.findIndex((item) => item.text === event.text);
+    if (index === -1) return;
+    const item = named.splice(index, 1)[0];
+    if (event.streamingBehavior === "steer") queued.steering.push(item);
+    else if (event.streamingBehavior === "followUp") queued.followUp.push(item);
+    else starting = item;
+    if (event.streamingBehavior) emitQueue(ctx);
+  });
+
   pi.on("message_start", (event, ctx) => {
-    const msg = event.message as { role?: string } | undefined;
-    if (msg?.role !== "user" || pendingMeta.length === 0) return;
-    const meta = pendingMeta.shift()!;
-    pi.appendEntry("tau_message_meta", meta);
-    ctx.ui.setStatus("tau-meta", JSON.stringify(meta));
+    const message = event.message as { role?: string; content?: unknown } | undefined;
+    if (message?.role !== "user") return;
+    const wasQueued = !starting;
+    current = starting ?? takeQueued(textOf(message.content));
+    starting = null;
+    if (!current) return;
+    emitTau(ctx, { type: "tau_message_identity", clientMessageId: current.clientMessageId, ...(current.origin !== undefined ? { origin: current.origin } : {}) });
+    if (wasQueued) emitQueue(ctx);
+  });
+
+  pi.on("message_end", (event, ctx) => {
+    const message = event.message as { role?: string; timestamp?: unknown } | undefined;
+    if (message?.role !== "user" || !current) return;
+    const named = current;
+    current = null;
+    // pi stores the message after its message_end handlers: journal it once its entry exists (found by timestamp).
+    const journal = (attempt: number) => {
+      const entry = (ctx.sessionManager?.getBranch?.() ?? []).findLast((item) => item.type === "message" && item.message?.role === "user"
+        && (item.message as { timestamp?: unknown }).timestamp === message.timestamp) as (SessionEntry & { id?: string }) | undefined;
+      if (entry?.id) pi.appendEntry("client-message-entry", { clientMessageId: named.clientMessageId, entryId: entry.id, ...(named.origin !== undefined ? { origin: named.origin } : {}) });
+      else if (attempt < 50) setTimeout(() => journal(attempt + 1), 20);
+    };
+    setTimeout(() => journal(0), 0);
   });
 
   // 4. /btw side questions: answered from the conversation so far with the session's model, never added to it.

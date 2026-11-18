@@ -175,6 +175,12 @@ export class RpcProcess {
   private settled: boolean | null;
   /** The last `queue_update`: pi's `get_state` reports only `pendingMessageCount`. */
   private lastQueue: { steering: unknown[]; followUp: unknown[] } | null = null;
+  /** Whether tau's companion extension answers (any `tau` widget frame seen): then messages carry client ids. */
+  tauExtension = false;
+  /** The extension's names for the queued messages (`tau_queue`), in pi's queue order. */
+  private queueIds: Record<"steering" | "followUp", Array<{ clientMessageId?: unknown; origin?: unknown }>> | null = null;
+  /** The name the extension announced for the user message pi starts next (`tau_message_identity`). */
+  private identity: { clientMessageId: unknown; origin?: unknown } | null = null;
   private stderrTail = "";
   private exited = false;
   private exitInfo: { code: number | null; signal: NodeJS.Signals | null } | null = null;
@@ -329,6 +335,14 @@ export class RpcProcess {
     if (parsed.type === "agent_start") this.settled = false;
     if (parsed.type === "queue_update") {
       this.lastQueue = { steering: Array.isArray(parsed.steering) ? parsed.steering : [], followUp: Array.isArray(parsed.followUp) ? parsed.followUp : [] };
+      this.dispatch({ ...parsed, ...this.queueNames(this.lastQueue) } as RpcFrame, replayed);
+      return;
+    }
+    if ((parsed.type === "message_start" || parsed.type === "message_end") && this.identity && isRecord(parsed.message) && parsed.message.role === "user") {
+      const { clientMessageId, origin } = this.identity;
+      if (parsed.type === "message_end") this.identity = null;
+      this.dispatch({ ...parsed, type: parsed.type, clientMessageId, ...(origin !== undefined ? { origin } : {}) }, replayed);
+      return;
     }
     if (parsed.type === "agent_settled") {
       this.settled = true;
@@ -381,6 +395,19 @@ export class RpcProcess {
     if (method === "setWidget" && req.widgetKey === "tau" && Array.isArray(req.widgetLines) && typeof req.widgetLines[0] === "string") {
       try {
         const btw = JSON.parse(req.widgetLines[0]) as RpcFrame;
+        this.tauExtension = true;
+        if (btw?.type === "tau_hello") return null;
+        if (btw?.type === "tau_message_identity") {
+          this.identity = { clientMessageId: btw.clientMessageId, ...(btw.origin !== undefined ? { origin: btw.origin } : {}) };
+          return null;
+        }
+        if (btw?.type === "tau_queue") {
+          const list = (value: unknown) => (Array.isArray(value) ? value.filter(isRecord) : []);
+          this.queueIds = { steering: list(btw.steering), followUp: list(btw.followUp) };
+          // pi may have reported this queue before the extension named it: report it again, named.
+          const named = this.lastQueue && this.queueNames(this.lastQueue);
+          return named && Object.keys(named).length ? { type: "queue_update", ...this.lastQueue, ...named } : null;
+        }
         if (btw && btw.type === "tau_reply") {
           // Answers one of this process's extension calls; another server's calls name ids it never made.
           const entry = typeof btw.replyId === "string" ? this.extensionReplies.get(btw.replyId) : undefined;
@@ -542,12 +569,26 @@ export class RpcProcess {
   }
 
   /** A `response`; one for no pending command (timed out, or another server's) is dropped. */
+  /** The extension's ids and origins for `queue`, when they line up with it; none otherwise. */
+  private queueNames(queue: { steering: unknown[]; followUp: unknown[] }): Record<string, unknown> {
+    const names = this.queueIds;
+    if (!names || names.steering.length !== queue.steering.length || names.followUp.length !== queue.followUp.length) return {};
+    const field = (key: "clientMessageId" | "origin") => ({
+      steering: names.steering.map((item) => item[key] ?? null), followUp: names.followUp.map((item) => item[key] ?? null),
+    });
+    return { clientMessageIds: field("clientMessageId"), messageOrigins: field("origin") };
+  }
+
   /** Fills the `get_state` fields tau reads that pi does not report: the queue, its size and settlement. */
   private withQueueAndSettlement(state: Record<string, unknown>): Record<string, unknown> {
     const pending = typeof state.pendingMessageCount === "number" ? state.pendingMessageCount : undefined;
     const out = { ...state };
     if (out.queuedMessageCount === undefined && pending !== undefined) out.queuedMessageCount = pending;
-    if (out.queuedMessages === undefined && (this.lastQueue || pending === 0)) out.queuedMessages = this.lastQueue ?? { steering: [], followUp: [] };
+    if (out.queuedMessages === undefined && (this.lastQueue || pending === 0)) {
+      const queue = this.lastQueue ?? { steering: [], followUp: [] };
+      out.queuedMessages = { ...queue, ...this.queueNames(queue) };
+    }
+    if (out.supportsClientMessageIds === undefined && this.tauExtension) out.supportsClientMessageIds = true;
     if (out.isSettled === undefined && this.settled !== null && pending !== undefined) {
       out.isSettled = this.settled && state.isStreaming !== true && state.isCompacting !== true && pending === 0;
     }

@@ -175,7 +175,6 @@ const PASSTHROUGH_COMMANDS = new Set([
   "set_subagent_subscription",
   "get_login_providers",
   "login",
-  "get_client_message_status",
 ]);
 
 // Commands that can carry user-attached images to the model. All of them must
@@ -2536,6 +2535,11 @@ export class AgentSessionWrapper {
   }
 
   /** `correlationKey`: the command a caller submitted through `send`; marked once its native message write begins. */
+  /** pi's queue was taken back: the extension's names for it will never start (best effort; it journals them withdrawn). */
+  private forgetQueuedNames(): void {
+    if (this.proc.tauExtension) void this.proc.callExtension("tau_meta", { action: "clear" }, GET_STATE_TIMEOUT_MS).catch(() => {});
+  }
+
   private async sendNativeMessageCommand<T = unknown>(command: { type: string; [key: string]: unknown }, timeoutMs?: number, correlationKey?: object): Promise<T> {
     const message = IMAGE_BEARING_COMMANDS.has(command.type);
     const proof = message && !this.messageReplacement && !this.hasPendingMessageCommands()
@@ -2549,6 +2553,12 @@ export class AgentSessionWrapper {
     }
     const generation = this.messageCommandGeneration;
     try {
+      // pi keeps no client ids: the companion extension binds this name to the message pi admits next with this text.
+      if (message && this.proc.tauExtension && isClientMessageId(command.clientMessageId) && typeof command.message === "string") {
+        await this.proc.callExtension("tau_meta", {
+          action: "name", clientMessageId: command.clientMessageId, text: command.message, ...(isRecord(command.origin) ? { origin: command.origin } : {}),
+        }, GET_STATE_TIMEOUT_MS).catch(() => {});
+      }
       const replacement = proof ?? this.messageReplacement;
       const result = await this.proc.sendCommand<T>(command, timeoutMs, message && replacement
         ? (_ok, id) => replacement.replied(proof ? command : correlationKey ?? command, id)
@@ -2702,8 +2712,13 @@ export class AgentSessionWrapper {
       // Like a control read, expiry must not abort unrelated work or replay a possibly applied mutation.
       case "clear_queue": {
         const result = await this.proc.sendCommand({ type: "clear_queue" }, GET_STATE_TIMEOUT_MS);
+        this.forgetQueuedNames();
         return result ?? null;
       }
+
+      // The extension journals which messages pi persisted, queued or withdrew (`/tau_meta` status).
+      case "get_client_message_status":
+        return await this.proc.callExtension("tau_meta", { action: "status", clientMessageIds: command.clientMessageIds }, GET_STATE_TIMEOUT_MS);
 
       // abort_and_restore_queue is the TUI's Esc: clear_queue before abort (pi runs a queued
       // message as soon as an abort lands), then report the withdrawn texts as entries.
@@ -2714,6 +2729,7 @@ export class AgentSessionWrapper {
         const result = await this.withFinalRunningNotification(async () => {
           const withdrawn = type === "abort" ? null
             : await this.proc.sendCommand<{ steering?: unknown; followUp?: unknown }>({ type: "clear_queue" }, GET_STATE_TIMEOUT_MS);
+          if (withdrawn) this.forgetQueuedNames();
           try {
             await this.proc.sendCommand({ type: "abort" });
           } catch (error) {
