@@ -1,4 +1,7 @@
 import type { spawn } from "child_process";
+import { existsSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
 import { sanitizeProjectCommandEnvironment } from "../project-command-env";
 import { isRecord } from "../type-guards";
 import { OMP_NOT_FOUND, resolveOmpBin } from "./omp-cli";
@@ -6,15 +9,13 @@ import { type RpcTransport, spawnLocalRpcTransport } from "./rpc-transport";
 import { LINK_LIMITS } from "../hosts/link-protocol";
 
 /**
- * Process + protocol layer for ompweb's omp (`ompweb-omp --headless`), which speaks the channel of
- * runner/src/channel.ts as NDJSON over stdio. Frames pass through as `{type: t, ...rest}`, except:
+ * Process + protocol layer for `pi --mode rpc` (NDJSON over stdio).
  *
- *   hello                          → readiness (`waitReady` resolves `{type:"ready", ...hello}`)
- *   event {event}                  → the event object itself
- *   res {id, ok, data?, error?}    → settles `sendCommand`
- *
- * and back: `sendCommand({type, ...args})` → `cmd {id, op: type, args}`, any other `{type, ...rest}`
- * → `{t: type, ...rest}` (`ui_response`, `ui_input`, `host_tool_result`, …).
+ *   Commands (tau -> pi):     { id: string, type: string, ...args }
+ *   Responses (pi -> tau):    { id?: string, type: "response", command: string, success: boolean, data?, error? }
+ *   Events (pi -> tau):       { type: "agent_start" | "message_update" | ..., ... }
+ *   Extension UI (pi -> tau): { type: "extension_ui_request", id: string, method: ..., ... }
+ *   Extension UI (tau -> pi): { type: "extension_ui_response", id: string, value?, confirmed?, cancelled? }
  */
 
 export type RpcFrame = { type: string; [key: string]: unknown };
@@ -30,6 +31,7 @@ export class RpcCommandError extends Error {
     this.code = code;
   }
 }
+
 export class RpcCommandTimeoutError extends Error {
   readonly command: string;
   readonly timeoutMs: number;
@@ -54,9 +56,9 @@ interface PendingCommand {
 }
 
 export interface RpcProcessOptions {
-  /** Working directory for the agent (also passed as --cwd). */
+  /** Working directory for the agent. */
   cwd: string;
-  /** Extra CLI args appended after the base `--headless --cwd <cwd>`. */
+  /** Extra CLI args appended after `--mode rpc [--extension ...]`. */
   extraArgs?: string[];
   /** Environment overrides merged over process.env. */
   env?: Record<string, string>;
@@ -64,9 +66,9 @@ export interface RpcProcessOptions {
   onFrame?: (frame: RpcFrame) => void;
   /** Called once when the child exits, after pending commands are rejected. */
   onExit?: (info: { code: number | null; signal: NodeJS.Signals | null; stderrTail: string }) => void;
-  /** Byte transport to run over. Omitted → spawn ompweb's omp (see spawnLocalRpcTransport). */
+  /** Byte transport to run over. Omitted -> spawn `pi --mode rpc` (see spawnLocalRpcTransport). */
   transport?: RpcTransport;
-  /** The daemon already saw this child's hello, or it outlived its server: ready at once,
+  /** The daemon already saw this child's startup, or it outlived its server: ready at once,
    * and frames are held until `release` (after `replay`). */
   adopted?: true;
   /** Injectable process boundary for deterministic transport tests. */
@@ -78,13 +80,16 @@ export interface RpcProcessOptions {
 
 const STDERR_TAIL_LIMIT = 8 * 1024;
 /**
- * Largest line omp-web writes to omp's stdin. Command bodies are already capped at 8 MiB by the
+ * Largest line tau writes to pi's stdin. Command bodies are already capped at 8 MiB by the
  * agent routes (`MAX_AGENT_COMMAND_REQUEST_BYTES`); this bound only turns a pathological command
  * into a clear error instead of an unbounded pipe write.
  */
 const MAX_INBOUND_LINE_BYTES = 32 * 1024 * 1024;
-/** Frames whose numeric `id` names the cmd they belong to; ompweb correlates them with `onReply`'s string id. */
-const COMMAND_ID_FRAMES = new Set(["prompt_result", "prompt_error", "bash_output"]);
+const READY_PROBE_ID = "__tau_ready__";
+const DIALOG_UI_METHODS = new Set(["select", "confirm", "input", "editor"]);
+const COMMAND_MAP: Record<string, string> = {
+  get_available_commands: "get_commands",
+};
 
 /** A stdout line as JSON; undefined when blank or not JSON (never let a stray line kill the reader). */
 function parseLine(line: string): unknown {
@@ -98,20 +103,41 @@ function parseLine(line: string): unknown {
 }
 
 const REQUEST_TYPES = new Set(["host_tool_call", "host_uri_request", "ui_request"]);
-const requestId = (frame: RpcFrame) =>
-  REQUEST_TYPES.has(frame.type) && (typeof frame.id === "string" || typeof frame.id === "number") ? String(frame.id) : null;
+const requestId = (frame: RpcFrame) => {
+  if (frame.type === "extension_ui_request" && typeof frame.method === "string" && DIALOG_UI_METHODS.has(frame.method) && typeof frame.id === "string") {
+    return frame.id;
+  }
+  return REQUEST_TYPES.has(frame.type) && (typeof frame.id === "string" || typeof frame.id === "number") ? String(frame.id) : null;
+};
 
-/** Spawns ompweb's omp headless with the sanitized child environment. */
+/** Locate the companion pi extension bundled with tau, if present on disk. */
+export function resolveTauExtensionPath(): string | null {
+  if (process.env.TAU_NO_EXTENSION === "1") return null;
+  const packageRoot = process.env.OMP_WEB_PACKAGE_DIR;
+  if (packageRoot) {
+    const candidate = join(packageRoot, "lib", "pi", "tau-extension.ts");
+    if (existsSync(candidate)) return candidate;
+  }
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const candidate = join(here, "..", "pi", "tau-extension.ts");
+    if (existsSync(candidate)) return candidate;
+  } catch {
+    // Compiled binary or virtual URL: fall back to cwd.
+  }
+  const cwdCandidate = join(process.cwd(), "lib", "pi", "tau-extension.ts");
+  return existsSync(cwdCandidate) ? cwdCandidate : null;
+}
+
+/** Spawns `pi --mode rpc` with the sanitized child environment. */
 export function spawnOmpTransport(options: RpcProcessOptions): RpcTransport {
   const resolveBin = options.dependencies?.resolveOmpBin ?? resolveOmpBin;
   const bin = resolveBin();
   if (!bin) {
     throw new Error(OMP_NOT_FOUND);
   }
-  const args = ["--headless", "--cwd", options.cwd, ...(options.extraArgs ?? [])];
-  // omp-web ignores named profiles (OMP_PROFILE/PI_PROFILE): strip them so the
-  // child resolves the same default agent dir. An explicit options.env entry
-  // still wins (used to force the default profile for isolated test runs).
+  const extPath = resolveTauExtensionPath();
+  const args = ["--mode", "rpc", ...(extPath ? ["--extension", extPath] : []), ...(options.extraArgs ?? [])];
   const env = sanitizeProjectCommandEnvironment({ ...process.env, ...options.env });
   if (options.env?.OMP_PROFILE === undefined) delete env.OMP_PROFILE;
   if (options.env?.PI_PROFILE === undefined) delete env.PI_PROFILE;
@@ -123,7 +149,7 @@ export class RpcProcess {
   /** Read by the session wrapper for host-specific signals (a remote link's resync and lost child). */
   readonly transport: RpcTransport;
   private readonly exitedPromise: Promise<void>;
-  private readonly pending = new Map<number, PendingCommand>();
+  private readonly pending = new Map<string, PendingCommand>();
   private readonly frameListeners = new Set<(frame: RpcFrame) => void>();
   private readyPromise: Promise<RpcFrame>;
   private readonly resolveReady: (frame: RpcFrame) => void;
@@ -134,7 +160,10 @@ export class RpcProcess {
   private heldOverflow: Error | null = null;
   /** Ids of the requests `replay` delivered (see `release`). */
   private readonly replayedRequests = new Set<string>();
-  // The daemon maps each link's ids onto its own, so a plain counter cannot meet another server's.
+  /** Extension UI request ids bridged from `tau-extension.ts` (`__tau_host_tool__` / `__tau_ask__`). */
+  private readonly extensionBridgeIds = new Set<string>();
+  /** Standard pi extension dialog methods awaiting `ui_response` -> `extension_ui_response`. */
+  private readonly extensionDialogMethods = new Map<string, string>();
   private nextId = 1;
   private stderrTail = "";
   private exited = false;
@@ -156,7 +185,6 @@ export class RpcProcess {
     const exitDeferred = Promise.withResolvers<void>();
     this.exitedPromise = exitDeferred.promise;
     if (options.adopted) {
-      // Its hello went to the daemon or the server that spawned it.
       this.heldFrames = [];
       ready.resolve({ type: "ready" });
     }
@@ -176,7 +204,7 @@ export class RpcProcess {
       this.exited = true;
       this.exitInfo = { code, signal };
       const exitError = new Error(
-        `omp exited (code ${code ?? "null"}, signal ${signal ?? "none"})${this.stderrTail ? `: ${this.stderrTail.slice(-500)}` : ""}`,
+        `pi exited (code ${code ?? "null"}, signal ${signal ?? "none"})${this.stderrTail ? `: ${this.stderrTail.slice(-500)}` : ""}`,
       );
       ready.reject(exitError);
       for (const [, entry] of this.pending) {
@@ -187,6 +215,11 @@ export class RpcProcess {
       exitDeferred.resolve();
       options.onExit?.({ code, signal, stderrTail: this.stderrTail });
     });
+
+    if (!options.adopted) {
+      // Probe readiness via get_state so waitReady() confirms pi is booted and reading stdin.
+      this.writeFrame({ id: READY_PROBE_ID, type: "get_state" }, () => {});
+    }
   }
 
   get isAlive(): boolean {
@@ -197,11 +230,11 @@ export class RpcProcess {
     return this.exitInfo ? { ...this.exitInfo, stderrTail: this.stderrTail } : null;
   }
 
-  /** Resolves with `{type:"ready", ...hello}`; rejects if the process dies first or the
-   * timeout elapses. omp startup can take a few seconds (extensions, LSP). */
+  /** Resolves with `{type:"ready", ...state}`; rejects if the process dies first or the
+   * timeout elapses. pi startup can take a few seconds (extensions, discovery). */
   waitReady(timeoutMs = 60_000): Promise<RpcFrame> {
     const timeout = new Promise<never>((_, reject) => {
-      const timer = setTimeout(() => reject(new Error(`omp ready timeout after ${timeoutMs}ms`)), timeoutMs);
+      const timer = setTimeout(() => reject(new Error(`pi ready timeout after ${timeoutMs}ms`)), timeoutMs);
       timer.unref?.();
       this.readyPromise.finally(() => clearTimeout(timer)).catch(() => {});
     });
@@ -223,8 +256,7 @@ export class RpcProcess {
     }
   }
 
-  /** Adopted child, after `replay`: delivers the frames held since and stops holding. A request
-   * opened while the old server stopped is in both (replayed, and resent unacked): it is delivered once. */
+  /** Adopted child, after `replay`: delivers the frames held since and stops holding. */
   release(): void {
     if (this.heldOverflow) throw this.heldOverflow;
     const held = this.heldFrames ?? [];
@@ -236,16 +268,11 @@ export class RpcProcess {
     this.replayedRequests.clear();
   }
 
-  /**
-   * Counts an adopted child's output until `release`, up to LINK_LIMITS.channelBufferBytes
-   * as RemoteRpcTransport holds it. Past that the adoption fails: its commands
-   * reject, `replay` and `release` throw, and the output is dropped while the wrapper kills it.
-   */
   private holdable(line: string): boolean {
     if (this.heldOverflow) return false;
     this.heldBytes += Buffer.byteLength(line);
     if (this.heldBytes <= LINK_LIMITS.channelBufferBytes) return true;
-    const overflow = new Error(`omp's output during adoption exceeded ${LINK_LIMITS.channelBufferBytes} bytes`);
+    const overflow = new Error(`pi's output during adoption exceeded ${LINK_LIMITS.channelBufferBytes} bytes`);
     this.heldOverflow = overflow;
     this.heldFrames = [];
     for (const [, entry] of this.pending) {
@@ -256,23 +283,78 @@ export class RpcProcess {
     return false;
   }
 
-  /** One channel frame from omp. `replayed`: a daemon line (see `replay`), delivered past the frames still held. */
+  /** One JSONL frame from `pi --mode rpc`. `replayed`: a daemon line (see `replay`). */
   private receive(parsed: unknown, replayed = false): void {
-    if (!isRecord(parsed) || typeof parsed.t !== "string") return;
-    const { t, ...rest } = parsed;
-    switch (t) {
-      case "hello":
-        this.resolveReady({ type: "ready", ...rest });
+    if (!isRecord(parsed) || typeof parsed.type !== "string") return;
+    if (parsed.type === "response") {
+      if (parsed.id === READY_PROBE_ID) {
+        const state = parsed.success === true && isRecord(parsed.data) ? parsed.data : {};
+        this.resolveReady({ type: "ready", ...state });
         return;
-      case "res":
-        this.handleResponse(rest);
-        return;
-      case "event":
-        if (isRecord(rest.event) && typeof rest.event.type === "string") this.dispatch(rest.event as RpcFrame, replayed);
-        return;
-      default:
-        this.dispatch({ type: t, ...rest, ...(COMMAND_ID_FRAMES.has(t) && typeof rest.id === "number" ? { id: String(rest.id) } : {}) }, replayed);
+      }
+      this.handleResponse(parsed);
+      return;
     }
+    if (parsed.type === "ready" || parsed.type === "hello") {
+      this.resolveReady({ ...parsed, type: "ready" });
+      return;
+    }
+    if (parsed.type === "extension_ui_request" && typeof parsed.method === "string") {
+      const translated = this.translateExtensionUiRequest(parsed);
+      if (translated) this.dispatch(translated, replayed);
+      return;
+    }
+    this.dispatch(parsed as RpcFrame, replayed);
+  }
+
+  private translateExtensionUiRequest(req: Record<string, unknown>): RpcFrame | null {
+    const id = typeof req.id === "string" ? req.id : String(req.id ?? "");
+    const method = String(req.method);
+    if (method === "input" && req.title === "__tau_host_tool__" && typeof req.placeholder === "string") {
+      try {
+        const payload = JSON.parse(req.placeholder) as { toolName?: string; args?: unknown };
+        if (id && typeof payload.toolName === "string") {
+          this.extensionBridgeIds.add(id);
+          return { type: "host_tool_call", id, toolName: payload.toolName, arguments: payload.args ?? {} };
+        }
+      } catch {
+        // Fall through to standard input dialog if malformed.
+      }
+    }
+    if (method === "input" && req.title === "__tau_ask__" && typeof req.placeholder === "string") {
+      try {
+        const payload = JSON.parse(req.placeholder) as Record<string, unknown>;
+        if (id) {
+          this.extensionBridgeIds.add(id);
+          return { type: "ui_request", id, method: "askDialog", args: [payload] };
+        }
+      } catch {
+        // Fall through.
+      }
+    }
+    if (DIALOG_UI_METHODS.has(method) && id) {
+      this.extensionDialogMethods.set(id, method);
+      const args = method === "select"
+        ? [req.title, req.options]
+        : method === "confirm"
+          ? [req.title, req.message]
+          : method === "input"
+            ? [req.title, req.placeholder]
+            : [req.title, req.prefill];
+      return { type: "ui_request", id, method, args };
+    }
+    if (method === "notify") {
+      return { type: "notice", level: typeof req.notifyType === "string" ? req.notifyType : "info", message: String(req.message ?? "") };
+    }
+    if (method === "setWidget" && req.widgetKey === "tau-btw" && Array.isArray(req.widgetLines) && typeof req.widgetLines[0] === "string") {
+      try {
+        const btw = JSON.parse(req.widgetLines[0]) as RpcFrame;
+        if (btw && typeof btw.type === "string") return btw;
+      } catch {
+        // Ignore malformed widget payload.
+      }
+    }
+    return req as RpcFrame;
   }
 
   private dispatch(frame: RpcFrame, replayed = false): void {
@@ -291,45 +373,35 @@ export class RpcProcess {
     }
   }
 
-  /** Send a command and await its response `data`. A failed response rejects
-   * with RpcCommandError. No timeout by default — some commands (login,
-   * long prompts via bash) legitimately take minutes, and the session wrapper
-   * reclaims wedged children via idle-kill and dispose(). Callers that want a
-   * cap pass `timeoutMs` (>0); when set, the timer is unref'd so it never
-   * keeps the event loop alive on its own. `onReply` runs synchronously when
-   * the response is read, before any frame after it is dispatched; it is told whether the command succeeded and its
-   * wire id as a string (what `prompt_result`, `prompt_error` and `bash_output` name). */
+  /** Send an RPC command and await its response `data`. A failed response rejects
+   * with RpcCommandError. */
   sendCommand<T = unknown>(command: { type: string; [key: string]: unknown }, timeoutMs?: number, onReply?: (success: boolean, id: string) => void): Promise<T> {
     if (this.exited) {
-      return Promise.reject(new Error("omp process has exited"));
+      return Promise.reject(new Error("pi process has exited"));
     }
     if (this.heldOverflow) return Promise.reject(this.heldOverflow);
     const dispatchedAt = Date.now();
-    const id = this.nextId++;
-    const { type: op, ...args } = command;
+    const id = String(this.nextId++);
+    const mappedType = COMMAND_MAP[command.type] ?? command.type;
+    const wireCommand = { ...command, type: mappedType, id };
     return new Promise<T>((resolve, reject) => {
       const entry: PendingCommand = {
-        command: op,
+        command: mappedType,
         resolve: resolve as (data: unknown) => void,
         reject,
         onReply,
       };
       if (timeoutMs && timeoutMs > 0) {
         entry.timer = setTimeout(() => {
-          // Only reject if this exact entry is still pending — a response that
-          // landed between the timer firing and this callback must not
-          // spuriously reject.
           if (this.pending.get(id) === entry) {
             this.pending.delete(id);
-            reject(new RpcCommandTimeoutError(op, timeoutMs, undefined, dispatchedAt));
+            reject(new RpcCommandTimeoutError(mappedType, timeoutMs, undefined, dispatchedAt));
           }
         }, timeoutMs);
-        // A pending command timer must never keep the event loop alive on its own
-        // (it would block graceful shutdown when omp has stopped answering).
         entry.timer.unref?.();
       }
       this.pending.set(id, entry);
-      this.writeFrame({ t: "cmd", id, op, args }, (error) => {
+      this.writeFrame(wireCommand, (error) => {
         if (error) {
           const pending = this.pending.get(id);
           if (pending) {
@@ -342,25 +414,54 @@ export class RpcProcess {
     });
   }
 
-  /** Fire-and-forget frame (ui_response, ui_input, host_tool_result, login_input_response, …). */
+  /** Fire-and-forget frame (`extension_ui_response`, etc.). */
   sendFrame(frame: { type: string; [key: string]: unknown }): void {
     if (this.exited) return;
-    const { type, ...rest } = frame;
-    this.writeFrame({ t: type, ...rest }, () => {});
-  }
-
-  private writeFrame(frame: { t: string; [key: string]: unknown }, callback: (error?: Error | null) => void): void {
-    const line = `${JSON.stringify(frame)}\n`;
-    if (Buffer.byteLength(line, "utf8") > MAX_INBOUND_LINE_BYTES) {
-      callback(new Error(`omp command exceeds the ${MAX_INBOUND_LINE_BYTES}-byte inbound transport limit`));
+    const id = frame.id !== undefined && frame.id !== null ? String(frame.id) : "";
+    if (frame.type === "host_tool_result" && id && this.extensionBridgeIds.delete(id)) {
+      const value = JSON.stringify({
+        ...(isRecord(frame.result) ? frame.result : { content: [{ type: "text", text: String(frame.result ?? "") }] }),
+        ...(frame.isError !== undefined ? { isError: Boolean(frame.isError) } : {}),
+      });
+      this.writeFrame({ type: "extension_ui_response", id, value }, () => {});
       return;
     }
-    // Serialized so two lines never interleave on the pipe and a failed write
-    // cannot reorder the responses callers are awaiting.
+    if (frame.type === "ui_response" && id) {
+      if (this.extensionBridgeIds.delete(id)) {
+        if (frame.value === undefined) {
+          this.writeFrame({ type: "extension_ui_response", id, cancelled: true }, () => {});
+        } else {
+          const value = typeof frame.value === "string" ? frame.value : JSON.stringify(frame.value);
+          this.writeFrame({ type: "extension_ui_response", id, value }, () => {});
+        }
+        return;
+      }
+      const method = this.extensionDialogMethods.get(id);
+      if (method) {
+        this.extensionDialogMethods.delete(id);
+        if (frame.value === undefined) {
+          this.writeFrame({ type: "extension_ui_response", id, cancelled: true }, () => {});
+        } else if (method === "confirm") {
+          this.writeFrame({ type: "extension_ui_response", id, confirmed: Boolean(frame.value) }, () => {});
+        } else {
+          this.writeFrame({ type: "extension_ui_response", id, value: String(frame.value) }, () => {});
+        }
+        return;
+      }
+    }
+    this.writeFrame(frame, () => {});
+  }
+
+  private writeFrame(frame: Record<string, unknown>, callback: (error?: Error | null) => void): void {
+    const line = `${JSON.stringify(frame)}\n`;
+    if (Buffer.byteLength(line, "utf8") > MAX_INBOUND_LINE_BYTES) {
+      callback(new Error(`pi command exceeds the ${MAX_INBOUND_LINE_BYTES}-byte inbound transport limit`));
+      return;
+    }
     this.writeQueue = this.writeQueue.then(
       () => new Promise<void>((resolve) => {
         if (this.exited) {
-          callback(new Error("omp process is not running"));
+          callback(new Error("pi process is not running"));
           resolve();
           return;
         }
@@ -372,18 +473,19 @@ export class RpcProcess {
     );
   }
 
-  /** A `res`; one for no pending command (timed out, or another server's) is dropped. */
+  /** A `response`; one for no pending command (timed out, or another server's) is dropped. */
   private handleResponse(response: Record<string, unknown>): void {
-    const id = response.id;
-    const entry = typeof id === "number" ? this.pending.get(id) : undefined;
-    if (!entry || typeof id !== "number") return;
+    const id = response.id !== undefined && response.id !== null ? String(response.id) : null;
+    const entry = id !== null ? this.pending.get(id) : undefined;
+    if (!entry || id === null) return;
     this.pending.delete(id);
     clearTimeout(entry.timer);
-    entry.onReply?.(response.ok === true, String(id));
-    if (response.ok === true) {
+    const ok = response.success === true;
+    entry.onReply?.(ok, id);
+    if (ok) {
       entry.resolve(response.data);
     } else {
-      entry.reject(new RpcCommandError(entry.command, typeof response.error === "string" ? response.error : "omp command failed", typeof response.code === "string" ? response.code : undefined));
+      entry.reject(new RpcCommandError(entry.command, typeof response.error === "string" ? response.error : "pi command failed", typeof response.code === "string" ? response.code : undefined));
     }
   }
 

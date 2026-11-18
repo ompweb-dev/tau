@@ -14,38 +14,23 @@ import { HostOpError } from "./link-protocol";
 import type { Host } from "./host";
 import { sessionOps } from "./session-ops";
 
-// omp aliases "find"->"glob" and has no "ls" tool; the web UI presets still use
-// the pi names (lib/tool-presets.ts), so translate before building --tools.
-const TOOL_NAME_ALIASES: Record<string, string> = { find: "glob", search: "grep" };
-const DROPPED_TOOL_NAMES = new Set(["ls"]);
-
-/** Translate pi-web preset tool names into omp builtin tool names. */
+/** Translate preset tool names into pi builtin tool names. */
 export function mapPresetToolNames(toolNames: string[]): string[] {
   const out: string[] = [];
   for (const raw of toolNames) {
     const lower = raw.toLowerCase();
-    if (DROPPED_TOOL_NAMES.has(lower)) continue;
-    const mapped = TOOL_NAME_ALIASES[lower] ?? lower;
-    if (!out.includes(mapped)) out.push(mapped);
+    if (!out.includes(lower)) out.push(lower);
   }
   return out;
 }
 
 const FULL_PRESET_KEY = [...PRESET_FULL].map((n) => n.toLowerCase()).sort().join(",");
 
-/** Extra CLI args for spawning `ompweb-omp --headless` for a session. */
-export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], advisor = false, launchConfig?: ProjectLaunchConfig, modelOverride?: string): string[] {
+/** Extra CLI args for spawning `pi --mode rpc` for a session. */
+export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], _advisor = false, launchConfig?: ProjectLaunchConfig, modelOverride?: string): string[] {
   const args: string[] = [];
   if (sessionFile) {
-    // An absolute path (or anything containing "/") resolves deterministically:
-    // omp's createSessionManager opens it directly via SessionManager.open
-    // without any interactive resume/fork prompts (main.ts resume handling).
-    args.push("--resume", sessionFile);
-    // An explicitly chosen model replaces the saved model and skips its
-    // restore check (omp's --model at startup). Without this, resuming a
-    // session whose saved model can no longer be restored dies before any
-    // set_model RPC can run (#277). Args are passed as an argv array, never
-    // through a shell, so only whitespace / flag-smuggled values are kept out.
+    args.push("--session", sessionFile);
     if (modelOverride && !modelOverride.startsWith("-") && !/\s/.test(modelOverride)) {
       args.push("--model", modelOverride);
     }
@@ -54,22 +39,16 @@ export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[],
     if (toolNames.length === 0) {
       args.push("--no-tools");
     } else if (presetKey === FULL_PRESET_KEY) {
-      // "Full" means everything: leave omp's complete default toolset intact
-      // rather than restricting it to the (much smaller) pi preset list.
+      // "Full" means everything: leave pi's complete default toolset intact.
     } else {
       const mapped = mapPresetToolNames(toolNames);
       if (mapped.length > 0) args.push("--tools", mapped.join(","));
     }
   }
-  if (advisor) args.push("--advisor");
-  else if (launchConfig?.advisor) args.push("--advisor");
-  // Refuse the whole launch, not individual tokens: filtering a reserved
-  // flag would silently change the profile or pass its value as a positional.
   if (launchConfig?.profile !== undefined) {
     if (!launchConfig.profile || !isValidOmpProfile(launchConfig.profile)) {
       throw new HostOpError(400, "stored_invalid_profile", "Invalid saved workspace profile. Open the workspace launch configuration and correct or clear the profile before starting a session.");
     }
-    args.push("--profile", launchConfig.profile);
   }
   if (launchConfig?.extraArgs) {
     const reserved = launchConfig.extraArgs.find(isReservedLaunchArg);

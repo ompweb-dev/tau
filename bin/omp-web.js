@@ -10,8 +10,10 @@ require("./node-version").exitIfUnsupportedNode();
 // callers to know the path of the secondary executable.
 const forwardedServiceScripts = {
   launchd: "omp-web-launchd.js",
+  "tau-launchd": "omp-web-launchd.js",
   "ompweb-launchd": "omp-web-launchd.js",
   systemd: "omp-web-systemd.js",
+  "tau-systemd": "omp-web-systemd.js",
   "ompweb-systemd": "omp-web-systemd.js",
 };
 
@@ -39,18 +41,6 @@ if (process.argv[2] === "preflight") {
     ({ runPreflight }) => runPreflight().then((code) => process.exit(code)),
     (error) => {
       console.error(`preflight failed: ${error instanceof Error ? error.message : String(error)}`);
-      process.exit(1);
-    },
-  );
-  return;
-}
-// `ompweb fetch-omp` (lib/omp/runner-fetch.ts): fetch this version's omp runner if missing; updaters run it before preflight.
-if (process.argv[2] === "fetch-omp") {
-  process.env.OMP_WEB_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
-  module.require("jiti").createJiti(__filename).import("../lib/omp/runner-fetch.ts").then(
-    ({ runFetchOmp }) => runFetchOmp().then((code) => process.exit(code)),
-    (error) => {
-      console.error(`fetch-omp failed: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     },
   );

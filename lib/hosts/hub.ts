@@ -1443,7 +1443,7 @@ export class RemoteRpcTransport implements RpcTransport {
 
   deliverLine(line: string): void {
     if (this.closed) return;
-    if (line.includes('"t":"hello"') || line.includes('"t":"session"')) this.noteSession(line);
+    if (line.includes('"command":"get_state"') || line.includes('"type":"session"') || line.includes('"t":"hello"') || line.includes('"t":"session"')) this.noteSession(line);
     if (this.lineListeners.length > 0) return notify(this.lineListeners, line);
     const bytes = this.holdable(line);
     if (bytes === null) return;
@@ -1481,8 +1481,12 @@ export class RemoteRpcTransport implements RpcTransport {
     } catch {
       return;
     }
-    if (isRecord(frame) && (frame.t === "hello" || frame.t === "session") && typeof frame.sessionId === "string" && isValidSessionId(frame.sessionId)) {
-      this.session = frame.sessionId;
+    if (!isRecord(frame)) return;
+    const sessionId = frame.type === "response" && frame.command === "get_state" && frame.success === true && isRecord(frame.data)
+      ? frame.data.sessionId
+      : (frame.type === "session" || frame.t === "hello" || frame.t === "session") ? frame.sessionId : undefined;
+    if (typeof sessionId === "string" && isValidSessionId(sessionId)) {
+      this.session = sessionId;
     }
   }
 }

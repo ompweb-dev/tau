@@ -3,37 +3,29 @@ import { homedir, tmpdir } from "os";
 import * as path from "path";
 
 /**
- * Node port of oh-my-pi's directory resolution (packages/utils/src/dirs.ts).
- * omp-web cannot import the Bun-only @oh-my-pi packages, so the layout rules
- * are replicated here. Covered: PI_CODING_AGENT_DIR override, PI_CONFIG_DIR
- * rename, and the XDG data layout (used only when $XDG_DATA_HOME/omp already
- * exists, mirroring omp's opt-in migration). Named profiles
- * (OMP_PROFILE/PI_PROFILE) are intentionally unsupported: omp-web always
- * resolves the default profile location.
+ * Directory resolution mirroring @earendil-works/pi-coding-agent (config.ts & session-manager.ts).
+ * Covered: PI_CODING_AGENT_DIR override and PI_CONFIG_DIR rename.
  */
 
-const APP_NAME = "omp";
-const CONFIG_DIR_NAME = ".omp";
-
+const CONFIG_DIR_NAME = ".pi";
 
 export function getConfigDirName(): string {
   return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;
 }
 
-/** Config root: ~/.omp (plus PI_CONFIG_DIR rename). */
+/** Config root: ~/.pi (plus PI_CONFIG_DIR rename). */
 export function getConfigRoot(): string {
   return path.join(homedir(), getConfigDirName());
 }
 
-/** The agent state directory (~/.omp/agent). PI_CODING_AGENT_DIR overrides it. */
+/** The agent state directory (~/.pi/agent). PI_CODING_AGENT_DIR overrides it. */
 export function getAgentDir(): string {
   const override = process.env.PI_CODING_AGENT_DIR;
   if (override) return path.resolve(override);
   return path.join(getConfigRoot(), "agent");
 }
 
-/** The agent directory, created owner-only when missing: omp runs there for a request at the user level, which has no
- * project; a missing directory would otherwise fail the spawn as if omp itself were missing. */
+/** The agent directory, created owner-only when missing. */
 export function ensureAgentDir(): string {
   const dir = getAgentDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -48,72 +40,40 @@ function isDefaultAgentDir(): boolean {
   return true;
 }
 
-/** omp-web's crash/stall journal directory: ~/.omp/omp-web, or
+/** tau's crash/stall journal directory: ~/.pi/omp-web, or
  * <agent dir>/omp-web when PI_CODING_AGENT_DIR points elsewhere, so isolated
  * runs (tests, dev servers) never write the real journal. */
 export function getDiagnosticsDir(): string {
   return path.join(isDefaultAgentDir() ? getConfigRoot() : getAgentDir(), "omp-web");
 }
 
-/** XDG data root for the default agent dir: only honored on linux/darwin when
- * $XDG_DATA_HOME/omp already exists — omp treats the XDG layout as opt-in via
- * `omp config init-xdg`. XDG flattens the `agent/` prefix:
- * ~/.omp/agent/sessions → $XDG_DATA_HOME/omp/sessions. */
-function xdgDataAgentRoot(): string | undefined {
-  if (process.platform !== "linux" && process.platform !== "darwin") return undefined;
-  if (!isDefaultAgentDir()) return undefined;
-  const value = process.env.XDG_DATA_HOME;
-  if (!value) return undefined;
-  try {
-    const appRoot = path.join(value, APP_NAME);
-    return existsSync(appRoot) ? appRoot : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function agentDataSubdir(subdir: string): string {
-  const xdg = xdgDataAgentRoot();
-  return path.join(xdg ?? getAgentDir(), subdir);
-}
-
-/** ~/.omp/agent/sessions (or $XDG_DATA_HOME/omp/sessions). */
+/** ~/.pi/agent/sessions */
 export function getSessionsDir(): string {
-  return agentDataSubdir("sessions");
+  return path.join(getAgentDir(), "sessions");
 }
 
-/** OMP's gc archive root for compressed session JSONL files. */
+/** Archive root for compressed session JSONL files. */
 export function getArchivedSessionsDir(): string {
   return path.join(path.dirname(getSessionsDir()), "archive", "sessions");
 }
 
 /** Content-addressed blob store referenced from session entries. */
 export function getBlobsDir(): string {
-  return agentDataSubdir("blobs");
+  return path.join(getAgentDir(), "blobs");
 }
 
-/** Settings file (YAML). config.yml is canonical, config.yaml the fallback. */
+/** Settings file (JSON): ~/.pi/agent/settings.json. */
 export function getSettingsPath(): string {
-  const dir = getAgentDir();
-  const canonical = path.join(dir, "config.yml");
-  if (existsSync(canonical)) return canonical;
-  const fallback = path.join(dir, "config.yaml");
-  if (existsSync(fallback)) return fallback;
-  return canonical;
+  return path.join(getAgentDir(), "settings.json");
 }
 
-/** Custom models file (YAML). models.yml canonical, models.yaml fallback. */
+/** Custom models file (JSON): ~/.pi/agent/models.json. */
 export function getModelsConfigPath(): string {
-  const dir = getAgentDir();
-  const canonical = path.join(dir, "models.yml");
-  if (existsSync(canonical)) return canonical;
-  const fallback = path.join(dir, "models.yaml");
-  if (existsSync(fallback)) return fallback;
-  return canonical;
+  return path.join(getAgentDir(), "models.json");
 }
 
-/** Best-effort canonicalization mirroring omp's resolveEquivalentPath: resolve
- * symlinks when the path exists, otherwise keep the resolved input. */
+/** Best-effort canonicalization: resolve symlinks when the path exists,
+ * otherwise keep the resolved input. */
 function canonicalize(value: string): string {
   try {
     return realpathSync.native(value);
@@ -122,49 +82,27 @@ function canonicalize(value: string): string {
   }
 }
 
-function encodeRelativeSessionDirName(prefix: string, relative: string): string {
-  const encoded = relative.replace(/[/\\:]/g, "-");
-  return encoded ? (prefix.endsWith("-") ? `${prefix}${encoded}` : `${prefix}-${encoded}`) : prefix;
-}
-
-function encodeLegacyAbsoluteSessionDirName(cwd: string): string {
-  const resolvedCwd = path.resolve(cwd);
+/**
+ * Session directory slug for a cwd — matches pi's getDefaultSessionDirPath
+ * in core/session-manager.ts:
+ * `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`
+ */
+export function getSessionDirNameForCwd(cwd: string): string {
+  const resolvedCwd = canonicalize(path.resolve(cwd));
   return `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 }
 
-/**
- * Session directory slug for a cwd — a faithful port of getDefaultSessionDirName
- * in packages/coding-agent/src/session/session-paths.ts:
- * - under $HOME: "-" + relative path with [/\:] replaced by dashes ("-" for $HOME itself)
- * - under tmpdir: "-tmp" (+ "-" + dashed relative path)
- * - otherwise: legacy absolute encoding "--abs-path-dashed--"
- */
-export function getSessionDirNameForCwd(cwd: string): string {
-  const canonicalCwd = canonicalize(path.resolve(cwd));
-  const canonicalHome = canonicalize(homedir());
-  const canonicalTmp = canonicalize(tmpdir());
-  const homeRelative = path.relative(canonicalHome, canonicalCwd);
-  const tempRelative = path.relative(canonicalTmp, canonicalCwd);
-  if (homeRelative === "" || (!homeRelative.startsWith("..") && !path.isAbsolute(homeRelative))) {
-    return encodeRelativeSessionDirName("-", homeRelative);
-  }
-  if (tempRelative === "" || (!tempRelative.startsWith("..") && !path.isAbsolute(tempRelative))) {
-    return encodeRelativeSessionDirName("-tmp", tempRelative);
-  }
-  return encodeLegacyAbsoluteSessionDirName(canonicalCwd);
-}
-
-/** User-level agents directory (~/.omp/agent/agents). */
+/** User-level agents directory (~/.pi/agent/agents). */
 export function getUserAgentsDir(): string {
   return path.join(getAgentDir(), "agents");
 }
 
-/** Project-level agents directory (./.omp/agents at git root, or cwd fallback). */
+/** Project-level agents directory (./.pi/agents at git root, or cwd fallback). */
 export function getProjectAgentsDir(cwd: string): string {
   let current = path.resolve(cwd);
   const home = homedir();
   while (true) {
-    const candidate = path.join(current, ".omp", "agents");
+    const candidate = path.join(current, ".pi", "agents");
     try {
       if (statSync(candidate).isDirectory()) return candidate;
     } catch {
@@ -176,18 +114,17 @@ export function getProjectAgentsDir(cwd: string): string {
     if (parent === current) break;
     current = parent;
   }
-  return path.join(path.resolve(cwd), ".omp", "agents");
+  return path.join(path.resolve(cwd), ".pi", "agents");
 }
 
 /** Cache directory for unpacked bundled agents (temp). */
 export function getAgentsBundledCacheDir(): string {
-  return path.join(tmpdir(), "omp-web-bundled-agents");
+  return path.join(tmpdir(), "tau-bundled-agents");
 }
 
-// omp's own rule (internal-urls/local-protocol.ts): long artifact paths move to the temp dir on Windows.
 const WINDOWS_LOCAL_ROOT_MAX_CHARS = 180;
 
-/** omp's `local://` root for a session (`resolveLocalRoot` in omp's local-protocol.ts). */
+/** `local://` root for a session. */
 export function sessionLocalRoot(sessionFile: string, sessionId: string, platform: NodeJS.Platform = process.platform): string {
   const candidate = path.resolve(path.dirname(sessionFile), path.basename(sessionFile, ".jsonl"), "local");
   if (platform === "win32" && candidate.length >= WINDOWS_LOCAL_ROOT_MAX_CHARS) {

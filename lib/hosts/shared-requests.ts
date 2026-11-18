@@ -48,11 +48,11 @@ export class SharedRequests {
     const request = requestKey(frame);
     if (!request) return true;
     if (request.open && this.completed.has(request.key)) return false;
-    if (frame.t === "ui_request") this.dialogs.set(request.key, [line]);
-    else if (frame.t === "ui_end") { this.dialogs.delete(request.key); this.completed.add(request.key); }
+    if (frame.type === "ui_request" || frame.type === "extension_ui_request") this.dialogs.set(request.key, [line]);
+    else if (frame.type === "ui_end") { this.dialogs.delete(request.key); this.completed.add(request.key); }
     else if (request.open) {
-      if (!this.callbacks.has(request.key)) this.callbacks.set(request.key, { frame: { t: frame.t, toolName: frame.toolName, url: frame.url, operation: frame.operation }, lines: [line], executor: null,
-        def: frame.t === "host_tool_call" ? this.toolDefs.get(frame.toolName as string) : undefined });
+      if (!this.callbacks.has(request.key)) this.callbacks.set(request.key, { frame: { type: frame.type, toolName: frame.toolName, url: frame.url, operation: frame.operation }, lines: [line], executor: null,
+        def: frame.type === "host_tool_call" ? this.toolDefs.get(frame.toolName as string) : undefined });
       this.dispatch();
       return false;
     } else {
@@ -68,10 +68,10 @@ export class SharedRequests {
   answer(id: string, frame: WireFrame): boolean {
     const request = requestKey(frame);
     if (!request || request.open) return false;
-    if (frame.t === "ui_response") {
+    if (frame.type === "ui_response" || frame.type === "extension_ui_response") {
       if (!this.dialogs.delete(request.key)) return false;
       this.completed.add(request.key);
-      const end = JSON.stringify({ t: "ui_end", id: frame.id });
+      const end = JSON.stringify({ type: "ui_end", id: frame.id });
       for (const other of this.deps.members()) if (other !== id) this.deps.deliver(other, [end]);
       return true;
     }
@@ -119,7 +119,7 @@ export class SharedRequests {
   private eligible(id: string, call: Callback): boolean {
     if (!this.deps.isUp(id) || !this.deps.members().includes(id)) return false;
     const registration = this.registrations.get(id);
-    if (call.frame.t === "host_tool_call") {
+    if (call.frame.type === "host_tool_call") {
       return registration?.tools.some(tool => tool.name === call.frame.toolName && JSON.stringify(tool) === call.def) ?? false;
     }
     const scheme = typeof call.frame.url === "string" ? call.frame.url.split(":", 1)[0] : "";

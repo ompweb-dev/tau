@@ -84,31 +84,32 @@ export class ChannelLifecycle {
 
   noteStdin(frame: WireFrame): void {
     this.idleSince = this.clock();
-    const request = requestKey(frame), id = frame.t === "cmd" ? idOf(frame.id) : null;
+    const request = requestKey(frame);
+    const id = request && !request.open ? null : idOf(frame.id);
     if (request && !request.open) this.requests.delete(request.key);
     if (id !== null) {
       this.commands.add(id);
-      const op = frame.op, args = isRecord(frame.args) ? frame.args : {};
+      const op = frame.type;
       if (op === "prompt" || op === "abort_and_prompt" || op === "steer" || op === "follow_up" || op === "followUp") {
         const queued = op === "steer" || op === "follow_up" || op === "followUp"
-          || args.streamingBehavior === "steer" || args.streamingBehavior === "followUp";
+          || frame.streamingBehavior === "steer" || frame.streamingBehavior === "followUp";
         if (queued) this.awaitingQueue.set(id, false);
         else this.awaitingStart.add(id);
       }
-      if (op === "remove_queued_message" || op === "abort_and_restore_queue") this.queueWithdrawals.set(id, this.queueRevision);
+      if (op === "remove_queued_message" || op === "abort_and_restore_queue" || op === "clear_queue") this.queueWithdrawals.set(id, this.queueRevision);
     }
     this.changed();
   }
   noteStdout(frame: WireFrame): void {
     this.idleSince = this.clock();
     const before = this.isRunning;
-    // The runner sends its own frames (prompt_result, …) top level, AgentSession's inside `event`.
-    const event = wireEvent(frame) ?? { ...frame, type: frame.t };
+    const event = wireEvent(frame) ?? frame;
     switch (event.type) {
       case "agent_start":
         this.running = true; this.unsettled = true; this.awaitingStart.clear(); this.awaitingQueue.clear(); break;
       case "agent_end": if (event.isTerminal !== false) this.running = false; break;
       case "session_settled":
+      case "agent_settled":
         this.running = false; this.unsettled = false;
         this.awaitingStart.clear(); this.awaitingQueue.clear(); this.queuePresent = false; this.queueWithdrawals.clear(); this.withdrawalAfter = null; break;
       case "prompt_result": case "prompt_error":
@@ -123,13 +124,15 @@ export class ChannelLifecycle {
         // Consumption also empties the queue; only an acknowledged withdrawal releases its start guard.
         this.releaseWithdrawnQueue();
         break;
-      case "auto_compaction_start": this.compacting = true; break;
-      case "auto_compaction_end": this.compacting = false; break;
+      case "auto_compaction_start":
+      case "compaction_start": this.compacting = true; break;
+      case "auto_compaction_end":
+      case "compaction_end": this.compacting = false; break;
     }
-    const id = frame.t === "res" ? idOf(frame.id) : null;
+    const id = frame.type === "response" ? idOf(frame.id) : null;
     if (id !== null) {
       this.commands.delete(id);
-      if (frame.ok === false || (isRecord(frame.data) && frame.data.agentInvoked === false)) {
+      if (frame.success === false || (isRecord(frame.data) && frame.data.agentInvoked === false)) {
         this.awaitingStart.delete(id); this.awaitingQueue.delete(id);
       } else if (this.awaitingQueue.has(id) && (this.queuePresent || (isRecord(frame.data) && frame.data.queued === true))) {
         this.awaitingQueue.set(id, true);
@@ -137,7 +140,7 @@ export class ChannelLifecycle {
       if (this.queueWithdrawals.has(id)) {
         const revision = this.queueWithdrawals.get(id)!;
         this.queueWithdrawals.delete(id);
-        if (frame.ok === true) {
+        if (frame.success === true) {
           this.withdrawalAfter = revision;
           this.releaseWithdrawnQueue();
         }

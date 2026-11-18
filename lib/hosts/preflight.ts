@@ -43,8 +43,12 @@ export async function runPreflight(timeoutMs = 30_000): Promise<number> {
     transport.onLine((line) => {
       let frame;
       try { frame = JSON.parse(line); } catch { return; /* not a frame */ }
-      // The daemon refuses any other channel protocol (daemon-channels.ts).
-      if (frame?.t === "hello") outcome.resolve(frame.proto === CHANNEL_PROTO ? null : `speaks channel protocol ${String(frame.proto)}, not ${CHANNEL_PROTO}`);
+      if (frame?.type === "response" && frame?.id === "preflight") {
+        outcome.resolve(frame.success === true ? null : `get_state failed: ${String(frame.error ?? "unknown error")}`);
+      }
+    });
+    transport.write('{"id":"preflight","type":"get_state"}\n', (err) => {
+      if (err) outcome.resolve(`stdin write failed: ${err.message}`);
     });
     const timer = setTimeout(() => outcome.resolve(`no hello within ${timeoutMs / 1000} s${tail()}`), timeoutMs);
     const failure = await outcome.promise;

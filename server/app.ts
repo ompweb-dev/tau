@@ -5,7 +5,6 @@ import { browserLink, type BrowserLinkData } from "@/lib/browser-link";
 import { hostLinkSocket, type LinkSocketData } from "@/lib/hosts/hub";
 import { maintenanceSocket, type MaintenanceSocketData } from "@/lib/hosts/maintenance-hub";
 import { proxy } from "@/proxy";
-import { ensureOmpRunner } from "@/lib/omp/runner-fetch";
 import { register } from "../instrumentation.node";
 import { finalizeResponse, INDEX_CACHE, renderIndex, serveFile, stylesheetFirst } from "./http";
 import { dispatch, ROUTE_MODULES, routePattern, type ServerSocketData } from "./routes";
@@ -234,8 +233,6 @@ export async function startProduction(listen: { port: number; hostname: string }
   await register();
   acknowledgeSelfUpdateBoot();
   void resumeCoordinatedSelfUpdate().catch((error: unknown) => console.error(`[omp-web] Could not resume the approved upgrade: ${error instanceof Error ? error.message : String(error)}`));
-  // In the background: the fetch can take minutes, and what needs omp reports OMP_NOT_FOUND until it lands.
-  void ensureOmpRunner().catch((error: unknown) => console.error(`[omp-web] ${error instanceof Error ? error.message : String(error)}`));
   console.log(`[omp-web] Ready on ${server.url.origin}`);
   return server;
 }

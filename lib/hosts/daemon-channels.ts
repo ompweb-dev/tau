@@ -22,9 +22,9 @@ type Channel = {
   pending: PendingRequests; snapshot: StreamSnapshot; lifecycle?: ChannelLifecycle; shared?: SharedRequests;
   members: Map<string, Member>; aliases: Set<string>; files: Set<string>;
   /** Daemon cmd id -> the link that sent it (null once it left) and that link's own id: links number their commands alike. */
-  commands: Map<number, { link: DaemonLink | null; id: unknown; op: string }>;
-  /** `onReply`: runs as omp's successful reply is read, before the next stdout line. */
-  internal: Map<number, { resolve(frame: WireFrame): void; reject(error: Error): void; timer: NodeJS.Timeout; onReply?(): void }>;
+  commands: Map<string, { link: DaemonLink | null; id: unknown; op: string }>;
+  /** `onReply`: runs as pi's successful reply is read, before the next stdout line. */
+  internal: Map<string, { resolve(frame: WireFrame): void; reject(error: Error): void; timer: NodeJS.Timeout; onReply?(): void }>;
   ready: Promise<WireFrame | null>; noteReady(frame: WireFrame | null): void; readyTimer: NodeJS.Timeout;
   startup: Promise<void>; exited: boolean; opened: boolean; fullFallback: boolean; forceTimer?: NodeJS.Timeout;
   /** omp the daemon did not start (a TUI's runner on the host socket): no idle stop, never recovered. */
@@ -304,31 +304,35 @@ export class ChannelTable {
   }
 
   private async configure(channel: Channel): Promise<void> {
-    const hello = await channel.ready; clearTimeout(channel.readyTimer);
     if (channel.exited) return;
-    if (hello?.proto !== CHANNEL_PROTO) {
-      // An attached runner's socket stays open for the host socket's refusal frame, which closes it.
+    try {
+      const res = await this.command(channel, "get_state", {});
+      clearTimeout(channel.readyTimer);
+      if (isRecord(res.data)) {
+        this.noteIdentity(channel, res.data as WireFrame);
+      }
+    } catch (error) {
+      clearTimeout(channel.readyTimer);
+      if (channel.exited) return;
       if (!channel.adopted) channel.transport.killTree(true);
-      throw new HostOpError(502, "host_process_exited", hello ? `omp speaks channel protocol ${String(hello.proto)}, not ${CHANNEL_PROTO}` : "omp did not say hello");
+      throw new HostOpError(502, "host_process_exited", error instanceof Error ? error.message : "pi did not answer get_state");
     }
-    // Fire and forget: the runner answers only after its extensions start, which may wait on a human; replies nobody owns are dropped.
-    void this.command(channel, "set_event_filter", { events: null, messageUpdates: "delta" }).catch(() => {});
-    void this.command(channel, "set_subagent_subscription", { level: "events" }).catch(() => {});
   }
 
   private command(channel: Channel, op: string, args: Record<string, unknown>, onReply?: () => void): Promise<WireFrame> {
-    if (channel.exited) return Promise.reject(new Error("omp exited"));
-    const id = ++this.commandId, command = { t: "cmd", id, op, args };
+    if (channel.exited) return Promise.reject(new Error("pi exited"));
+    const id = String(++this.commandId);
+    const command = { ...args, type: op, id };
     const { promise, resolve, reject } = Promise.withResolvers<WireFrame>();
-    const timer = setTimeout(() => { channel.internal.delete(id); channel.lifecycle?.forgetCommand(String(id)); reject(new Error(`omp ${op} timed out`)); }, 5000); timer.unref?.();
+    const timer = setTimeout(() => { channel.internal.delete(id); channel.lifecycle?.forgetCommand(id); reject(new Error(`pi ${op} timed out`)); }, 15000); timer.unref?.();
     channel.internal.set(id, { resolve, reject, timer, onReply }); channel.lifecycle?.noteStdin(command);
     channel.transport.write(JSON.stringify(command) + "\n", error => {
-      if (error) { const pending = channel.internal.get(id); if (!pending) return; clearTimeout(pending.timer); channel.internal.delete(id); channel.lifecycle?.forgetCommand(String(id), true); reject(error); }
+      if (error) { const pending = channel.internal.get(id); if (!pending) return; clearTimeout(pending.timer); channel.internal.delete(id); channel.lifecycle?.forgetCommand(id, true); reject(error); }
     });
     return promise;
   }
 
-  /** `hello` and `session` name the session omp runs now (a new session's first one, a switch, a fork or a move). */
+  /** `get_state` and `session` name the session pi runs now. */
   private noteIdentity(channel: Channel, frame: WireFrame): void {
     const id = frame.sessionId;
     if (typeof id === "string" && isValidSessionId(id) && id !== channel.pending.sessionId) {
@@ -348,16 +352,13 @@ export class ChannelTable {
       for (const member of channel.members.values()) member.link.queue({ type: "resync", ch: channel.ch }, channel.ch);
       return;
     }
-    if (frame.t === "hello") channel.noteReady(frame);
-    if (frame.t === "hello" || frame.t === "session") this.noteIdentity(channel, frame);
+    if (frame.type === "session") this.noteIdentity(channel, frame);
     if (channel.shared?.isCompleted(frame)) return;
     channel.lifecycle?.noteStdout(frame);
     const agentEvent = wireEvent(frame);
-    // The runner's own frames (prompt_result, notice, session_info_update, …) are top level; read them like events.
-    const event = agentEvent ?? { ...frame, type: frame.t };
+    const event = agentEvent ?? frame;
     if (agentEvent && !channel.snapshot.note(agentEvent) && !channel.fullFallback) {
       channel.fullFallback = true;
-      void this.command(channel, "set_event_filter", { events: null, messageUpdates: "full" }).catch(() => {});
     }
     if (event?.type === "notice" && event.source === "session-persistence" && event.level !== "error") {
       // Until a `session` frame names the moved session, recovery must not record the old id/file pair.
@@ -365,33 +366,36 @@ export class ChannelTable {
     }
     if (event?.type === "agent_start" || event?.type === "agent_end" || event?.type === "session_info_update") this.deps.sessionsChanged?.();
     if (channel.resuming && (event?.type === "agent_start" || event?.type === "agent_end")) { channel.resuming = false; this.deps.runningChanged?.(); }
-    if (frame.t === "res" && typeof frame.id === "number") {
-      const pending = channel.internal.get(frame.id);
+    if (frame.type === "response" && (typeof frame.id === "string" || typeof frame.id === "number")) {
+      const fid = String(frame.id);
+      if (frame.command === "get_state" && frame.success === true && isRecord(frame.data)) {
+        this.noteIdentity(channel, frame.data as WireFrame);
+      }
+      const pending = channel.internal.get(fid);
       if (pending) {
-        clearTimeout(pending.timer); channel.internal.delete(frame.id);
-        if (frame.ok === false) pending.reject(new Error(String(frame.error ?? "omp command failed"))); else { pending.onReply?.(); pending.resolve(frame); }
+        clearTimeout(pending.timer); channel.internal.delete(fid);
+        if (frame.success === false) pending.reject(new Error(String(frame.error ?? "pi command failed"))); else { pending.onReply?.(); pending.resolve(frame); }
         return;
       }
-      const owner = channel.commands.get(frame.id);
+      const owner = channel.commands.get(fid);
       if (owner) {
-        // shortcut: a message command's entry waits for its prompt_result/prompt_error; one that never comes stays until exit.
-        if (!MESSAGE_COMMANDS.has(owner.op)) channel.commands.delete(frame.id);
+        if (!MESSAGE_COMMANDS.has(owner.op)) channel.commands.delete(fid);
         const member = owner.link && channel.members.get(owner.link.id);
         if (member) this.deliver(channel, member, { type: "stdout", ch: channel.ch, line: JSON.stringify({ ...frame, id: owner.id }) }, true);
         return;
       }
-      // A reply nobody owns (a timed-out internal command): never a member's, whose ids the daemon's may collide with.
       return;
     }
-    if ((frame.t === "prompt_result" || frame.t === "prompt_error" || frame.t === "bash_output") && typeof frame.id === "number") {
-      const owner = channel.commands.get(frame.id);
+    if ((frame.type === "prompt_result" || frame.type === "prompt_error" || frame.type === "bash_output" || frame.type === "bash_execution_update") && (typeof frame.id === "string" || typeof frame.id === "number")) {
+      const fid = String(frame.id);
+      const owner = channel.commands.get(fid);
       if (owner) {
-        if (frame.t !== "bash_output") channel.commands.delete(frame.id);
+        if (frame.type === "prompt_result" || frame.type === "prompt_error") channel.commands.delete(fid);
         const member = owner.link && channel.members.get(owner.link.id);
         if (member) this.deliver(channel, member, { type: "stdout", ch: channel.ch, line: JSON.stringify({ ...frame, id: owner.id }) });
-        if (frame.t !== "bash_output") {
+        if (frame.type === "prompt_result" || frame.type === "prompt_error") {
           const outcome: WireFrame = { ...frame }; delete outcome.id;
-          const peer = JSON.stringify({ t: PEER_PROMPT_OUTCOME_FRAME, outcome });
+          const peer = JSON.stringify({ type: PEER_PROMPT_OUTCOME_FRAME, outcome });
           for (const other of channel.members.values()) if (other !== member) this.deliver(channel, other, { type: "stdout", ch: channel.ch, line: peer });
         }
         return;
@@ -451,10 +455,10 @@ export class ChannelTable {
     const frame = parseWire(line);
     if (!frame) throw invalid("Invalid channel frame");
     const member = channel.members.get(link.id)!;
-    const op = frame.t === "cmd" && typeof frame.op === "string" ? frame.op : null;
-    if (frame.t === "cmd" && op === null) throw invalid("Invalid channel command");
+    const isReply = ["extension_ui_response", "ui_response", "host_tool_result", "host_uri_result"].includes(frame.type);
+    const op = isReply ? null : frame.type;
     const refuse = (code: string, error: string) => {
-      if (op !== null) this.deliver(channel, member, { type: "stdout", ch, line: JSON.stringify({ t: "res", id: frame.id, ok: false, code, error }) }, true);
+      if (op !== null) this.deliver(channel, member, { type: "stdout", ch, line: JSON.stringify({ type: "response", id: frame.id, command: op, success: false, code, error }) }, true);
     };
     if (channel.replacing) return refuse("session_restarting", "This session is restarting to apply advisor mode; retry once it is ready");
     if (op !== null && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
@@ -462,25 +466,24 @@ export class ChannelTable {
     }
     if (op === "branch" || op === "new_session" || op === "switch_session") channel.sessionMovePending = false;
     if (op !== null && ["set_event_filter", "set_subagent_subscription", "set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
-    let out = frame, id: number | null = null;
-    if (["ui_response", "host_tool_result", "host_uri_result"].includes(frame.t)) {
+    let out = frame, id: string | null = null;
+    if (isReply) {
       if (!channel.shared?.answer(link.id, frame)) return;
     } else if (op !== null) {
       if (idOf(frame.id) === null) throw invalid("Invalid channel command id");
-      id = ++this.commandId;
+      id = String(++this.commandId);
       channel.commands.set(id, { link, id: frame.id, op });
       out = { ...frame, id };
     }
     if (op !== null && MESSAGE_COMMANDS.has(op)) {
       channel.shared?.prompt(link.id);
-      // Ahead of omp's echo: an identical peer message must not confirm another server's own admission.
-      const marker = JSON.stringify({ t: PEER_MESSAGE_FRAME });
+      const marker = JSON.stringify({ type: PEER_MESSAGE_FRAME });
       for (const [other, peer] of channel.members) if (other !== link.id) this.deliver(channel, peer, { type: "stdout", ch, line: marker });
     }
     channel.lifecycle?.noteStdin(out);
     channel.transport.write(JSON.stringify(out) + "\n", error => {
       if (!error || id === null) return;
-      channel.commands.delete(id); channel.lifecycle?.forgetCommand(String(id), true);
+      channel.commands.delete(id); channel.lifecycle?.forgetCommand(id, true);
       if (channel.members.has(link.id)) refuse("write_failed", error.message);
     });
   }

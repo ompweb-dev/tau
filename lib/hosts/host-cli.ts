@@ -69,9 +69,7 @@ async function main(argv: string[]): Promise<number> {
     return 1;
   }
   // Login/logout need none of the daemon, which jiti would otherwise transpile on every run.
-  const [{ runHostDaemon }, { hostSocketPath }, { ensureOmpRunner }] = await Promise.all([import("./daemon"), import("./omp-socket"), import("../omp/runner-fetch")]);
-  // Sessions need the runner; until it is here they fail with OMP_NOT_FOUND and the next start retries.
-  void ensureOmpRunner().catch((error: unknown) => console.error(`ompweb host: ${error instanceof Error ? error.message : String(error)}`));
+  const [{ runHostDaemon }, { hostSocketPath }] = await Promise.all([import("./daemon"), import("./omp-socket")]);
   let daemon: HostDaemon | undefined;
   const endpoint = await createHostControlServer((command) => {
     if (!daemon) throw new Error("The host daemon is starting");

@@ -28,7 +28,7 @@ export class StreamSnapshot {
   whole(): string | null {
     if (!this.frame || !isRecord(this.frame.message)) return null;
     // A snapshot is a full update, not the delta already represented by it.
-    return JSON.stringify({ t: "event", event: { ...this.frame, assistantMessageEvent: undefined, message: withStreamedArguments(this.frame.message) } });
+    return JSON.stringify({ ...this.frame, assistantMessageEvent: undefined, message: withStreamedArguments(this.frame.message) });
   }
 
   clear(): void { this.frame = null; }
