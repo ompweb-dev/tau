@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-      PI_VERSION: 0.85.1
+      PI_VERSION: 1.5.2
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
