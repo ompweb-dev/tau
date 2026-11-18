@@ -75,18 +75,19 @@ export function parsePiListOutput(stdout: string): PiPackageEntry[] {
   const cleaned = stdout.replace(ANSI_RE, "");
   const entries: PiPackageEntry[] = [];
   let scope: "global" | "project" | null = null;
-  let currentSource: string | null = null;
+  // pi prints a package's installed path on the next, deeper line only when it is installed.
+  let last: PiPackageEntry | null = null;
   for (const rawLine of cleaned.split(/\r?\n/)) {
     const trimmed = rawLine.trim();
     if (!trimmed) continue;
-    if (trimmed === "User packages:") { scope = "global"; currentSource = null; continue; }
-    if (trimmed === "Project packages:") { scope = "project"; currentSource = null; continue; }
+    if (trimmed === "User packages:") { scope = "global"; last = null; continue; }
+    if (trimmed === "Project packages:") { scope = "project"; last = null; continue; }
     if (!scope) continue;
-    if (/^\s{4}/.test(rawLine) && currentSource) {
-      entries.push({ source: currentSource, path: trimmed, scope });
-      currentSource = null;
+    if (/^\s{4}/.test(rawLine)) {
+      if (last && !last.path) last.path = trimmed;
     } else if (/^\s{2}/.test(rawLine)) {
-      currentSource = trimmed;
+      last = { source: trimmed.replace(/ \(filtered\)$/, ""), path: "", scope };
+      entries.push(last);
     }
   }
   return entries;
