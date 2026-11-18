@@ -176,9 +176,6 @@ const PASSTHROUGH_COMMANDS = new Set([
   "set_subagent_subscription",
   "get_login_providers",
   "login",
-  "btw",
-  "btw_cancel",
-  "get_btw_history",
   "get_client_message_status",
 ]);
 
@@ -3011,6 +3008,19 @@ export class AgentSessionWrapper {
         this.proc.sendFrame(command as { type: string; [key: string]: unknown });
         return null;
       }
+
+      // pi has no side questions: the companion extension answers them (`/tau_btw`, lib/pi/tau-extension.ts) and
+      // streams btw_record / btw_delta frames.
+      case "btw":
+        return await this.proc.callExtension("tau_btw", {
+          action: "ask",
+          question: command.question,
+          ...(typeof command.recordId === "string" ? { recordId: command.recordId } : {}),
+        });
+      case "btw_cancel":
+        return await this.proc.callExtension("tau_btw", { action: "cancel", recordId: command.recordId });
+      case "get_btw_history":
+        return await this.proc.callExtension("tau_btw", { action: "history" }, GET_STATE_TIMEOUT_MS);
 
       default: {
         if (PASSTHROUGH_COMMANDS.has(type)) {

@@ -55,6 +55,8 @@ function bridgedToolCall(frame: WireFrame): WireFrame | null {
     return null;
   }
 }
+/** A companion-extension command (`/tau_*`, sent as a prompt): pi runs no turn for it, so it is no user message. */
+const isExtensionCommand = (frame: Record<string, unknown>) => frame.type === "prompt" && typeof frame.message === "string" && frame.message.startsWith("/tau_");
 /** The extension's answer to a bridged call: the tool result as the dialog's value. */
 function bridgedToolResult(frame: WireFrame): WireFrame {
   const result = isRecord(frame.result) ? frame.result : { content: [{ type: "text", text: String(frame.result ?? "") }] };
@@ -326,8 +328,8 @@ export class ChannelTable {
     const { promise, resolve, reject } = Promise.withResolvers<WireFrame>();
     const timer = setTimeout(() => { channel.internal.delete(id); channel.lifecycle?.forgetCommand(id); reject(new Error(`pi ${op} timed out`)); }, timeoutMs); timer.unref?.();
     channel.internal.set(id, { resolve, reject, timer, onReply });
-    // A companion-extension command (`/tau_*`) starts no run, and pi's reply never says so (no agentInvoked).
-    if (!(op === "prompt" && typeof args.message === "string" && args.message.startsWith("/tau_"))) channel.lifecycle?.noteStdin(command);
+    // A companion-extension command starts no run (older pi's reply never says so).
+    if (!isExtensionCommand(command)) channel.lifecycle?.noteStdin(command);
     channel.transport.write(JSON.stringify(command) + "\n", error => {
       if (error) { const pending = channel.internal.get(id); if (!pending) return; clearTimeout(pending.timer); channel.internal.delete(id); channel.lifecycle?.forgetCommand(id, true); reject(error); }
     });
@@ -461,15 +463,17 @@ export class ChannelTable {
     const member = channel.members.get(link.id)!;
     const isReply = ["extension_ui_response", "ui_response", "host_tool_result", "host_uri_result"].includes(frame.type);
     const op = isReply ? null : frame.type;
+    const extension = isExtensionCommand(frame);
     const refuse = (code: string, error: string) => {
       if (op !== null) this.deliver(channel, member, { type: "stdout", ch, line: JSON.stringify({ type: "response", id: frame.id, command: op, success: false, code, error }) }, true);
     };
     if (channel.replacing) return refuse("session_restarting", "This session is restarting to apply advisor mode; retry once it is ready");
-    if (op !== null && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
+    if (op !== null && !extension && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
       return refuse("session_busy", "Another web app is editing this session's history; retry once it finishes");
     }
     if (op === "branch" || op === "new_session" || op === "switch_session") channel.sessionMovePending = false;
     if (op !== null && ["set_event_filter", "set_subagent_subscription", "set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
+    if (extension && /^\/tau_host_tools\b/.test(frame.message as string)) throw invalid("This command is owned by the host daemon");
     let out = frame, id: string | null = null;
     if (isReply) {
       if (!channel.shared?.answer(link.id, frame)) return;
@@ -477,10 +481,11 @@ export class ChannelTable {
     } else if (op !== null) {
       if (idOf(frame.id) === null) throw invalid("Invalid channel command id");
       id = String(++this.commandId);
-      channel.commands.set(id, { link, id: frame.id, op });
+      // An extension command's reply ends it: never kept for a prompt_result like a message command.
+      channel.commands.set(id, { link, id: frame.id, op: extension ? "extension_command" : op });
       out = { ...frame, id };
     }
-    if (op !== null && MESSAGE_COMMANDS.has(op)) {
+    if (op !== null && !extension && MESSAGE_COMMANDS.has(op)) {
       channel.shared?.prompt(link.id);
       const marker = JSON.stringify({ type: PEER_MESSAGE_FRAME });
       for (const [other, peer] of channel.members) if (other !== link.id) this.deliver(channel, peer, { type: "stdout", ch, line: marker });

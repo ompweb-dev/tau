@@ -1,4 +1,5 @@
 import type { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import { existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -165,6 +166,8 @@ export class RpcProcess {
   /** Standard pi extension dialog methods awaiting `ui_response` -> `extension_ui_response`. */
   private readonly extensionDialogMethods = new Map<string, string>();
   private nextId = 1;
+  /** Companion-extension calls awaiting their `tau_reply` frame (see `callExtension`). */
+  private readonly extensionReplies = new Map<string, { command: string; resolve(data: unknown): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   /** Whether pi has settled since its last `agent_start` (`agent_settled`); null for an adopted child whose history is unknown. */
   private settled: boolean | null;
   /** The last `queue_update`: pi's `get_state` reports only `pendingMessageCount`. */
@@ -217,6 +220,11 @@ export class RpcProcess {
         entry.reject(exitError);
       }
       this.pending.clear();
+      for (const [, entry] of this.extensionReplies) {
+        clearTimeout(entry.timer);
+        entry.reject(exitError);
+      }
+      this.extensionReplies.clear();
       exitDeferred.resolve();
       options.onExit?.({ code, signal, stderrTail: this.stderrTail });
     });
@@ -364,6 +372,17 @@ export class RpcProcess {
     if (method === "setWidget" && req.widgetKey === "tau-btw" && Array.isArray(req.widgetLines) && typeof req.widgetLines[0] === "string") {
       try {
         const btw = JSON.parse(req.widgetLines[0]) as RpcFrame;
+        if (btw && btw.type === "tau_reply") {
+          // Answers one of this process's extension calls; another server's calls name ids it never made.
+          const entry = typeof btw.replyId === "string" ? this.extensionReplies.get(btw.replyId) : undefined;
+          if (entry) {
+            this.extensionReplies.delete(btw.replyId as string);
+            clearTimeout(entry.timer);
+            if (typeof btw.error === "string") entry.reject(new RpcCommandError(entry.command, btw.error));
+            else entry.resolve(btw.data);
+          }
+          return null;
+        }
         if (btw && typeof btw.type === "string") return btw;
       } catch {
         // Ignore malformed widget payload.
@@ -427,6 +446,31 @@ export class RpcProcess {
         }
       });
     });
+  }
+
+  /**
+   * Calls a companion-extension command (`/<command> <json>`, lib/pi/tau-extension.ts). pi starts no run for it and its
+   * prompt reply carries no data, so the extension answers with a `tau_reply` frame naming `replyId`.
+   */
+  callExtension<T = unknown>(command: string, args: Record<string, unknown>, timeoutMs = 30_000): Promise<T> {
+    const replyId = randomUUID();
+    const reply = new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.extensionReplies.delete(replyId);
+        reject(new RpcCommandTimeoutError(command, timeoutMs));
+      }, timeoutMs);
+      timer.unref?.();
+      this.extensionReplies.set(replyId, { command, resolve: resolve as (data: unknown) => void, reject, timer });
+    });
+    // The reply may come before or after pi's own prompt reply; only a refused prompt settles the call by itself.
+    this.sendCommand({ type: "prompt", message: `/${command} ${JSON.stringify({ ...args, replyId })}` }, timeoutMs).catch((error: Error) => {
+      const entry = this.extensionReplies.get(replyId);
+      if (!entry) return;
+      clearTimeout(entry.timer);
+      this.extensionReplies.delete(replyId);
+      entry.reject(error);
+    });
+    return reply;
   }
 
   /** Fire-and-forget frame (`extension_ui_response`, etc.). */
