@@ -18,6 +18,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PI_VERSION: 0.85.1
+
 permissions:
   contents: read
   pull-requests: read
@@ -46,12 +49,12 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      # The runner's own deps too: lib/hosts/omp-socket.test.mjs checks the host against runner/src/channel.ts.
       - name: Install dependencies
-        run: |
-          npm ci
-          npx bun runner/scripts/use-omp-build.ts
-          npx bun install --cwd runner --frozen-lockfile
+        run: npm ci
+
+      # The pi tau drives (`pi --mode rpc`), on PATH for the tests' live sessions, the smoke tests and preflight.
+      - name: Install pi
+        run: npm install --global "@earendil-works/pi-coding-agent@$PI_VERSION"
 
       - name: TypeScript typecheck
         run: npm run typecheck
@@ -86,9 +89,6 @@ jobs:
       - name: Verify production build
         run: npm run build
 
-      - name: Build the omp runner
-        run: npx bun runner/scripts/build-binary.ts
-
       - name: Smoke test
         run: npm run smoke
 
@@ -117,7 +117,7 @@ jobs:
           npx bun scripts/check-host-release-archive.ts "$archive"
           npm run smoke -- --binary "$bin"
           # What the host updater checks on a new release before it switches (lib/hosts/update-worker.ts): the marker
-          # it finds the command by, then the command itself against the bundled ompweb-omp.
+          # it finds the command by, then the command itself against the pi on PATH.
           grep -qa ompweb-preflight-scratch- "$bin"
           node -e 'require("node:child_process").execFileSync(process.argv[1], ["preflight"], {stdio:"inherit",timeout:120000})' "$bin"
 
@@ -126,23 +126,21 @@ jobs:
         shell: bash
         env:
           OMPWEB_COMPILED_UPGRADE_E2E: "1"
-        run: |
-          export OMPWEB_UPGRADE_E2E_RUNNER="$(node -p "require('node:path').resolve('runner', 'release', 'ompweb-omp-' + (process.platform === 'win32' ? 'windows' : process.platform) + '-' + process.arch + (process.platform === 'win32' ? '.exe' : ''))")"
-          npx bun test --parallel --timeout 900000 lib/compiled-upgrade.integration.test.mjs
+        run: npx bun test --parallel --timeout 900000 lib/compiled-upgrade.integration.test.mjs
 
       - name: Packed install smoke test
         shell: bash
         run: |
           npm pack --ignore-scripts
           npm install -g --prefix "$RUNNER_TEMP/ompweb-prefix" ./ompweb-dev-tau-*.tgz
-          npm run smoke -- --omp "$(ls runner/release/ompweb-omp-*)" --package "$(npm root -g --prefix "$RUNNER_TEMP/ompweb-prefix")/@ompweb-dev/tau"
+          npm run smoke -- --package "$(npm root -g --prefix "$RUNNER_TEMP/ompweb-prefix")/@ompweb-dev/tau"
 
       # Bun's postinstall does not run here: the launcher must fall back to @oven/bun-<os>-<arch> (spec R1).
       - name: Packed install smoke test (install scripts disabled)
         shell: bash
         run: |
           npm install -g --ignore-scripts --prefix "$RUNNER_TEMP/ompweb-prefix-no-scripts" ./ompweb-dev-tau-*.tgz
-          npm run smoke -- --omp "$(ls runner/release/ompweb-omp-*)" --package "$(npm root -g --prefix "$RUNNER_TEMP/ompweb-prefix-no-scripts")/@ompweb-dev/tau"
+          npm run smoke -- --package "$(npm root -g --prefix "$RUNNER_TEMP/ompweb-prefix-no-scripts")/@ompweb-dev/tau"
 
       - name: Parse Windows PowerShell scripts (Windows only)
         if: runner.os == 'Windows'

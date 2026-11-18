@@ -1,10 +1,10 @@
 // `npm run smoke [-- --package <dir> | --binary <path>]`: starts ompweb (`node <dir>/bin/omp-web.js`, or the compiled
 // binary) on a free port with a throwaway HOME, waits for its automatic local host, and checks the shipped
-// bundle, the SPA, a hashed asset, the API, a session listed through the daemon, a live session started through the
-// omp runner (no model call) and the SSE stream, then stops both.
-// <dir>: the repo root (after `npm run build` and `bun runner/scripts/build-binary.ts`) or a packed install;
-// <path>: release/ompweb-<os>-<arch>/ompweb, whose directory holds the static files and the runner (ompweb-omp) unless
-// built --no-runner. Prints one `ok <step>` / `FAIL <step>: <detail>` line per step.
+// bundle, the SPA, a hashed asset, the API, a session listed through the daemon, a live session started through
+// `pi --mode rpc` (no model call) and the SSE stream, then stops both. pi comes from PATH unless --omp names one.
+// <dir>: the repo root (after `npm run build`) or a packed install;
+// <path>: release/ompweb-<os>-<arch>/ompweb, whose directory holds the static files.
+// Prints one `ok <step>` / `FAIL <step>: <detail>` line per step.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -223,11 +223,11 @@ try {
       });
     }
 
-    // No model call: the spawn, the runner's hello and the get_state that follows it.
-    await step("a live session starts through the omp runner", async () => {
+    // No model call: the spawn and pi's answer to get_state.
+    await step("a live session starts through pi", async () => {
       const response = await fetch(`${base}/api/agent/${SESSION_ID}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "get_state" }) });
       const text = await response.text();
-      assert(response.status === 200 && text.includes(SESSION_ID), `get_state: status ${response.status} ${text} (no runner? build it with \`bun runner/scripts/build-binary.ts\`)`);
+      assert(response.status === 200 && text.includes(SESSION_ID), `get_state: status ${response.status} ${text} (is pi on PATH?)`);
       const state = await (await fetch(`${base}/api/agent/${SESSION_ID}`)).json() as { running?: boolean };
       assert(state.running === true, `GET /api/agent: ${JSON.stringify(state)}`);
     });
