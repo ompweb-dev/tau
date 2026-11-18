@@ -165,6 +165,10 @@ export class RpcProcess {
   /** Standard pi extension dialog methods awaiting `ui_response` -> `extension_ui_response`. */
   private readonly extensionDialogMethods = new Map<string, string>();
   private nextId = 1;
+  /** Whether pi has settled since its last `agent_start` (`agent_settled`); null for an adopted child whose history is unknown. */
+  private settled: boolean | null;
+  /** The last `queue_update`: pi's `get_state` reports only `pendingMessageCount`. */
+  private lastQueue: { steering: unknown[]; followUp: unknown[] } | null = null;
   private stderrTail = "";
   private exited = false;
   private exitInfo: { code: number | null; signal: NodeJS.Signals | null } | null = null;
@@ -184,6 +188,7 @@ export class RpcProcess {
     this.readyPromise.catch(() => {});
     const exitDeferred = Promise.withResolvers<void>();
     this.exitedPromise = exitDeferred.promise;
+    this.settled = options.adopted ? null : true;
     if (options.adopted) {
       this.heldFrames = [];
       ready.resolve({ type: "ready" });
@@ -302,6 +307,16 @@ export class RpcProcess {
     if (parsed.type === "extension_ui_request" && typeof parsed.method === "string") {
       const translated = this.translateExtensionUiRequest(parsed);
       if (translated) this.dispatch(translated, replayed);
+      return;
+    }
+    if (parsed.type === "agent_start") this.settled = false;
+    if (parsed.type === "queue_update") {
+      this.lastQueue = { steering: Array.isArray(parsed.steering) ? parsed.steering : [], followUp: Array.isArray(parsed.followUp) ? parsed.followUp : [] };
+    }
+    if (parsed.type === "agent_settled") {
+      this.settled = true;
+      // tau names the end of a run and everything it continues into `session_settled`.
+      this.dispatch({ ...parsed, type: "session_settled" }, replayed);
       return;
     }
     this.dispatch(parsed as RpcFrame, replayed);
@@ -474,6 +489,18 @@ export class RpcProcess {
   }
 
   /** A `response`; one for no pending command (timed out, or another server's) is dropped. */
+  /** Fills the `get_state` fields tau reads that pi does not report: the queue, its size and settlement. */
+  private withQueueAndSettlement(state: Record<string, unknown>): Record<string, unknown> {
+    const pending = typeof state.pendingMessageCount === "number" ? state.pendingMessageCount : undefined;
+    const out = { ...state };
+    if (out.queuedMessageCount === undefined && pending !== undefined) out.queuedMessageCount = pending;
+    if (out.queuedMessages === undefined && (this.lastQueue || pending === 0)) out.queuedMessages = this.lastQueue ?? { steering: [], followUp: [] };
+    if (out.isSettled === undefined && this.settled !== null && pending !== undefined) {
+      out.isSettled = this.settled && state.isStreaming !== true && state.isCompacting !== true && pending === 0;
+    }
+    return out;
+  }
+
   private handleResponse(response: Record<string, unknown>): void {
     const id = response.id !== undefined && response.id !== null ? String(response.id) : null;
     const entry = id !== null ? this.pending.get(id) : undefined;
@@ -483,7 +510,7 @@ export class RpcProcess {
     const ok = response.success === true;
     entry.onReply?.(ok, id);
     if (ok) {
-      entry.resolve(response.data);
+      entry.resolve(entry.command === "get_state" && isRecord(response.data) ? this.withQueueAndSettlement(response.data) : response.data);
     } else {
       entry.reject(new RpcCommandError(entry.command, typeof response.error === "string" ? response.error : "pi command failed", typeof response.code === "string" ? response.code : undefined));
     }
