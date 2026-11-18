@@ -9,9 +9,9 @@ type Params = { params: Promise<{ provider: string }> };
 // a URL are rejected by omp's RPC mode). Keys therefore cannot be stored or
 // removed from the web UI.
 const API_KEY_WRITE_GUIDANCE =
-  "omp-web cannot manage stored API keys. Run `omp` in a terminal and use /login (or /logout), " +
+  "tau cannot manage stored API keys directly. Run `pi` in a terminal and use /login (or /logout), " +
   "set the provider's environment variable (e.g. OPENAI_API_KEY), or configure an apiKey on a " +
-  "custom provider in ~/.omp/agent/models.yml.";
+  "custom provider in ~/.pi/agent/models.json.";
 
 // GET /api/auth/api-key/[provider] — returns auth status (never returns the actual key)
 export async function GET(_req: Request, { params }: Params) {
