@@ -393,7 +393,7 @@ export function validateApprovedReleasePin(value: unknown, version?: string, rep
   }
   if (value.npm === undefined) return { version: value.version, releaseRepo: value.releaseRepo, assets };
   const { tarball, integrity } = value.npm as Record<string, unknown>;
-  if (tarball !== `https://registry.npmjs.org/@kahme247/ompweb/-/ompweb-${value.version}.tgz`
+  if (tarball !== `https://registry.npmjs.org/@ompweb-dev/tau/-/tau-${value.version}.tgz`
     || typeof integrity !== "string" || !/^sha512-[A-Za-z0-9+/]{86}==$/.test(integrity)
     || `sha512-${Buffer.from(integrity.slice(7), "base64").toString("base64")}` !== integrity) return invalid();
   return { version: value.version, releaseRepo: value.releaseRepo, assets, npm: { tarball: tarball as string, integrity } };
@@ -577,39 +577,9 @@ export async function preflightHostRelease(d: HostReleasePreflightInput, release
   const entry = binary ? join(release, process.platform === "win32" ? "ompweb.exe" : "ompweb") : join(release, "bin", "omp-web.js");
   // Detected statically: an older ompweb takes `preflight` for a positional and starts the web server.
   if (!(binary ? readFileSync(entry).includes(Buffer.from(PREFLIGHT_MARKER_BASE64, "base64")) : existsSync(join(release, "lib", "hosts", "preflight.ts")))) {
-    if (pin || binary && !d.restartOnly) throw new Error("The new host release has no preflight command to check its omp with");
-    console.warn(`ompweb ${d.version} has no preflight command; its omp was not checked`);
+    if (pin || binary && !d.restartOnly) throw new Error("The new host release has no preflight command to check its pi runtime with");
+    console.warn(`tau ${d.version} has no preflight command; its pi runtime was not checked`);
     return;
-  }
-  if (pin && !binary && !process.env.OMP_WEB_OMP_BIN) {
-    const resolver = join(release, "lib", "omp", "omp-cli.ts");
-    if (!existsSync(resolver) || !readFileSync(resolver).includes(Buffer.from("b21wd2ViLXBhY2thZ2VkLXJ1bm5lci12MQ==", "base64"))) throw new Error("The approved package does not support per-install pinned runner resolution; install a release with that capability or configure an explicit OMP_WEB_OMP_BIN");
-  }
-  const pinnedRunner = pin && !process.env.OMP_WEB_OMP_BIN ? join(release, process.platform === "win32" ? "ompweb-omp.exe" : "ompweb-omp") : undefined;
-  if (pin && pinnedRunner) {
-    hostReleaseName();
-    const runner = pinnedRunner;
-    const asset = `ompweb-omp-${process.platform === "win32" ? "windows" : process.platform}-${process.arch}${process.platform === "win32" ? ".exe" : ""}`;
-    const digest = pin.assets[asset];
-    if (existsSync(runner)) {
-      const info = lstatSync(runner);
-      if (!info.isFile() || info.isSymbolicLink() || info.size > HOST_RELEASE_MAX_MEMBER) throw new Error("Unsafe approved runner file");
-      if (!digest && !binary) throw new Error("Missing approved external runner pin");
-      if (digest) {
-        const hash = createHash("sha256");
-        for await (const chunk of createReadStream(runner)) hash.update(chunk);
-        if (hash.digest("hex") !== digest) throw new Error("Approved runner digest mismatch");
-      }
-    } else {
-      if (!digest) throw new Error("Missing approved external runner pin");
-      const partial = `${runner}.${randomUUID()}.partial`;
-      try {
-        const actual = await downloadHostUpdateFile(`https://github.com/${pin.releaseRepo}/releases/download/v${pin.version}/${asset}`, partial, HOST_RELEASE_MAX_MEMBER);
-        if (actual !== `sha256:${digest}`) throw new Error("Approved runner digest mismatch");
-        chmodSync(partial, 0o755);
-        renameSync(partial, runner);
-      } finally { rmSync(partial, { force: true }); }
-    }
   }
   const command = (args: string[], timeout: number) => exec(binary ? entry : d.runtime!, binary ? args : [entry, ...args], { cwd: release, timeout, env: workerEnvironment(), maxBuffer: 1024 * 1024, windowsHide: true });
   const detail = (error: unknown) => (String((error as { stderr?: unknown }).stderr ?? "").trim() || (error instanceof Error ? error.message : String(error))).slice(-500);
