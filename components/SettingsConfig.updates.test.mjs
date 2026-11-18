@@ -68,8 +68,8 @@ test("a binary install's ompweb update links the release page instead of showing
   assert.match(link.rel, /\bnoopener\b/);
   assert.ok(![...binary.querySelectorAll("code")].some((code) => code.textContent === releases), "the release page is shown as a command");
 
-  const { container: npm } = await renderSystemTab(t, { appUpdate: { ...appUpdate, installMethod: "npm", updateCommand: "npm install -g @kahme247/ompweb" } });
-  assert.ok([...npm.querySelectorAll("code")].some((code) => code.textContent === "npm install -g @kahme247/ompweb"), "the npm command is gone");
+  const { container: npm } = await renderSystemTab(t, { appUpdate: { ...appUpdate, installMethod: "npm", updateCommand: "npm install -g @ompweb-dev/tau" } });
+  assert.ok([...npm.querySelectorAll("code")].some((code) => code.textContent === "npm install -g @ompweb-dev/tau"), "the npm command is gone");
 });
 
 test("a supported binary install gets the in-app Update action, not a download link, and clicking it only opens the review", async (t) => {
@@ -91,7 +91,7 @@ test("a host's omp row is its own update target: its version, its candidate and 
   const { HostUpdates } = await import("./HostUpdates");
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
-    ompweb: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @kahme247/ompweb", installMethod: "npm", protocolVersion: 10 },
+    ompweb: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 10 },
     omp: { currentVersion: "18.20.0-int.202611130355.gd2c2eff", availableVersion: "18.21.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @earendil-works/pi-coding-agent" },
     operation: null,
   });

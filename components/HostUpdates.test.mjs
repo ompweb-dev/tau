@@ -7,7 +7,7 @@ import { HostUpdates } from "./HostUpdates";
 
 const endpoint = "/api/hosts/box/updates";
 const info = {
-  ompweb: { currentVersion: "0.7.0", availableVersion: "0.7.1", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @kahme247/ompweb", installMethod: "npm", protocolVersion: 12 },
+  ompweb: { currentVersion: "0.7.0", availableVersion: "0.7.1", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 12 },
   omp: { currentVersion: "18.20.0" },
   operation: null,
 };

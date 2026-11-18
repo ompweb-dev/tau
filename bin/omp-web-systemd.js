@@ -8,7 +8,7 @@ require("./node-version").exitIfUnsupportedNode();
 //
 // Usage:
 //   ompweb-systemd [install|uninstall|start|stop|restart|status|open]
-//   npx --yes --package=@kahme247/ompweb@latest ompweb-systemd install
+//   npx --yes --package=@ompweb-dev/tau@latest ompweb-systemd install
 //
 // `install` creates ~/.omp/agent/web-service.env. The file is deliberately
 // separate from the unit so port, hostname, password, and omp path can be

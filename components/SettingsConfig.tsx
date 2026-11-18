@@ -1991,11 +1991,11 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                             <a href={appUpdate.updateCommand} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", wordBreak: "break-all" }}>{appUpdate.updateCommand}</a>
                           ) : (
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <code style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", wordBreak: "break-all" }}>{appUpdate.updateCommand || "npm install -g @kahme247/ompweb"}</code>
+                              <code style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", wordBreak: "break-all" }}>{appUpdate.updateCommand || "npm install -g @ompweb-dev/tau"}</code>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void copyText(appUpdate.updateCommand || "npm install -g @kahme247/ompweb")
+                                  void copyText(appUpdate.updateCommand || "npm install -g @ompweb-dev/tau")
                                     .then(() => toast.success(t("appShell.commandCopied")))
                                     .catch(() => toast.error(t("appShell.commandCopyFailed")));
                                 }}

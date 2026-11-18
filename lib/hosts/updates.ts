@@ -146,7 +146,7 @@ function installSupport(method: "npm" | "bun" | "binary"): string | null {
     if (method === "binary") {
       hostReleaseName();
       if (realpathSync(process.execPath) !== join(directory, process.platform === "win32" ? "ompweb.exe" : "ompweb") || !existsSync(join(directory, "dist", "index.html"))) throw new Error("Binary updates require a complete owned host release directory");
-    } else if (basename(directory) !== "ompweb" || basename(dirname(directory)) !== "@kahme247" || basename(dirname(dirname(directory))) !== "node_modules") throw new Error("Host updates require an installed npm/bun package; source checkouts are manual-only");
+    } else if (basename(directory) !== "tau" || basename(dirname(directory)) !== "@ompweb-dev" || basename(dirname(dirname(directory))) !== "node_modules") throw new Error("Host updates require an installed npm/bun package; source checkouts are manual-only");
     if (!safetyGuard) throw new Error("Host daemon restart safety is not configured");
     return null;
   } catch (error) { return messageOf(error); }

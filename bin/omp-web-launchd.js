@@ -8,7 +8,7 @@ require("./node-version").exitIfUnsupportedNode();
 //
 // Usage (installed as the `ompweb-launchd` bin, or run via npx / node directly):
 //   ompweb-launchd [install [package-spec]|uninstall|status]
-//   npx -p @kahme247/ompweb@latest ompweb-launchd install
+//   npx -p @ompweb-dev/tau@latest ompweb-launchd install
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { spawnSync } = require("node:child_process");
@@ -117,7 +117,7 @@ function install(pkgArg) {
     }
   }
 
-  const pkg = pkgArg ?? process.env.OMP_WEB_PKG ?? "@kahme247/ompweb@latest";
+  const pkg = pkgArg ?? process.env.OMP_WEB_PKG ?? "@ompweb-dev/tau@latest";
   const port = process.env.PORT ?? "30177";
   const hostname = process.env.OMP_WEB_HOSTNAME ?? "127.0.0.1";
   const noOpen = process.env.OMP_WEB_NO_OPEN ?? "1";

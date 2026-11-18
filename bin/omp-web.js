@@ -5,8 +5,8 @@
 require("./node-version").exitIfUnsupportedNode();
 
 // Forward service subcommands from the main bin. This makes both
-// `npx @kahme247/ompweb@latest ompweb-launchd ...` and
-// `npx @kahme247/ompweb@latest ompweb-systemd ...` work without requiring
+// `npx @ompweb-dev/tau@latest ompweb-launchd ...` and
+// `npx @ompweb-dev/tau@latest ompweb-systemd ...` work without requiring
 // callers to know the path of the secondary executable.
 const forwardedServiceScripts = {
   launchd: "omp-web-launchd.js",

@@ -213,7 +213,7 @@ function formatReleaseNotes({
   if (!lines.join("\n").includes("## Upgrade")) {
     lines.push("\n## Upgrade\n");
     lines.push("```bash");
-    lines.push(`npm install -g @kahme247/ompweb@${version}`);
+    lines.push(`npm install -g @ompweb-dev/tau@${version}`);
     lines.push("```");
   }
 

@@ -246,7 +246,7 @@ async function verifyStagedRelease(d: ServerUpdateDescriptor): Promise<void> {
     return;
   }
   const metadata: unknown = JSON.parse(readFileSync(join(d.release, "package.json"), "utf8"));
-  if (!isRecord(metadata) || metadata.name !== "@kahme247/ompweb" || metadata.version !== d.targetVersion || !existsSync(join(d.release, "bin", "omp-web.js")) || !existsSync(join(d.release, "server", "main.ts"))) throw new Error("The staged package does not match the requested version");
+  if (!isRecord(metadata) || metadata.name !== "@ompweb-dev/tau" || metadata.version !== d.targetVersion || !existsSync(join(d.release, "bin", "omp-web.js")) || !existsSync(join(d.release, "server", "main.ts"))) throw new Error("The staged package does not match the requested version");
 }
 
 /** Mirrors progress into the plan the server persisted (agent/omp-web/server-upgrades/<id>/plan.json): the worker only ever sets `state`, `error` and the local participant's stage. Advisory: status.json is the durable result. */

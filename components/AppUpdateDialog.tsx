@@ -291,7 +291,7 @@ export function AppUpdateDialog({ open, update, phase, visibleStage, error, plan
   // The server's live plan supersedes the reviewed one once it reports the same plan; a stale earlier plan never replaces it.
   const progressPlan = plan !== null && update?.upgradePlan?.id !== plan.id ? plan : update?.upgradePlan ?? plan;
   const busy = phase === "preparing" || phase === "restarting" || phase === "completed";
-  const command = update?.updateCommand || "npm install -g @kahme247/ompweb";
+  const command = update?.updateCommand || "npm install -g @ompweb-dev/tau";
   const completedVersion = update?.selfUpdateStatus?.targetVersion ?? update?.availableVersion ?? update?.currentVersion ?? "?";
   const versionTransition = reviewing
     ? { fromVersion: plan.fromVersion, targetVersion: plan.targetVersion }

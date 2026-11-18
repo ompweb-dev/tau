@@ -10,14 +10,14 @@ const env = { PATH: "/usr/bin", PI_CODING_AGENT_DIR: "/Users/u/agent" };
 test("the host daemon plist runs `ompweb host`, restarts with KeepAlive, and is throttled", () => {
   const plist = buildPlist({
     label: HOST_LABEL,
-    args: ["/usr/local/bin/npx", "--yes", "@kahme247/ompweb@latest", "host"],
+    args: ["/usr/local/bin/npx", "--yes", "@ompweb-dev/tau@latest", "host"],
     env,
     logName: "ompweb-host",
     throttleInterval: 10,
   });
   assert.equal(HOST_LABEL, "com.kahme247.ompweb-host");
   assert.match(plist, /<key>Label<\/key><string>com\.kahme247\.ompweb-host<\/string>/);
-  assert.match(plist, /<string>@kahme247\/ompweb@latest<\/string>\n    <string>host<\/string>\n  <\/array>/);
+  assert.match(plist, /<string>@ompweb-dev\/tau@latest<\/string>\n    <string>host<\/string>\n  <\/array>/);
   assert.match(plist, /<key>KeepAlive<\/key><true\/>/);
   assert.match(plist, /<key>ThrottleInterval<\/key><integer>10<\/integer>/);
   assert.match(plist, /<key>PI_CODING_AGENT_DIR<\/key><string>\/Users\/u\/agent<\/string>/);

@@ -101,8 +101,8 @@ export function resolveServerInstall(): ServerInstall {
     }
     return { method: "binary", installDir, runtime: process.execPath };
   }
-  if (basename(installDir) !== "ompweb" || basename(dirname(installDir)) !== "@kahme247" || basename(dirname(dirname(installDir))) !== "node_modules") {
-    throw unsupported("Updates need the installed @kahme247/ompweb package; a source checkout is updated with git");
+  if (basename(installDir) !== "tau" || basename(dirname(installDir)) !== "@ompweb-dev" || basename(dirname(dirname(installDir))) !== "node_modules") {
+    throw unsupported("Updates need the installed @ompweb-dev/tau package; a source checkout is updated with git");
   }
   return { method: detectInstallMethod(installDir), installDir, runtime: nodeRuntime() };
 }

@@ -448,7 +448,7 @@ export async function stagePackage(d: HostPackageSource, staging: string): Promi
   const prefix = join(staging, "fetch");
   mkdirSync(prefix, { mode: 0o700 });
   writeFileSync(join(prefix, "package.json"), '{"private":true}', { mode: 0o600 });
-  let packageName = `@kahme247/ompweb@${d.version}`;
+  let packageName = `@ompweb-dev/tau@${d.version}`;
   if (pin) {
     packageName = join(staging, "approved-package.tgz");
     const fd = openSync(packageName, "wx", 0o600);
@@ -464,9 +464,9 @@ export async function stagePackage(d: HostPackageSource, staging: string): Promi
   const line = [command, ...args].map((arg) => `"${arg.replaceAll('"', '')}"`).join(" ");
   await exec(windows ? process.env.ComSpec || "cmd.exe" : command, windows ? ["/d", "/s", "/c", `"${line}"`] : args, { timeout: DOWNLOAD_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: workerEnvironment(), windowsHide: true, windowsVerbatimArguments: windows });
   const modules = join(prefix, "node_modules");
-  const packageDir = join(modules, "@kahme247", "ompweb");
+  const packageDir = join(modules, "@ompweb-dev", "tau");
   const metadata = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-  if (metadata.name !== "@kahme247/ompweb" || metadata.version !== d.version || !existsSync(join(packageDir, "bin", "omp-web-host.js"))) throw new Error("Installed host package does not match the requested version");
+  if (metadata.name !== "@ompweb-dev/tau" || metadata.version !== d.version || !existsSync(join(packageDir, "bin", "omp-web-host.js"))) throw new Error("Installed host package does not match the requested version");
   if (lstatSync(packageDir).isSymbolicLink()) throw new Error("Unsupported linked host package layout");
   const release = join(staging, "release");
   renameSync(packageDir, release);
@@ -595,7 +595,7 @@ export async function installedHostVersionMatches(method: HostUpdateDescriptor["
   try {
     if (method === "binary") return await binaryReportsVersion(join(installDir, process.platform === "win32" ? "ompweb.exe" : "ompweb"), installDir, version);
     const metadata = JSON.parse(readFileSync(join(installDir, "package.json"), "utf8"));
-    return metadata.name === "@kahme247/ompweb" && metadata.version === version;
+    return metadata.name === "@ompweb-dev/tau" && metadata.version === version;
   } catch { return false; }
 }
 
@@ -816,9 +816,9 @@ function validateDescriptor(path: string): HostUpdateDescriptor {
     // The running host may use an operator-supplied runner; the candidate's actual runner is checked by preflight.
     if (!existsSync(join(d.installDir, process.platform === "win32" ? "ompweb.exe" : "ompweb")) || !existsSync(join(d.installDir, "dist", "index.html"))) throw new Error("Incomplete host binary release layout");
   } else {
-    if (basename(d.installDir) !== "ompweb" || basename(dirname(d.installDir)) !== "@kahme247" || basename(dirname(dirname(d.installDir))) !== "node_modules") throw new Error("Package updates require an installed npm/bun package layout");
+    if (basename(d.installDir) !== "tau" || basename(dirname(d.installDir)) !== "@ompweb-dev" || basename(dirname(dirname(d.installDir))) !== "node_modules") throw new Error("Package updates require an installed npm/bun package layout");
     const current = JSON.parse(readFileSync(join(d.installDir, "package.json"), "utf8"));
-    if (current.name !== "@kahme247/ompweb" || (!d.restartOnly && current.version !== d.fromVersion)) throw new Error("Host install changed since this update was requested");
+    if (current.name !== "@ompweb-dev/tau" || (!d.restartOnly && current.version !== d.fromVersion)) throw new Error("Host install changed since this update was requested");
   }
   return d;
 }

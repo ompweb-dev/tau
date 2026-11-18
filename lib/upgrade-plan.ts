@@ -46,7 +46,7 @@ async function candidateIdentity(version: string, includeNpm = true): Promise<{ 
   const [source, bytes, npmBytes] = await Promise.all([
     fetchHostUpdateBytes(`https://raw.githubusercontent.com/${repo}/v${version}/lib/hosts/link-protocol.ts`, 128 * 1024),
     fetchHostUpdateBytes(`https://api.github.com/repos/${repo}/releases/tags/v${version}`, 2 * 1024 * 1024),
-    includeNpm ? fetchHostUpdateBytes(`https://registry.npmjs.org/${encodeURIComponent("@kahme247/ompweb")}/${version}`, 2 * 1024 * 1024).catch(() => null) : Promise.resolve(null),
+    includeNpm ? fetchHostUpdateBytes(`https://registry.npmjs.org/${encodeURIComponent("@ompweb-dev/tau")}/${version}`, 2 * 1024 * 1024).catch(() => null) : Promise.resolve(null),
   ]);
   const release: unknown = JSON.parse(bytes.toString("utf8"));
   if (!isRecord(release) || release.tag_name !== `v${version}` || release.draft === true || !Array.isArray(release.assets)) {
@@ -63,7 +63,7 @@ async function candidateIdentity(version: string, includeNpm = true): Promise<{ 
   if (npmBytes !== null) {
     try {
       const npm: unknown = JSON.parse(npmBytes.toString("utf8"));
-      if (!isRecord(npm) || npm.name !== "@kahme247/ompweb" || npm.version !== version || !isRecord(npm.dist)) throw new Error("Unverified npm publication");
+      if (!isRecord(npm) || npm.name !== "@ompweb-dev/tau" || npm.version !== version || !isRecord(npm.dist)) throw new Error("Unverified npm publication");
       pin = validateApprovedReleasePin({ ...pin, npm: { tarball: npm.dist.tarball, integrity: npm.dist.integrity } }, version, repo);
     } catch { /* Package participants below require a valid npm publication; binary-only plans do not. */ }
   }

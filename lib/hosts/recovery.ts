@@ -83,7 +83,7 @@ function oldHostInstall(status: HostControlStatus): OldHostInstall {
   const binaryName = process.platform === "win32" ? "ompweb.exe" : "ompweb";
   if (basename(status.executable) === binaryName && existsSync(join(dirname(status.executable), "dist", "index.html"))) return { installMethod: "binary", installDir: dirname(status.executable), runtime: status.executable };
   const packageDir = dirname(dirname(status.entrypoint));
-  if (["omp-web.js", "omp-web-host.js"].includes(basename(status.entrypoint)) && existsSync(join(packageDir, "package.json")) && JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).name === "@kahme247/ompweb") return { installMethod: detectInstallMethod(packageDir), installDir: packageDir, runtime: status.executable };
+  if (["omp-web.js", "omp-web-host.js"].includes(basename(status.entrypoint)) && existsSync(join(packageDir, "package.json")) && JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).name === "@ompweb-dev/tau") return { installMethod: detectInstallMethod(packageDir), installDir: packageDir, runtime: status.executable };
   throw new Error("The running host is neither a complete binary release nor an installed npm/bun package; recover it manually");
 }
 

@@ -420,7 +420,7 @@ export function AppShell({ appName }: { appName: string }) {
           <UpdateToastBody
             currentVersion={data.currentVersion}
             availableVersion={version}
-            target={data.updateCommand || "npm install -g @kahme247/ompweb"}
+            target={data.updateCommand || "npm install -g @ompweb-dev/tau"}
             link={binary}
             action={binary ? undefined : {
               label: translate("settingsConfig.appUpdateAction"),

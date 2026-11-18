@@ -8,7 +8,7 @@ const path = process.getBuiltinModule("node:path");
 const MIN_BUN_VERSION = "1.4.4";
 // The postinstall replaces bin/bun.exe (a 450-byte placeholder) with the real ~100 MB binary.
 const PLACEHOLDER_LIMIT = 1024 * 1024;
-const REINSTALL = "npm install -g @kahme247/ompweb";
+const REINSTALL = "npm install -g @ompweb-dev/tau";
 // bun@1.4.4's optionalDependencies, by `${process.platform}-${process.arch}` (Android uses the linux-*-android builds).
 const PLATFORM_PACKAGES = {
   "darwin-arm64": ["@oven/bun-darwin-aarch64"],

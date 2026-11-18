@@ -25,7 +25,7 @@ export async function getGitHubReleaseNotes(version: string): Promise<GitHubRele
   try {
     response = await fetch(`${RELEASES_API_URL}${encodeURIComponent(tag)}`, {
       cache: "no-store",
-      headers: { Accept: "application/vnd.github+json", "User-Agent": "@kahme247/ompweb", "X-GitHub-Api-Version": "2022-11-28" },
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "@ompweb-dev/tau", "X-GitHub-Api-Version": "2022-11-28" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch {

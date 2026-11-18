@@ -3,13 +3,13 @@
 //
 // Usage (installed as the `ompweb-launchd` bin, or run via npx / node directly):
 //   ompweb-launchd [install [package-spec]|uninstall|status]
-//   npx -p @kahme247/ompweb@latest ompweb-launchd install
+//   npx -p @ompweb-dev/tau@latest ompweb-launchd install
 //
 // The positional package-spec picks what the service runs via `npx --yes`
-// (default @kahme247/ompweb@latest; env OMP_WEB_PKG is an equivalent override).
+// (default @ompweb-dev/tau@latest; env OMP_WEB_PKG is an equivalent override).
 //
 // Configuration (read at install time, baked into the plist):
-//   OMP_WEB_PKG          npm package spec run via npx               default @kahme247/ompweb@latest
+//   OMP_WEB_PKG          npm package spec run via npx               default @ompweb-dev/tau@latest
 //   PORT                 Server port                                default 30177
 //   OMP_WEB_HOSTNAME     Server bind host                           default 127.0.0.1
 //   OMP_WEB_PASSWORD     Optional plaintext password, hashed before it is written
@@ -94,7 +94,7 @@ function install(pkgArg?: string): void {
   }
 
   // Service parameters with defaults; the positional package spec wins over env.
-  const pkg = pkgArg ?? process.env.OMP_WEB_PKG ?? "@kahme247/ompweb@latest";
+  const pkg = pkgArg ?? process.env.OMP_WEB_PKG ?? "@ompweb-dev/tau@latest";
   const port = process.env.PORT ?? "30177";
   const hostname = process.env.OMP_WEB_HOSTNAME ?? "127.0.0.1";
   const noOpen = process.env.OMP_WEB_NO_OPEN ?? "1";
