@@ -34,7 +34,11 @@ interface PiContext {
     getEntries?: () => SessionEntry[];
     getBranch?: () => SessionEntry[];
     getLeafId?: () => string | null;
+    getSessionId?: () => string;
+    getEntry?: (id: string) => SessionEntry | undefined;
   };
+  /** Command handlers only (ExtensionCommandContext). */
+  navigateTree?: (targetId: string, options?: { summarize?: boolean }) => Promise<{ cancelled: boolean }>;
 }
 
 interface PiExtensionAPI {
@@ -232,7 +236,7 @@ export default function tauExtension(pi: PiExtensionAPI): void {
 
   // 4. /btw side questions: answered from the conversation so far with the session's model, never added to it.
   //    tau calls `/tau_btw {action, replyId, ...}` and gets a `tau_reply` frame back; answers stream as `btw_delta`
-  //    and `btw_record` frames (all through the `tau-btw` widget, which tau's RpcProcess decodes).
+  //    and `btw_record` frames (all through the `tau` widget, which tau's RpcProcess decodes).
   const btwRecords = new Map<string, BtwRecord>();
   const btwRunning = new Map<string, AbortController>();
   const latestTurn = (record: BtwRecord): BtwTurn => record.followUps?.at(-1) ?? record;
@@ -241,7 +245,7 @@ export default function tauExtension(pi: PiExtensionAPI): void {
     if (!followUps?.length) return { ...record, ...patch };
     return { ...record, followUps: [...followUps.slice(0, -1), { ...followUps[followUps.length - 1], ...patch }] };
   };
-  const emitBtw = (ctx: PiContext, frame: Record<string, unknown>) => ctx.ui.setWidget("tau-btw", [JSON.stringify(frame)]);
+  const emitBtw = (ctx: PiContext, frame: Record<string, unknown>) => ctx.ui.setWidget("tau", [JSON.stringify(frame)]);
 
   pi.on("session_start", (_event, ctx) => {
     btwRecords.clear();
@@ -335,7 +339,29 @@ export default function tauExtension(pi: PiExtensionAPI): void {
     },
   });
 
-  // 5. pi-subagents event bridge
+  // 5. History Edit: move the leaf to just before a user message, keeping the old branch (tau's edit_message).
+  pi.registerCommand("tau_edit", {
+    description: "tau's history Edit",
+    async handler(args, ctx) {
+      let cmd: { replyId?: unknown; entryId?: unknown };
+      try {
+        cmd = JSON.parse(args);
+      } catch {
+        return;
+      }
+      const reply = (frame: Record<string, unknown>) => ctx.ui.setWidget("tau", [JSON.stringify({ type: "tau_reply", replyId: cmd.replyId, ...frame })]);
+      const entry = typeof cmd.entryId === "string" ? ctx.sessionManager?.getEntry?.(cmd.entryId) : undefined;
+      if (entry?.type !== "message" || entry.message?.role !== "user") return reply({ error: "The edit target must be a user message" });
+      try {
+        const { cancelled } = await ctx.navigateTree!(cmd.entryId as string, { summarize: false });
+        reply({ data: { sessionId: ctx.sessionManager?.getSessionId?.(), cancelled, leafId: ctx.sessionManager?.getLeafId?.() ?? null } });
+      } catch (error) {
+        reply({ error: error instanceof Error ? error.message : String(error) });
+      }
+    },
+  });
+
+  // 6. pi-subagents event bridge
   const subagentEvents = [
     "subagent:start",
     "subagent:update",

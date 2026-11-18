@@ -3992,6 +3992,8 @@ async function attachEditableWrapper(t, native, { holdHistory = false } = {}) {
       if (command.type === "prompt") { await native.command(command); return { agentInvoked: true }; }
       return {};
     },
+    // History Edit's companion-extension call (`/tau_edit`) reaches the fake as the edit it stands for.
+    callExtension(command, args) { return this.sendCommand(command === "tau_edit" ? { type: "edit_message", entryId: args.entryId } : { type: command, ...args }); },
     sendFrame() {},
     async dispose() { listeners.clear(); },
   }, process.cwd(), null, false, "", undefined, onlineHost);

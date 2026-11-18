@@ -369,7 +369,7 @@ export class RpcProcess {
     if (method === "notify") {
       return { type: "notice", level: typeof req.notifyType === "string" ? req.notifyType : "info", message: String(req.message ?? "") };
     }
-    if (method === "setWidget" && req.widgetKey === "tau-btw" && Array.isArray(req.widgetLines) && typeof req.widgetLines[0] === "string") {
+    if (method === "setWidget" && req.widgetKey === "tau" && Array.isArray(req.widgetLines) && typeof req.widgetLines[0] === "string") {
       try {
         const btw = JSON.parse(req.widgetLines[0]) as RpcFrame;
         if (btw && btw.type === "tau_reply") {

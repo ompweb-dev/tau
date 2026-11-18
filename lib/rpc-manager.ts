@@ -2275,7 +2275,8 @@ export class AgentSessionWrapper {
         throw new WebRpcError("Wait for the current run to finish before editing", "session_busy");
       }
 
-      const result = await proc.sendCommand<SessionEditResult>({ type: "edit_message", entryId }, EDIT_TIMEOUT_MS);
+      // pi moves the leaf only from an extension command (`/tau_edit`, lib/pi/tau-extension.ts): navigateTree.
+      const result = await proc.callExtension<SessionEditResult>("tau_edit", { entryId }, EDIT_TIMEOUT_MS);
       if (!isRecord(result) || typeof result.sessionId !== "string" || !result.sessionId.trim() || typeof result.cancelled !== "boolean"
         || (result.leafId !== null && typeof result.leafId !== "string")) {
         throw new Error("OMP returned an invalid history edit result");
