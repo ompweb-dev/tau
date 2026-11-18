@@ -1,9 +1,9 @@
 import { useId } from "react";
 
-// ompweb brand mark: a rounded π inside an open orbit on its midnight tile.
+// tau brand mark: a rounded τ inside an open orbit on its midnight tile.
 export default function OmpWebLogo({
   size = 20,
-  label = "ompweb logo",
+  label = "tau logo",
 }: {
   size?: number;
   label?: string;
@@ -29,7 +29,7 @@ export default function OmpWebLogo({
       <rect width="64" height="64" rx="15" fill="#0f0a14" />
       <g fill="none" stroke={`url(#${g})`} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M49 17A23 23 0 1 0 55 34" />
-        <path d="M21 24H43M26 24V39M37 24V44" />
+        <path d="M20 28C21 24 23.5 23 27 23H43M32.5 23C31 31 30.5 38.5 32.5 42.5C34.5 45.5 39 45 41.5 41.5" />
       </g>
     </svg>
   );

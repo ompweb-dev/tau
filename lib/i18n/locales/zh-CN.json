@@ -1,6 +1,6 @@
 {
   "login.title": "欢迎回来",
-  "login.description": "请输入此 omp web 工作区的密码。",
+  "login.description": "请输入此 tau 工作区的密码。",
   "login.password": "密码",
   "login.incorrectPassword": "密码不正确，请重试。",
   "login.connectionFailed": "无法登录，请检查连接后重试。",
@@ -241,7 +241,7 @@
   "appShell.exitNativeBackDescription": "此浏览器无法自动关闭应用。你已确认离开，请再次按返回键或关闭应用。编辑草稿后将重新启用提醒。",
   "appShell.exitNativeBackTitle": "按返回键或关闭应用以离开",
   "appShell.exitStay": "留下",
-  "appShell.exitTitle": "离开 omp web？",
+  "appShell.exitTitle": "离开 tau？",
   "appShell.openFileTitle": "打开来自其他会话的文件？",
   "appShell.openUrlSameSessionTitle": "打开链接？",
   "appShell.openUrlSameSessionDescription": "智能体想要打开：\n{url}",

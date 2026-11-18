@@ -12,7 +12,7 @@ const pngDataUrl = (filename: string) =>
   `data:image/png;base64,${readFileSync(join(process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd(), "public", filename)).toString("base64")}`;
 
 const manifest = {
-  description: "Web UI for the oh-my-pi (omp) coding agent",
+  description: "Web UI for the pi coding agent",
   start_url: "/",
   scope: "/",
   display: "standalone",

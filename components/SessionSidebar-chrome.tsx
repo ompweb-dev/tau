@@ -339,7 +339,7 @@ function OmpWebTitle() {
   const hasCommitDetails = Boolean(commitHash && commitDate);
   const VersionTrigger = hasCommitDetails ? Popover.Trigger : "button";
 
-  const target = showVersion ? `v${process.env.OMP_WEB_PUBLIC_APP_VERSION ?? "0.0.0"}` : "omp web";
+  const target = showVersion ? `v${process.env.OMP_WEB_PUBLIC_APP_VERSION ?? "0.0.0"}` : "tau";
   const display = useScramble(target, scrambling, reducedMotion);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -378,13 +378,12 @@ function OmpWebTitle() {
           alignItems: "center",
           gap: 7,
         }}
-        title={showVersion ? "Show ompweb name" : "Show ompweb version"}
+        title={showVersion ? "Show tau name" : "Show tau version"}
       >
         <OmpWebLogo size={20} />
         {!scrambling && !showVersion ? (
           <span>
-            <span style={{ color: "var(--accent)" }}>omp</span>
-            <span style={{ color: "var(--text)" }}>web</span>
+            <span style={{ color: "var(--accent)" }}>tau</span>
           </span>
         ) : (
           <span style={{ color: showVersion ? "var(--accent)" : "var(--text)" }}>{display}</span>

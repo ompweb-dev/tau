@@ -1,6 +1,6 @@
 {
   "login.title": "Welcome back",
-  "login.description": "Enter the password for this omp web workspace.",
+  "login.description": "Enter the password for this tau workspace.",
   "login.password": "Password",
   "login.incorrectPassword": "Incorrect password. Please try again.",
   "login.connectionFailed": "Could not sign in. Please check your connection and try again.",
@@ -243,7 +243,7 @@
   "appShell.exitNativeBackDescription": "This browser cannot close the app automatically. Your exit is confirmed; press Back again or close the app. Editing a draft restores the warning.",
   "appShell.exitNativeBackTitle": "Use Back or close the app to leave",
   "appShell.exitStay": "Stay",
-  "appShell.exitTitle": "Leave omp web?",
+  "appShell.exitTitle": "Leave tau?",
   "appShell.openFileTitle": "Open file from another session?",
   "appShell.openUrlSameSessionTitle": "Open link?",
   "appShell.openUrlSameSessionDescription": "The agent wants to open:\n{url}",

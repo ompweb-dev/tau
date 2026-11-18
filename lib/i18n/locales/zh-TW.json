@@ -1,6 +1,6 @@
 {
   "login.title": "歡迎回來",
-  "login.description": "請輸入此 omp web 工作區的密碼。",
+  "login.description": "請輸入此 tau 工作區的密碼。",
   "login.password": "密碼",
   "login.incorrectPassword": "密碼不正確，請再試一次。",
   "login.connectionFailed": "無法登入。請檢查網路連線後再試一次。",
@@ -243,7 +243,7 @@
   "appShell.exitNativeBackDescription": "此瀏覽器無法自動關閉應用程式。已確認離開；請再次按下返回或關閉應用程式。編輯草稿會重新顯示此警告。",
   "appShell.exitNativeBackTitle": "使用返回鍵或關閉應用程式以離開",
   "appShell.exitStay": "留在此處",
-  "appShell.exitTitle": "離開 omp web？",
+  "appShell.exitTitle": "離開 tau？",
   "appShell.openFileTitle": "要開啟其他對話的檔案嗎？",
   "appShell.openUrlSameSessionTitle": "要開啟連結嗎？",
   "appShell.openUrlSameSessionDescription": "代理要求開啟：\n{url}",

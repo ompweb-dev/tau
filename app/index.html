@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-    <title>omp web</title>
-    <meta name="description" content="Web UI for the oh-my-pi (omp) coding agent" />
+    <title>tau</title>
+    <meta name="description" content="Web UI for the pi coding agent" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="omp web" />
+    <meta name="apple-mobile-web-app-title" content="tau" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="google" content="notranslate" />
@@ -24,7 +24,7 @@
     <!-- Static copies of components/RouteLoadingFallback.tsx and of LoginForm's first render, painted before the bundle
          runs; createRoot replaces them. RouteLoadingFallback.test.mjs and LoginForm.test.mjs keep them in sync. -->
     <div id="root" style="display: contents">
-      <div class="route-fallback" role="status" aria-busy="true" aria-label="Loading omp web">
+      <div class="route-fallback" role="status" aria-busy="true" aria-label="Loading tau">
         <aside class="route-fallback-sidebar" aria-hidden="true">
           <div class="skeleton route-fallback-sidebar-title"></div>
           <div class="skeleton route-fallback-sidebar-button"></div>
@@ -60,7 +60,7 @@
               </svg>
             </div>
             <h1 id="login-title" class="display-serif" style="margin:0;font-size:28px;line-height:1.1;color:var(--text)">Welcome back</h1>
-            <p style="margin:10px 0 24px;color:var(--text-muted);font-size:13px;line-height:1.5">Enter the password for this omp web workspace.</p>
+            <p style="margin:10px 0 24px;color:var(--text-muted);font-size:13px;line-height:1.5">Enter the password for this tau workspace.</p>
             <form style="display:grid;gap:14px">
               <label for="web-password" style="display:grid;gap:6px;color:var(--text-muted);font-size:12px;font-weight:600">Password<input id="web-password" class="ui-focus-ring" type="password" autoComplete="current-password" autofocus="" required="" style="width:100%;min-height:44px;padding:9px 10px;border:1px solid var(--border);border-radius:var(--radius-control);background:var(--bg);color:var(--text);font-size:14px;transition:border-color var(--dur-fast) var(--ease-out-warm), box-shadow var(--dur-fast) var(--ease-out-warm)" value=""/></label>
               <button type="submit" class="ui-focus-ring" style="min-height:44px;border:0;border-radius:var(--radius-control);background:var(--accent-strong);color:var(--on-accent);font-weight:600;cursor:pointer;opacity:1">Unlock workspace</button>
