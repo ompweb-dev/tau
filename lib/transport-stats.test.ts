@@ -62,7 +62,7 @@ test("diagnostics exclude unconfirmed deliveries and failed commands from succes
 
 test("commands the web app may answer without omp count as transport only, never as omp time", () => {
   const ok = { metric: "action", transport: "ws", outcome: "ok", sentAt: 0, gotAt: 10, recvAt: 2, repliedAt: 3 };
-  const rows = diagnosticStats([{ ...ok, type: "predict_word" }, { ...ok, type: "get_btw_history" }]);
+  const rows = diagnosticStats([{ ...ok, type: "get_btw_history" }, { ...ok, type: "btw_cancel" }]);
   assert.deepEqual(rows.map((row) => [row.metric, row.count]), [["transportMs", 2]]);
 });
 

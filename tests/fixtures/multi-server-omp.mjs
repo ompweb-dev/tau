@@ -9,8 +9,8 @@ const sessionId = process.env.OMP_MULTI_SESSION_ID;
 const sessionFile = process.env.OMP_MULTI_SESSION_FILE;
 const record = (entry) => fs.appendFileSync(process.env.OMP_MULTI_LOG, `${JSON.stringify({ pid: process.pid, ...entry })}\n`);
 const send = (frame) => process.stdout.write(`${JSON.stringify(frame)}\n`);
-const out = (event) => send({ t: "event", event });
-const resumed = process.argv.includes("--resume");
+const out = (event) => send(event);
+const resumed = process.argv.includes("--session");
 record({ type: "start", resumed });
 let streaming = false;
 let messages = [];
@@ -30,19 +30,17 @@ const end = () => {
   out({ type: "agent_end", isTerminal: true, messages: [] });
   out({ type: "session_settled" });
 };
-send({ t: "hello", proto: 1, pid: process.pid, sessionId, sessionFile, cwd: process.cwd() });
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
   const command = JSON.parse(line);
   record({ type: "stdin", command });
-  if (command.t === "ui_response") {
+  if (command.type === "ui_response") {
     // ompweb names the dialog by its wire id as a string.
     record({ type: "answer", id: String(command.id) });
     return end();
   }
-  if (command.t !== "cmd") return;
-  const { args } = command;
-  const reply = (data = {}) => send({ t: "res", id: command.id, ok: true, data });
-  switch (command.op) {
+  const args = command;
+  const reply = (data = {}) => send({ type: "response", id: command.id, command: command.type, success: true, data });
+  switch (command.type) {
     case "get_state": return reply({ sessionId, sessionFile, cwd: process.cwd(), supportsClientMessageIds: true, isStreaming: streaming, isSettled: !streaming, isCompacting: false, queuedMessages: [], messages });
     case "get_subagents": return reply({ subagents: [] });
     case "get_btw_history": return reply({ records: [] });
@@ -62,7 +60,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       persist(user, args.clientMessageId);
       out({ type: "message_end", messageId: `u${n}`, message: user, ...correlation });
       if (args.message === "ask") {
-        send({ t: "ui_request", id: n, method: "askDialog", args: [[{ id: "pick", question: "Pick one", options: [{ label: "A" }, { label: "B" }] }]] });
+        send({ type: "ui_request", id: n, method: "askDialog", args: [[{ id: "pick", question: "Pick one", options: [{ label: "A" }, { label: "B" }] }]] });
         return;
       }
       const assistant = { role: "assistant", content: [{ type: "text", text: "" }], timestamp: Date.now() };

@@ -162,9 +162,9 @@ test("local host shows both installed versions and a blocked candidate with its 
   const row = screen.getByRole("button", { name: "Rename This machine" }).closest("li");
   await within(row).findByText(/Update the web server first: protocol 4 is not supported\./);
   assert.ok(within(row).getByRole("button", { name: "Update ompweb host" }).disabled);
-  // omp is read-only: it updates with ompweb.
+  // omp is its own target: with no candidate it offers no update, and it no longer says it updates with ompweb.
   assert.equal(within(row).queryByRole("button", { name: "Update omp runtime" }), null);
-  within(row).getByText("Updated with ompweb");
+  assert.equal(within(row).queryByText("Updated with ompweb"), null);
   assert.match(row.textContent, /Current: 1\.0\.0/);
   assert.match(row.textContent, /Current: 2\.0\.0/);
   assert.match(row.textContent, /Available: 1\.1\.0/);
@@ -368,12 +368,12 @@ test("a registry version that is not newer is not shown as an available candidat
   await showHosts([hostRow()]);
   await screen.findByText("Current: 18.14.0");
   screen.getByText("Current: 20.1.0-beta.1");
-  screen.getByText("Up to date");
+  assert.equal(screen.getAllByText("Up to date").length, 2);
   assert.equal(screen.queryByText(/^Available:/), null);
   assert.equal(screen.queryByRole("button", { name: /^Update (ompweb host|omp runtime)$/ }), null);
 });
 
-test("resident-session blocking stays readable with a disabled daemon update; the omp row stays read-only", async (t) => {
+test("resident-session blocking stays readable with a disabled daemon update; the omp row offers no update without a candidate", async (t) => {
   mockHostRequests(t, async () => Response.json(updateInfo({
     ompweb: software({ canUpdate: false, blockedReason: "Close all sessions on Laptop before updating the host daemon.", installMethod: "npm", protocolVersion: 3 }),
   })));
@@ -381,7 +381,7 @@ test("resident-session blocking stays readable with a disabled daemon update; th
   await screen.findByText(/Close all sessions on Laptop before updating the host daemon/);
   assert.ok(screen.getByRole("button", { name: "Update ompweb host" }).disabled);
   assert.equal(screen.queryByRole("button", { name: "Update omp runtime" }), null);
-  screen.getByText("Updated with ompweb");
+  assert.equal(screen.queryByText("Updated with ompweb"), null);
 });
 
 test("sharing credentials is confirmed before it is turned on, and turned off at once", async (t) => {

@@ -87,12 +87,12 @@ test("a supported binary install gets the in-app Update action, not a download l
   assert.ok(!requests.some((url) => url.includes("app-update")), "the Settings click must not prepare or commit anything itself");
 });
 
-test("a host's omp row shows the omp its ompweb shipped and offers no update of its own", async (t) => {
+test("a host's omp row is its own update target: its version, its candidate and its own Update button", async (t) => {
   const { HostUpdates } = await import("./HostUpdates");
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
     ompweb: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @kahme247/ompweb", installMethod: "npm", protocolVersion: 10 },
-    omp: { currentVersion: "18.20.0-int.202611130355.gd2c2eff" },
+    omp: { currentVersion: "18.20.0-int.202611130355.gd2c2eff", availableVersion: "18.21.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @earendil-works/pi-coding-agent" },
     operation: null,
   });
   const container = document.createElement("div");
@@ -108,6 +108,7 @@ test("a host's omp row shows the omp its ompweb shipped and offers no update of 
   });
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   assert.ok(container.textContent.includes("18.20.0-int.202611130355.gd2c2eff"), container.textContent);
-  assert.ok(container.textContent.includes("Updated with ompweb"), container.textContent);
-  assert.deepEqual(buttonLabels(container).filter((label) => label === "Update"), ["Update"], "only ompweb has an update button");
+  assert.ok(container.textContent.includes("Available: 18.21.0"), container.textContent);
+  assert.ok(!container.textContent.includes("Updated with ompweb"), container.textContent);
+  assert.deepEqual(buttonLabels(container).filter((label) => label === "Update"), ["Update", "Update"], "ompweb and omp each have an update button");
 });
