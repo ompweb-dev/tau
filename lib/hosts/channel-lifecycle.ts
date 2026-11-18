@@ -132,7 +132,8 @@ export class ChannelLifecycle {
     const id = frame.type === "response" ? idOf(frame.id) : null;
     if (id !== null) {
       this.commands.delete(id);
-      if (frame.success === false || (isRecord(frame.data) && frame.data.agentInvoked === false)) {
+      // pi (0.99+) reports `disposition: "handled"` for a prompt an extension command or input handler consumed: no run.
+      if (frame.success === false || (isRecord(frame.data) && (frame.data.agentInvoked === false || frame.data.disposition === "handled"))) {
         this.awaitingStart.delete(id); this.awaitingQueue.delete(id);
       } else if (this.awaitingQueue.has(id) && (this.queuePresent || (isRecord(frame.data) && frame.data.queued === true))) {
         this.awaitingQueue.set(id, true);
