@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "child_process";
-import { createInterface } from "readline";
+import { StringDecoder } from "string_decoder";
 import { wrapWindowsScript } from "./omp-cli";
 
 /**
@@ -84,9 +84,26 @@ export function spawnLocalRpcTransport(options: {
     for (const listener of stderrListeners) listener(chunk);
   };
 
-  createInterface({ input: child.stdout }).on("line", (line) => {
+  const emitLine = (line: string) => {
     if (lineListeners.length === 0) pendingLines.push(line);
     for (const listener of lineListeners) listener(line);
+  };
+  // pi frames end at LF only: readline also splits on U+2028/U+2029, which are valid inside JSON strings.
+  const decoder = new StringDecoder("utf8");
+  let partial = "";
+  const split = (text: string) => {
+    partial += text;
+    for (let end = partial.indexOf("\n"); end !== -1; end = partial.indexOf("\n")) {
+      const line = partial.slice(0, end);
+      partial = partial.slice(end + 1);
+      emitLine(line.endsWith("\r") ? line.slice(0, -1) : line);
+    }
+  };
+  child.stdout.on("data", (chunk: Buffer) => split(decoder.write(chunk)));
+  child.stdout.on("end", () => {
+    split(decoder.end());
+    if (partial) emitLine(partial);
+    partial = "";
   });
   child.stderr.on("data", (chunk: Buffer) => emitStderr(chunk.toString("utf8")));
   child.on("exit", emitExit);
