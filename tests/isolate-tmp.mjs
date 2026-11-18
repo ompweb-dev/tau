@@ -1,7 +1,7 @@
 // Preloaded by every test process (bunfig.toml [test]): os.tmpdir() points into a directory of this process's own, so
 // state a test writes after it restored the environment (a body still running past its timeout, a late timer) lands
 // there and not in the machine's real temp directory, where a running server would read it (the self-update root
-// `<tmp>/ompweb-self-update-<uid>`). Removed once the file's tests end.
+// `<tmp>/tau-self-update-<uid>`). Removed once the file's tests end.
 import { afterAll } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
