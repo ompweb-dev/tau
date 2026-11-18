@@ -87,12 +87,12 @@ export const COMMAND_DEDUPE_MS = 600_000;
  * answered by the web app itself when no omp child is alive (lib/agent-command.ts NO_SPAWN_REPLIES), or forwarded to
  * omp without awaiting its reply (lib/rpc-manager.ts dispatchCommand). */
 export const NO_OMP_REPLY_COMMANDS: ReadonlySet<string> = new Set([
-  "predict_word", "predict_word_feedback", "get_btw_history", "btw_cancel",
+  "get_btw_history", "btw_cancel",
   "host_tool_result", "host_uri_result", "ui_response", "ui_input",
   "outbox_add", "outbox_remove", "outbox_scope",
 ]);
 
-const REPEATABLE_COMMANDS = ["predict_word", "predict_word_feedback", "set_host_tools", "set_host_uri_schemes", "outbox_add", "outbox_remove", "outbox_scope"];
+const REPEATABLE_COMMANDS = ["set_host_tools", "set_host_uri_schemes", "outbox_add", "outbox_remove", "outbox_scope"];
 
 /** Commands that are repeatable by nature: `get_*` and `predict_word` only read, the outbox commands are idempotent by
  * their message id (lib/message-outbox.ts), and the others register or record the same thing again. Safe to send again

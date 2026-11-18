@@ -176,18 +176,11 @@ const PASSTHROUGH_COMMANDS = new Set([
   "set_subagent_subscription",
   "get_login_providers",
   "login",
-  "predict_word",
-  "predict_word_feedback",
   "btw",
   "btw_cancel",
   "get_btw_history",
   "get_client_message_status",
 ]);
-
-// Outlasts omp's cold prediction-daemon start (up to 3 × 30s start rounds plus a
-// 30s first completion), so omp's answer or error decides; a wedged daemon still
-// cannot pin the request forever.
-const PREDICT_WORD_TIMEOUT_MS = 125_000;
 
 // Commands that can carry user-attached images to the model. All of them must
 // pass the same server-side per-image/count/aggregate validation before the
@@ -3020,7 +3013,7 @@ export class AgentSessionWrapper {
           }
           const result: unknown = await this.sendNativeMessageCommand(
             command as { type: string },
-            type === "predict_word" ? PREDICT_WORD_TIMEOUT_MS : preserveUnknownDelivery && type === "set_thinking_level" ? PROMPT_ACK_TIMEOUT_MS : undefined,
+            preserveUnknownDelivery && type === "set_thinking_level" ? PROMPT_ACK_TIMEOUT_MS : undefined,
             correlationKey,
           );
           if (type === "set_thinking_level") this.invalidateSessionLists();

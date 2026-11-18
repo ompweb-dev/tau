@@ -15,8 +15,6 @@ import type { MessageOrigin } from "@/lib/message-origin";
 // ghost text, no running side question and nothing to cancel, so the reply is
 // known without omp. Asking (`btw`) and opening the history start omp first.
 export const NO_SPAWN_REPLIES: Record<string, unknown> = {
-  predict_word: { suffix: null },
-  predict_word_feedback: null,
   get_btw_history: { records: [] },
   btw_cancel: { cancelled: false },
 };

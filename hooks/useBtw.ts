@@ -4,7 +4,7 @@ import { sendAgentCommand } from "@/lib/agent-client";
 import { translate } from "@/lib/i18n";
 import { applyBtwEvent, isBtwRecord, latestBtwTurn, mergeBtwHistory, upsertBtwRecord, type BtwRecord } from "@/lib/btw";
 import { scheduleAtDisplayRate } from "@/lib/message-update-coalescer";
-import { UNSUPPORTED_RETRY_MS } from "@/hooks/useWordPrediction";
+const UNSUPPORTED_RETRY_MS = 60_000;
 
 /** omp's `btw` failure when a Cancel (or session change) beat its first checkpoint. */
 const CANCELLED_BEFORE_START = "cancelled before it started";
