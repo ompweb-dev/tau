@@ -96,7 +96,7 @@ export class ChannelLifecycle {
         if (queued) this.awaitingQueue.set(id, false);
         else this.awaitingStart.add(id);
       }
-      if (op === "remove_queued_message" || op === "abort_and_restore_queue" || op === "clear_queue") this.queueWithdrawals.set(id, this.queueRevision);
+      if (op === "clear_queue") this.queueWithdrawals.set(id, this.queueRevision);
     }
     this.changed();
   }

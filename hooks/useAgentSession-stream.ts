@@ -253,8 +253,6 @@ export const PROMPT_SETTLE_INITIAL_DELAY_MS = 800;
 export const PROMPT_SETTLE_POLL_MS = 600;
 export const PROMPT_SETTLE_MAX_MS = 20_000;
 export const AGENT_STATE_RECONCILE_MS = 15_000;
-// Stop waits at most this long to take queued messages back before aborting.
-export const WITHDRAW_BEFORE_ABORT_MS = 1_500;
 export const BASH_STATE_RECONCILE_MS = 1_000;
 // Cadence for re-reading a session that some OTHER `omp` process is running.
 // omp-web owns no wrapper for those, so /api/agent/<id>/events 409s and nothing

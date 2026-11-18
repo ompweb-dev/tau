@@ -44,9 +44,9 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     case "get_state": return reply({ sessionId, sessionFile, cwd: process.cwd(), supportsClientMessageIds: true, isStreaming: streaming, isSettled: !streaming, isCompacting: false, queuedMessages: [], messages });
     case "get_subagents": return reply({ subagents: [] });
     case "get_btw_history": return reply({ records: [] });
+    case "clear_queue": return reply({ steering: [], followUp: [] });
     case "abort":
-    case "abort_and_restore_queue":
-      reply({ messages: [] });
+      reply();
       return end();
     case "prompt": {
       reply({ agentInvoked: true });

@@ -67,7 +67,7 @@ export const LINK_CLOSE = { goingAway: 1001, invalidData: 1007, policy: 1008, to
 /** Native commands that append to, replace or resume the active history: a history edit fences them on every link. */
 export const HISTORY_MUTATING_COMMANDS = new Set([
   "edit_message", "prompt", "steer", "follow_up", "followUp", "abort", "abort_and_prompt",
-  "abort_and_restore_queue", "remove_queued_message", "promote_queued_message",
+  "abort_and_restore_queue", "clear_queue",
   "fork", "branch", "new_session", "switch_session", "compact", "abort_compaction",
   "reload", "bash", "abort_bash", "handoff", "set_todos", "set_session_name",
   "set_model", "cycle_model", "set_thinking_level", "cycle_thinking_level",

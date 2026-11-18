@@ -262,15 +262,14 @@ test("renders single queued prompt in compact bar", () => {
   assert.match(html, /\[From Build session\]/);
   assert.match(html, />(Edit|chatInput\.queuedEdit)</);
   assert.match(html, />(Delete|chatInput\.queuedDelete)</);
-  assert.match(html, />(Steer|chatInput\.queuedSteerAction)</);
+  assert.doesNotMatch(html, />Steer</, "pi has no promotion to steering");
 });
 
-test("keeps editing and deletion but hides Steer for a single queued steer", () => {
+test("keeps editing and deletion for a single queued steer", () => {
   const html = renderToStaticMarkup(
     React.createElement(ChatInput, {
       async onSend() { return { status: "accepted" }; },
       onAbort() {},
-      onPromoteQueuedToSteer() {},
       isStreaming: true,
       queuedMessages: {
         followUp: [],
@@ -282,7 +281,7 @@ test("keeps editing and deletion but hides Steer for a single queued steer", () 
   assert.match(html, /Already prioritized task/);
   assert.match(html, />(Edit|chatInput\.queuedEdit)</);
   assert.match(html, />(Delete|chatInput\.queuedDelete)</);
-  assert.doesNotMatch(html, />(Steer|chatInput\.queuedSteerAction)</);
+  assert.doesNotMatch(html, />Steer</);
 });
 
 test("renders multiple queued prompts with count and expand action", () => {
@@ -301,6 +300,9 @@ test("renders multiple queued prompts with count and expand action", () => {
   assert.match(html, /\(3\)/);
   assert.match(html, />(Show all queued prompts|Show all|chatInput\.expandQueued)</);
   assert.match(html, /First task/);
+  // pi takes its queue back only whole: one Edit and one Delete for the whole queue.
+  assert.equal(html.match(/>(Edit|chatInput\.queuedEdit)</g)?.length, 1);
+  assert.equal(html.match(/>(Delete|chatInput\.queuedDelete)</g)?.length, 1);
 });
 
 

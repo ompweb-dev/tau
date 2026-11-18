@@ -869,23 +869,25 @@ test("a superseded send result cannot restore a prompt that was already processe
   assert.deepEqual(getDraft(KEY).images, []);
 });
 
+// What useAgentSession's clearQueuedMessages resolves to: pi's withdrawn texts (never images) in delivery order. The
+// composer recovers them into the conversation the click came from, following its confirmed identity moves.
+function clearQueueWith(answer, onCall = () => {}) {
+  return () => { onCall(); return answer; };
+}
+
 for (const hops of [1, 2]) {
   test(`a held successful queue Edit recovers once into its confirmed owner after ${hops} move(s)`, async (t) => {
     const targetKeys = Array.from({ length: hops }, (_, index) => `${KEY}:queue-edit-target-${index}`);
     t.after(() => targetKeys.forEach(clearDraft));
     const nativeQueue = ["removed question"];
-    const removedImages = [{ data: PNG, mimeType: "image/png" }];
-    const removals = [];
+    let removals = 0;
     let releaseResponse;
-    const response = new Promise((resolve) => { releaseResponse = () => resolve(removedImages); });
+    const response = new Promise((resolve) => { releaseResponse = () => resolve(["removed question"]); });
     const sent = [];
     const { ref, rerender } = await renderWithAttachments({
       queuedMessages: { followUp: [...nativeQueue], steering: [] },
-      onRemoveQueuedMessage: (text, queue) => {
-        removals.push({ text, queue });
-        assert.equal(nativeQueue.shift(), text, "native removal succeeds before its HTTP response arrives");
-        return response;
-      },
+      // pi clears its queue before the HTTP response arrives.
+      onClearQueuedMessages: clearQueueWith(response, () => { removals += 1; nativeQueue.length = 0; }),
       onSend: async (message, images) => {
         sent.push({ message, images });
         return { status: "accepted" };
@@ -895,7 +897,7 @@ for (const hops of [1, 2]) {
     fireEvent.change(textbox, { target: { value: "source draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Edit", exact: true }));
     assert.deepEqual(nativeQueue, []);
-    assert.deepEqual(removals, [{ text: "removed question", queue: "followUp" }]);
+    assert.equal(removals, 1);
     // The queue is already empty and the turn idle, so history Edit is legal.
     let currentKey = KEY;
     for (const targetKey of targetKeys) {
@@ -925,19 +927,18 @@ for (const hops of [1, 2]) {
     const expected = {
       ...beforeResponse,
       value: `removed question\n\n${beforeResponse.value}`,
-      images: [...removedImages, ...beforeResponse.images],
       promptOnly: true,
     };
     await act(async () => { releaseResponse(); await response; });
     await waitFor(() => assert.deepEqual(getDraft(currentKey), expected));
     assert.equal(textbox.value, expected.value);
-    assert.equal(screen.getAllByRole("button", { name: /remove image/i }).length, 3);
+    assert.equal(screen.getAllByRole("button", { name: /remove image/i }).length, 2);
     assert.equal(sessionStorage.getItem(`omp-draft-${currentKey}`), expected.value);
     for (const abandonedKey of [KEY, ...targetKeys.slice(0, -1)]) {
       assert.equal(getDraft(abandonedKey), null, "recovery must not resurrect an abandoned owner");
     }
     assert.deepEqual(nativeQueue, [], "recovery does not requeue the removed message");
-    assert.equal(removals.length, 1, "native removal is never retried");
+    assert.equal(removals, 1, "the native clear is never retried");
     assert.deepEqual(sent, [], "recovery does not implicitly submit");
     fireEvent.click(screen.getByRole("button", { name: /^send$/i }));
     await waitFor(() => assert.equal(sent.length, 1));
@@ -953,20 +954,14 @@ for (const hops of [1, 2]) {
   test(`a queue Edit response before the move commit recovers only into its confirmed owner after ${hops} move(s)`, async (t) => {
     const targetKeys = Array.from({ length: hops }, (_, index) => `${KEY}:pre-commit-target-${index}`);
     t.after(() => targetKeys.forEach(clearDraft));
-    const removedImages = [{ data: PNG, mimeType: "image/png" }];
     const nativeQueue = ["removed question"];
     let releaseResponse;
-    const response = new Promise((resolve) => { releaseResponse = () => resolve(removedImages); });
+    const response = new Promise((resolve) => { releaseResponse = () => resolve(["removed question"]); });
     const sent = [];
     let removals = 0;
     const { ref, rerender } = await renderWithAttachments({
       queuedMessages: { followUp: [...nativeQueue], steering: [] },
-      onRemoveQueuedMessage: (text, queue) => {
-        assert.equal(queue, "followUp");
-        assert.equal(nativeQueue.shift(), text);
-        removals += 1;
-        return response;
-      },
+      onClearQueuedMessages: clearQueueWith(response, () => { removals += 1; nativeQueue.length = 0; }),
       onSend: async (message, images) => {
         sent.push({ message, images });
         return { status: "accepted" };
@@ -998,7 +993,6 @@ for (const hops of [1, 2]) {
           expected = {
             ...movedDraft,
             value: `removed question\n\n${movedDraft.value}`,
-            images: [...removedImages, ...movedDraft.images],
             promptOnly: true,
           };
           assert.deepEqual(getDraft(targetKey), expected, "HTTP success recovers before the new identity renders");
@@ -1041,13 +1035,12 @@ for (const [responseBeforeCommit, movedBeforeNavigation] of [[false, false], [fa
     const navigationKey = movedBeforeNavigation ? KEY : `${KEY}:queue-unrelated`;
     const unrelatedTarget = `${KEY}:queue-unrelated-target`;
     t.after(() => [originalTarget, navigationKey, unrelatedTarget].forEach(clearDraft));
-    const removedImages = [{ data: PNG, mimeType: "image/png" }];
     let releaseResponse;
-    const response = new Promise((resolve) => { releaseResponse = () => resolve(removedImages); });
+    const response = new Promise((resolve) => { releaseResponse = () => resolve(["removed question"]); });
     let removals = 0;
     const { ref, rerender } = await renderWithAttachments({
       queuedMessages: { followUp: ["removed question"], steering: [] },
-      onRemoveQueuedMessage: () => { removals += 1; return response; },
+      onClearQueuedMessages: clearQueueWith(response, () => { removals += 1; }),
     });
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "original conversation" } });
     fireEvent.click(screen.getByRole("button", { name: "Edit", exact: true }));
@@ -1087,7 +1080,6 @@ for (const [responseBeforeCommit, movedBeforeNavigation] of [[false, false], [fa
     await waitFor(() => assert.deepEqual(getDraft(recoveryKey), {
       ...sourceDraft,
       value: "removed question\n\noriginal conversation",
-      images: [...removedImages, ...sourceDraft.images],
       promptOnly: true,
     }));
     assert.equal(screen.getByRole("textbox").value, "unrelated conversation");

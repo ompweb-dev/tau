@@ -190,7 +190,6 @@ const IMAGE_BEARING_COMMANDS = new Set(["prompt", "steer", "follow_up", "abort_a
 // pi-web commands with no omp RPC equivalent. The UI tolerates these failing.
 const UNSUPPORTED_COMMANDS: Record<string, string> = {
   navigate_tree: "Branch navigation is not supported over the omp RPC protocol",
-  clear_queue: "Recalling queued messages is not supported over the omp RPC protocol",
   get_tools: "Per-session tool listing is not supported over the omp RPC protocol",
   set_tools: "Changing tools on a running session is not supported over the omp RPC protocol; tool presets apply to new sessions",
 };
@@ -2702,22 +2701,31 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "remove_queued_message":
-      case "promote_queued_message": {
-        // Queue mutations are synchronous control operations, like get_state.
-        // Expiry must not abort unrelated work or replay a possibly applied mutation.
-        const result = await this.proc.sendCommand(command as { type: string }, GET_STATE_TIMEOUT_MS);
+      // pi takes the queue back only whole: clear_queue returns every queued text (never images).
+      // Like a control read, expiry must not abort unrelated work or replay a possibly applied mutation.
+      case "clear_queue": {
+        const result = await this.proc.sendCommand({ type: "clear_queue" }, GET_STATE_TIMEOUT_MS);
         return result ?? null;
       }
 
-      // abort_and_restore_queue is omp's Esc: it takes queued user input back
-      // atomically, then aborts, and returns the withdrawn messages.
+      // abort_and_restore_queue is the TUI's Esc: clear_queue before abort (pi runs a queued
+      // message as soon as an abort lands), then report the withdrawn texts as entries.
       case "abort":
       case "abort_and_restore_queue": {
         this.responseObserved = false;
         this.responseRunActive = false;
         const result = await this.withFinalRunningNotification(async () => {
-          const response: unknown = await this.proc.sendCommand({ type });
+          const withdrawn = type === "abort" ? null
+            : await this.proc.sendCommand<{ steering?: unknown; followUp?: unknown }>({ type: "clear_queue" }, GET_STATE_TIMEOUT_MS);
+          try {
+            await this.proc.sendCommand({ type: "abort" });
+          } catch (error) {
+            // The withdrawn texts exist only in this answer: return them, and let state reconciliation show the run.
+            if (!withdrawn) throw error;
+            console.warn(`[omp-web] abort after clear_queue failed for ${this._sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          const entries = (texts: unknown) => (Array.isArray(texts) ? texts : []).filter((text) => typeof text === "string").map((text) => ({ text }));
+          const response = withdrawn && { steering: entries(withdrawn.steering), followUp: entries(withdrawn.followUp) };
           // If the prompt was aborted before the agent loop started, no
           // agent_end will arrive to clear the flag; the streaming flag still
           // tracks a live turn that ends with its own agent_end.

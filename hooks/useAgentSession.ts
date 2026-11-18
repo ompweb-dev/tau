@@ -27,7 +27,7 @@ import { HostOfflineError, TransportLostError, getOutboxScope, rememberOutboxSco
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
-import { clearDraft, getDraft, mergeRecoveredText, recoverDraft, setDraft, toDraftImages, type ChatDraft, type ChatDraftImage } from "@/lib/draft-store";
+import { clearDraft, getDraft, mergeRecoveredText, recoverDraft, setDraft, type ChatDraft } from "@/lib/draft-store";
 import { formatExitedSessionNotice, translate } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
@@ -79,7 +79,6 @@ import {
 import type { NoticeType } from "./useAgentSession-notices";
 import {
   AGENT_STATE_RECONCILE_MS,
-  WITHDRAW_BEFORE_ABORT_MS,
   BASH_STATE_RECONCILE_MS,
   EVENT_STREAM_CONNECT_TIMEOUT_MS,
   EVENT_STREAM_RETRY_MAX_MS,
@@ -2431,29 +2430,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [agentRunning]);
 
 
-  /** Cancel one pending message in omp. The chip itself leaves through omp's
-   *  queue snapshot; resolves to the removed message's images (empty when it
-   *  had none or omp does not return them) only when omp confirms the
-   *  removal, else false. */
-  const removeQueuedMessage = useCallback(async (text: string, queue: "steering" | "followUp"): Promise<ChatDraftImage[] | false> => {
+  /** Take every queued message back from pi, which clears its queue only whole
+   *  (texts, never images); the chips leave through pi's queue snapshot.
+   *  Resolves to the texts in delivery order, or false when pi did not clear. */
+  const clearQueuedMessages = useCallback(async (): Promise<string[] | false> => {
     const sid = sessionIdRef.current;
-    if (!hookAliveRef.current || !sid || !text) return false;
-    if (!queuedMessagesRef.current[queue].includes(text)) {
-      addNotice({ type: "warning", message: translate("agentSession.queuedRemovalUnavailable") });
-      return false;
-    }
+    if (!hookAliveRef.current || !sid) return false;
     if (queuedRemovalRef.current?.sessionId === sid) return false;
     const removal = { sessionId: sid };
     queuedRemovalRef.current = removal;
     try {
-      const result = await sendAgentCommand<{ removed: boolean; images?: unknown }>(sid, {
-        type: "remove_queued_message", message: text, queue,
-      });
-      if (result?.removed === true) return toDraftImages(result.images);
-      if (hookAliveRef.current && sessionIdRef.current === sid) {
-        addNotice({ type: "warning", message: translate("agentSession.queuedRemovalUnavailable") });
-      }
-      return false;
+      const result = await sendAgentCommand<{ steering?: unknown; followUp?: unknown }>(sid, { type: "clear_queue" });
+      return [result?.steering, result?.followUp].flatMap((queue) => (Array.isArray(queue) ? queue : []))
+        .filter((text): text is string => typeof text === "string" && text.length > 0);
     } catch (error) {
       if (hookAliveRef.current && sessionIdRef.current === sid) {
         addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
@@ -2461,30 +2450,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return false;
     } finally {
       if (queuedRemovalRef.current === removal) queuedRemovalRef.current = null;
-    }
-  }, [addNotice]);
-
-  /** Move the first matching follow-up into omp's steering queue; the chip
-   *  relabels through omp's queue snapshot. Never enqueue a copy via steer. */
-  const promoteQueuedToSteer = useCallback(async (text: string) => {
-    const sid = sessionIdRef.current;
-    if (!hookAliveRef.current || !sid || !text || !queuedMessagesRef.current.followUp.includes(text)) return;
-    if (queuedRemovalRef.current?.sessionId === sid) return;
-    const promotion = { sessionId: sid };
-    queuedRemovalRef.current = promotion;
-    try {
-      const result = await sendAgentCommand<{ promoted: boolean }>(sid, {
-        type: "promote_queued_message",
-        message: text,
-      });
-      if (result?.promoted !== true && hookAliveRef.current && sessionIdRef.current === sid) {
-        addNotice({ type: "warning", message: translate("agentSession.queuedPromotionUnavailable") });
-      }
-    } catch (error) {
-      if (!hookAliveRef.current || sessionIdRef.current !== sid) return;
-      addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
-    } finally {
-      if (queuedRemovalRef.current === promotion) queuedRemovalRef.current = null;
     }
   }, [addNotice]);
 
@@ -3661,132 +3626,44 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session]);
   executeBashRef.current = executeBash;
 
-  const withdrawAndAbort = useCallback(async (sid: string, onAbortSent: () => void) => {
-    // Captured at the click: no abort below may reach a run that started
+  const withdrawAndAbort = useCallback(async (sid: string) => {
+    // Captured at the click: a retry must not reach a run that started
     // since (this client's next prompt or another device's).
     const runId = promptRunIdRef.current;
     const runsEnded = runsEndedRef.current;
     const sameRun = () => promptRunIdRef.current === runId && runsEndedRef.current === runsEnded;
-    // Like the TUI's Esc, omp takes every pending user message back and then
-    // aborts, in one step: it also catches a steer this client's queue
-    // snapshot does not list yet, or one the run already claimed but never
-    // recorded, which a removal by text cannot reach and which omp would
-    // otherwise run as a new turn right after the abort. The texts and images
-    // return to this session's draft (omp drops the images from a response
-    // over its transport limit). Known window: they exist only in the
-    // response until the abort finishes, so a reload during a slow abort
+    // Like the TUI's Esc, the server takes every pending user message back
+    // (pi's clear_queue) and then aborts: pi would otherwise run a queued
+    // message as soon as the abort lands. The texts return to this session's
+    // draft; pi keeps no images for them. Known window: they exist only in
+    // the response until the abort finishes, so a reload during a slow abort
     // loses them.
-    type RestoredQueue = { steering?: Array<{ text?: unknown; images?: unknown[] }>; followUp?: Array<{ text?: unknown; images?: unknown[] }> };
+    type RestoredQueue = { steering?: Array<{ text?: unknown }>; followUp?: Array<{ text?: unknown }> };
     let restoredQueue: RestoredQueue | null | undefined;
-    let unsupported = false;
     let failures = 0;
-    // A failure after omp already withdrew would lose the texts on the
-    // per-entry path (the queue is empty by then). Retrying the same command
-    // is safe instead: omp returns whatever is still queued.
-    for (let attempt = 0; attempt < 2 && restoredQueue === undefined && !unsupported && (attempt === 0 || sameRun()); attempt++) {
+    // Retrying the same command is safe: it returns whatever is still queued.
+    for (let attempt = 0; attempt < 2 && restoredQueue === undefined && (attempt === 0 || sameRun()); attempt++) {
       try {
         restoredQueue = (await sendAgentCommand<RestoredQueue>(sid, { type: "abort_and_restore_queue" })) ?? null;
-      } catch (error) {
-        unsupported = error instanceof Error && error.message.includes("Unknown command");
-        if (!unsupported) failures += 1;
+      } catch {
+        failures += 1;
       }
     }
-    if (!unsupported) {
-      const steering = Array.isArray(restoredQueue?.steering) ? restoredQueue.steering : [];
-      const followUp = Array.isArray(restoredQueue?.followUp) ? restoredQueue.followUp : [];
-      const entries = [...steering, ...followUp];
-      const texts = entries
-        // An image-only message comes back as omp's "[Image]" chip label,
-        // which is not text to put back; a literal "[Image]" without images is.
-        .filter((entry) => !(entry.text === "[Image]" && Array.isArray(entry.images) && entry.images.length > 0))
-        .map((entry) => entry.text)
-        .filter((text): text is string => typeof text === "string" && text.length > 0);
-      const images = entries.flatMap((entry) => toDraftImages(entry.images));
-      if (texts.length > 0 || images.length > 0) recoverDraft(sid, { text: texts.join("\n\n"), images, promptOnly: true });
-      // A failed attempt may have withdrawn messages whose texts were in the
-      // lost response; say so unless the retry brought texts back.
-      if (failures > 0 && texts.length === 0 && hookAliveRef.current && sessionIdRef.current === sid) {
-        addNotice({ type: "warning", message: translate("agentSession.queueRestoreUncertain") });
-      }
-      return;
-    }
-    // omp before abort_and_restore_queue: take pending messages back out of
-    // omp BEFORE the abort: omp runs a queued steer as soon as an abort lands
-    // (and keeps a follow-up for after the next reply, #130). A message the
-    // model already took (removed: false) lands in the transcript instead. A
-    // steer whose send has not reached omp's queue snapshot yet is not withdrawn.
-    const pending = queuedMessagesRef.current;
-    const entries = [
-      ...pending.steering.map((text) => ({ text, queue: "steering" as const })),
-      ...pending.followUp.map((text) => ({ text, queue: "followUp" as const })),
-    ];
-    const removed: boolean[] = [];
-    const restored: boolean[] = [];
-    let recoveredBlock = "";
-    let failed = false;
-    // Recover confirmed withdrawals in queue order. A later batch rewrites the
-    // earlier block in order while the draft still starts with it.
-    const recoverWithdrawn = () => {
-      const fresh = entries.filter((_, i) => removed[i] && !restored[i]).map((entry) => entry.text);
-      if (fresh.length === 0) return;
-      entries.forEach((_, i) => { if (removed[i]) restored[i] = true; });
-      const block = entries.filter((_, i) => restored[i]).map((entry) => entry.text).join("\n\n");
-      recoverDraft(sid, { text: block, replace: recoveredBlock ? { lead: recoveredBlock, fallback: fresh.join("\n\n") } : undefined, promptOnly: true });
-      recoveredBlock = block;
-    };
-    const removals = Promise.all(entries.map(async (entry, i) => {
-      // A promotion that landed after this snapshot moved the message into
-      // steering (removal from steering never moves it back): try both.
-      const queues = entry.queue === "followUp" ? ["followUp", "steering"] as const : ["steering"] as const;
-      try {
-        for (const queue of queues) {
-          // A late refusal must not reach into a newer run's steering queue.
-          if (queue === "steering" && entry.queue === "followUp"
-            && (promptRunIdRef.current !== runId || runsEndedRef.current !== runsEnded)) return;
-          const result = await sendAgentCommand<{ removed: boolean }>(sid, { type: "remove_queued_message", message: entry.text, queue });
-          if (result?.removed === true) {
-            removed[i] = true;
-            return;
-          }
-        }
-      } catch (error) {
-        console.error("Failed to withdraw queued message:", error);
-        failed = true;
-      }
-    }));
-    // A slow removal must not hold Stop hostage; late answers still recover
-    // text. (Executor form: Promise.withResolvers is missing in Safari < 17.4.)
-    let clearDeadline = () => {};
-    await Promise.race([removals, new Promise((resolve) => {
-      const timer = setTimeout(resolve, WITHDRAW_BEFORE_ABORT_MS);
-      clearDeadline = () => clearTimeout(timer);
-    })]);
-    clearDeadline();
-    // Text omp already gave back must survive a reload while a slower
-    // removal is still pending.
-    recoverWithdrawn();
-    // The targeted run may have ended during the wait and another prompt
-    // (this client's or another device's) started: this Stop is not for it.
-    if (sameRun()) {
-      try {
-        await sendAgentCommand(sid, { type: "abort" });
-      } catch (e) {
-        console.error("Failed to abort:", e);
-      }
-    }
-    // From here only late recovery remains: a new run's Stop must not wait on it.
-    onAbortSent();
-    await removals;
-    recoverWithdrawn();
-    if (failed && hookAliveRef.current && sessionIdRef.current === sid) {
-      addNotice({ type: "warning", message: translate("agentSession.queueDiscardFailed") });
+    const steering = Array.isArray(restoredQueue?.steering) ? restoredQueue.steering : [];
+    const followUp = Array.isArray(restoredQueue?.followUp) ? restoredQueue.followUp : [];
+    const texts = [...steering, ...followUp]
+      .map((entry) => entry.text)
+      .filter((text): text is string => typeof text === "string" && text.length > 0);
+    if (texts.length > 0) recoverDraft(sid, { text: texts.join("\n\n"), promptOnly: true });
+    // A failed attempt may have withdrawn messages whose texts were in the
+    // lost response; say so unless the retry brought texts back.
+    if (failures > 0 && texts.length === 0 && hookAliveRef.current && sessionIdRef.current === sid) {
+      addNotice({ type: "warning", message: translate("agentSession.queueRestoreUncertain") });
     }
   }, [addNotice]);
 
   // Button, Esc, and the global shortcut can all fire while a withdrawal is
   // in flight: one Stop at a time, or two recoveries interleave their text.
-  // The guard covers withdrawal and abort only; late recovery of a stalled
-  // removal must not swallow the Stop of a run that starts afterwards.
   const stopInFlightRef = useRef<Promise<void> | null>(null);
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -3803,7 +3680,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (stopInFlightRef.current) return stopInFlightRef.current;
     // An older Stop never clears a newer one's guard.
     const release = () => { if (stopInFlightRef.current === stop) stopInFlightRef.current = null; };
-    const stop: Promise<void> = withdrawAndAbort(sid, release).finally(release);
+    const stop: Promise<void> = withdrawAndAbort(sid).finally(release);
     stopInFlightRef.current = stop;
     return stop;
   }, [withdrawAndAbort]);
@@ -4935,7 +4812,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleCompact, handleHandoff, handleSteer, handleFollowUp, handleAbortCompaction,
     heldMessages, deleteHeldMessage, retryHeldMessage,
     handleBuiltinSlashCommand, togglePreCompactionHistory,
-    handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, removeQueuedMessage, promoteQueuedToSteer, setActiveLeafId, setData, setMessages,
+    handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, clearQueuedMessages, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
     resolveUploadHost,
     btw, askBtw,

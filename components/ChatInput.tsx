@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, moveDraftSubmissions, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft, type ChatDraftImage } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, moveDraftSubmissions, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -239,9 +239,9 @@ interface Props {
   generationSpeed?: GenerationSpeedInfo | null;
   /** Cancel one pending message in omp before removing it from the queue
    *  panel; resolves to its images once omp confirms, else false. */
-  onRemoveQueuedMessage?: (text: string, queue: "steering" | "followUp") => Promise<ChatDraftImage[] | false>;
+  /** Takes the whole queue back from pi (it clears only whole): the texts in delivery order, or false. */
+  onClearQueuedMessages?: () => Promise<string[] | false>;
   /** Promote the first matching native follow-up into steering. */
-  onPromoteQueuedToSteer?: (text: string) => void | Promise<void>;
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
   onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
@@ -375,8 +375,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   sessionInfoContainer,
   modelCapacity,
   generationSpeed,
-  onRemoveQueuedMessage,
-  onPromoteQueuedToSteer,
+  onClearQueuedMessages,
   draftKey = "new:unassigned",
   uploadHostId = LOCAL_HOST_ID,
   resolveUploadHost,
@@ -429,8 +428,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     setPromptOnlyState(next);
   }, []);
   const [queuedDeleteTarget, setQueuedDeleteTarget] = useState<{
-    text: string;
-    kind: "follow-up" | "steer";
     draftKey: string | undefined;
     queue: Props["queuedMessages"];
   } | null>(null);
@@ -1887,54 +1884,41 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const activeDeleteTarget = queuedDeleteTarget?.draftKey === draftKey
     && queuedDeleteTarget?.queue === queuedMessages ? queuedDeleteTarget : null;
 
-  const handleQueueAction = useCallback(async (
-    entry: { kind: "follow-up" | "steer"; text: string },
-    action: "edit" | "delete" | "steer",
-  ) => {
-    if (queueActionPendingRef.current || (action === "steer" && submissionBlockedRef.current)) return;
+  const handleQueueAction = useCallback(async (action: "edit" | "delete") => {
+    if (queueActionPendingRef.current) return;
     queueActionPendingRef.current = true;
     setQueueActionPending(true);
     const recoveryIdentity = draftRecoveryIdentityRef.current;
     try {
-      if (action === "steer") {
-        if (entry.kind === "follow-up") await onPromoteQueuedToSteer?.(entry.text);
-        return;
-      }
-      const removed = await onRemoveQueuedMessage?.(
-        entry.text, entry.kind === "steer" ? "steering" : "followUp",
-      );
-      setQueuedDeleteTarget(null);
-      if (!removed || action !== "edit") return;
+      const texts = await onClearQueuedMessages?.();
       // Recover to this conversation's last confirmed owner, not a later navigation.
-      // omp labels an image-only message "[Image]": not text when it has images.
-      recoverDraft(recoveryIdentity.key, { text: entry.text === "[Image]" && removed.length > 0 ? "" : entry.text, images: removed, promptOnly: true });
+      if (action === "edit" && texts && texts.length > 0) recoverDraft(recoveryIdentity.key, { text: texts.join("\n\n"), promptOnly: true });
     } catch (error) {
-      setQueuedDeleteTarget(null);
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
+      setQueuedDeleteTarget(null);
       queueActionPendingRef.current = false;
       setQueueActionPending(false);
     }
-  }, [onRemoveQueuedMessage, onPromoteQueuedToSteer]);
+  }, [onClearQueuedMessages]);
 
-  const handleItemDelete = useCallback((entry: { kind: "follow-up" | "steer"; text: string }) => {
-    setQueuedDeleteTarget({ ...entry, draftKey, queue: queuedMessages });
-  }, [draftKey, queuedMessages]);
-
-  const handleQueuedEdit = useCallback(() => {
-    if (!firstQueued) return;
-    void handleQueueAction(firstQueued, "edit");
-  }, [firstQueued, handleQueueAction]);
+  const handleQueuedEdit = useCallback(() => { void handleQueueAction("edit"); }, [handleQueueAction]);
 
   const handleQueuedDelete = useCallback(() => {
-    if (!firstQueued) return;
-    handleItemDelete(firstQueued);
-  }, [firstQueued, handleItemDelete]);
+    setQueuedDeleteTarget({ draftKey, queue: queuedMessages });
+  }, [draftKey, queuedMessages]);
 
-  const handleQueuedSteer = useCallback(() => {
-    if (!firstQueued) return;
-    void handleQueueAction(firstQueued, "steer");
-  }, [firstQueued, handleQueueAction]);
+  /** Edit and Delete act on the whole queue: pi takes queued messages back only together. */
+  const queueActions = (
+    <>
+      <QueuedActionButton disabled={queueActionPending || !onClearQueuedMessages} onClick={handleQueuedEdit} title={t("chatInput.queuedEditTitle")}>
+        {t("chatInput.queuedEdit")}
+      </QueuedActionButton>
+      <QueuedActionButton disabled={queueActionPending || !onClearQueuedMessages} onClick={handleQueuedDelete} title={t("chatInput.queuedDeleteTitle")}>
+        {t("chatInput.queuedDelete")}
+      </QueuedActionButton>
+    </>
+  );
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = filteredSlashCommands.length - 1;
@@ -2377,7 +2361,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
           <>
             {t("chatInput.queuedDeleteConfirmBody")}
             <span style={{ display: "block", marginTop: 12, maxHeight: 180, overflowY: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {activeDeleteTarget?.text}
+              {queuedEntries.map((entry) => entry.text).join("\n\n")}
             </span>
           </>
         )}
@@ -2387,7 +2371,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         busy={queueActionPending}
         onConfirm={() => {
           if (!activeDeleteTarget) return;
-          void handleQueueAction(activeDeleteTarget, "delete");
+          void handleQueueAction("delete");
         }}
       />
       {/* Hidden file input */}
@@ -2997,17 +2981,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                       : ""}
                   {firstQueued?.text}
                 </span>
-                <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={handleQueuedEdit} title={t("chatInput.queuedEditTitle")}>
-                  {t("chatInput.queuedEdit")}
-                </QueuedActionButton>
-                <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={handleQueuedDelete} title={t("chatInput.queuedDeleteTitle")}>
-                  {t("chatInput.queuedDelete")}
-                </QueuedActionButton>
-                {firstQueued?.kind === "follow-up" && (
-                  <QueuedActionButton disabled={submissionBlocked || queueActionPending || !onPromoteQueuedToSteer} onClick={handleQueuedSteer} title={t("chatInput.queuedSteerTitle")} accent>
-                    {t("chatInput.queuedSteerAction")}
-                  </QueuedActionButton>
-                )}
+                {queueActions}
               </div>
             ) : (
               <div>
@@ -3077,6 +3051,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                     )}
                   </button>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    {queueActions}
                     <button
                       type="button"
                       onClick={() => setQueueExpanded((prev) => !prev)}
@@ -3153,17 +3128,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                         >
                           {entry.text}
                         </span>
-                        <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={() => void handleQueueAction(entry, "edit")} title={t("chatInput.queuedEditTitle")}>
-                          {t("chatInput.queuedEdit")}
-                        </QueuedActionButton>
-                        <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={() => handleItemDelete(entry)} title={t("chatInput.queuedDeleteTitle")}>
-                          {t("chatInput.queuedDelete")}
-                        </QueuedActionButton>
-                        {entry.kind === "follow-up" && (
-                          <QueuedActionButton disabled={submissionBlocked || queueActionPending || !onPromoteQueuedToSteer} onClick={() => void handleQueueAction(entry, "steer")} title={t("chatInput.queuedSteerTitle")} accent>
-                            {t("chatInput.queuedSteerAction")}
-                          </QueuedActionButton>
-                        )}
                       </div>
                     ))}
                   </div>
