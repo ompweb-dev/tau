@@ -44,6 +44,22 @@ type ChannelDeps = {
   sessionsChanged?(): void;
   channelsChanged?(ch: string): void;
 };
+/** pi's companion extension asks for a host tool as an `input` dialog titled `__tau_host_tool__` (lib/pi/tau-extension.ts):
+ * the daemon routes it as the `host_tool_call` it stands for, so one member executes it. */
+function bridgedToolCall(frame: WireFrame): WireFrame | null {
+  if (frame.type !== "extension_ui_request" || frame.method !== "input" || frame.title !== "__tau_host_tool__" || typeof frame.id !== "string" || typeof frame.placeholder !== "string") return null;
+  try {
+    const payload: unknown = JSON.parse(frame.placeholder);
+    return isRecord(payload) && typeof payload.toolName === "string" ? { type: "host_tool_call", id: frame.id, toolName: payload.toolName, arguments: payload.args ?? {} } : null;
+  } catch {
+    return null;
+  }
+}
+/** The extension's answer to a bridged call: the tool result as the dialog's value. */
+function bridgedToolResult(frame: WireFrame): WireFrame {
+  const result = isRecord(frame.result) ? frame.result : { content: [{ type: "text", text: String(frame.result ?? "") }] };
+  return { type: "extension_ui_response", id: frame.id, value: JSON.stringify({ ...result, ...(frame.isError !== undefined ? { isError: Boolean(frame.isError) } : {}) }) };
+}
 const invalid = (message = "Invalid channel request") => new HostOpError(400, "invalid_request", message);
 /** A process start's launch, from what its opener asked: the wire never names the credentials server (it is the opening
  * link's own, and only when the hub asks), and a configuration version passes only in its one valid form. */
@@ -254,7 +270,12 @@ export class ChannelTable {
       if (preparingLinkId) channel.lifecycle.setPreparing(preparingLinkId, true);
       channel.shared = new SharedRequests({ members: () => [...channel.members.keys()], isUp: id => channel.members.get(id)?.link.isUp() ?? false,
         deliver: (id, lines) => { const member = channel.members.get(id); if (member) for (const line of lines) this.deliver(channel, member, { type: "stdout", ch, line }); },
-        write: (op, args, onReply) => { void this.command(channel, op, args, onReply).catch(error => this.deps.log(`channel ${ch}: ${String(error)}`)); } });
+        write: (op, args, onReply) => {
+          // pi has neither command: the companion extension registers the tools it is sent; host URI schemes have no pi counterpart.
+          if (op === "set_host_uri_schemes") return;
+          const [command, commandArgs] = op === "set_host_tools" ? ["prompt", { message: `/tau_host_tools ${JSON.stringify(args.tools)}` }] : [op, args];
+          void this.command(channel, command, commandArgs, onReply).catch(error => this.deps.log(`channel ${ch}: ${String(error)}`));
+        } });
       spawned.transport.onLine(line => this.stdout(channel, line));
       // The last 500 bytes omp writes before startup settles, for the daemon's own log if it exits meanwhile; never sent on.
       let startupStderr: Buffer | null = Buffer.alloc(0);
@@ -304,7 +325,9 @@ export class ChannelTable {
     const command = { ...args, type: op, id };
     const { promise, resolve, reject } = Promise.withResolvers<WireFrame>();
     const timer = setTimeout(() => { channel.internal.delete(id); channel.lifecycle?.forgetCommand(id); reject(new Error(`pi ${op} timed out`)); }, timeoutMs); timer.unref?.();
-    channel.internal.set(id, { resolve, reject, timer, onReply }); channel.lifecycle?.noteStdin(command);
+    channel.internal.set(id, { resolve, reject, timer, onReply });
+    // A companion-extension command (`/tau_*`) starts no run, and pi's reply never says so (no agentInvoked).
+    if (!(op === "prompt" && typeof args.message === "string" && args.message.startsWith("/tau_"))) channel.lifecycle?.noteStdin(command);
     channel.transport.write(JSON.stringify(command) + "\n", error => {
       if (error) { const pending = channel.internal.get(id); if (!pending) return; clearTimeout(pending.timer); channel.internal.delete(id); channel.lifecycle?.forgetCommand(id, true); reject(error); }
     });
@@ -325,12 +348,14 @@ export class ChannelTable {
     this.deps.runningChanged?.();
   }
 
-  private stdout(channel: Channel, line: string): void {
-    const frame = parseWire(line);
-    if (!frame) {
+  private stdout(channel: Channel, rawLine: string): void {
+    const parsed = parseWire(rawLine);
+    if (!parsed) {
       for (const member of channel.members.values()) member.link.queue({ type: "resync", ch: channel.ch }, channel.ch);
       return;
     }
+    const call = bridgedToolCall(parsed);
+    const frame = call ?? parsed, line = call ? JSON.stringify(call) : rawLine;
     if (frame.type === "session") this.noteIdentity(channel, frame);
     if (channel.shared?.isCompleted(frame)) return;
     channel.lifecycle?.noteStdout(frame);
@@ -448,6 +473,7 @@ export class ChannelTable {
     let out = frame, id: string | null = null;
     if (isReply) {
       if (!channel.shared?.answer(link.id, frame)) return;
+      if (frame.type === "host_tool_result") out = bridgedToolResult(frame);
     } else if (op !== null) {
       if (idOf(frame.id) === null) throw invalid("Invalid channel command id");
       id = String(++this.commandId);

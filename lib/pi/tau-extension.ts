@@ -2,7 +2,7 @@
  * Companion pi extension for tau (loaded via `pi --mode rpc --extension ...`).
  *
  * Bridges tau-specific capabilities over pi's standard RPC + Extension UI protocol:
- *   1. Host tools (`open_file`, `github_*`) via `ctx.ui.input("__tau_host_tool__", ...)`
+ *   1. Host tools the server registers (`/tau_host_tools`), called via `ctx.ui.input("__tau_host_tool__", ...)`
  *   2. Interactive `ask` tool via `ctx.ui.input("__tau_ask__", ...)`
  *   3. `clientMessageId` / `origin` tracking via `/tau_meta` + `input` / `message_start`
  *   4. `/btw` side-question bridge (`/btw`, `/tau_btw`)
@@ -46,6 +46,8 @@ interface PiExtensionAPI {
     },
   ): void;
   on(event: string, handler: (event: Record<string, unknown>, ctx: PiContext) => unknown): void;
+  getActiveTools(): string[];
+  setActiveTools(names: string[]): void;
   appendEntry(customType: string, data?: unknown): void;
   events: {
     on(event: string, handler: (data: unknown) => void): () => void;
@@ -114,88 +116,32 @@ function registerHostTool(
 }
 
 export default function tauExtension(pi: PiExtensionAPI): void {
-  // 1. Host tools: open_file + GitHub watch/action tools
-  registerHostTool(
-    pi,
-    "open_file",
-    "Open File",
-    "Open a file in the tau web UI file viewer (supports local:// URIs and workspace paths).",
-    {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "File path or local:// URI to open in the viewer." },
-        line: { type: "number", description: "Optional 1-based line number to jump to." },
-        endLine: { type: "number", description: "Optional 1-based end line number to highlight." },
-      },
-      required: ["path"],
+  // 1. Host tools: the ones tau's server registers for this session (browser tools such as open_file, and the
+  //    agent and GitHub tools while Settings allows them). The host daemon turns its `set_host_tools` union into
+  //    `/tau_host_tools <json array>`; tools it no longer lists are deactivated, as pi cannot unregister one.
+  const hostTools = new Set<string>();
+  pi.registerCommand("tau_host_tools", {
+    description: "Register the host tools tau's server names for this session",
+    handler(args) {
+      let tools: unknown;
+      try {
+        tools = JSON.parse(args);
+      } catch {
+        return;
+      }
+      if (!Array.isArray(tools)) return;
+      const listed = new Set<string>();
+      for (const tool of tools) {
+        if (typeof tool !== "object" || tool === null || typeof (tool as { name?: unknown }).name !== "string") continue;
+        const { name, description, parameters } = tool as { name: string; description?: unknown; parameters?: unknown };
+        listed.add(name);
+        registerHostTool(pi, name, name, typeof description === "string" ? description : "",
+          typeof parameters === "object" && parameters !== null ? parameters as Record<string, unknown> : { type: "object", properties: {} });
+        hostTools.add(name);
+      }
+      const active = pi.getActiveTools().filter((name) => !hostTools.has(name) || listed.has(name));
+      pi.setActiveTools([...new Set([...active, ...listed])]);
     },
-  );
-
-  const githubTarget = {
-    type: "string",
-    description: "OWNER/REPO#N, or a https://github.com/OWNER/REPO/pull/N, /issues/N or /actions/runs/ID URL.",
-  };
-
-  registerHostTool(pi, "watch_github", "Watch GitHub", "Watch a GitHub PR, issue, or Actions workflow run for updates.", {
-    type: "object",
-    properties: { target: githubTarget },
-    required: ["target"],
-  });
-  registerHostTool(pi, "unwatch_github", "Unwatch GitHub", "Stop watching a GitHub PR, issue, or workflow run.", {
-    type: "object",
-    properties: { target: githubTarget },
-    required: ["target"],
-  });
-  registerHostTool(pi, "github_read", "Read GitHub", "Read metadata, comments, reviews, threads, checks, files, or diff for a GitHub target.", {
-    type: "object",
-    properties: {
-      target: githubTarget,
-      include: { type: "array", items: { type: "string" }, description: "Parts to include (summary, comments, reviews, threads, checks, files, diff)." },
-      ids: { type: "array", items: { type: "string" }, description: "Optional item IDs to fetch." },
-    },
-    required: ["target"],
-  });
-  registerHostTool(pi, "github_comment", "GitHub Comment", "Post a comment on a GitHub PR or issue.", {
-    type: "object",
-    properties: {
-      target: githubTarget,
-      body: { type: "string", description: "Comment body in Markdown." },
-      replyToId: { type: "string", description: "Optional review comment ID to reply to." },
-    },
-    required: ["target", "body"],
-  });
-  registerHostTool(pi, "github_resolve_thread", "Resolve GitHub Thread", "Resolve or unresolve a PR review thread.", {
-    type: "object",
-    properties: {
-      target: githubTarget,
-      threadId: { type: "string", description: "GraphQL thread ID." },
-      resolved: { type: "boolean", description: "True to resolve, false to unresolve." },
-    },
-    required: ["target", "threadId"],
-  });
-  registerHostTool(pi, "github_run_list", "List GitHub Runs", "List recent GitHub Actions workflow runs.", {
-    type: "object",
-    properties: {
-      repo: { type: "string", description: "OWNER/REPO" },
-      branch: { type: "string" },
-      workflow: { type: "string" },
-      status: { type: "string" },
-      limit: { type: "number" },
-    },
-    required: ["repo"],
-  });
-  registerHostTool(pi, "github_run_rerun", "Rerun GitHub Workflow", "Rerun a GitHub Actions workflow run.", {
-    type: "object",
-    properties: {
-      target: githubTarget,
-      failedOnly: { type: "boolean" },
-    },
-    required: ["target"],
-  });
-  registerHostTool(pi, "github_run_cancel", "Cancel GitHub Workflow", "Cancel a running GitHub Actions workflow run.", {
-    type: "object",
-    properties: { target: githubTarget },
-    required: ["target"],
   });
 
   // 2. Interactive `ask` tool
