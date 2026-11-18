@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { isMap, parseDocument, stringify } from "yaml";
 import { getSettingsPath } from "./paths";
 import { isRecord } from "../type-guards";
 import { effectiveCompactionMethodOrder, isCompactionMethodOrder, type CompactionMethod } from "../compaction-methods";
@@ -58,33 +57,37 @@ function assertOptionalBoolean(value: unknown, name: string): void {
   if (value !== undefined && typeof value !== "boolean") throw new Error(`${name} must be a boolean`);
 }
 
-function readDocument() {
+function readJsonObject(): { path: string; data: Record<string, unknown> } {
   const path = configPath();
-  const doc = parseDocument(existsSync(path) ? readFileSync(path, "utf8") : "");
-  if (doc.errors.length > 0) throw new Error(`${path} is not valid YAML: ${doc.errors[0].message}`);
-  return { path, doc };
+  if (!existsSync(path)) return { path, data: {} };
+  const raw = readFileSync(path, "utf8");
+  if (!raw.trim()) return { path, data: {} };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(parsed)) throw new Error(`${path} must contain a JSON object`);
+  return { path, data: parsed };
 }
 
-/** omp's `/slow` for Claude: `providers.anthropic.slowMode: auto` (default off).
- *  An unreadable config counts as off, like omp's default. */
+/** Claude slow mode: `providers.anthropic.slowMode: "auto"` (default off).
+ *  An unreadable config counts as off. */
 export function readAnthropicSlowMode(): boolean {
   try {
-    const data = readDocument().doc.toJS();
-    if (!isRecord(data)) return false;
+    const { data } = readJsonObject();
     const providers = isRecord(data.providers) ? data.providers : {};
     const anthropic = isRecord(providers.anthropic) ? providers.anthropic : {};
-    // omp's migration also accepts top-level dotted keys, nested values winning.
     return (anthropic.slowMode ?? data["providers.anthropic.slowMode"]) === "auto";
   } catch {
     return false;
   }
 }
 
-/** Returns the persisted native OMP values only; omitted keys keep OMP defaults. */
+/** Returns the persisted native pi/tau values only; omitted keys keep defaults. */
 export function readNativeSettings(): { path: string; settings: NativeSettings } {
-  const { path, doc } = readDocument();
-  const data = doc.toJS();
-  if (!isRecord(data)) return { path, settings: {} };
+  const { path, data } = readJsonObject();
   const advisor = isRecord(data.advisor) ? data.advisor : {};
   const providers = isRecord(data.providers) ? data.providers : {};
   const autoThinkingSource = providers.autoThinkingSource;
@@ -235,35 +238,44 @@ export function writeNativeSettings(settings: NativeSettings): void {
     if (values !== undefined && (!Array.isArray(values) || values.some((value) => typeof value !== "string" || !value.trim()))) throw new Error(`${key} must contain non-empty strings`);
   }
 
-  const { path, doc } = readDocument();
+  const { path, data } = readJsonObject();
   mkdirSync(dirname(path), { recursive: true });
-  if (doc.contents === null) {
-    const temp = `${path}.tmp-${process.pid}-${Date.now()}`;
-    writeFileSync(temp, stringify(settings), "utf8");
-    renameSync(temp, path);
-    return;
+  const mergeSection = (key: string, patch?: Record<string, unknown>) => {
+    if (!patch || Object.keys(patch).length === 0) return;
+    const existing = isRecord(data[key]) ? { ...data[key] } : {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (v !== undefined) existing[k] = v;
+    }
+    data[key] = existing;
+  };
+  if (settings.defaultThinkingLevel !== undefined) data.defaultThinkingLevel = settings.defaultThinkingLevel;
+  if (autoThinkingSource !== undefined) mergeSection("providers", { autoThinkingSource });
+  if (settings.hideThinkingBlock !== undefined) data.hideThinkingBlock = settings.hideThinkingBlock;
+  if (settings.externalThinking !== undefined) data.externalThinking = settings.externalThinking;
+  if (settings.textVerbosity !== undefined) data.textVerbosity = settings.textVerbosity;
+  if (settings.personality !== undefined) data.personality = settings.personality;
+  mergeSection("advisor", settings.advisor);
+  if (settings.tools) {
+    const existingTools = isRecord(data.tools) ? { ...data.tools } : {};
+    if (settings.tools.approvalMode !== undefined) existingTools.approvalMode = settings.tools.approvalMode;
+    if (settings.tools.approval) {
+      const existingApproval = isRecord(existingTools.approval) ? { ...existingTools.approval } : {};
+      if (settings.tools.approval.bash !== undefined) existingApproval.bash = settings.tools.approval.bash;
+      if (settings.tools.approval.extension !== undefined) existingApproval.extension = settings.tools.approval.extension;
+      existingTools.approval = existingApproval;
+    }
+    data.tools = existingTools;
   }
-  if (!isMap(doc.contents)) throw new Error(`${path} must contain a YAML mapping`);
-  if (settings.defaultThinkingLevel !== undefined) doc.set("defaultThinkingLevel", settings.defaultThinkingLevel);
-  if (autoThinkingSource !== undefined) doc.setIn(["providers", "autoThinkingSource"], autoThinkingSource);
-  if (settings.hideThinkingBlock !== undefined) doc.set("hideThinkingBlock", settings.hideThinkingBlock);
-  if (settings.externalThinking !== undefined) doc.set("externalThinking", settings.externalThinking);
-  if (settings.textVerbosity !== undefined) doc.set("textVerbosity", settings.textVerbosity);
-  if (settings.personality !== undefined) doc.set("personality", settings.personality);
-  for (const [key, value] of Object.entries(settings.advisor ?? {})) doc.setIn(["advisor", key], value);
-  if (settings.tools?.approvalMode !== undefined) doc.setIn(["tools", "approvalMode"], settings.tools.approvalMode);
-  if (settings.tools?.approval?.bash !== undefined) doc.setIn(["tools", "approval", "bash"], settings.tools.approval.bash);
-  if (settings.tools?.approval?.extension !== undefined) doc.setIn(["tools", "approval", "extension"], settings.tools.approval.extension);
-  if (settings.enabledModels !== undefined) doc.set("enabledModels", settings.enabledModels);
-  if (settings.disabledProviders !== undefined) doc.set("disabledProviders", settings.disabledProviders);
-  if (settings.modelProviderOrder !== undefined) doc.set("modelProviderOrder", settings.modelProviderOrder);
-  for (const [key, value] of Object.entries(settings.retry ?? {})) doc.setIn(["retry", key], value);
-  for (const [key, value] of Object.entries(settings.compaction ?? {})) doc.setIn(["compaction", key], value);
-  for (const [key, value] of Object.entries(settings.memory ?? {})) doc.setIn(["memory", key], value);
-  for (const [key, value] of Object.entries(settings.autolearn ?? {})) doc.setIn(["autolearn", key], value);
-  for (const [key, value] of Object.entries(settings.mnemopi ?? {})) doc.setIn(["mnemopi", key], value);
-  for (const [key, value] of Object.entries(settings.mcp ?? {})) doc.setIn(["mcp", key], value);
+  if (settings.enabledModels !== undefined) data.enabledModels = settings.enabledModels;
+  if (settings.disabledProviders !== undefined) data.disabledProviders = settings.disabledProviders;
+  if (settings.modelProviderOrder !== undefined) data.modelProviderOrder = settings.modelProviderOrder;
+  mergeSection("retry", settings.retry);
+  mergeSection("compaction", settings.compaction);
+  mergeSection("memory", settings.memory);
+  mergeSection("autolearn", settings.autolearn);
+  mergeSection("mnemopi", settings.mnemopi);
+  mergeSection("mcp", settings.mcp);
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(temp, doc.toString(), "utf8");
+  writeFileSync(temp, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   renameSync(temp, path);
 }

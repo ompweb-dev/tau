@@ -85,13 +85,8 @@ async function treeFingerprint(roots: Record<ConfigRoot, string>): Promise<strin
       if ((await statOrNull(base))?.isDirectory()) await walk(base, new Set());
       continue;
     }
-    const sources = entry.root === "agent" && (entry.path === "config.yml" || entry.path === "models.yml") ? [base, base.replace(/\.yml$/, ".yaml")] : [base];
-    for (const source of sources) {
-      const found = await statOrNull(source);
-      if (!found?.isFile()) continue;
-      note(source, found);
-      break;
-    }
+    const found = await statOrNull(base);
+    if (found?.isFile()) note(base, found);
   }
   return parts.join("\n");
 }

@@ -163,7 +163,7 @@ function readsAsMap(yaml: string): boolean {
 
 /** The member's own settings in `dir`: `.yml` before `.yaml`, as omp reads them. */
 function ownSettings(dir: string): { path: string; yaml: string } | null {
-  for (const name of ["config.yml", "config.yaml"]) {
+  for (const name of ["settings.json"]) {
     const path = join(dir, name);
     try {
       return { path, yaml: readFileSync(path, "utf8") };
@@ -318,12 +318,12 @@ export function createClusterConfig(deps: {
       let settings = false;
       for (const file of manifest.files) {
         const bytes = readFileSync(join(d.objects, file.hash));
-        const isSettings = file.root === "agent" && file.path === "config.yml";
+        const isSettings = file.root === "agent" && file.path === "settings.json";
         settings ||= isSettings;
         writeAtomic(join(d.stage, file.root, file.path), isSettings ? mergedSettings(bytes.toString("utf8"), own) : bytes, file.exec ? 0o700 : 0o600);
       }
-      // Without a master config.yml the member still keeps its machine-specific keys (K2).
-      if (!settings && own) writeAtomic(join(d.stage, "agent", "config.yml"), mergedSettings("", own));
+      // Without a master settings.json the member still keeps its machine-specific keys (K2).
+      if (!settings && own) writeAtomic(join(d.stage, "agent", "settings.json"), mergedSettings("", own));
 
       const previousEnv = loadWebServerSettings().agentEnv;
       if (first) {

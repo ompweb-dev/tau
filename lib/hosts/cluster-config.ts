@@ -1,16 +1,15 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
 import { join } from "node:path";
-import { isMap, parseDocument, YAMLMap, type Document } from "yaml";
 
 /** `manifestBytes`: the longest manifest a member reads (daemon-cluster-config.ts), as the routes serialize it. */
 export const CONFIG_LIMITS = { fileBytes: 5_242_880, bundleBytes: 52_428_800, manifestBytes: 5_242_880 };
 
 export type ConfigRoot = "agent" | "home";
 
-/** Mirrored entries: files and directories, relative to the omp agent directory or to the home directory. */
+/** Mirrored entries: files and directories, relative to the pi agent directory or to the home directory. */
 export const MIRRORED: readonly { root: ConfigRoot; path: string; kind: "file" | "dir" }[] = [
-  ...["config.yml", "models.yml", "mcp.json", ".mcp.json", "AGENTS.md", "RULES.md", "SYSTEM.md", "APPEND_SYSTEM.md", "TITLE_SYSTEM.md", "secrets.yml", ".env"].map(
+  ...["settings.json", "models.json", "mcp.json", ".mcp.json", "AGENTS.md", "RULES.md", "SYSTEM.md", "APPEND_SYSTEM.md", "TITLE_SYSTEM.md", "secrets.yml", ".env"].map(
     (path) => ({ root: "agent" as const, path, kind: "file" as const }),
   ),
   ...["skills", "agents", "rules", "instructions", "commands", "prompts", "hooks", "extensions", "tools"].map((path) => ({
@@ -79,29 +78,48 @@ function statOrNull(path: string, manifestPath: string): Stats | null {
   }
 }
 
-const invalidSettings = () => new ClusterConfigError("invalid_settings", "config.yml is not a valid YAML map");
+const invalidSettings = () => new ClusterConfigError("invalid_settings", "settings.json is not a valid JSON object");
 
-function parseSettings(yaml: string) {
-  const doc: Document = parseDocument(yaml);
-  if (doc.errors.length > 0) throw invalidSettings();
-  if (doc.contents === null) doc.contents = new YAMLMap(); // omp loads an empty document as {}
-  if (!isMap(doc.contents)) throw invalidSettings();
-  return doc;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function stripLocalSettings(masterYaml: string): string {
-  // Failures (e.g. an alias left dangling by a removed anchor) are reported without the file's content.
+function parseSettings(json: string): Record<string, unknown> {
+  if (!json.trim()) return {};
+  let parsed: unknown;
   try {
-    const doc = parseSettings(masterYaml);
-    for (const path of LOCAL_SETTINGS) if (doc.hasIn(path)) doc.deleteIn(path);
-    const out = doc.toString();
-    const check = parseDocument(out);
-    if (check.errors.length > 0) throw invalidSettings();
-    check.toJS();
-    return out;
-  } catch (error) {
-    throw error instanceof ClusterConfigError ? error : invalidSettings();
+    parsed = JSON.parse(json);
+  } catch {
+    throw invalidSettings();
   }
+  if (!isPlainObject(parsed)) throw invalidSettings();
+  return parsed;
+}
+
+function deletePath(obj: Record<string, unknown>, path: readonly string[]): void {
+  let curr: Record<string, unknown> = obj;
+  for (let i = 0; i < path.length - 1; i++) {
+    const next = curr[path[i]];
+    if (!isPlainObject(next)) return;
+    curr = next;
+  }
+  delete curr[path[path.length - 1]];
+}
+
+function setPath(obj: Record<string, unknown>, path: readonly string[], value: unknown): void {
+  let curr: Record<string, unknown> = obj;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    if (!isPlainObject(curr[key])) curr[key] = {};
+    curr = curr[key] as Record<string, unknown>;
+  }
+  curr[path[path.length - 1]] = value;
+}
+
+export function stripLocalSettings(masterJson: string): string {
+  const obj = parseSettings(masterJson);
+  for (const path of LOCAL_SETTINGS) deletePath(obj, path);
+  return `${JSON.stringify(obj, null, 2)}\n`;
 }
 
 /** The member's value at `path` as plain data, or undefined when absent. */
@@ -114,26 +132,18 @@ function plainAt(data: unknown, path: readonly string[]): unknown {
   return node;
 }
 
-export function mergeLocalSettings(masterYaml: string, ownYaml: string | null): string {
-  const stripped = stripLocalSettings(masterYaml);
-  if (ownYaml === null) return stripped;
-  // An unusable own file keeps nothing, like an absent one: the member must still be able to sync.
+export function mergeLocalSettings(masterJson: string, ownJson: string | null): string {
+  const stripped = stripLocalSettings(masterJson);
+  if (ownJson === null) return stripped;
   try {
-    const ownDoc = parseDocument(ownYaml);
-    if (ownDoc.errors.length > 0) return stripped;
-    const own = ownDoc.toJS() as unknown; // plain data: aliases and anchors of the member's file do not travel
-    const doc = parseSettings(stripped);
+    const own = ownJson.trim() ? JSON.parse(ownJson) : {};
+    if (!isPlainObject(own)) return stripped;
+    const obj = parseSettings(stripped);
     for (const path of LOCAL_SETTINGS) {
       const value = plainAt(own, path);
-      if (value === undefined) continue;
-      // setIn throws when a parent exists but is not a map (`python: 3`, `python: [1]`); the member's shape wins there.
-      for (let i = 1; i < path.length; i++) {
-        const parent = doc.getIn(path.slice(0, i), true);
-        if (parent !== undefined && !isMap(parent)) doc.deleteIn(path.slice(0, i));
-      }
-      doc.setIn(path, doc.createNode(value));
+      if (value !== undefined) setPath(obj, path, value);
     }
-    return doc.toString();
+    return `${JSON.stringify(obj, null, 2)}\n`;
   } catch {
     return stripped;
   }
@@ -172,7 +182,7 @@ export function buildManifest(
     if (!isManagedPath(root, path)) throw new ClusterConfigError("invalid_path", `${path} cannot be mirrored: its name is not a safe relative path`);
     checkSize(path, stat.size);
     let bytes: Uint8Array = io(path, () => readFileSync(source));
-    if (root === "agent" && path === "config.yml") bytes = Buffer.from(stripLocalSettings(Buffer.from(bytes).toString("utf8")), "utf8");
+    if (root === "agent" && path === "settings.json") bytes = Buffer.from(stripLocalSettings(Buffer.from(bytes).toString("utf8")), "utf8");
     checkSize(path, bytes.length);
     total += bytes.length;
     if (total > CONFIG_LIMITS.bundleBytes) throw new ClusterConfigError("bundle_too_large", `the bundle exceeds ${CONFIG_LIMITS.bundleBytes} bytes at ${path}`);
@@ -204,14 +214,8 @@ export function buildManifest(
       if (statOrNull(base, entry.path)?.isDirectory()) walk(entry.root, entry.path, base, new Set());
       continue;
     }
-    // omp reads `.yml` before `.yaml`, so `.yaml` stands in only when `.yml` is absent.
-    const sources = entry.root === "agent" && (entry.path === "config.yml" || entry.path === "models.yml") ? [base, base.replace(/\.yml$/, ".yaml")] : [base];
-    for (const source of sources) {
-      const stat = statOrNull(source, entry.path);
-      if (!stat?.isFile()) continue;
-      addFile(entry.root, entry.path, source, stat);
-      break;
-    }
+    const stat = statOrNull(base, entry.path);
+    if (stat?.isFile()) addFile(entry.root, entry.path, base, stat);
   }
 
   files.sort((a, b) => compare(a.root, b.root) || compare(a.path, b.path));
