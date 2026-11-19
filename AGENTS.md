@@ -92,8 +92,7 @@ pi speaks JSON lines on stdin/stdout: commands answered by `{type:"response", id
 
 - `paths.ts`: pi's directory rules. Agent dir `~/.pi/agent` (`PI_CODING_AGENT_DIR` overrides it, `PI_CONFIG_DIR`
   renames `.pi`); sessions `<agent dir>/sessions/--<cwd with / \ : as ->--/` (`getSessionDirNameForCwd`); archive
-  `<agent dir>/../archive/sessions`; `settings.json`, `models.json`; `getDiagnosticsDir()` (`~/.pi/tau`, or
-  `<agent dir>/tau` when the agent dir is overridden; holds the tool-result media cache); `sessionLocalRoot`
+  `<agent dir>/../archive/sessions`; `settings.json`, `models.json`; `getTauDataDir()` (`<agent dir>/tau`); `sessionLocalRoot`
   (`local://` root: `<session file without .jsonl>/local`, Windows long paths `<tmp>/tau-local/<id>`).
 - `pi-cli.ts`: `resolvePiBin`, `getPiVersion` (cached by binary fingerprint), `wrapWindowsScript` (`.cmd`/`.bat` via
   `cmd.exe /c`), `PI_NOT_FOUND`.
@@ -115,7 +114,7 @@ pi speaks JSON lines on stdin/stdout: commands answered by `{type:"response", id
   `web-auth-secret.json`, `transport-metrics.jsonl`, `cluster-config/`, `own-config/`.
 - `<agent dir>/tau-settings.json` (+ `tau-settings.lock.sqlite`): server settings (`lib/web-settings.ts`).
 - `<agent dir>/projects.json`: managed projects. `<agent dir>/tau-interrupted-sessions-<pid>.json`: auto-resume lists.
-- `getDiagnosticsDir()/media/`: tool-result image copies and thumbnails.
+- `<agent dir>/tau/media/`: tool-result image copies and thumbnails; `<agent dir>/tau/diagnostics.log`: crash/stall journal.
 
 ---
 
@@ -391,7 +390,7 @@ pi announces a tool when it starts, streams its partial result while it runs, an
 `ThinkingBlock` seeds `expanded` from `expandThinkingByDefault` (`tau:expand-thinking`, off by default), an initial value only; it covers streaming blocks too, so no state flips mid-stream. Auto-expanded historical blocks are deferred: a mount effect loads them through `/api/sessions/[id]/entries/[entryId]/thinking`, cached per (session, entry, block). While on, thinking never folds into Process details.
 
 ### Tool-result images (`lib/media-cache.ts`, `/api/media/[hash]`)
-Tool-result images never reach the browser as base64: history (`deferMedia`) and live frames (`AgentSessionWrapper.emit`, which also feeds the replay snapshot) replace each with `{type:"image", mimeType, url:"/api/media/<sha256>"}`; user-message images stay inline. pi stores images inline in the session file, so they are hashed and copied to `getDiagnosticsDir()/media/` (the `blob:sha256:` / blob-directory path is inherited from omp's format). A daily sweep deletes copies older than 30 days. `?thumb=1` serves a 480px WebP (`Bun.Image`, EXIF-oriented, cached). Only PNG/JPEG/GIF/WebP by magic bytes.
+Tool-result images never reach the browser as base64: history (`deferMedia`) and live frames (`AgentSessionWrapper.emit`, which also feeds the replay snapshot) replace each with `{type:"image", mimeType, url:"/api/media/<sha256>"}`; user-message images stay inline. pi stores images inline in the session file, so they are hashed and copied to `<agent dir>/tau/media/` (the `blob:sha256:` / blob-directory path is inherited from omp's format). A daily sweep deletes copies older than 30 days. `?thumb=1` serves a 480px WebP (`Bun.Image`, EXIF-oriented, cached). Only PNG/JPEG/GIF/WebP by magic bytes.
 
 ### Streaming message updates
 pi's wire `message_update` is delta-only (pi `docs/json.md`): `usage` and `assistantMessageEvent`, never the message, an id or a `partial`.

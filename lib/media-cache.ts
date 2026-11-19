@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { getBlobsDir, getDiagnosticsDir } from "./pi/paths";
+import { getBlobsDir, getTauDataDir } from "./pi/paths";
 import { isRecord } from "./type-guards";
 
 /**
@@ -24,7 +24,7 @@ declare global {
 }
 
 function mediaDir(): string {
-  return path.join(getDiagnosticsDir(), "media");
+  return path.join(getTauDataDir(), "media");
 }
 
 function fileSize(file: string): number | undefined {

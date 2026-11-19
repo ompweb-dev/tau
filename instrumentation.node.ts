@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "fs";
 import { join } from "path";
-import { getDiagnosticsDir } from "@/lib/pi/paths";
+import { getTauDataDir } from "@/lib/pi/paths";
 
 export async function register(): Promise<void> {
   // Modules add SIGINT/SIGTERM cleanup listeners (lib/rpc-manager.ts), and any
@@ -124,7 +124,7 @@ export async function register(): Promise<void> {
   // so the next incident explains itself. Node's default crash semantics are
   // preserved — this only adds the record before exiting — except for client
   // aborts, which are journaled and survived (see below).
-  const logDir = getDiagnosticsDir();
+  const logDir = getTauDataDir();
   const logPath = join(logDir, "diagnostics.log");
   const appendDiag = (kind: string, detail: string) => {
     try {

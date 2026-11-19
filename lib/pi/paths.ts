@@ -32,19 +32,9 @@ export function ensureAgentDir(): string {
   return dir;
 }
 
-function isDefaultAgentDir(): boolean {
-  const override = process.env.PI_CODING_AGENT_DIR;
-  if (override) {
-    return path.resolve(override) === path.join(getConfigRoot(), "agent");
-  }
-  return true;
-}
-
-/** tau's crash/stall journal directory: ~/.pi/tau, or
- * <agent dir>/tau when PI_CODING_AGENT_DIR points elsewhere, so isolated
- * runs (tests, dev servers) never write the real journal. */
-export function getDiagnosticsDir(): string {
-  return path.join(isDefaultAgentDir() ? getConfigRoot() : getAgentDir(), "tau");
+/** tau's own data directory: <agent dir>/tau (the crash journal, media copies, host and server state). */
+export function getTauDataDir(): string {
+  return path.join(getAgentDir(), "tau");
 }
 
 /** ~/.pi/agent/sessions */
