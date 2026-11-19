@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { existsSync, promises as fs } from "fs";
 import { basename, extname, join } from "path";
 import { ANSI_RE, parseJsonLoose, parsePiListOutput } from "@/lib/omp/plugins-cli";
-import { OMP_NOT_FOUND, resolveOmpBin } from "@/lib/omp/omp-cli";
+import { PI_NOT_FOUND, resolvePiBin } from "@/lib/omp/omp-cli";
 import { ensureAgentDir } from "@/lib/omp/paths";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
@@ -68,9 +68,9 @@ function runOmp(
   args: string[],
   opts: { cwd?: string; timeout?: number } = {},
 ): Promise<{ stdout: string; stderr: string }> {
-  const bin = resolveOmpBin();
+  const bin = resolvePiBin();
   if (!bin) {
-    return Promise.reject(new Error(OMP_NOT_FOUND));
+    return Promise.reject(new Error(PI_NOT_FOUND));
   }
   return new Promise((resolve, reject) => {
     execFile(
@@ -273,7 +273,7 @@ function readScope(scope: unknown): PluginScope {
  * known cause worth a stable code for client-side localization. */
 function pluginErrorResponse(error: unknown): Response {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes(OMP_NOT_FOUND)) {
+  if (message.includes(PI_NOT_FOUND)) {
     return Response.json({ error: message, code: "omp_not_found" }, { status: 500 });
   }
   return Response.json({ error: message }, { status: 500 });
