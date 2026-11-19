@@ -87,7 +87,7 @@ export function getConfigAgentRoots(): string[] {
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
 const PI_ENV_NAME = /^\.env(?:\.|$)/i;
-const PI_SECRET_NAME = /^(?:\.?agent\.db(?:[-.~].*)?|\.?models\.(?:yml|yaml|json)(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?|\.env(?:\..*)?)$/i;
+const PI_SECRET_NAME = /^(?:\.?agent\.db(?:[-.~].*)?|\.?(?:models\.(?:yml|yaml|json)|(?:mcp-)?auth\.json)(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?|\.env(?:\..*)?)$/i;
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
 
 /** Request metadata failures retain a 404; incomplete credential ownership metadata throws a 503. */
@@ -110,7 +110,7 @@ export function isPiSecretFile(filePath: string): boolean {
     const agentDir = agentDirs.includes(dir);
     const namePattern = agentDir ? PI_SECRET_NAME : PI_ENV_NAME;
     if (namePattern.test(name) && (parents.has(comparablePath(dir)) || parents.has(comparablePath(resolvedOrSelf(dir, markUnavailable))))) return true;
-    const names = new Set(agentDir ? ["agent.db", "models.yml", "models.yaml", "models.json", ".env"] : [".env"]);
+    const names = new Set(agentDir ? ["agent.db", "models.yml", "models.yaml", "models.json", "auth.json", "mcp-auth.json", ".env"] : [".env"]);
     try {
       for (const entry of readdirSync(dir, { encoding: "buffer" })) {
         const name = entry.toString("utf8");

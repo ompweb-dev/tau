@@ -11,9 +11,7 @@ require("./node-version").exitIfUnsupportedNode();
 const forwardedServiceScripts = {
   launchd: "tau-launchd.js",
   "tau-launchd": "tau-launchd.js",
-  "tau-launchd": "tau-launchd.js",
   systemd: "tau-systemd.js",
-  "tau-systemd": "tau-systemd.js",
   "tau-systemd": "tau-systemd.js",
 };
 
