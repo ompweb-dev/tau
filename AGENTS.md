@@ -1148,24 +1148,17 @@ a number when requested and applies only if no newer snapshot or
 `remove_queued_message` (act only on `removed: true`; newer omp also returns
 the message's `images`, which Edit restores), Steer uses
 `promote_queued_message`; the chip changes when omp's next snapshot arrives.
-`handleAbort` coalesces overlapping Stops, then sends `abort_and_restore_queue`:
-omp's Esc (`clearQueue({ forInterrupt: true })`, then abort) in one step,
-returning the withdrawn user messages, whose texts and images go to the
-session draft via `recoverDraft`. omp labels an image-only message `[Image]`;
-that label is never restored as text. It covers what a client snapshot cannot: a steer promoted
-after the last `queue_update`, and live-steered input the run claimed but never
-recorded (omp would otherwise requeue it and drain it into a new turn right
-after the abort). Never reimplement this client-side. A failed request is
-retried once (omp returns whatever is still queued) and only while the run
-captured at the click is current; texts lost with a response that never
-arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
-Fallback ONLY when omp answers "Unknown command" (omp without the command):
-withdraw each listed message with `remove_queued_message` BEFORE sending
-`abort` (bounded by `WITHDRAW_BEFORE_ABORT_MS`), saved as each removal
-confirms. A follow-up that answers `removed: false` is retried on `steering`
-(a concurrent promotion moved it); never the reverse. Every abort is fenced to
-the prompt run id captured at the click, so it cannot kill a prompt started
-during the wait.
+`handleAbort` coalesces overlapping Stops, then sends `abort_and_restore_queue`,
+which the wrapper runs as the TUI's Esc: pi's `clear_queue` (it answers
+`{ steering: string[], followUp: string[] }`, every queued text, never images),
+then `abort` (pi would otherwise run a queued message as soon as the abort
+lands). It answers the withdrawn texts as `{ steering, followUp }` entries of
+`{ text }`, which go to the session draft via `recoverDraft`. They come from
+pi's own queue, never the companion extension's `tau_queue` names. When the
+abort after `clear_queue` fails, the texts are still returned. A failed
+request is retried once (pi returns whatever is still queued) and only while
+the run captured at the click is current; texts lost with a response that
+never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
 - Submitting during a run defaults to **Queue follow-up**
   (`lib/composer-prefs.ts`, `omp-web:submit-during-run`); only an explicitly
   stored choice overrides it, and an absent key yields `queue`.
