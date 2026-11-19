@@ -182,7 +182,7 @@ export function OmpRuntimeVersion() {
   const [version, setVersion] = useState<string | null | undefined>(lastKnownOmpVersion);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/omp-version")
+    fetch("/api/pi-version")
       .then((res) => {
         if (!res.ok) throw new Error(`Version lookup failed: HTTP ${res.status}`);
         return res.json();

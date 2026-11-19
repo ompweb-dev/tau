@@ -39,9 +39,8 @@ import * as notificationsDevices from "@/app/api/notifications/devices/route";
 import * as notificationsHistory from "@/app/api/notifications/history/route";
 import * as notificationsPresence from "@/app/api/notifications/presence/route";
 import * as notificationsTest from "@/app/api/notifications/test/route";
-import * as ompSettings from "@/app/api/omp-settings/route";
-import * as ompUpdate from "@/app/api/omp-update/route";
-import * as ompVersion from "@/app/api/omp-version/route";
+import * as piSettings from "@/app/api/pi-settings/route";
+import * as piVersion from "@/app/api/pi-version/route";
 import * as plugins from "@/app/api/plugins/route";
 import * as projectsClone from "@/app/api/projects/clone/route";
 import * as projects from "@/app/api/projects/route";
@@ -135,9 +134,8 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "notifications/history": notificationsHistory,
   "notifications/presence": notificationsPresence,
   "notifications/test": notificationsTest,
-  "omp-settings": ompSettings,
-  "omp-update": ompUpdate,
-  "omp-version": ompVersion,
+  "pi-settings": piSettings,
+  "pi-version": piVersion,
   "plugins": plugins,
   "projects/clone": projectsClone,
   "projects": projects,

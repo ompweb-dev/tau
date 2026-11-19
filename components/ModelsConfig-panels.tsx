@@ -87,7 +87,7 @@ export function RetryFallbackDetail() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/omp-settings")
+    fetch("/api/pi-settings")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
       .then((data: { settings?: RetrySettings }) => {
         const loaded = data.settings ?? {};
@@ -116,7 +116,7 @@ export function RetryFallbackDetail() {
           const snapshot = latestRef.current;
           latestRef.current = null;
           try {
-            const response = await fetch("/api/omp-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
+            const response = await fetch("/api/pi-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
             const data = await response.json() as { settings?: RetrySettings; error?: string };
             if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
             const confirmed = data.settings ?? snapshot;
@@ -154,7 +154,7 @@ export function NativeRegistryDetail({ models, onChanged }: { models: RuntimeMod
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    fetch("/api/omp-settings")
+    fetch("/api/pi-settings")
       .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
       .then((data: { settings?: NativeRegistrySettings }) => setSettings(data.settings ?? {}))
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
@@ -179,7 +179,7 @@ export function NativeRegistryDetail({ models, onChanged }: { models: RuntimeMod
           const snapshot = latestRef.current;
           latestRef.current = null;
           try {
-            const response = await fetch("/api/omp-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
+            const response = await fetch("/api/pi-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
             const data = await response.json() as { settings?: NativeRegistrySettings; error?: string };
             if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
             if (latestRef.current === null) setSettings(data.settings ?? snapshot);

@@ -184,7 +184,7 @@ export function AppShell({ appName }: { appName: string }) {
     // omp's own setting, so the transcript hides thinking when the TUI does.
     // Re-read on focus: the TUI or another tab may have changed it.
     const load = () => {
-      fetch("/api/omp-settings")
+      fetch("/api/pi-settings")
         .then((response) => (response.ok ? response.json() : null))
         .then((data: { settings?: { hideThinkingBlock?: boolean } } | null) => { if (data) setHideThinkingBlock(data.settings?.hideThinkingBlock === true); })
         .catch(() => {});

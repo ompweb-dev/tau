@@ -34,7 +34,7 @@ function recordRequests(t) {
   t.mock.method(globalThis, "fetch", async (url, init) => {
     requests.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
     const path = String(url).split("?")[0];
-    if (path === "/api/omp-settings") return Response.json({ settings: {} });
+    if (path === "/api/pi-settings") return Response.json({ settings: {} });
     if (path === "/api/mcp") {
       const inventory = [{ name: "demo", source: "User level", status: "configured", type: "stdio" }];
       return Response.json({ servers: [], inventory });

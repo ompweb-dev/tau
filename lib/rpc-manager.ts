@@ -2876,15 +2876,6 @@ export function getLiveRpcSessionIds(): string[] {
   return [...getRegistry()].filter(([, session]) => session.isAlive?.()).map(([sessionId]) => sessionId);
 }
 
-/** Stop all live omp children after an explicit runtime update. The browser will
- * reconnect sessions on demand and start them with the updated executable. */
-export async function restartAllRpcSessions(): Promise<number> {
-  // An update changes this machine's omp only; remote runs keep going.
-  const sessions = [...new Set(getRegistry().values())].filter((session) => session.host.id === LOCAL_HOST_ID);
-  await Promise.all(sessions.map((session) => session.destroyAndWait("runtime-update", true)));
-  return sessions.length;
-}
-
 // ----------------------------------------------------------------------------
 // Running-status broadcaster
 //

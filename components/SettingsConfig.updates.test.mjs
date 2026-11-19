@@ -54,7 +54,6 @@ test("System keeps web-server updates but never checks or updates the host runti
   assert.ok(!buttonLabels(container).includes("Restart OMP sessions"));
   assert.ok(!container.textContent.includes("OMP runtime"));
   assert.ok(container.textContent.includes("Resume running sessions after a restart"));
-  assert.ok(!requests.includes("/api/omp-update"), requests.join(", "));
 });
 
 test("a binary install's tau update links the release page instead of showing a command", async (t) => {

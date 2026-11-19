@@ -953,7 +953,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
     setNativeSettingsError(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
-    fetch("/api/omp-settings", { signal: controller.signal })
+    fetch("/api/pi-settings", { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
       .then((data: { settings?: NativeSettings }) => {
         if (!nativeSettingsMutatedRef.current) setNativeSettings(data.settings ?? {});
@@ -984,7 +984,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
           const snapshot = latestNativeSettingsRef.current;
           latestNativeSettingsRef.current = null;
           try {
-            const response = await fetch("/api/omp-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
+            const response = await fetch("/api/pi-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
             const data = (await response.json()) as { settings?: NativeSettings; error?: string };
             if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
             if (latestNativeSettingsRef.current === null) setNativeSettings(data.settings ?? snapshot);
