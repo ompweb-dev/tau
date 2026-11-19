@@ -6,6 +6,12 @@ All notable changes to **omp-web** (`@kahme247/ompweb`) are documented in this f
 
 ## [Unreleased]
 
+### Changed
+
+- **Browsers connect over server-sent events only.** The browser WebSocket link (`/api/events/link`) and the Settings → Interface & Behavior → **Browser connection** choice are gone; chat commands and uploads go over HTTP. A stored `browserTransport` setting is ignored.
+- **pi trusts a project's files only inside a registered workspace.** Sessions in a workspace added in tau start with pi's `--approve`; elsewhere pi's own trust rules apply, and the Skills list leaves out the project skills pi would not load.
+- **Removed controls pi has no command for:** the Fast and Slow composer toggles, interrupt-and-reply, and the MCP panel's live status, switches and Reload (pi's `/mcp` is never sent as a chat message).
+
 ### Fixed
 
 - **Windows updates no longer fail when the update status is read while it is written.** Host update state, the server worker's status and upgrade plans retry their atomic replacement for a moment when a concurrent reader holds the file, as the server's own update state already did.

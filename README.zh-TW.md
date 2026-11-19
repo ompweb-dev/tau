@@ -127,7 +127,7 @@ OMP_WEB_PASSWORD_HASH='scrypt$15$8$1$…' ompweb
 
 ### 位於反向代理後方
 
-請在 `/api/events/link`（瀏覽器）與 `/api/hosts/link`（主機）上轉發 WebSocket 升級請求；若未轉發升級請求，瀏覽器會在幾秒鐘後自動改用伺服器傳送事件（SSE）。在 nginx 中，這表示需設定 `proxy_http_version 1.1;`、`proxy_set_header Upgrade $http_upgrade;`、`proxy_set_header Connection "upgrade";`，並將 `proxy_read_timeout` 設定為遠高於 30 秒。
+請在 `/api/hosts/link`（主機）上轉發 WebSocket 升級請求，並且不要緩衝 `/api/events` 的伺服器傳送事件（SSE）。在 nginx 中，這表示需設定 `proxy_http_version 1.1;`、`proxy_set_header Upgrade $http_upgrade;`、`proxy_set_header Connection "upgrade";`，並將 `proxy_read_timeout` 設定為遠高於 30 秒。
 
 ### 兩項服務：網頁伺服器與本機守護行程
 

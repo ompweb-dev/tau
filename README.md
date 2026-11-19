@@ -213,7 +213,7 @@ restart, without signing out of Windows.
 
 ### Behind a reverse proxy
 
-Forward WebSocket upgrades on `/api/events/link` (browsers), `/api/hosts/link` (application traffic) and `/api/hosts/maintenance` (host management and recovery); without the browser upgrade, the browser falls back to server-sent events after a few seconds. In nginx that means `proxy_http_version 1.1;`, `proxy_set_header Upgrade $http_upgrade;`, `proxy_set_header Connection "upgrade";`, and a `proxy_read_timeout` well above 30 s.
+Forward WebSocket upgrades on `/api/hosts/link` (application traffic) and `/api/hosts/maintenance` (host management and recovery), and do not buffer the server-sent events of `/api/events`. In nginx that means `proxy_http_version 1.1;`, `proxy_set_header Upgrade $http_upgrade;`, `proxy_set_header Connection "upgrade";`, and a `proxy_read_timeout` well above 30 s.
 
 Hosts that [use the server's provider logins](#use-the-servers-provider-logins-on-a-host) also call `/api/hosts/broker/`, authenticated by their host token. That path must reach ompweb without the proxy's own authentication (a proxy login page or `auth_request` would block the daemon), without response buffering (it carries a long-lived event stream; in nginx, `proxy_buffering off;`) and without redirects.
 
