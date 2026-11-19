@@ -57,7 +57,7 @@ test("Delete confirmation never claims omp has not seen a message that may have 
     return text;
   };
   const uncertain = await dialogText({ ...base, mayHaveBeenSent: true });
-  assert.match(uncertain, /may already have reached omp/);
+  assert.match(uncertain, /may already have reached pi/);
   assert.match(uncertain, /cannot cancel or undo/);
   assert.doesNotMatch(uncertain, /has not reached|will not be sent/);
   for (const state of ["held", "failed"]) {

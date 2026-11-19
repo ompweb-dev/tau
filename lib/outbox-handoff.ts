@@ -11,7 +11,7 @@ import { isRecord } from "./type-guards";
 import type { AgentMessage } from "./types";
 
 const MAX_HANDOFF_BYTES = 16 * 1024 * 1024;
-const invalidNativeStatus = () => new HostOpError(502, "invalid_client_message_status", "OMP returned invalid client-message status");
+const invalidNativeStatus = () => new HostOpError(502, "invalid_client_message_status", "pi returned invalid client-message status");
 
 /** Native evidence is selective and identity-bearing; malformed data never becomes a guessed acceptance. */
 function nativeStatus(value: unknown, ids: readonly string[]): ClientMessageStatus {

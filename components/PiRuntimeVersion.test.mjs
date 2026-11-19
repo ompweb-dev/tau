@@ -20,34 +20,34 @@ test("version survives refresh errors but confirmed unavailability invalidates i
   };
 
   let view = mount();
-  assert.equal(view.container.textContent, "omp Loading…");
+  assert.equal(view.container.textContent, "pi Loading…");
   await respond(null, 500);
-  assert.equal(view.container.textContent, "omp not found");
+  assert.equal(view.container.textContent, "pi not found");
   view.unmount();
 
   view = mount();
-  await respond("omp/18.1.21");
-  assert.equal(view.container.textContent, "omp v18.1.21");
+  await respond("1.5.2");
+  assert.equal(view.container.textContent, "pi v1.5.2");
   view.unmount();
 
   view = mount();
-  assert.equal(view.container.textContent, "omp v18.1.21");
+  assert.equal(view.container.textContent, "pi v1.5.2");
   await respond(null, 500);
-  assert.equal(view.container.textContent, "omp v18.1.21");
+  assert.equal(view.container.textContent, "pi v1.5.2");
   view.unmount();
 
   view = mount();
   await act(async () => pending.shift().reject(new Error("offline")));
-  assert.equal(view.container.textContent, "omp v18.1.21");
+  assert.equal(view.container.textContent, "pi v1.5.2");
   view.unmount();
 
   view = mount();
   await respond(null);
-  assert.equal(view.container.textContent, "omp not found");
+  assert.equal(view.container.textContent, "pi not found");
   view.unmount();
 
   view = mount();
-  assert.equal(view.container.textContent, "omp Loading…");
-  await respond("omp/18.1.22");
-  assert.equal(view.container.textContent, "omp v18.1.22");
+  assert.equal(view.container.textContent, "pi Loading…");
+  await respond("1.5.3");
+  assert.equal(view.container.textContent, "pi v1.5.3");
 });

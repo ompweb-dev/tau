@@ -136,7 +136,7 @@ function checkLaunchSecurity(launchOptions) {
     console.warn([
       "Warning: TAU_PASSWORD holds a plaintext password. This option has been deprecated and is marked for removal.",
       "",
-      "Every omp session inherits tau's environment, so an agent could print",
+      "Every pi session inherits tau's environment, so an agent could print",
       "the password into its transcript. tau hashed it and kept it out of the",
       "server's environment, but agents can still read it from this launcher",
       "process, and a new hash is made on every start, which signs every browser",
@@ -152,7 +152,7 @@ function checkLaunchSecurity(launchOptions) {
   } else if (launchOptions.legacyPassword !== undefined) {
     console.error([
       "tau no longer accepts a plaintext password: the --password flag was removed.",
-      "Every omp session inherits this process's environment, so an agent could",
+      "Every pi session inherits this process's environment, so an agent could",
       "print the password into its transcript.",
       "",
       "Create a hash and use that instead:",

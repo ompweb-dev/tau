@@ -146,7 +146,7 @@ test("without a workspace the Plugins panel works at the user level: no cwd, glo
   render(createElement(PluginsConfig, { embedded: true, cwd: null, sessionId: null, onClose: noop }));
   const source = await screen.findByRole("textbox", { name: "Source" });
   assert.deepEqual(requests.map((request) => request.url), ["/api/plugins"]);
-  assert.ok(screen.getByText("~/.omp/plugins"));
+  assert.ok(screen.getByText("~/.pi/agent"));
   assert.equal(screen.queryByRole("button", { name: "project" }), null);
   const user = userEvent.setup();
   await user.type(source, "npm:demo");

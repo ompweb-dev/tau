@@ -32,7 +32,7 @@ export const SETTINGS_CATEGORIES: TabItem[] = [
   { id: "providers", label: "API Keys & Providers", description: "Connected OAuth accounts, API keys, and model registry", Icon: KeyRound },
   { id: "usage", label: "Usage", description: "Tokens, costs, cache analytics, and model breakdown", Icon: BarChart3 },
   { id: "intelligence", label: "Agent & Intelligence", description: "Memory, autolearn, compaction and retry", Icon: Sparkles },
-  { id: "mcp", label: "Extensions & Tools", description: "MCP servers, managed skills, and OMP plugins", Icon: Cable },
+  { id: "mcp", label: "Extensions & Tools", description: "MCP servers, managed skills, and pi packages", Icon: Cable },
   { id: "hosts", label: "Hosts", description: "Linked machines, host software versions, and updates", Icon: Network },
   { id: "notifications", label: "Notifications", description: "Desktop and mobile notifications for your sessions", Icon: Bell },
   { id: "system", label: "System", description: "Web server updates, agent settings, and service controls", Icon: RefreshCw },

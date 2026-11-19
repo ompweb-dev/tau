@@ -203,7 +203,7 @@ export function PiRuntimeVersion() {
   }, []);
   return (
     <span aria-busy={version === undefined} style={{ fontSize: 11, color: "var(--text-muted)" }}>
-      omp <span style={{ color: "var(--text)" }}>{version === undefined ? t("appShell.loading") : version ? `v${version}` : t("chatWindow.versionNotFound")}</span>
+      pi <span style={{ color: "var(--text)" }}>{version === undefined ? t("appShell.loading") : version ? `v${version}` : t("chatWindow.versionNotFound")}</span>
     </span>
   );
 }

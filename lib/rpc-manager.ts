@@ -164,9 +164,9 @@ const IMAGE_BEARING_COMMANDS = new Set(["prompt", "steer", "follow_up"]);
 
 // pi-web commands with no omp RPC equivalent. The UI tolerates these failing.
 const UNSUPPORTED_COMMANDS: Record<string, string> = {
-  navigate_tree: "Branch navigation is not supported over the omp RPC protocol",
-  get_tools: "Per-session tool listing is not supported over the omp RPC protocol",
-  set_tools: "Changing tools on a running session is not supported over the omp RPC protocol; tool presets apply to new sessions",
+  navigate_tree: "Branch navigation is not supported over the pi RPC protocol",
+  get_tools: "Per-session tool listing is not supported over the pi RPC protocol",
+  set_tools: "Changing tools on a running session is not supported over the pi RPC protocol; tool presets apply to new sessions",
 };
 
 function toImageContents(value: unknown): Array<{ type: "image"; data: string; mimeType: string }> | undefined {
@@ -211,7 +211,7 @@ export interface MessageReplacementWatch {
   replied(command: object, id: string): void;
   stop(): void;
 }
-const CHILD_EXITED: HandOff = { error: "omp exited before it showed the message", mayHaveBeenSent: true };
+const CHILD_EXITED: HandOff = { error: "pi exited before it showed the message", mayHaveBeenSent: true };
 
 function queueTexts(value: unknown): string[] {
   if (!isRecord(value)) return [];
@@ -269,7 +269,7 @@ function watchReplacement(wrapper: AgentSessionWrapper, command: Record<string, 
   let retryPending = false;
   /** This command's `prompt_result` came while a slash template's context check still had to decide. */
   let resultArrived = false;
-  const unshown: HandOff = { error: "omp finished this message without showing it", mayHaveBeenSent: true };
+  const unshown: HandOff = { error: "pi finished this message without showing it", mayHaveBeenSent: true };
   const expectedText = () => typeof command.message === "string" && command.message ? command.message : Array.isArray(command.images) && command.images.length ? "[Image]" : "";
   const finish = (outcome: HandOff) => {
     if (seen || stopped) return;
@@ -365,7 +365,7 @@ function watchReplacement(wrapper: AgentSessionWrapper, command: Record<string, 
         && (event.agentInvoked === false || event.status === "aborted" || event.status === "error");
       // A failed hand-off needs a non-empty error: callers treat an empty one as delivered.
       const reason = isRecord(event.error) && typeof event.error.message === "string" && event.error.message.trim() ? event.error.message
-        : dropped ? "Stopped before omp showed it" : unshown.error;
+        : dropped ? "Stopped before pi showed it" : unshown.error;
       finish({ error: reason, mayHaveBeenSent: !dropped });
     } else if (event.type === "agent_end" && event.isTerminal !== false && !wrapper.isAlive()) finish(CHILD_EXITED);
     // Session-wide prompt failures may belong to an older run; only this command's reply can prove rejection.
@@ -373,7 +373,7 @@ function watchReplacement(wrapper: AgentSessionWrapper, command: Record<string, 
   return {
     async handOff() {
       if (!ownsWindow()) return ambiguous;
-      timer = setTimeout(() => finish({ error: "omp acknowledged this message but has not shown it yet", mayHaveBeenSent: true }), HANDOFF_FALLBACK_MS);
+      timer = setTimeout(() => finish({ error: "pi acknowledged this message but has not shown it yet", mayHaveBeenSent: true }), HANDOFF_FALLBACK_MS);
       timer.unref?.();
       const outcome = await promise;
       return ownsWindow() ? outcome : ambiguous;
@@ -944,7 +944,7 @@ export class AgentSessionWrapper {
     this.emit({
       type: "notice",
       level: "error",
-      message: `The omp process for this session exited unexpectedly (${status})${detail ? `: ${detail}` : "."}`,
+      message: `The pi process for this session exited unexpectedly (${status})${detail ? `: ${detail}` : "."}`,
     });
     // Terminal agent_end so a client mid-stream stops spinning immediately
     // instead of waiting for the reconcile poll.
@@ -1326,7 +1326,7 @@ export class AgentSessionWrapper {
       result: {
         content: [{
           type: "text",
-          text: `Host tool \"${toolName}\" is not available in tau. Use OMP's built-in tools within the selected workspace.`,
+          text: `Host tool \"${toolName}\" is not available in tau. Use pi's built-in tools within the selected workspace.`,
         }],
       },
     });
@@ -1875,7 +1875,7 @@ export class AgentSessionWrapper {
     // The ordinary notice path still emits the native error to every observer.
     const unsubscribe = proc.onFrame((frame) => {
       if (frame.type === "notice" && frame.source === "session-persistence" && frame.level === "error") {
-        persistenceError ??= new Error(typeof frame.message === "string" ? frame.message : "OMP could not persist the history edit");
+        persistenceError ??= new Error(typeof frame.message === "string" ? frame.message : "pi could not persist the history edit");
       }
     });
     notifyRunningChange();
@@ -1893,7 +1893,7 @@ export class AgentSessionWrapper {
         throw new WebRpcError("The session changed before the history edit", "session_changed");
       }
       if (typeof before.isSettled !== "boolean") {
-        throw new WebRpcError("Editing history requires a newer OMP that reports full session settlement", "session_edit_unsupported");
+        throw new WebRpcError("Editing history requires a newer pi that reports full session settlement", "session_edit_unsupported");
       }
       if (!before.isSettled || before.hasPendingAsyncWork === true
         || before.isStreaming || before.isCompacting || before.queuedMessageCount > 0
@@ -1905,7 +1905,7 @@ export class AgentSessionWrapper {
       const result = await proc.callExtension<SessionEditResult>("tau_edit", { entryId }, EDIT_TIMEOUT_MS);
       if (!isRecord(result) || typeof result.sessionId !== "string" || !result.sessionId.trim() || typeof result.cancelled !== "boolean"
         || (result.leafId !== null && typeof result.leafId !== "string")) {
-        throw new Error("OMP returned an invalid history edit result");
+        throw new Error("pi returned an invalid history edit result");
       }
       const after = await this.getStateWithTimeout();
       if (persistenceError) throw persistenceError;
@@ -1937,7 +1937,7 @@ export class AgentSessionWrapper {
         // later mutation race it once the web-side fence is released.
         await this.destroyAndWait("session-unresponsive", true);
         if (persistenceError) throw persistenceError;
-        throw new WebRpcError("The OMP session stopped responding and was reset.", "session_unresponsive");
+        throw new WebRpcError("The pi session stopped responding and was reset.", "session_unresponsive");
       }
       throw persistenceError ?? error;
     } finally {
@@ -2302,7 +2302,7 @@ export class AgentSessionWrapper {
             // report this run: recycle the unacknowledged prompt. A read-only
             // get_state timeout deliberately does not take this destructive path.
             await this.destroyAndWait("session-unresponsive", true);
-            throw new WebRpcError("The OMP session stopped responding and was reset.", "session_unresponsive");
+            throw new WebRpcError("The pi session stopped responding and was reset.", "session_unresponsive");
           }
           throw error;
         } finally {
@@ -2386,7 +2386,7 @@ export class AgentSessionWrapper {
             // This is only an observer poll. A busy event loop or delayed RPC
             // response is not authority to stop generation or a pending tool.
             console.warn("[tau] status-query-timeout", JSON.stringify({ sessionId: this._sessionId, timeoutMs: GET_STATE_TIMEOUT_MS, running: this.isRunning(), action: "preserved", at: new Date().toISOString() }));
-            throw new WebRpcError("The OMP status query timed out. The session was left running; retry shortly.", "session_state_timeout");
+            throw new WebRpcError("The pi status query timed out. The session was left running; retry shortly.", "session_state_timeout");
           }
           throw error;
         }

@@ -371,7 +371,7 @@ export async function runHostTool(
       return { text: handlers.openUrl(raw), isError: false };
     }
     case "notify": {
-      const title = str(args.title) ?? "OMP";
+      const title = str(args.title) ?? "pi";
       const message = str(args.message) ?? "";
       if (typeof Notification !== "undefined") {
         try {

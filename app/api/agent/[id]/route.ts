@@ -7,8 +7,8 @@ import { requestOwner } from "@/lib/web-auth";
 /** Stamp when the handler had the request and when it answered, so the browser
  * can split network time from server time. */
 function timed(receivedAt: number, res: Response): Response {
-  res.headers.set("x-omp-received-at", String(receivedAt));
-  res.headers.set("x-omp-replied-at", String(Date.now()));
+  res.headers.set("x-tau-received-at", String(receivedAt));
+  res.headers.set("x-tau-replied-at", String(Date.now()));
   return res;
 }
 

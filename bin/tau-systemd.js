@@ -541,7 +541,7 @@ async function runCli(argv = process.argv.slice(2)) {
       fail(`TAU_PI_BIN=${piBin} is not executable`);
     } else if (piBin && readLauncherInterpreter(piBin) && !launcherInterpreterDir(piBin)) {
       fail(
-        `omp at ${piBin} is a launcher script whose interpreter ` +
+        `pi at ${piBin} is a launcher script whose interpreter ` +
         `(${readLauncherInterpreter(piBin)}) was not found on PATH; ` +
         `install that runtime (or point TAU_PI_BIN at a standalone binary) and reinstall`,
       );

@@ -1349,7 +1349,7 @@ export function archiveSessionFileWithArtifacts(filePath: string, roots: Session
     path.isAbsolute(relative) ||
     !relative.endsWith(".jsonl")
   ) {
-    throw new Error("Session path is outside the active OMP sessions directory");
+    throw new Error("Session path is outside the active pi sessions directory");
   }
   if (!lstatSync(source).isFile()) throw new Error("Session path is not a regular file");
 

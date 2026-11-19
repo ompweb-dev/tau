@@ -55,7 +55,7 @@ export function ProjectLaunchConfigDialog({ projectPath, initialConfig, onClose,
         </div>
         <div style={{ display: "grid", gap: 12, padding: 18 }}>
           <label style={{ display: "grid", gap: 5, color: "var(--text-muted)", fontSize: 12 }}>
-            <span>OMP Profile</span>
+            <span>Profile</span>
             <input value={profile} onChange={(event) => setProfile(event.target.value)} placeholder={t("projectLaunchConfig.profilePlaceholder")} disabled={saving} aria-invalid={profileInvalid || undefined} style={{ height: 34, padding: "0 9px", border: `1px solid ${profileInvalid ? "var(--status-error)" : "var(--border)"}`, borderRadius: "var(--radius-control)", background: "var(--bg-panel)", color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 12, outline: "none" }} />
             {profileInvalid
               ? <span role="alert" style={{ color: "var(--status-error)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileInvalid")}</span>

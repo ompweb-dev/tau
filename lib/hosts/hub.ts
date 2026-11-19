@@ -868,7 +868,7 @@ async function adopt(link: Link, child: RemoteRpcTransport, sessionId: string, c
       return false;
     }
     child.close();
-    console.warn(`[tau] left the shared omp child of session ${sessionId} on ${labelOf(link.id)} running: this server could not adopt it (${reason})`);
+    console.warn(`[tau] left the shared pi child of session ${sessionId} on ${labelOf(link.id)} running: this server could not adopt it (${reason})`);
     return false;
   }
 }
@@ -1453,7 +1453,7 @@ export class RemoteHost implements Host {
 
   async spawnRpc(spawnRequest: SpawnRequest, sessionId: string | null = null, options?: { preparing?: boolean; expectedChannel?: string }): Promise<SpawnResult> {
     const link = linkFor(this.id);
-    if (link.status === "pi-missing") throw new HostOpError(503, "host_pi_missing", `omp is not installed on ${this.label}`);
+    if (link.status === "pi-missing") throw new HostOpError(503, "host_pi_missing", `pi is not installed on ${this.label}`);
     const { creationId } = spawnRequest;
     if (creationId !== undefined) {
       if (typeof creationId !== "string" || !CREATION_ID_RE.test(creationId)) {

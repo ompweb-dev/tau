@@ -75,10 +75,10 @@ export async function POST(req: Request) {
       return line;
     });
     if (rewritten.some((line) => line === null)) {
-      return Response.json({ error: "Not a valid omp session file (malformed JSON line)", code: "invalid_session_file" }, { status: 400 });
+      return Response.json({ error: "Not a valid pi session file (malformed JSON line)", code: "invalid_session_file" }, { status: 400 });
     }
     if (!cwd) {
-      return Response.json({ error: "Not a valid omp session file (missing session header with cwd)", code: "invalid_session_file" }, { status: 400 });
+      return Response.json({ error: "Not a valid pi session file (missing session header with cwd)", code: "invalid_session_file" }, { status: 400 });
     }
 
     const allowedRoots = await getAllowedFileRoots();

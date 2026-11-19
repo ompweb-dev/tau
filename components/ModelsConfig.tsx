@@ -1925,7 +1925,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                                 {discoveredModels.map((model) => (
                                   <span
                                     key={model.id}
-                                    title="Automatically discovered by OMP"
+                                    title="Automatically discovered by pi"
                                     style={{
                                       display: "inline-flex", alignItems: "center", padding: "3px 8px",
                                       borderRadius: 5, background: "var(--bg)", border: "1px solid var(--border)",

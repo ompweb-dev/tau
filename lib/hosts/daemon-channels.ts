@@ -266,10 +266,10 @@ export class ChannelTable {
         this.broadcast(channel, { type: "stderr", ch, chunk });
       });
       spawned.transport.onExit((code, signal) => {
-        if (startupStderr) this.deps.log(`channel ${ch}: omp exited during startup (code ${code ?? "null"}, signal ${signal ?? "none"}): ${JSON.stringify(startupStderr.toString("utf8"))}`);
+        if (startupStderr) this.deps.log(`channel ${ch}: pi exited during startup (code ${code ?? "null"}, signal ${signal ?? "none"}): ${JSON.stringify(startupStderr.toString("utf8"))}`);
         channel.exited = true; clearTimeout(channel.forceTimer);
         channel.lifecycle?.dispose(); channel.snapshot.clear();
-        for (const pending of channel.internal.values()) { clearTimeout(pending.timer); pending.reject(new Error("omp exited")); }
+        for (const pending of channel.internal.values()) { clearTimeout(pending.timer); pending.reject(new Error("pi exited")); }
         channel.internal.clear(); channel.commands.clear(); this.channels.delete(ch);
         // An open result still on its way must carry this exit after it (see release).
         if ([...channel.members.values()].some(member => member.paused)) this.exitedHandoffs.set(ch, channel);
@@ -280,7 +280,7 @@ export class ChannelTable {
       channel.startup = this.configure(channel).finally(() => channel.lifecycle?.setStartup(false));
       await channel.startup;
       startupStderr = null;
-      if (channel.exited) throw new HostOpError(502, "host_process_exited", "omp exited during startup");
+      if (channel.exited) throw new HostOpError(502, "host_process_exited", "pi exited during startup");
       this.deps.sessionsChanged?.();
       return channel;
     } finally { this.spawningCount--; }

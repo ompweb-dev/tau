@@ -1185,7 +1185,7 @@ test("ISSUE #167 sending a TUI-only command warns once and still delivers the te
   let es = await send("/guided-goal ship it");
   assert.deepEqual(
     w.latest.notices.map((n) => [n.type, n.message]),
-    [["warning", "/guided-goal is not a command this session can run — it was sent as plain text. TUI-only commands (for example /guided-goal) only work in the omp terminal."]],
+    [["warning", "/guided-goal is not a command this session can run — it was sent as plain text. TUI-only commands (for example /tree) only work in pi's terminal interface."]],
   );
   assert.equal(callsTo("POST", "/api/agent/").some((c) => c.body?.type === "prompt" && c.body?.message === "/guided-goal ship it"), true, "the text is not blocked");
 
@@ -2975,7 +2975,7 @@ test("a btw follow-up asks in its topic; a refused ask keeps the composer text a
   await act(async () => {
     await w.latest.handleBuiltinSlashCommand("/btw old omp?");
   });
-  assert.match(toastCalls[0]?.[1] ?? "", /requires a newer omp/);
+  assert.match(toastCalls[0]?.[1] ?? "", /needs tau.s pi extension/);
 
   // Cancelling a btw that is still starting is the user's own doing, not a failure.
   toastCalls.length = 0;
@@ -3021,7 +3021,7 @@ test("an open_file local:// tab is owned by the session the server resolved, whi
   primeSession("s1", [userMsg("u0", "q")]);
   world.holds.push({
     match: (method, url) => method === "GET" && url.includes("/api/sessions/s1/local-file"),
-    produce: async () => ({ value: { path: "/tmp/omp-local/s1-moved/note.md", sessionId: "s1-moved" } }),
+    produce: async () => ({ value: { path: "/tmp/tau-local/s1-moved/note.md", sessionId: "s1-moved" } }),
   });
   const opened = [];
   const { es } = await startRun("s1", "q1", false, { onOpenFile: (...args) => { opened.push(args); } });
@@ -3029,7 +3029,7 @@ test("an open_file local:// tab is owned by the session the server resolved, whi
     es.emit({ type: "host_tool_call", id: "owned", toolName: "open_file", arguments: { path: "local://note.md" } });
     await sleep(60);
   });
-  assert.deepEqual(opened, [["/tmp/omp-local/s1-moved/note.md", "note.md", { sessionId: "s1-moved", hostId: "local", cwd: "/workspace" }]]);
+  assert.deepEqual(opened, [["/tmp/tau-local/s1-moved/note.md", "note.md", { sessionId: "s1-moved", hostId: "local", cwd: "/workspace" }]]);
   const answer = callsTo("POST", "/api/agent/s1").find((call) => call.body?.type === "host_tool_result");
   assert.deepEqual([answer?.body.id, answer?.body.isError], ["owned", false], "the caller still gets the answer");
 });
