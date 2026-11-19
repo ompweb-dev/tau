@@ -22,7 +22,7 @@ import { HostOpError, LINK_LIMITS } from "./link-protocol";
 /** Uploads land in this subdirectory of the session's local root (`sessionLocalRoot`). */
 export const UPLOADS_LOCAL_DIR = "uploads";
 
-/** Separate daemons' files inside omp's shared Windows temp root, including copied session UUIDs. */
+/** Separate daemons' files inside the shared Windows temp root, including copied session UUIDs. */
 export function uploadOwnerNamespace(agentDir = getAgentDir()): string {
   let canonical: string;
   try { canonical = realpathSync.native(agentDir); }

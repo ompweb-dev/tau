@@ -170,7 +170,7 @@ function motionDurationMs(variable: string, fallback: number): number {
 export function useTheme() {
   const preference = useSyncExternalStore(subscribe, storedPreference, getServerSnapshot);
   // The OS preference is browser-only. Deferring it until after hydration keeps
-  // the initial client tree identical to the server's omp snapshot.
+  // the initial client tree identical to the server's `"omp"` (Midnight) snapshot.
   const [hydrated, setHydrated] = useState(false);
   const [osDark, setOsDark] = useState(false);
   useEffect(() => { setHydrated(true); }, []);

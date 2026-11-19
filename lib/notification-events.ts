@@ -115,7 +115,7 @@ const str = (value: unknown): string | undefined => (typeof value === "string" &
 type Detect = (frame: Record<string, unknown>, session: { sessionId: string; sessionName: string | null }) => NotificationEvent[];
 
 /**
- * Per-session detector: feed it every top-level rpc-ui frame in order. Subagent
+ * Per-session detector: feed it every top-level RPC frame in order. Subagent
  * activity arrives wrapped in `subagent_*` frames and is never inspected.
  *
  * "completed" fires on `session_settled` (the run and any background work it
@@ -134,7 +134,7 @@ export function createNotificationDetector(): Detect {
         failureReported = false;
         return [];
       // tau's own frames: an async prompt failure (`response` with
-      // success: false) and the omp child exiting mid-run.
+      // success: false) and the pi child exiting mid-run.
       case "prompt_error":
       case "process_exit": {
         lastOutcome = "error";

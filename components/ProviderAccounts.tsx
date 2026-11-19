@@ -50,7 +50,7 @@ export function ProviderAccounts({ providerId, hostId, enabled, onChanged }: { p
       const d = await res.json().catch(() => ({})) as { error?: string; code?: string };
       if (!res.ok) throw new Error(d.error || d.code ? formatApiError(d) : `HTTP ${res.status}`);
       setConfirm(null);
-      // Drop the row now; the refetch reconciles with omp's store.
+      // Drop the row now; the refetch reconciles with pi's store.
       setStored((s) => s && { ...s, accounts: s.accounts.filter((a) => a.credentialId !== account.credentialId) });
       setVersion((v) => v + 1);
       onChanged();

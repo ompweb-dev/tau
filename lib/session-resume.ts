@@ -8,7 +8,7 @@ import { isValidSessionId } from "./session-file-references-core";
 import { isRecord } from "./type-guards";
 import { loadWebServerSettings } from "./web-settings";
 
-/** How long a session whose omp process died stays recorded. A stop signal
+/** How long a session whose pi process died stays recorded. A stop signal
  *  reaches every process in the service at once, so a child can die just
  *  before tau's own shutdown handler runs; a crash while tau keeps
  *  running is dropped after this window instead of resumed on the next start. */

@@ -3,7 +3,7 @@
  *
  * `/api/models` carries each pickable model's baked effort ladder as
  * `["off", ...efforts]`. A running session's `get_state` resolves the model
- * omp is ACTUALLY using — which can differ from the session file's model
+ * pi is ACTUALLY using — which can differ from the session file's model
  * entry (a disabled/renamed provider falls back to the default model, and the
  * catalog only lists enabled providers). When the catalog misses the current
  * model, the live metadata is the authoritative fallback, so the dropdown

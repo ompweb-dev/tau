@@ -94,7 +94,7 @@ interface Props {
   setAddProjectOpen: (open: boolean, hostId?: string) => void;
   /** Opens the app settings (pinned sidebar footer row). */
   onOpenSettings?: () => void;
-  /** True when an omp/tau update is available — shows a badge on the gear. */
+  /** True when a tau update is available — shows a badge on the gear. */
   updateAvailable?: boolean;
   /** Opens the archived sessions browser. */
   onOpenArchive?: () => void;
@@ -702,8 +702,8 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     return () => { cancelled = true; };
   }, [selectedCwd, selectedHostId, selectedPoolKey, wtRefreshKey, refreshKey, storeWorktreeState]);
 
-  // Keep a just-created session and its project visible while omp is still
-  // flushing the JSONL file. The server list remains authoritative once it
+  // Keep a just-created session and its project visible until pi has
+  // written the JSONL file. The server list remains authoritative once it
   // contains the same id.
   // IMPORTANT: derive synchronously — the previous projectRootFor(cwd) needs
   // the async /api/worktrees git lookup, so the optimistic row would park in

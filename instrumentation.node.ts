@@ -35,9 +35,9 @@ export async function register(): Promise<void> {
     }
   })();
 
-  // Warm the shared utility omp process so the first models/auth request does
+  // Warm the shared utility pi process so the first models/auth request does
   // not pay the multi-second cold spawn (measured 1.2-4s on a real install).
-  // Fire-and-forget: register() must not block boot, and a missing omp binary
+  // Fire-and-forget: register() must not block boot, and a missing pi binary
   // is reported per-request by the routes — log once here and move on.
   // The shared process registers its own SIGINT/SIGTERM/exit disposal hook on
   // first use (lib/pi/rpc-utility.ts), as the session registry does.
@@ -82,7 +82,7 @@ export async function register(): Promise<void> {
     console.warn(`[tau] upload retention sync not started: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  // Cluster members run on this machine's omp configuration: every 30 s a member that is behind gets it (lib/hosts/hub.ts).
+  // Cluster members run on this machine's pi configuration: every 30 s a member that is behind gets it (lib/hosts/hub.ts).
   try {
     const { startClusterConfigSync } = await import("@/lib/hosts/hub");
     startClusterConfigSync();

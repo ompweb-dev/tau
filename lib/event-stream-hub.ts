@@ -420,14 +420,14 @@ function openHostsChannel(handle: SubscriptionHandle): SubscribeResult {
   return SUBSCRIBED;
 }
 
-// Agent events of one live omp wrapper, and the session's held messages (`outbox_update`, lib/message-outbox.ts).
+// Agent events of one live pi wrapper, and the session's held messages (`outbox_update`, lib/message-outbox.ts).
 function openSessionChannel(sessionId: string, handle: SubscriptionHandle): SubscribeResult {
-  // Observer-only: opening a saved session must not create another omp
+  // Observer-only: opening a saved session must not create another pi
   // process for a terminal-owned session. Explicit commands use
   // POST /api/agent/[id], which starts the wrapper before this attaches.
   const existing = getRpcSession(sessionId);
   let session = existing?.isAlive() ? existing : undefined;
-  // Held messages show before omp runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
+  // Held messages show before pi runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
   if (!session && outboxEntries(sessionId).length === 0) {
     return { ok: false, status: 409, error: "Session is not managed by tau", code: "session_not_managed" };
   }

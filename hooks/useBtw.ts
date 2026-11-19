@@ -6,14 +6,15 @@ import { applyBtwEvent, isBtwRecord, latestBtwTurn, mergeBtwHistory, upsertBtwRe
 import { scheduleAtDisplayRate } from "@/lib/message-update-coalescer";
 const UNSUPPORTED_RETRY_MS = 60_000;
 
-/** omp's `btw` failure when a Cancel (or session change) beat its first checkpoint. */
+/** A `btw` failure saying a Cancel (or session change) beat its first checkpoint; tau's extension reports a
+ * cancelled record instead, so pi never sends it. */
 const CANCELLED_BEFORE_START = "cancelled before it started";
 
-// An omp without the btw commands answers "Unknown command": background
+// A refusal naming an "Unknown command" (no side-question support): background
 // history refreshes pause instead of failing on every SSE connect.
 let unsupportedUntil = 0;
 
-/** An omp without the btw RPC commands gets an upgrade hint, not its raw error. */
+/** An "Unknown command" refusal (no side-question support) gets an upgrade hint, not its raw error. */
 export function toastBtwError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("Unknown command")) toast.error(translate("btw.unsupported"));
@@ -22,7 +23,7 @@ export function toastBtwError(error: unknown): void {
 
 type BtwFrame = { type: string; [key: string]: unknown };
 
-/** Side questions (omp `/btw`) for one chat: the session's BTW history fed by
+/** Side questions (`/btw`, answered by tau's pi extension) for one chat: the session's BTW history fed by
  * `btw_record`/`btw_delta` frames, the record shown in the composer panel, and
  * the history dialog. Never touches the main transcript. */
 export function useBtw(sessionIdRef: RefObject<string | null>) {
@@ -64,9 +65,9 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     cancelFlushRef.current ??= scheduleAtDisplayRate(flushFrames);
   }, [flushFrames]);
 
-  /** Merge omp's history. Background refreshes (SSE open, reconcile, a no-op
-   * cancel) stay silent: the route never starts omp for them, and an omp
-   * without the commands is not asked again for a while. */
+  /** Merge the session's side-question history. Background refreshes (SSE open, reconcile, a no-op
+   * cancel) stay silent: the route never starts pi for them, and a session
+   * that refused them as unknown is not asked again for a while. */
   const refreshHistory = useCallback(async (sid: string, explicit = false) => {
     if (!explicit && Date.now() < unsupportedUntil) return;
     const knownBefore = new Set(recordsRef.current.map((record) => record.id));
@@ -94,7 +95,7 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     if (recordsRef.current.some((record) => latestBtwTurn(record).status === "running")) void refreshHistory(sid);
   }, [refreshHistory]);
 
-  /** `/btw` alone: the history dialog. Unlike background reads, this starts omp. */
+  /** `/btw` alone: the history dialog. Unlike background reads, this starts pi. */
   const openHistory = useCallback(async (sid: string) => {
     setHistoryOpen(true);
     try {
@@ -106,7 +107,7 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     await refreshHistory(sid, true);
   }, [refreshHistory]);
 
-  /** Resolves once omp accepted the question (true), or it was cancelled
+  /** Resolves once pi accepted the question (true), or it was cancelled
    * before it started (false: the user's own Cancel, which its `btw_record`
    * already shows). The answer streams via frames. Throws on refusal. */
   const ask = useCallback(async (sid: string, question: string, recordId?: string): Promise<boolean> => {

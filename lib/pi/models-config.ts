@@ -49,8 +49,8 @@ export interface ModelsFileConfig {
   [key: string]: unknown;
 }
 
-/** Mirrors validateProviderConfiguration(mode: "models-config") closely enough
- * to reject configs omp itself would refuse to load. Throws on failure. */
+/** Mirrors pi's models.json validation closely enough
+ * to reject configs pi itself would refuse to load. Throws on failure. */
 export function validateModelsConfig(config: ModelsFileConfig): void {
   if (!isRecord(config)) throw new Error("Config must be an object");
   config = sanitizeModelsConfig(config);
@@ -80,8 +80,8 @@ export function validateModelsConfig(config: ModelsFileConfig): void {
       if (typeof model.maxTokens === "number" && model.maxTokens <= 0) {
         throw new Error(`Provider ${providerName}, model ${model.id}: invalid maxTokens`);
       }
-      // omp's schema requires all four cost fields whenever cost is present
-      // (partial costs make omp reject the whole file), so refuse to write one.
+      // pi's schema requires all four cost fields whenever cost is present
+      // (partial costs make pi reject the whole file), so refuse to write one.
       if (isRecord(model.cost)) {
         for (const key of ["input", "output", "cacheRead", "cacheWrite"] as const) {
           const value = model.cost[key];

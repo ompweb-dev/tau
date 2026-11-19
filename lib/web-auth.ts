@@ -11,7 +11,7 @@ export const TAU_TRUSTED_HEADER = "x-tau-auth";
  * Password protection for the web UI (issue #239). Only a hash is accepted:
  * `TAU_PASSWORD_HASH` holds the output of `tau hash-password`, and the
  * plaintext is never read from the environment, so it cannot leak into the
- * `omp` child processes tau spawns or into anything an agent prints.
+ * `pi` child processes tau spawns or into anything an agent prints.
  */
 export const WEB_PASSWORD_HASH_VAR = "TAU_PASSWORD_HASH";
 /** Legacy plaintext variable. Still *detected*, only to refuse to start. */

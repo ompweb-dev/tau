@@ -93,7 +93,7 @@ ${envXml}
 `;
 }
 
-// The daemon needs the web agent's PATH, omp binary and agent dir (host.json), not its password.
+// The daemon needs the web agent's PATH, pi binary and agent dir (host.json), not its password.
 function buildHostEnv({ svcPath, piBin, agentDir }) {
   return {
     PATH: svcPath,
@@ -171,7 +171,7 @@ function install(pkgArg) {
   fs.mkdirSync(LOG_DIR, { recursive: true });
   fs.mkdirSync(path.dirname(PLIST), { recursive: true });
   for (const [file, xml, label] of [[PLIST, web, LABEL], [HOST_PLIST, host, HOST_LABEL]]) {
-    // Reloading the daemon ends every omp run on this machine: leave it alone when nothing changed.
+    // Reloading the daemon ends every pi run on this machine: leave it alone when nothing changed.
     const unchanged = label === HOST_LABEL && fs.existsSync(file) && fs.readFileSync(file, "utf8") === xml;
     if (unchanged && spawnSync("launchctl", ["print", `${DOMAIN}/${label}`], { stdio: "ignore" }).status === 0) continue;
     fs.writeFileSync(file, xml, { mode: 0o600 });

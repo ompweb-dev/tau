@@ -106,8 +106,8 @@ function formatSlowModeResetClock(resetsAtSec: number, now: number): string {
     : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** A reset time we can actually put on screen, or null when omp gave us none.
- *  omp may omit the field or send a non-number, and a reset already in the
+/** A reset time we can actually put on screen, or null when we got none.
+ *  The state may omit the field or send a non-number, and a reset already in the
  *  past would render a plausible but wrong clock — both are worse than saying
  *  no time at all, because the user would plan around them. */
 function usableSlowModeResetTime(
@@ -193,7 +193,7 @@ interface Props {
   modelError?: string | null;
   modelsLoading?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
-  /** omp's structured provider usage-limit state, shown as a warning chip. */
+  /** Structured provider usage-limit state, shown as a warning chip (pi 1.5.2 does not report it). */
   usageLimit?: UsageLimitState;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -223,8 +223,6 @@ interface Props {
   modelCapacity?: { contextWindow?: number; maxTokens?: number } | null;
   /** Generation speed shown in the context ring popover. */
   generationSpeed?: GenerationSpeedInfo | null;
-  /** Cancel one pending message in omp before removing it from the queue
-   *  panel; resolves to its images once omp confirms, else false. */
   /** Takes the whole queue back from pi (it clears only whole): the texts in delivery order, or false. */
   onClearQueuedMessages?: () => Promise<string[] | false>;
   /** Promote the first matching native follow-up into steering. */
@@ -760,8 +758,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     }
   }, [attachAsFiles, fitsInline, markInputEdited, t]);
 
-  /** Text is inlined while it fits the text budget; past it, when it turns out binary, and always for a PDF (omp reads
-   *  it as a document; its decoded bytes are not text), it goes As file. */
+  /** Text is inlined while it fits the text budget; past it, when it turns out binary, and always for a PDF (its
+   *  decoded bytes are not text), it goes As file. */
   const processTextFiles = useCallback(async (files: File[]) => {
     // In-flight batches reserve their bytes too, so two overlapping drops
     // cannot each fit under the aggregate budget on their own.
@@ -1157,7 +1155,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const raw = overrideText ?? value;
     const msg = raw.trim();
     if (!msg && !attachedImagesRef.current.length && !attachedTextFilesRef.current.length && !attachedUploadsRef.current.length) return;
-    // `!cmd` runs right away during a run too, as in omp's terminal; it is never queued as text.
+    // `!cmd` runs right away during a run too, as in pi's TUI; it is never queued as text.
     const shellCommand = !promptOnlyRef.current && msg.startsWith("!") && !attachedImagesRef.current.length && !attachedTextFilesRef.current.length && !attachedUploadsRef.current.length;
     if (submissionBlockedRef.current || holdingRef.current) return;
     onAudioUnlock?.();
@@ -1339,7 +1337,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
 
   // Externally reported commands (extension/prompt/skill/piBuiltin) group
   // below the client built-ins; any name the web UI intercepts itself —
-  // whether an omp builtin or a user extension — is dropped so each command
+  // whether a pi builtin or a user extension — is dropped so each command
   // appears exactly once and the client interception behavior is unchanged.
   const externalSlashCommands: SlashCommandPaletteItem[] = React.useMemo(
     () => (slashCommands ?? []).flatMap((command): SlashCommandPaletteItem[] => {
@@ -1694,9 +1692,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     onAudioUnlock?.();
     if (msg.startsWith("/")) {
       // Web commands must be expanded even when queued: the raw slash text
-      // would otherwise reach omp as a literal message (its /goal //plan are
-      // TUI-only). Action commands (compact/...) keep the raw text so omp's
-      // own ACP handlers can run them.
+      // would otherwise reach pi as a literal message. Action commands
+      // (compact/...) keep the raw text so pi's own handlers can run them.
       const expansion = expandWebSlashCommand(msg);
       if (expansion.kind === "expand") {
         const prompt = composeMessageWithTextAttachments(expansion.prompt, files);

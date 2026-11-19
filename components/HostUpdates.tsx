@@ -183,7 +183,7 @@ export function HostUpdates({ host }: { host: HostRow }) {
       {(["tau", "pi"] as const).map((target) => {
         const software = target === "tau" ? info?.tau : undefined;
         const label = t(`hostUpdates.${target}`);
-        const fallbackVersion = target === "tau" ? host.tauVersion : host.piVersion?.replace(/^(?:omp|pi)\//, "");
+        const fallbackVersion = target === "tau" ? host.tauVersion : host.piVersion?.replace(/^pi\//, "");
         const updateDisabled = disabled || needsStatus || operation?.recoveryRequired === true || !software?.canUpdate;
         const forceable = operation?.recoveryRequired !== true && software?.updateAvailable === true && !software.canUpdate && software.canForceUpdate === true;
         return (

@@ -47,11 +47,11 @@ export function allowFileRoot(root: string): void {
 const ALLOWED_ROOTS_TTL_MS = 5_000;
 
 /**
- * omp's own config/agent roots: the config root (`~/.omp`, or whatever
- * `PI_CONFIG_DIR` renamed it to), the agent state dir (`~/.omp/agent`, or
+ * pi's own config/agent roots: the config root (`~/.pi`, or whatever
+ * `PI_CONFIG_DIR` renamed it to), the agent state dir (`~/.pi/agent`, or
  * `PI_CODING_AGENT_DIR`), and the ecosystem-standard agent rule/skill provider
- * dirs `~/.agents` and `~/.agent`. Global instruction files omp loads itself
- * (`~/.agents/AGENTS.md`, `~/.omp/agent/...`) used to 403 in the file viewer
+ * dirs `~/.agents` and `~/.agent`. Global instruction files pi loads itself
+ * (`~/.agents/AGENTS.md`, `~/.pi/agent/...`) used to 403 in the file viewer
  * because only workspaces were allowed roots (#135).
  *
  * Derived from lib/pi/paths.ts rather than re-implemented, so the
@@ -70,18 +70,19 @@ export function getConfigAgentRoots(): string[] {
 }
 
 /**
- * omp's own secret files, which must stay unreadable through the generic file
+ * Secret files, which must stay unreadable through the generic file
  * API even though their directory is an allowed root (#135).
  *
- * `agent.db` is omp's credential store (API keys; its SQLite sidecars and
- * backups hold the same) and `models.yml` can carry an `apiKey` for custom
- * models (`models.yaml` / `models.json` are its other names). Both are already
+ * `auth.json` is pi's credential store (API keys and OAuth tokens), `agent.db`
+ * a credential database (its SQLite sidecars and backups hold the same), and
+ * `models.json` can carry an `apiKey` for custom models (`models.yml` /
+ * `models.yaml` are denied too). Both are already
  * reachable through their purpose-built routes (`app/api/auth/api-key/*`,
  * `app/api/models-config/route.ts`), which redact or scope what they return.
  *
  * Only direct files in an agent dir are denied, including credential copies
- * and editor swaps. `.env` files are also protected at the config root: omp's
- * packages/utils/src/env.ts loads that root and getAgentDir(), including profiles.
+ * and editor swaps. `.env` files are also protected at the config root and
+ * in the agent dirs, profiles included.
  * Independent session uploads and package assets remain readable. Resolve both
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
@@ -166,7 +167,7 @@ export function isPiSecretFile(filePath: string): boolean {
   return false;
 }
 
-/** Default and genuine named-profile config roots, both loaded by omp's env.ts. */
+/** Default config root and its genuine named-profile roots (`profiles/<name>`), whose secrets stay protected. */
 function piConfigDirs(filePaths: string[], onUnavailable: () => void, onRequestUnavailable: () => void): string[] {
   const configRoot = getConfigRoot();
   const profiles = path.join(configRoot, "profiles");
@@ -303,7 +304,7 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   for (const root of getAdditionalAllowedRoots()) roots.add(root);
   // Config roots are appended LAST: a relative request must fan out over real
   // workspaces (session cwds, project roots, allowFileRoot() roots) before it
-  // can land in ~/.omp or ~/.agents.
+  // can land in ~/.pi or ~/.agents.
   for (const root of getConfigAgentRoots()) roots.add(root);
   globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;

@@ -14,12 +14,12 @@ const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 // separately while preserving the 10 MB limit for decoded session content.
 const MAX_IMPORT_REQUEST_BYTES = MAX_IMPORT_BYTES * 2 + 64 * 1024;
 
-/** omp session file timestamps: ISO-8601 with `:` and `.` replaced by `-`. */
+/** pi session file timestamps: ISO-8601 with `:` and `.` replaced by `-`. */
 function isoSessionTimestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-// POST /api/sessions/import — import a native omp session .jsonl file.
+// POST /api/sessions/import — import a native pi session .jsonl file.
 // The session keeps its original entries but can only target a workspace the
 // user previously authorized through projects, sessions, or cwd selection.
 export async function POST(req: Request) {

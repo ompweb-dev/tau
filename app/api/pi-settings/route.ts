@@ -19,7 +19,7 @@ export async function PUT(request: Request) {
     }
     if (body.settings.enabledModels !== undefined) {
       // The utility process is best-effort here: settings remain editable when
-      // omp is unavailable, but an available catalog rejects ambiguous bare IDs.
+      // pi is unavailable, but an available catalog rejects ambiguous bare IDs.
       try {
         const response = await runUtilityCommand<{ models?: unknown }>({ type: "get_available_models" }, 120_000);
         if (Array.isArray(response.models)) {

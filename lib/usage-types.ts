@@ -28,8 +28,8 @@ export interface UsageRecord {
   costQuality: CostQualityTier;
   /**
    * Id of the transcript entry the usage came from (for a `task` result
-   * summary: the task entry id + `#` + the subagent id). omp copies entries
-   * with their ids and timestamps (`/tan`, `/fork`, branches), so the same id
+   * summary: the task entry id + `#` + the subagent id). pi copies entries
+   * with their ids and timestamps (`/fork`, `/clone`, branches), so the same id
    * + timestamp in several files is one billed request.
    */
   entryId?: string;

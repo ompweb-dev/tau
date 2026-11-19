@@ -166,7 +166,7 @@ interface Props {
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
   entryId?: string;
-  /** Branch point omp's `branch` command accepts for this message (a user entry; see lib/chat-fork.ts). */
+  /** Fork point pi's `fork` command accepts for this message (a user entry; see lib/chat-fork.ts). */
   forkEntryId?: string;
   /** Forking puts the branched prompt back into the composer (edit-and-resend). */
   forkEditsPrompt?: boolean;
@@ -182,11 +182,11 @@ interface Props {
   toolCallsDefaultCollapsed?: boolean;
   /** Open thinking blocks on mount ("Expand thinking blocks by default" in Settings). */
   expandThinkingByDefault?: boolean;
-  /** omp `hideThinkingBlock`: omit thinking blocks. */
+  /** pi `hideThinkingBlock`: omit thinking blocks. */
   hideThinking?: boolean;
   /** Source `content` index of each block when `message` carries a subset of an entry's blocks, so deferred thinking loads the right block. */
   sourceBlockIndices?: number[];
-  /** omp-reported output throughput (get_state.tokensPerSecond), live while streaming. */
+  /** Output throughput from get_state.tokensPerSecond, live while streaming (pi 1.5.2 does not report it). */
   liveTokensPerSecond?: number | null;
 }
 
@@ -297,8 +297,8 @@ function imageBlockSrc(img: ImageContent): string {
 /**
  * "New session" (fork) action, shared by user and assistant messages.
  *
- * omp's `branch` command accepts a user-message entry only (an assistant entry
- * answers "Invalid entry ID for branching"), so `entryId` is the branch point
+ * pi's `fork` command accepts a user-message entry only (an assistant entry
+ * answers "Invalid entry ID for forking"), so `entryId` is the fork point
  * resolved by `resolveForkTargets` — for an assistant reply, the next user
  * prompt, so the reply stays in the fork's history.
  */
@@ -536,8 +536,8 @@ const heldActionStyle = {
   fontSize: 11, whiteSpace: "nowrap",
 } as const;
 
-/** A message tau holds until omp has it (docs/specs/2026-11-04-message-outbox-design.md O1): dimmed, after the
- * live turn, naming the leg it waits on. Delete only while nothing of it can have reached omp; Retry a failed one. */
+/** A message tau holds until pi has it (docs/specs/2026-11-04-message-outbox-design.md O1): dimmed, after the
+ * live turn, naming the leg it waits on. Delete only while nothing of it can have reached pi; Retry a failed one. */
 export function HeldMessageView({ held, hostLabel, onDelete, onRetry }: {
   held: HeldMessage;
   hostLabel?: string;
@@ -690,7 +690,7 @@ function AssistantMessageView({
   prevTimestamp?: number;
   sessionId?: string;
   entryId?: string;
-  /** User entry omp's `branch` command accepts for this reply (see lib/chat-fork.ts). */
+  /** User entry pi's `fork` command accepts for this reply (see lib/chat-fork.ts). */
   forkEntryId?: string;
   forkEditsPrompt?: boolean;
   onFork?: (entryId: string, editPrompt: boolean) => void;
@@ -1126,7 +1126,7 @@ const ToolCallBlock = memo(function ToolCallBlock({
 }) {
   const { t } = useI18n();
   const openAgentLink = useContext(AgentLinkContext);
-  // `partial` results are omp's live snapshots for a tool that is still
+  // `partial` results are pi's live snapshots for a tool that is still
   // executing (see lib/types.ts); the committed toolResult replaces them.
   const isRunning = result?.partial === true;
   // A running tool opens its row when the interface keeps tool calls expanded

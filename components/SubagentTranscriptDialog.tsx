@@ -22,7 +22,7 @@ interface SubagentMessagesPage {
 }
 
 /** Compact, defensive row for one raw transcript message (content may be a
- * string, a block array, or absent — legacy pi / omp RPC shapes). */
+ * string, a block array, or or absent). */
 function SubagentTranscriptRow({ message }: { message: AgentMessage }) {
   const label = message.role === "user" ? "U" : message.role === "assistant" ? "A" : "R";
   const labelColor = message.role === "user" ? "var(--accent)" : message.role === "assistant" ? "var(--text-muted)" : "var(--text-dim)";

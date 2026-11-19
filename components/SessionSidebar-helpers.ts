@@ -50,7 +50,7 @@ function normalizeProjectKey(value: string): string {
   return isWindowsPath ? normalized.toLowerCase() : normalized;
 }
 // Bounded retry window for restoring a brand-new session from its URL before
-// omp flushes the JSONL (typically appears within a second or two of the
+// pi writes the JSONL (typically appears within a second or two of the
 // first prompt, so 8 × 1s covers it without hanging a dead link forever).
 const INITIAL_RESTORE_RETRY_MS = 1000;
 const INITIAL_RESTORE_MAX_ATTEMPTS = 8;

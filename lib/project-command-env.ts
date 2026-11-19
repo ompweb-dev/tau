@@ -5,7 +5,7 @@
  *  - Host runtime variables (PORT, NODE_ENV): these describe the
  *    tau server, not the selected project, and can make project commands
  *    behave as if they were running inside the web app.
- *  - tau's own secrets. Every `omp` session inherits this environment, so
+ *  - tau's own secrets. Every `pi` session inherits this environment, so
  *    an agent that runs `env` would otherwise print the web password hash into
  *    its transcript and off to the model provider (issue #239). Only the
  *    *secret* names are removed, not every `TAU_*`: the update and restart

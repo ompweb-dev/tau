@@ -12,13 +12,13 @@ import type { MessageOrigin } from "@/lib/message-origin";
 // Commands that ride whatever child is alive and never spawn or replace one:
 // the side-question reads/cancel tau sends in the background (SSE connect,
 // reconcile). Without a live process there is no running side question and
-// nothing to cancel, so the reply is known without pi. Asking (`btw`) and opening the history start omp first.
+// nothing to cancel, so the reply is known without pi. Asking (`btw`) and opening the history start pi first.
 export const NO_SPAWN_REPLIES: Record<string, unknown> = {
   get_btw_history: { records: [] },
   btw_cancel: { cancelled: false },
 };
 
-/** tau's own failures carry a stable code the client can localize; omp's
+/** tau's own failures carry a stable code the client can localize; pi's
  * errors stay opaque English text. */
 export function commandErrorResponse(error: unknown): Response {
   if (error instanceof RequestBodyTooLargeError) {
@@ -61,14 +61,14 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
     if (command.origin !== undefined) {
       return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
     }
-    // Held messages: stored and answered here; the outbox's dispatcher sends them to omp (lib/message-outbox.ts).
+    // Held messages: stored and answered here; the outbox's dispatcher sends them to pi (lib/message-outbox.ts).
     if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner);
     if (type === "get_client_message_status") {
       const ids = readClientMessageIds(command.clientMessageIds);
       if (!ids) return Response.json({ error: "clientMessageIds must contain 1 to 32 unique valid IDs", code: "invalid_client_message_ids" }, { status: 400 });
       return Response.json({ success: true, data: await reconcileOutboxHandoffs(id, ids) });
     }
-    // Attached files go to the session's host first; nothing reaches omp when one fails (spec U3).
+    // Attached files go to the session's host first; nothing reaches pi when one fails (spec U3).
     const uploads = takeUploads(command, owner, trustedUploads);
     // Hold later wrapper selection as well as dispatch behind attachment preparation, so a Stop
     // cannot overtake the preparing prompt.
@@ -114,9 +114,9 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
     const target = await sessionSpawnTarget(id, host);
     if (!target) return Response.json({ error: "Session not found", code: "session_not_found" }, { status: 404 });
 
-    // A cold set_model must reach omp before the saved model is restored:
-    // spawning with only --resume lets omp exit on an unrestorable saved
-    // model before the RPC below ever runs (#277). Binding the requested
+    // A cold set_model must reach pi before the saved model is restored:
+    // spawning with only the session makes pi restore (or fail to restore)
+    // the saved model before the RPC below ever runs (#277). Binding the requested
     // model at spawn time skips that restore check. Live children never
     // reach this path (they take the fast path above), and any other command
     // keeps the previous spawn behavior.
@@ -140,7 +140,7 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
         // Try the normal RPC first: when it succeeds it also records the new
         // model in the session, so later spawns restore it without an override.
         // If set_model fails although the spawn already bound the model (seen
-        // with omp for a provider without credentials), the switch itself
+        // for a provider without credentials), the switch itself
         // succeeded: verify from live state and report success rather than a
         // false failure. A mismatch rethrows the RPC error, so a real failure
         // still surfaces.

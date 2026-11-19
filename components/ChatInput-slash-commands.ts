@@ -15,8 +15,8 @@ export function isDormantSkillCommand(command: SlashCommandPaletteItem, dormantN
 }
 
 export const BUILTIN_SLASH_COMMAND_DEFS: { name: string; descriptionKey: string; argumentHintKey?: string }[] = [
-  // Web-native prompt-composing commands (goal/plan/... are TUI-only in omp and
-  // never execute over the RPC prompt path — see lib/web-slash-commands.ts).
+  // Web-native prompt-composing commands, expanded by the web UI before they
+  // reach pi — see lib/web-slash-commands.ts.
   ...WEB_SLASH_COMMANDS.map((command) => ({
     name: command.name,
     descriptionKey: command.descriptionKey,

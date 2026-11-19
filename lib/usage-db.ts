@@ -40,7 +40,7 @@ declare global {
  */
 const USAGE_DB_SCHEMA_VERSION = 3;
 
-/** Get the path to the usage SQLite database file (~/.omp/agent/usage.db). */
+/** Get the path to the usage SQLite database file (`usage.db` in the agent directory). */
 export function getUsageDbPath(): string {
   const dir = getAgentDir();
   if (!existsSync(dir)) {
@@ -331,7 +331,7 @@ export function syncSessionFilesToDb(
 
 /**
  * Rebuild `temp.uncounted_usage`: ids of stored rows the report must skip.
- * - Copies. omp copies transcript entries, `task` summaries included, with
+ * - Copies. pi copies transcript entries, `task` summaries included, with
  *   their ids and timestamps (`/tan` clones, `/fork` and branch copies, even
  *   into another project folder), so the same (entry_id, timestamp) in several
  *   files is one request. The row from the earliest-started owning session

@@ -302,7 +302,7 @@ html.omp .markdown-body a:focus-visible::after {
 
 /* omp.sh sunray signature for the empty-state wordmark: a cyan→white sheen
    that sweeps across every 9s. Static gradient text when reduced motion. */
-html.omp .omp-wordmark {
+html.omp .tau-wordmark {
   background: linear-gradient(105deg, var(--accent-2) 38%, var(--text) 50%, var(--accent-2) 62%);
   background-position: 100% 0;
   background-size: 320% 100%;
@@ -311,7 +311,7 @@ html.omp .omp-wordmark {
   color: transparent;
 }
 @media (prefers-reduced-motion: no-preference) {
-  html.omp .omp-wordmark {
+  html.omp .tau-wordmark {
     animation: omp-sunray-sweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 }

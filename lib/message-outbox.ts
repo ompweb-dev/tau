@@ -1,6 +1,6 @@
 // The web server's leg of the message outbox (docs/specs/2026-11-04-message-outbox-design.md, O2 to O4 and O6): a
-// message sent to an existing session is stored here before `outbox_add` answers, then sent to omp by one dispatcher
-// per session, oldest first and one at a time, and leaves once omp has it. The `session` channel shows the entries.
+// message sent to an existing session is stored here before `outbox_add` answers, then sent to pi by one dispatcher
+// per session, oldest first and one at a time, and leaves once pi has it. The `session` channel shows the entries.
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from "fs";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { join } from "path";
@@ -933,7 +933,7 @@ async function deliver(entry: Row): Promise<Outcome> {
     // The host's sweep has removed the staged files by now (spec O3): never send the message without them.
     return fail(entry, "The attached files are gone: attach them again", false);
   }
-  // Start (or join) the session's omp first, as any command would, so the echo watch is on the wrapper that gets it.
+  // Start (or join) the session's pi first, as any command would, so the echo watch is on the wrapper that gets it.
   const priorWrapper = getRpcSession(sessionId);
   const generation = priorWrapper?.getMessageCommandGeneration() ?? 0;
   const competingPending = priorWrapper?.hasPendingMessageCommands() ?? false;
@@ -944,7 +944,7 @@ async function deliver(entry: Row): Promise<Outcome> {
   if (!started.ok) return refused(current, started, false);
   if (!wrapper?.isAlive()) return retry(current);
   const baseline = await started.json() as { data?: { queuedMessages?: unknown; supportsClientMessageIds?: boolean } };
-  // An OMP without client message IDs gets the earlier text-matched hand-off; its rows retire without a bridge.
+  // A pi child without client message IDs (no tau extension) gets the earlier text-matched hand-off; its rows retire without a bridge.
   const correlated = baseline.data?.supportsClientMessageIds === true;
   if (wrapper.getMessageCommandGeneration() !== (priorWrapper === wrapper ? generation : 0)
     || (competingPending && !wrapper.hasPendingMessageCommands())) return "next";
@@ -1064,8 +1064,8 @@ async function deliver(entry: Row): Promise<Outcome> {
   }
 }
 
-/** How an entry goes to omp (spec O3): a prompt during a run as a follow-up, a steer with no run to steer as a
- * follow-up. omp expands slash commands and prompt templates in `prompt` only, so one sent during a run goes as a
+/** How an entry goes to pi (spec O3): a prompt during a run as a follow-up, a steer with no run to steer as a
+ * follow-up. pi refuses extension commands in `steer` and `follow_up`, so a slash command sent during a run goes as a
  * prompt with its streamingBehavior (queued like a follow-up or steer). */
 function commandOf(entry: Row, running: boolean): { type: string; streamingBehavior?: "steer" | "followUp" } {
   const slash = entry.message.startsWith("/");
@@ -1105,9 +1105,9 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
   const current = row(entry.id);
   if (!current || current.state === "delivered" || current.state === "failed") return "next";
   const error = typeof body.error === "string" ? body.error : `HTTP ${response.status}`;
-  // Nothing reached omp: the session's entries wait for the host's next hello.
+  // Nothing reached pi: the session's entries wait for the host's next hello.
   if (body.hostOffline === true && (!sent || body.delivery === "refused")) return "offline";
-  // A timed-out status read (`session_state_timeout`, e.g. omp busy streaming) is the preflight, not the message.
+  // A timed-out status read (`session_state_timeout`, e.g. pi busy streaming) is the preflight, not the message.
   if (body.code === "session_busy" || body.code === "session_restarting"
     || (!sent && (body.code === "host_timeout" || body.code === "host_sessions_unavailable" || body.code === "session_state_timeout"))) return retry(entry);
   // Only a missing session can be an archived one; any other 404 (an upload that is gone, say) is that refusal.
@@ -1138,7 +1138,7 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
     if (resolved.response.status !== 404) return refused(entry, resolved.response, false);
     if (outbox().wakes?.has(entry.session_id)) return retry(entry);
   }
-  // A lost reply (delivery unknown), a server error or an unresponsive child after the message went: omp may have it.
+  // A lost reply (delivery unknown), a server error or an unresponsive child after the message went: pi may have it.
   return fail(entry, error, sent && (response.status >= 500 || body.code === "session_unresponsive"));
 }
 

@@ -2200,7 +2200,7 @@ export class AgentSessionWrapper {
             this.emit({ type: "prompt_result", agentInvoked: false });
             notifyRunningChange();
           } else if (!streamingBehavior && ack?.agentInvoked !== false) {
-            // OMP acked but agent hasn't started yet — keep promptRunning alive
+            // pi acked but agent hasn't started yet — keep promptRunning alive
             // until agent_start arrives (or a timeout expires).
             this.awaitingAgentStart = true;
             this.awaitingAgentStartDeadline = Date.now() + AWAITING_AGENT_START_TIMEOUT_MS;
@@ -3241,7 +3241,7 @@ export async function startRpcSession(
       }
       // Await the child's full exit before the `finally` releases the startup
       // lock: a fire-and-forget destroy() would let a retry spawn a second
-      // OMP child while the failed one is still flushing/exiting, and
+      // pi child while the failed one is still flushing/exiting, and
       // concurrent resume/delete/archive paths could race that old child.
       const disposing = created.destroyAndWait();
       // That wait ends early once the host is offline, with the child still

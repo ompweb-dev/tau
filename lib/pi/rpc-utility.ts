@@ -6,7 +6,7 @@ import { RpcProcess } from "./rpc-process";
  * (get_available_models, get_state, `/tau_auth providers`). These commands do
  * not belong to any user session, so they run against a single lazily-started
  * RPC process that is killed after ~60s of inactivity. Access is serialized:
- * the omp RPC loop handles one command at a time anyway, and serialization
+ * the RPC child handles one command at a time anyway, and serialization
  * lets lazy start/idle-kill stay race-free.
  *
  * Real user sessions must use lib/rpc-manager.ts instead — this process runs
@@ -20,11 +20,11 @@ const UTILITY_EXTRA_ARGS = ["--no-session", "--no-skills", "--no-mcp"];
 const READY_TIMEOUT_MS = 60_000;
 // Longer than the 60s models-cache TTL on purpose: with idle-kill == TTL every
 // pause past a minute paid a cold multi-second respawn on top of the stale
-// cache. Cost of the longer window is one idle omp process.
+// cache. Cost of the longer window is one idle pi process.
 const IDLE_KILL_MS = 300_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
-/** Minimal mirror of omp's Model (packages/catalog/src/types.ts) — only the
+/** Minimal mirror of pi's Model — only the
  * fields the models/auth routes read. Everything else passes through opaque. */
 export interface PiModel {
   id: string;
@@ -58,7 +58,7 @@ function getState(): UtilityRpcState {
   if (!globalThis.__tauUtilityRpcState) {
     globalThis.__tauUtilityRpcState = { proc: null, idleTimer: null, queue: Promise.resolve() };
     // Mirror the session registry in lib/rpc-manager.ts: dispose the shared
-    // utility omp process on server shutdown so it does not outlive the server.
+    // utility pi process on server shutdown so it does not outlive the server.
     // Idempotent and safe to call any time (clears the idle timer + disposes).
     const cleanup = () => disposeUtilityRpc();
     process.once("exit", cleanup);
@@ -69,7 +69,7 @@ function getState(): UtilityRpcState {
 }
 
 /**
- * Tear down the shared utility omp process immediately (skip the idle timer).
+ * Tear down the shared utility pi process immediately (skip the idle timer).
  * Registered as a server-shutdown hook in getState() above (mirroring the
  * session registry in lib/rpc-manager.ts) so the utility process does not
  * outlive the server; also safe to call any time — it just clears any pending

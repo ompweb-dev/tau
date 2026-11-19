@@ -56,9 +56,7 @@ export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[],
 /**
  * Pick a spawn cwd that actually exists. A session records the directory it was
  * created in, but that directory may have been deleted since: spawn() would
- * fail with ENOENT and `omp --cwd <missing>` throws in setProjectDir. omp's own
- * resume path skips the chdir when the recorded project dir is gone and keeps
- * the launch cwd (main.ts), so hand it a live directory and let it decide.
+ * fail with ENOENT, so hand pi a live directory instead.
  */
 export function resolveSpawnCwd(recordedCwd?: string | null): string {
   return resolveSpawnCwdResult(recordedCwd).cwd;

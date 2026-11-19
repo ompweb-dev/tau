@@ -90,7 +90,7 @@ const CONFIG_API = "/api/hosts/cluster-config/";
 export interface HostDaemon {
   stop(): Promise<void>;
   done: Promise<number>;
-  /** Settles once startup work (upload sweep, session recovery, omp version read) is done; until then drain reports busy. */
+  /** Settles once startup work (upload sweep, session recovery, pi version read) is done; until then drain reports busy. */
   started: Promise<void>;
   control(command: HostControlCommand): HostControlStatus;
 }

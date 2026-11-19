@@ -87,7 +87,7 @@ function CopyAnswerButton({ answer }: { answer: string }) {
 export interface BtwPanelProps extends FileLinkProps {
   record: BtwRecord;
   onCancel: () => void;
-  /** Resolves false when omp refused the follow-up (already toasted). */
+  /** Resolves false when pi refused the follow-up (already toasted). */
   onFollowUp: (question: string) => Promise<boolean>;
   onClose: () => void;
 }

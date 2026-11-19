@@ -545,7 +545,7 @@ function authenticate(req: Request): HostRecord | Response {
     return record;
   } catch (error) {
     if (!(error instanceof HostRegistryUnreadableError)) throw error;
-    // Never 401 here: a daemon told its token is unknown stops every omp child.
+    // Never 401 here: a daemon told its token is unknown stops every pi child.
     console.error(`[tau] host link refused: ${error.message}`);
     return json({ error: "The host registry cannot be read" }, 503);
   }
@@ -559,7 +559,7 @@ const stopping = () => json({ error: "tau is shutting down" }, 503);
  * drops it), and no hello or uplink frame is applied or acked: each daemon keeps
  * its children's output unacked and sends it to the next server, which adopts the
  * children. Every link socket closes 1001, so its daemon redials. Without this a
- * tab closing on the way out would answer omp's open host tool calls with an
+ * tab closing on the way out would answer pi's open host tool calls with an
  * error, and output this server took but never showed would be lost to the next one.
  */
 export function freezeHostLinks(): void {
@@ -1149,7 +1149,7 @@ function remoteWorkspaceOps(hostId: string): WorkspaceOps {
   return ops as unknown as WorkspaceOps;
 }
 
-/** An omp child on a linked host. Output that arrives before `RpcProcess`
+/** A pi child on a linked host. Output that arrives before `RpcProcess`
  * subscribes is held for the first listener, as the local transport does, up
  * to channelBufferBytes: overflow closes this server's membership. */
 export class RemoteRpcTransport implements RpcTransport {
@@ -1470,7 +1470,7 @@ export class RemoteHost implements Host {
         }
       };
       let pools = readPools();
-      // A member runs only on the master's configuration, which its daemon applies before omp starts (spec K4).
+      // A member runs only on the master's configuration, which its daemon applies before pi starts (spec K4).
       if (isClusterMember(pools, this.id)) {
         try {
           configVersion = await masterConfigVersion();
@@ -1894,7 +1894,7 @@ export function onHostsChange(listener: () => void): () => void {
   };
 }
 
-/** Fires on every accepted hello with the omp children the daemon still runs. Listeners
+/** Fires on every accepted hello with the pi children the daemon still runs. Listeners
  * run after reattach: lost channels have exited, others are adopted, retained by the journal, or killed. */
 export function onHostHello(listener: (hostId: string, channels: HelloChannel[]) => void): () => void {
   const listeners = hub().helloListeners;

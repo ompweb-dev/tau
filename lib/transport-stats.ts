@@ -26,7 +26,7 @@ export const diff = (a: unknown, b: unknown): number | undefined => {
 
 /** An action's whole round trip (tab clock). */
 export const totalMsOf = (s: Sample) => diff(s.gotAt, s.sentAt);
-/** An action's time on the server: received to replied (server clock), which includes omp's own work. */
+/** An action's time on the server: received to replied (server clock), which includes pi's own work. */
 export const serverMsOf = (s: Sample) => diff(s.repliedAt, s.recvAt);
 
 /** totalMs − serverMs: clock-free, and what the transport added to an action. */
@@ -96,7 +96,7 @@ export function diagnosticStats(samples: Sample[]): DiagnosticStat[] {
   for (const s of samples) {
     const transport = typeof s.transport === "string" ? s.transport : "unknown";
     if (s.metric === "action") {
-      // A local timeout/proxy refusal never confirms an omp round trip; this panel measures successful commands only.
+      // A local timeout/proxy refusal never confirms a pi round trip; this panel measures successful commands only.
       if (s.outcome !== "ok" || serverMsOf(s) === undefined) continue;
       add(transport, "upMs", upMsOf(s));
       const totalMs = totalMsOf(s);

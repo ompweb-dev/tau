@@ -3,7 +3,7 @@ import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, with
 import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type PiModel } from "@/lib/pi/rpc-utility";
 import { getModelsConfigPath } from "@/lib/pi/paths";
 
-// The omp model registry (auth + models.yml) is global, not per-cwd, so one
+// The pi model registry (auth + models.json) is global, not per-cwd, so one
 // cache entry serves every request. The ?cwd= query parameter is still
 // accepted for client compatibility but no longer affects the result.
 const MODELS_CACHE_KEY = "global";
@@ -45,7 +45,7 @@ function compareModelEntries(
 }
 
 // "off" is always a valid selector; the concrete efforts come from the model's
-// baked thinking metadata (omp: getSupportedEfforts = reasoning ? efforts : []).
+// baked thinking metadata.
 function thinkingLevelsFor(model: PiModel): string[] {
   if (!model.reasoning) return ["off"];
   return ["off", ...(model.thinking?.efforts ?? [])];
@@ -90,7 +90,7 @@ async function loadModels(): Promise<ModelsData> {
     thinkingLevels[key] = thinkingLevelsFor(m);
   }
 
-  // omp resolves the default model at session start; a --no-session utility
+  // pi resolves the default model at session start; a --no-session utility
   // process reports it via get_state.
   let defaultModel: { provider: string; modelId: string } | null = null;
   try {

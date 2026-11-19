@@ -5,8 +5,8 @@ import { findAndReplace } from "mdast-util-find-and-replace";
 import type { SubagentInfo } from "./subagent-types";
 
 /**
- * `agent://<id>[/<child>...]` handles omp advertises for subagent output.
- * Id segments mirror omp's dot-qualified subagent ids; a trailing sentence
+ * `agent://<id>[/<child>...]` handles naming subagent output.
+ * Id segments are dot-qualified subagent ids; a trailing sentence
  * period is never part of a match.
  */
 const SEGMENT = "[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*";
@@ -16,7 +16,7 @@ const AGENT_URL_PROSE_RE = new RegExp(`(?<![\\w/])${AGENT_URL_SOURCE}`, "g");
 const AGENT_URL_EXACT_RE = new RegExp(`^${AGENT_URL_SOURCE}$`);
 const AGENT_HREF_RE = new RegExp(`^agent://(${SEGMENT})((?:/[^?#]*)?)(?:[?#].*)?$`);
 const CHILD_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
-// omp's write-only broadcast address; reading it fails, so it is never linked.
+// The write-only broadcast address; reading it fails, so it is never linked.
 const BROADCAST_URL = "agent://all";
 
 /** Opens the subagent named by an `agent://` link; provided by the chat view. */
@@ -35,8 +35,7 @@ export const agentAwareUrlTransform: UrlTransform = (url) => {
 };
 
 /**
- * Subagent ids an `agent://` href may name, most specific first. Mirrors omp's
- * resolver: `agent://Parent/Child` names `Parent.Child` when that output
+ * Subagent ids an `agent://` href may name, most specific first: `agent://Parent/Child` names `Parent.Child` when that output
  * exists, else the slash path is JSON extraction on `Parent`.
  */
 export function agentLinkIds(href: string | undefined): string[] {

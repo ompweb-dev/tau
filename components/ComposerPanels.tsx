@@ -354,7 +354,7 @@ export function ComposerPanels({ todoPhases, subagents, onSelectSubagent, btw = 
  * frame owns the title and the Compact action. Renders nothing until the
  * session reports stats or usage.
  *
- * NOTE: omp reports context as a single total (tokens/window/percent) — there
+ * NOTE: pi reports context as a single total (tokens/window/percent) — there
  * is no per-category breakdown on the wire, so none is shown here. */
 export function ContextDetailPanel({ sessionStats, contextUsage, modelCapacity, generationSpeed }: {
   sessionStats?: SessionStatsInfo | null;

@@ -15,7 +15,7 @@ export function formatPercent(pct: number): string {
   return `${pct.toFixed(1)}%`;
 }
 
-/** Cache hit rate: cacheRead / (input + cacheRead) * 100 — matches `omp stats` cacheRate.
+/** Cache hit rate: cacheRead / (input + cacheRead) * 100.
  * Returns null when denominator is 0 (no input/cache yet) so callers can hide the row. */
 export function getCacheHitRate(input: number, cacheRead: number): number | null {
   const denom = input + cacheRead;

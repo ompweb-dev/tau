@@ -220,7 +220,7 @@ function dialogTitle(request: UiDialogRequest, askTitle: string): string {
   }
 }
 
-/** omp's approval choices, in its order: this call, the session, each grant, then no. */
+/** Approval choices, in order: this call, the session, each grant, then no. */
 function approvalChoices(request: Extract<UiDialogRequest, { method: "approve" }>, allow: string, deny: string): { label: string; value: UiApprovalAnswer }[] {
   const [prompt] = request.args;
   return [
@@ -248,7 +248,7 @@ const INPUT_TYPES: Record<string, true> = {
   radio: true, checkbox: true, text: true, number: true, range: true, email: true, url: true, tel: true, search: true, date: true, time: true, hidden: true,
 };
 
-/** A radio/checkbox group that offers a free-text "Other" answer, as omp's html-form adds one. */
+/** A radio/checkbox group that offers a free-text "Other" answer. */
 interface OtherGroup { type: string; name: string; required: boolean }
 interface FormCtx {
   prefix: string;
@@ -273,7 +273,7 @@ const queryAll = <T extends Element>(form: HTMLFormElement, selector: string) =>
 const namedInputs = (form: HTMLFormElement, name: string, type: string) =>
   queryAll<HTMLInputElement>(form, "input").filter((input) => input.name === name && input.type === type);
 
-// Mirrors omp's parser: a named radio/checkbox group of two or more options gets an Other answer
+// A named radio/checkbox group of two or more options gets an Other answer
 // unless one of its options is already labelled "Other".
 function planForm(root: ParentNode, prefix: string, otherLabel: string): FormCtx {
   const ctx: FormCtx = { prefix, otherLabel, others: new Map(), grouped: new Set(), rows: new Map(), adopted: new Set() };
@@ -326,7 +326,7 @@ function otherBox({ type, name, required }: OtherGroup, ctx: FormCtx, key: strin
     "data-required": required || undefined,
     "aria-label": ctx.otherLabel,
     placeholder: ctx.otherLabel,
-    // Typing a radio group's own answer drops the picked option, as in omp.
+    // Typing a radio group's own answer drops the picked option.
     onInput: (event: { currentTarget: HTMLInputElement }) => {
       const box = event.currentTarget;
       if (type === "radio" && box.value.trim() !== "" && box.form) for (const radio of namedInputs(box.form, name, type)) radio.checked = false;
@@ -407,7 +407,7 @@ function formElement(element: Element, ctx: FormCtx, key: string): ReactNode {
   return createElement(tag, props, ...children);
 }
 
-/** What the form submits, as omp's html-form reports it (see HtmlFormData). */
+/** What the form submits (see HtmlFormData). */
 export function readFormData(form: HTMLFormElement): HtmlFormData {
   const data: HtmlFormData = {};
   const controls = queryAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(form, "input, select, textarea").filter((control) => control.name && !control.disabled);
@@ -472,7 +472,7 @@ function ServerConfirmBody({ payload }: { payload: AgentConfirmPayload }) {
 }
 
 /**
- * Overlay dialog for omp's `ExtensionUIContext` dialogs as the runner sends them.
+ * Overlay dialog for pi's `ExtensionUIContext` dialogs and tau's ask, as `lib/pi/rpc-process.ts` sends them.
  * Polished UX:
  *   - entrance animation (fade backdrop + scale-in panel)
  *   - focus trap: focus moves into the dialog on open and is returned to the
@@ -487,7 +487,7 @@ export function ExtensionDialog({
   attached = false,
 }: {
   request: UiDialogRequest;
-  /** Answers with omp's return value (`undefined` cancels); resolves `false` when it could not be sent. */
+  /** Answers with the dialog's return value (`undefined` cancels); resolves `false` when it could not be sent. */
   onRespond: (request: UiDialogRequest, value: UiDialogValue | undefined) => void | Promise<boolean>;
   /** Render as a composer panel instead of a full-chat overlay. */
   attached?: boolean;
@@ -500,8 +500,8 @@ export function ExtensionDialog({
   // `pointerType` of the latest press: the pointer media query only describes
   // the primary pointer, not the one pressing now.
   const pressPointerRef = useRef<string | null>(null);
-  // omp takes one answer per request id and the panel stays up until the next request arrives, so the
-  // select controls are disabled in that window instead of sending a tap omp would silently drop.
+  // pi takes one answer per request id and the panel stays up until the next request arrives, so the
+  // select controls are disabled in that window instead of sending a tap pi would silently drop.
   const [answeredId, setAnsweredId] = useState<UiDialogRequest["id"] | null>(null);
   const awaitingNext = request.method === "select" && answeredId === request.id;
   const [askDrafts, setAskDrafts] = useState(() => initialAskDrafts(request));
@@ -730,7 +730,7 @@ export function ExtensionDialog({
                 return (
                   <button
                     key={option}
-                    // A row past omp's markable ones ("Done selecting") is an action, not an answer.
+                    // A row past the markable ones ("Done selecting") is an action, not an answer.
                     className={markable && !checkbox ? "extension-choice extension-choice-action" : "extension-choice"}
                     data-checked={selected || checked || undefined}
                     onClick={() => stage ? setSelectedOption(option) : respond(option)}

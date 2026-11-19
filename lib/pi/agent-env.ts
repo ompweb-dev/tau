@@ -1,8 +1,8 @@
 /**
- * Environment variables injected into the `omp` child process (issue #104).
+ * Environment variables injected into the `pi` child process (issue #104).
  *
- * The values live in tau's own settings file (~/.omp/agent/tau-settings.json,
- * see lib/web-settings.ts) — omp's config.yml stays omp's. `getAgentEnvOverrides()`
+ * The values live in tau's own settings file (`tau-settings.json` in the agent
+ * dir, see lib/web-settings.ts) — pi's settings.json stays pi's. `getAgentEnvOverrides()`
  * is what lib/hosts/local-host.ts passes as the spawn env overrides; it runs inside the
  * spawn path, so it must never throw: a missing, unreadable or hand-edited settings
  * file yields `{}` and the child simply inherits process.env unchanged.
@@ -24,7 +24,7 @@ export {
 } from "./agent-env-policy";
 
 /**
- * Environment overrides for the `omp` child process, from tau's settings file.
+ * Environment overrides for the `pi` child process, from tau's settings file.
  * Never throws: unreadable settings fall back to `{}` so spawning is unaffected.
  * Values are re-validated here, so a hand-edited settings file cannot smuggle a
  * reserved variable past the API.

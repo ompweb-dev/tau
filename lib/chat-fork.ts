@@ -1,17 +1,16 @@
 /**
  * Fork targets for the message transcript.
  *
- * omp's `branch` command — what the UI calls "fork" / "New session" —
- * only accepts a **user** message entry. Verified against a live
- * omp: branching at an assistant entry answers
- * `success:false, error:"Invalid entry ID for branching"`. The new session
+ * pi's `fork` command — what the UI calls "fork" / "New session" —
+ * only accepts a **user** message entry: forking at an assistant entry
+ * fails with "Invalid entry ID for forking". The new session
  * holds the history *before* that user entry, and the command returns the
  * entry's prompt text so the client can offer it for editing and re-sending.
  *
  * The UI offers the action on every message and resolves each one to a branch
- * point omp supports:
+ * point pi supports:
  * - a user message forks at itself and its prompt is put back into the
- *   composer (edit-and-resend, like omp's TUI `/branch`);
+ *   composer (edit-and-resend, like pi's TUI `/fork`);
  * - an assistant reply forks at the NEXT user prompt, so the new session keeps
  *   that reply (and the rest of its turn) in its history;
  * - the newest reply has no next prompt, so it falls back to its own turn's
@@ -30,7 +29,7 @@ export function resolveForkTargets(
   messages: readonly { role: string; branchSummary?: boolean }[],
   entryIds: readonly (string | undefined)[],
 ): (ForkTarget | undefined)[] {
-  // Branch summaries render as user rows but are not entries omp can branch at.
+  // Branch summaries render as user rows but are not entries pi can fork at.
   const roles = messages.map((message) => (message.branchSummary ? "branchSummary" : message.role));
   const targets: (ForkTarget | undefined)[] = roles.map(() => undefined);
   let nextUserEntryId: string | undefined;

@@ -10,9 +10,9 @@ import {
 } from "./session-reader";
 import { invalidateLocalSessionLists } from "./hosts/session-index";
 
-// omp owns the writes to a session's JSONL. tau streams RPC events only for
+// pi owns the writes to a session's JSONL. tau streams RPC events only for
 // the sessions it spawned itself, so a session started outside the web UI — by
-// `omp` in a terminal, or by a harness that launches omp — never updated while
+// `pi` in a terminal, or by a harness that launches pi — never updated while
 // it was open: the file grew and nothing told the browser. This watches the
 // session tree and reports which session ids changed, which the running-events
 // stream forwards to the client.

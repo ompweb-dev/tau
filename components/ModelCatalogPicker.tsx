@@ -48,8 +48,8 @@ function formatContext(n: number): string {
 }
 
 function toPickedModel(entry: CatalogModelEntry): CatalogPickedModel {
-  // omp's models.yml schema requires ALL FOUR cost fields when cost is
-  // present (models-config-schema-bundle.ts); default missing cache fields to
+  // pi's models.json requires ALL FOUR cost fields when cost is
+  // present; default missing cache fields to
   // 0 exactly like the catalog recommendation does, and skip cost entirely
   // when the catalog entry has no usable input/output price.
   const hasPrice = entry.cost.input !== undefined && entry.cost.output !== undefined;

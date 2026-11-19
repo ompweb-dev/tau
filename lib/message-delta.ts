@@ -20,15 +20,15 @@ const contentOf = (message: object | undefined): unknown => (message as { conten
 const MAX_INDEX_GAP = 32;
 const DELTA_KINDS: Record<string, true> = { text_delta: true, thinking_delta: true, toolcall_delta: true };
 
-/** A `message_update` without a snapshot: omp's delta projection sends `message: { role }` only. */
+/** A `message_update` without a snapshot: the daemon's delta projection sends `message: { role }` only. */
 export function isDeltaUpdate(event: { type?: unknown; message?: unknown }): boolean {
   return event.type === "message_update" && isRecord(event.message) && !("content" in event.message);
 }
 
 /**
- * `message` with one omp `assistantMessageEvent` applied, or null when the
+ * `message` with one `assistantMessageEvent` applied, or null when the
  * update does not fit it (no base, no block at its index, a block of another
- * kind, an unknown kind, an omp older than 18.13.2 that sends no opened block):
+ * kind, an unknown kind, a start without its opened block):
  * the caller has lost the message and must get a snapshot, never guess.
  */
 export function applyMessageDelta<T extends object>(message: T | undefined, update: unknown): T | null {
@@ -114,9 +114,9 @@ const REPARSE_BYTES = 2048;
 const REPARSE_MS = 100;
 
 /**
- * Tool calls still streaming get the arguments their JSON so far reads as, like omp's full snapshots. Parsing a
+ * Tool calls still streaming get the arguments their JSON so far reads as, like a full snapshot. Parsing a
  * large argument (a whole file being written) costs milliseconds, so it is redone only once the JSON grew by
- * REPARSE_BYTES or REPARSE_MS passed; toolcall_end replaces the block with omp's final arguments.
+ * REPARSE_BYTES or REPARSE_MS passed; toolcall_end replaces the block with pi's final arguments.
  */
 export function withStreamedArguments<T extends object>(message: T, now = Date.now()): T {
   const content = contentOf(message);
@@ -136,7 +136,7 @@ export function withStreamedArguments<T extends object>(message: T, now = Date.n
   } as T;
 }
 
-/** What the transcript renders: streamed arguments parsed, and no holes left by block kinds omp sends only in full at message_end. */
+/** What the transcript renders: streamed arguments parsed, and no holes left by block kinds pi sends only in full at message_end. */
 export function displayMessage<T extends object>(message: T): T {
   const parsed = withStreamedArguments(message);
   const content = contentOf(parsed);
@@ -149,7 +149,7 @@ const NUMBER = /^-?\d+(\.\d+)?([eE][+-]?\d+)?$/;
 const ESCAPES: Record<string, string> = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
 
 /**
- * A JSON prefix read as omp's `parseStreamingJson` does: open strings,
+ * A JSON prefix read as pi-ai's `parseStreamingJson` does: open strings,
  * objects and arrays keep what arrived; a half-sent number, keyword or key is
  * left out. Anything unreadable is `{}`.
  */

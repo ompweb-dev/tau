@@ -9,7 +9,7 @@ export type GithubActionsOperation = "dispatch" | "cancel" | "rerun";
 export type GithubActionsPermission = "deny" | "ask" | "allow";
 export type GithubActionsPermissions = Record<GithubActionsOperation, GithubActionsPermission>;
 
-/** tau's own server-side settings (omp's config.yml stays omp's). */
+/** tau's own server-side settings (pi's settings.json stays pi's). */
 export interface WebServerSettings {
   /** Resume sessions that were mid-run when tau stopped. */
   autoResumeSessions: boolean;
@@ -26,7 +26,7 @@ export interface WebServerSettings {
   /** Per-operation approval policy for GitHub Actions mutations. */
   githubActionsPermissions: GithubActionsPermissions;
   /**
-   * Environment variables merged into the `omp` child process (issue #104).
+   * Environment variables merged into the `pi` child process (issue #104).
    * Stored as a validated record; lib/pi/agent-env.ts owns the policy and
    * re-checks every name before handing it to a spawn.
    */

@@ -317,9 +317,10 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
 }
 
 // ── Thinking levels editor ────────────────────────────────────────────────────
-// Edits omp's `thinking` config: `efforts` lists the enabled levels, and
+// Edits a model's `thinking` config: `efforts` lists the enabled levels, and
 // `effortMap` overrides the string sent on the wire for a level. When every
-// row is Default the config is omitted and omp derives the ladder itself.
+// row is Default the config is omitted. pi 1.5.2 reads `thinkingLevelMap`
+// instead and ignores this shape.
 
 
 function ThinkingEditor({
@@ -1349,7 +1350,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                 <SectionTitle>{t("modelsConfig.composerPickerTitle")}</SectionTitle>
                 <p style={{ margin: "6px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{t("modelsConfig.composerPickerDesc")}</p>
               </div>
-              {/* Refresh OMP runtime models */}
+              {/* Refresh pi runtime models */}
               <button type="button" onClick={() => void loadRuntimeModels()} disabled={runtimeModelsLoading} title={t("modelsConfig.refreshRuntimeModels")} style={{ padding: 7, border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text-muted)", cursor: runtimeModelsLoading ? "wait" : "pointer", flexShrink: 0 }}><RefreshCw size={14} aria-hidden="true" /></button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

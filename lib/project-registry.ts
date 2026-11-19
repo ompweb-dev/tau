@@ -7,7 +7,7 @@ import type { ManagedProject, ProjectLaunchConfig } from "./types";
 
 // ============================================================================
 // Project registry: which directories the user explicitly manages, and which
-// of them are hidden from the sidebar. Stored as ~/.omp/agent/projects.json
+// of them are hidden from the sidebar. Stored as `projects.json` in the agent dir
 // (the same agent dir as sessions), written atomically so a crash can never
 // leave a half-written registry. Hiding is reversible: the entry (and its
 // sessions) is restored by adding the directory again.
@@ -31,7 +31,7 @@ export interface ProjectRegistryEntry {
   sortOrder?: number;
   /** Present when pinned; position among pinned projects, lower first. */
   pinOrder?: number;
-  /** Workspace-level omp launch configuration. */
+  /** Workspace-level pi launch configuration. */
   launchConfig?: ProjectLaunchConfig;
 }
 

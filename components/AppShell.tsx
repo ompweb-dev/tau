@@ -177,11 +177,11 @@ export function AppShell({ appName }: { appName: string }) {
   const [neverFoldActivity, setNeverFoldActivity] = useState(false);
   const [showToolCallsUnfolded, setShowToolCallsUnfolded] = useState(false);
   // "Expand thinking blocks by default" — like the tool-call preference, a
-  // UI-only behavior, so it lives in localStorage rather than omp's config.
+  // UI-only behavior, so it lives in localStorage rather than pi's settings.
   const [expandThinkingByDefault, setExpandThinkingByDefault] = useState(false);
   const [hideThinkingBlock, setHideThinkingBlock] = useState(false);
   useEffect(() => {
-    // omp's own setting, so the transcript hides thinking when the TUI does.
+    // pi's own setting, so the transcript hides thinking when the TUI does.
     // Re-read on focus: the TUI or another tab may have changed it.
     const load = () => {
       fetch("/api/pi-settings")

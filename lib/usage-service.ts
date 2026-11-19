@@ -322,9 +322,9 @@ export function parseSessionUsage(
           // report, see collectUncountedUsage in usage-db.ts). Background
           // subagents never report usage here at all.
           //
-          // omp writes a spawn's transcript into the artifacts directory of the
+          // A spawn's transcript lives in the artifacts directory of the
           // session that ran the `task` call — that session's own file minus
-          // `.jsonl` (leaseArtifacts in omp's task/structured-subagent.ts) — which
+          // `.jsonl` — which
           // is the file this result is in, not the top-level owning session. So a
           // nested spawn `Parent.Child` whose result is in `<session>/Parent.jsonl`
           // lives at `<session>/Parent/Parent.Child.jsonl`.

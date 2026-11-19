@@ -175,7 +175,7 @@ export interface LastAssistantTextResponse {
 
 // Shape of lib/rpc-manager's WebSessionState as seen over HTTP.
 export type AgentStateResponse = {
-  // Raw get_state passthrough: the resolved model omp is actually running.
+  // Raw get_state passthrough: the resolved model pi is actually running.
   model?: { provider: string; id: string; name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } };
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
@@ -198,7 +198,7 @@ export type AgentStateResponse = {
 };
 
 export function normalizeThinkingLevel(level: string | undefined): ThinkingLevelOption {
-  // omp's "inherit" sentinel means "no explicit selection" — show as auto.
+  // No level (or "inherit", which pi never reports) means no explicit selection — show as auto.
   if (!level || level === "inherit") return "auto";
   return level as ThinkingLevelOption;
 }
@@ -247,12 +247,12 @@ export const PROMPT_SETTLE_POLL_MS = 600;
 export const PROMPT_SETTLE_MAX_MS = 20_000;
 export const AGENT_STATE_RECONCILE_MS = 15_000;
 export const BASH_STATE_RECONCILE_MS = 1_000;
-// Cadence for re-reading a session that some OTHER `omp` process is running.
+// Cadence for re-reading a session that some OTHER `pi` process (a terminal) is running.
 // tau owns no wrapper for those, so /api/agent/<id>/events 409s and nothing
 // streams in; the only way their transcript advances is an explicit sync poll.
 // Fast enough to look live, far slower than the SSE path it stands in for.
 export const EXTERNAL_RUN_POLL_MS = 2_000;
-// A tail that stopped growing is not a live foreign run any more (its omp died,
+// A tail that stopped growing is not a live foreign run any more (its pi died,
 // or the run was interrupted between a tool call and its result). Stop polling;
 // the cheap heuristic below re-arms the poll if the transcript grows again.
 export const EXTERNAL_RUN_STALE_MS = 60_000;
@@ -402,8 +402,8 @@ export function readCompactResult(result: unknown, reason: string): CompactResul
   if (!result || typeof result !== "object") return null;
   const r = result as CompactCommandResult;
   if (typeof r.tokensBefore !== "number") return null;
-  // The server estimates estimatedTokensAfter from the summary when omp's
-  // CompactionResult omits it; default to 0 as a last resort.
+  // pi's CompactionResult has no estimatedTokensAfter: the server estimates it
+  // from the summary; default to 0 as a last resort.
   return {
     reason,
     tokensBefore: r.tokensBefore,
@@ -412,7 +412,7 @@ export function readCompactResult(result: unknown, reason: string): CompactResul
 }
 
 /** Shared construction for an outgoing prompt: the optimistic user bubble
- * (display shape with nested image blocks) and omp's RPC payload shape
+ * (display shape with nested image blocks) and pi's RPC payload shape
  * (flat image objects). Used by handleSend
  * so the two paths cannot drift apart. */
 export function buildOutgoingPrompt(
@@ -459,9 +459,9 @@ export type SlashCommandsResponse = {
   commands?: RpcAvailableSlashCommand[];
 };
 
-// Map omp's slash-command sources onto the palette's grouping. Builtins are
-// skipped: the client intercepts its own builtin set, and other omp builtins
-// still work when typed (omp executes them via the prompt command).
+// Map the `get_commands` sources (extension, prompt template, skill) onto the
+// palette's grouping. pi lists no builtins; a `builtin` source is skipped all
+// the same, since the client intercepts its own builtin set.
 export function toSlashCommandInfo(command: RpcAvailableSlashCommand): SlashCommandInfo | null {
   if (command.source === "builtin") return null;
   const source: SlashCommandInfo["source"] = command.source === "extension"
@@ -472,14 +472,14 @@ export function toSlashCommandInfo(command: RpcAvailableSlashCommand): SlashComm
   return { name: command.name, description: command.description, source };
 }
 
-// omp exposes only the commands its RPC prompt path can actually run. TUI-only
-// ones (`/guided-goal`, `/vibe`, `/budget`, …) never appear in `get_commands`,
+// pi lists only the commands its RPC prompt path can actually run (extension
+// commands, prompt templates, skills). Its TUI builtins (`/model`, `/tree`, …)
+// never appear in `get_commands`,
 // so the client has no way to run them and sending one lands in the transcript
 // as literal prompt text with no hint that nothing happened (#167).
 //
-// Callers pass the FULL command list — including the builtins that
-// `toSlashCommandInfo` hides from the palette, which are still executed by omp
-// when typed and therefore must not warn. An empty list means the roster has
+// Callers pass the FULL command list — including any builtins that
+// `toSlashCommandInfo` hides from the palette, which must not warn. An empty list means the roster has
 // not arrived yet (or failed), in which case saying "unknown" would be a guess.
 export function isUnknownSlashCommand(text: string, knownNames: readonly string[]): boolean {
   if (knownNames.length === 0) return false;

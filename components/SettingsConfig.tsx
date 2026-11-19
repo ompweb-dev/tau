@@ -472,7 +472,7 @@ function UploadRetentionSetting() {
 }
 
 /** Server-side tau setting (issue #104): KEY=VALUE text injected into the
- * `omp` child process. Parsing/validation lives in lib/pi/agent-env.ts; this only
+ * pi child process. Parsing/validation lives in lib/pi/agent-env.ts; this only
  * feeds it localized messages and renders the result. `cluster`: the members run it too (spec K1). */
 function AgentEnvSetting({ cluster }: { cluster: boolean }) {
   const { t } = useI18n();

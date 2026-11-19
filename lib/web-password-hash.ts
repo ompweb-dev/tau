@@ -7,7 +7,7 @@ import * as passwordHash from "../bin/tau-password-hash.js";
 /**
  * Self-describing scrypt password hash. tau only ever stores and compares
  * a hash of the web sign-in password (issue #239): the plaintext used to live
- * in `TAU_PASSWORD`, which every `omp` child process inherited, so an
+ * in `TAU_PASSWORD`, which every agent child process inherited, so an
  * agent that ran `env` could print it into a session file and off to a model
  * provider.
  *

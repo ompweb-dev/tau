@@ -521,7 +521,7 @@ function markdownCode(text: string): string {
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
-/** The prompt carrying these uploads reached omp: their registry entries go. */
+/** The prompt carrying these uploads reached pi: their registry entries go. */
 export function forgetUploads(ids: string[], owner: string, receipts?: OutboxUploadReceipt[]): void {
   for (const id of ids) {
     const upload = uploads().get(id);

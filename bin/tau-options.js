@@ -53,7 +53,7 @@ Password:
 
   tau never passes a plaintext password on: --password is rejected, and an
   TAU_PASSWORD is hashed at startup with a warning that prints its hash
-  (set alongside TAU_PASSWORD_HASH, it is rejected), because every omp
+  (set alongside TAU_PASSWORD_HASH, it is rejected), because every pi
   session inherits the environment and an agent could print the password
   into its transcript.
 

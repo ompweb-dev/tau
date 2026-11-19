@@ -1,10 +1,10 @@
-// Shared models.yml types, constants, and pure helpers extracted from
+// Shared models.json types, constants, and pure helpers extracted from
 // ModelsConfig.tsx (pure extraction, no behavior change).
 
 export type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
 
 // Provider glyphs are derived from the provider id. Provider ids come from
-// OMP/models.yml at runtime, so adding one never requires a UI registry entry.
+// pi's models.json at runtime, so adding one never requires a UI registry entry.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,8 +37,7 @@ export type OAuthLoginState =
   | { phase: "success" }
   | { phase: "error"; message: string };
 
-// Mirrors the ModelThinkingSchema subset of omp's models.yml
-// (oh-my-pi/packages/coding-agent/src/config/models-config-schema.ts).
+// A model's `thinking` config as tau writes it. pi 1.5.2 does not read it (it reads `thinkingLevelMap`).
 export interface ThinkingConfig {
   mode?: string;
   efforts?: string[];
@@ -108,7 +107,7 @@ export type RetrySettings = {
   retry?: { enabled?: boolean; maxRetries?: number };
 };
 export const COMPOSER_MODELS_STORAGE_KEY = "omp-composer-models";
-// omp's models.yml ApiSchema (config/models-config-schema.ts)
+// APIs a models.json provider or model can name.
 export const API_OPTIONS = [
   "openai-completions",
   "openai-responses",

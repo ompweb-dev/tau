@@ -1,9 +1,8 @@
 /**
  * Web-native slash commands (prompt-composing).
  *
- * omp's own `/goal`, `/plan`, `/vibe`, ... are TUI-only builtins (`handleTui`);
- * the RPC prompt path (which tau uses) forwards them as literal user text
- * instead of executing them. These client-side commands fill that gap: the
+ * pi has no `/goal`, `/plan`, `/vibe`, ... over RPC: the prompt path (which
+ * tau uses) forwards an unknown slash command as literal user text. These client-side commands fill that gap: the
  * palette advertises them and the client built-in dispatcher expands them into
  * effective prompts sent through the normal prompt pipeline, so the agent
  * actually receives a clear instruction rather than a stray "/goal ..." line.
@@ -141,7 +140,7 @@ export type WebSlashCommandExpansion =
  * expanded prompt to send, a usage error for a required-arg command with no
  * args, or "not-web" for commands the client does not own. Single source of
  * truth for both the idle dispatcher and the streaming queue path, so a web
- * command is never forwarded to omp as literal slash text.
+ * command is never forwarded to pi as literal slash text.
  */
 export function expandWebSlashCommand(text: string): WebSlashCommandExpansion {
   if (!text.startsWith("/")) return { kind: "not-web" };

@@ -9,7 +9,7 @@ const forwardedSignals = ["SIGINT", "SIGTERM"];
 // SIGHUP arrives when a CLI-run launcher loses its terminal (window closed,
 // session ended). The child must die gracefully, not verbatim: a verbatim
 // SIGHUP terminates Node without running exit handlers, orphaning the detached
-// omp children it spawned. Translate it to a graceful SIGTERM tree kill.
+// pi children it spawned. Translate it to a graceful SIGTERM tree kill.
 const translatedSignals = { SIGHUP: "SIGTERM" };
 const shutdownTimeoutMs = 5_000;
 // Time to wait for a terminated process tree to actually exit (used as the

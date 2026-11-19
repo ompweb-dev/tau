@@ -12,7 +12,7 @@ import type { ProjectLaunchConfig } from "@/lib/types";
 const MAX_EXTRA_ARGS = 32;
 const MAX_EXTRA_ARG_LENGTH = 256;
 
-/** Validate the workspace-level omp launch config; reject overrides of web-managed session-boundary args. */
+/** Validate the workspace-level pi launch config; reject overrides of web-managed session-boundary args. */
 function parseLaunchConfig(value: unknown): ProjectLaunchConfig | undefined {
   if (value === undefined || value === null) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ProjectPathError("invalid_launch_config", "Launch config must be an object");

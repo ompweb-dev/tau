@@ -125,15 +125,15 @@ export async function DELETE(
   try {
     const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) return resolved.response;
-    // Await the child's exit before unlinking: omp flushes session state on
-    // shutdown and would recreate the file if it were still running.
+    // Await the child's exit before unlinking: a running pi would
+    // recreate the file on its next append.
     // Disposing a child behind a down link would wait for the link to return.
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
     const live = getRpcSession(id);
     if (!live?.hostOwnedLifecycle) await live?.destroyAndWait?.("delete", true);
-    // Live children are skipped by the re-parent rewrite: their omp process
-    // owns the file and would clobber it on its next flush.
+    // Live children are skipped by the re-parent rewrite: their pi process
+    // owns the file and would clobber it on its next write.
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds());
     if (!result.ok) return opErrorResponse(result);
     // Remove only this deleted session's content-free retry-lineage metadata.

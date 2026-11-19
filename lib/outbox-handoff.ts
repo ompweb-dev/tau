@@ -87,7 +87,7 @@ async function liveChildFor(sessionId: string, ids: readonly string[]) {
   throw failure;
 }
 
-/** Ask the live native child about intents the browser still holds; this never starts or replaces omp. Absence of a
+/** Ask the live native child about intents the browser still holds; this never starts or replaces pi. Absence of a
  * child answers 409 and the browser reads its own history instead; uncertainty answers a retryable 503. */
 export async function reconcileOutboxHandoffs(sessionId: string, ids: readonly string[]): Promise<ClientMessageStatus> {
   const live = await liveChildFor(sessionId, ids);

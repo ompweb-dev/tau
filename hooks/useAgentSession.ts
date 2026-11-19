@@ -159,8 +159,8 @@ const MAX_HANDLED_EDIT_HISTORY_MARKERS = 64;
 // A running-channel lookup that failed is retried after 1 s, 2 s and 4 s, then waits for the next frame.
 const RUNNING_LOOKUP_RETRIES = 3;
 
-/** Read the error carried by OMP's assistant/error frames without rendering
- * arbitrary payloads as [object Object]. OMP normally puts provider failures
+/** Read the error carried by pi's assistant/error frames without rendering
+ * arbitrary payloads as [object Object]. pi normally puts provider failures
  * on the assistant message (`stopReason: "error"`, `errorMessage`) and then
  * emits a plain `agent_end`, so this must be collected before that terminal
  * frame arrives. */
@@ -292,9 +292,9 @@ function toastStoppedSend(error: unknown, promptIssued = true): boolean | null {
   return error.mayHaveRun && promptIssued;
 }
 
-/** The held `!` runs omp has not recorded yet. A recorded run is a run of the
- * command stamped after `after`, the newest omp stamp this tab had seen when it
- * was sent (both omp's clock, so older runs never match in any view); each
+/** The held `!` runs pi has not recorded yet. A recorded run is a run of the
+ * command stamped after `after`, the newest pi stamp this tab had seen when it
+ * was sent (both pi's clock, so older runs never match in any view); each
  * recorded run settles one held entry, oldest first, and `settled` holds the
  * runs (`stamp:command`) that already settled one. Adds the runs it matches. */
 function unrecordedHeldBash<T extends { command: string; after: number }>(messages: AgentMessage[], held: T[], settled: Set<string>): T[] {
@@ -325,9 +325,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [error, setError] = useState<string | null>(null);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [confirmedMessages, setMessages] = useState<AgentMessage[]>([]);
-  // A new chat's first prompt, shown until omp's session has it (existing sessions hold theirs in the outbox).
+  // A new chat's first prompt, shown until pi's session has it (existing sessions hold theirs in the outbox).
   const [optimisticUserMessage, setOptimisticUserMessage] = useState<AgentMessage | null>(null);
-  // omp's echo of a user message, shown until the transcript catch-up has its saved copy (same omp timestamp): the echo
+  // pi's echo of a user message, shown until the transcript catch-up has its saved copy (same pi timestamp): the echo
   // is a frame, the copy arrives over HTTP a moment later, and the held bubble it replaces is already gone.
   const [echoedUserMessage, setEchoedUserMessage] = useState<AgentMessage | null>(null);
   const [correlatedMessages, setCorrelatedMessages] = useState<{ sessionId: string; message: AgentMessage; epoch: number }[]>([]);
@@ -359,9 +359,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [hostFrame, setHostFrame] = useState<{ sessionId: string | null; status: HostStatus } | null>(null);
   const [bashRunning, setBashRunning] = useState(false);
   const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean } | null>(null);
-  // `!` results from a running turn: omp holds them back until a later prompt
+  // `!` results from a running turn: pi holds them back until a later prompt
   // starts, so until the transcript has them they show from here, like the
-  // terminal's pending block. `after` is the newest omp stamp this tab had
+  // terminal's pending block. `after` is the newest pi stamp this tab had
   // seen when it was sent; it only grows, so a history view cannot lower it.
   const [heldBash, setHeldBash] = useState<{ message: BashExecutionMessage; command: string; after: number }[]>([]);
   const newestStampRef = useRef(0);
@@ -442,7 +442,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [toolPreset, setToolPreset] = useState<ToolPreset>("full");
   useEffect(() => { setToolPreset(getPreferredToolPreset()); }, []);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
-  // omp's provider usage-limit stage (wrap-up allowance / /slow low priority).
+  // Provider usage-limit stage from get_state (wrap-up allowance / low priority); pi 1.5.2 reports none.
   const [usageLimit, setUsageLimit] = useState<UsageLimitState | undefined>(undefined);
   // Runtime session modes returned by get_state and changed via RPC (set_auto_compaction).
   const [autoCompactionEnabled, setAutoCompactionEnabled] = useState(true);
@@ -458,13 +458,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
-  // omp's own output throughput from get_state. omp reports a number only
-  // when it has throughput data (typically around generation); null otherwise.
+  // Output throughput from get_state's tokensPerSecond. pi 1.5.2 reports none,
+  // so this stays null.
   const [tokensPerSecond, setTokensPerSecond] = useState<number | null>(null);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
-  // In-flight tool executions, keyed by toolCallId: omp reports a tool's output
+  // In-flight tool executions, keyed by toolCallId: pi reports a tool's output
   // as it runs (`tool_execution_start` / `tool_execution_update` / `_end`), but
   // the matching `toolResult` message only lands when the tool finishes. Until
   // then these entries keep the tool call row live (running indicator + streamed
@@ -473,7 +473,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [liveToolResults, setLiveToolResults] = useState<Map<string, ToolResultMessage>>(() => new Map());
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
-  // Every command omp reported, builtins included — the palette hides those,
+  // Every command pi reported, any builtins included — the palette hides those,
   // but the unknown-command warning must not flag them (#167). Ref-only: it is
   // consulted at send time and must never re-render the composer.
   const knownSlashCommandNamesRef = useRef<string[]>([]);
@@ -583,13 +583,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Mirror of the isCompacting state that survives render batching, so two
   // clicks in the same tick cannot double-send a compact command.
   const isCompactingRef = useRef(false);
-  // Bumped by every compaction start and end this tab sees (its own, or omp's
+  // Bumped by every compaction start and end this tab sees (its own, or pi's
   // auto-compaction): a native snapshot requested before the latest one is stale.
   const compactionGenRef = useRef(0);
-  // This tab's manual compactions still in flight: omp may not have the command
+  // This tab's manual compactions still in flight: pi may not have the command
   // yet, so an idle snapshot cannot release them; the command's settlement does.
   const localCompactionsRef = useRef(0);
-  // omp's auto-compaction between its start and end events: a manual compaction
+  // pi's auto-compaction between its start and end events: a manual compaction
   // settling meanwhile leaves the control to it.
   const autoCompactingRef = useRef(false);
   // Bumped when an Edit starts: a running lookup from before it is stale.
@@ -602,7 +602,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isCompactingRef.current = value;
     setIsCompacting(value);
   }, []);
-  // Apply omp's isCompacting from a snapshot requested at compaction generation `gen`.
+  // Apply pi's isCompacting from a snapshot requested at compaction generation `gen`.
   const applyNativeCompacting = useCallback((value: boolean, gen: number) => {
     if (compactionGenRef.current !== gen || (!value && localCompactionsRef.current > 0)) return;
     // An idle snapshot also settles an auto-compaction whose end event was missed.
@@ -673,7 +673,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // produced any assistant content. Used to surface a persistent error when
   // the agent stops without a visible failure.
   const lastQuotaErrorRef = useRef<string | null>(null);
-  // Provider failures are carried by the final assistant message in OMP and
+  // Provider failures are carried by the final assistant message in pi and
   // agent_end itself is often deliberately payload-free. Keep the message
   // until the terminal path can surface it exactly once.
   const lastRunErrorRef = useRef<string | null>(null);
@@ -807,12 +807,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   // For existing sessions, the live state's resolved model wins over the
-  // session file's entry: omp may have fallen back to the default model when
+  // session file's entry: pi may have fallen back to the default model when
   // the recorded one is gone (disabled provider, renamed id), and the file
   // entry then describes a model that is not actually running. pendingModel
   // stays at the bottom (below the file entry) — it only fills the gap while
   // a brand-new session has no file data yet, and a failed new-session
-  // set_model must not mask omp's actual resolved model.
+  // set_model must not mask pi's actual resolved model.
   const displayModel = useMemo(
     () =>
       isNew
@@ -862,7 +862,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } satisfies SessionStatsInfo;
   }, [messages, sessionStatsOverride, contextUsage, data?.filePath, session?.id, session?.name]);
 
-  // Goal mode is web-hosted because omp's native /goal is TUI-only. Keep it
+  // Goal mode is web-hosted because pi has no /goal. Keep it
   // scoped to its session so switching conversations never leaks objectives.
   useEffect(() => {
     const sid = session?.id;
@@ -1006,7 +1006,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   // Lightweight live-state sync after composer commands. A command against an
-  // idle-disposed session restarts omp, which re-resolves the model from the
+  // idle-disposed session restarts pi, which re-resolves the model from the
   // session file — the freshly resolved model (and clamped thinking level)
   // must reach the composer so the ladder/active level match reality.
   const refreshLiveModelState = useCallback(async (sid: string) => {
@@ -1350,8 +1350,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const data = await sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
       const available = Array.isArray(data?.commands) ? data.commands : [];
-      // Keep the builtins too: they are hidden from the palette but omp still
-      // runs them when typed, so they must not be reported as unknown (#167).
+      // Keep any builtins too: they are hidden from the palette but must not
+      // be reported as unknown (#167).
       // A reply carrying no list is not evidence that nothing is known, so it
       // must not erase a roster an earlier reply did supply.
       if (available.length > 0) knownSlashCommandNamesRef.current = available.map((command) => command.name);
@@ -1382,7 +1382,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [catchUp]);
 
   // Reconnect actions captured after their definitions (host-tool and URI
-  // registrations are per-wrapper and are not persisted by omp, and the
+  // registrations are per-wrapper and are not persisted by pi, and the
   // roster needs a fresh get_subagents snapshot) so the fatal-error reconnect
   // below can restore everything the mount flow sets up — not just the stream.
   const reconnectActionsRef = useRef<((sid: string) => void) | null>(null);
@@ -1467,12 +1467,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearInterval(timer);
   }, [reconcileHandoff, serverOutbox, session?.id]);
 
-  // A held-message stream ("connected" mode) was opened without asking omp whether a run is going; the running
+  // A held-message stream ("connected" mode) was opened without asking pi whether a run is going; the running
   // channel treats an open stream as carrying the run, so the chat asks once that stream attaches (below).
   const adoptObservedRunRef = useRef<(sid: string, source: EventStream) => void>(() => {});
   /** `restoreWrapper`: re-register what a wrapper loses (host tools, URI schemes, roster) once attached. "connected":
    * the session may have no wrapper yet (the server opens the channel for its held messages alone, docs/specs/
-   * 2026-11-04-message-outbox-design.md): do everything that talks to omp only on `connected`, which comes once one
+   * 2026-11-04-message-outbox-design.md): do everything that talks to pi only on `connected`, which comes once one
    * is attached, since any command would start one. */
   const connectEvents = useCallback((sid: string, restoreWrapper: boolean | "connected" = false): Promise<EventStreamConnectionResult | null> => {
     // An awaited RPC can finish after its chat unmounted. No continuation may
@@ -1520,10 +1520,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const attached = () => {
         restore();
         void catchUp.request();
-        // Side questions: omp re-reads the persisted history on stream open, so
-        // a snapshot here catches topics asked in the terminal or another tab.
+        // Side questions: the session file keeps finished ones (`tau_btw`
+        // entries), so a snapshot here catches topics asked in another tab.
         void refreshBtwHistory(sid);
-        // Subscribe, then snapshot: OMP does not replay queue or diagnostics
+        // Subscribe, then snapshot: pi does not replay queue or diagnostics
         // updates emitted before this stream opened.
         void refreshAgentSnapshots(sid);
         void reconcileHandoffRef.current();
@@ -1550,8 +1550,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             applyBtwFrame(event);
             return;
           }
-          // The web server's own frame, not omp's: no stream sequence to observe. Through the coalescer so it
-          // applies after the omp frames before it (an echo or queue_update that replaces a held bubble).
+          // The web server's own frame, not pi's: no stream sequence to observe. Through the coalescer so it
+          // applies after the pi frames before it (an echo or queue_update that replaces a held bubble).
           if (event.type === "outbox_update") {
             eventCoalescer.push(event);
             return;
@@ -1711,7 +1711,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await sendAgentCommand(sid, { type: "set_host_tools", tools: HOST_TOOL_DEFINITIONS });
     } catch {
-      // Older omp builds without host tools: the UI simply stays passive.
+      // A refused registration leaves the UI passive.
     }
   }, [HOST_TOOL_DEFINITIONS]);
 
@@ -1731,7 +1731,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await sendAgentCommand(sid, { type: "set_host_uri_schemes", schemes: HOST_URI_SCHEMES });
     } catch {
-      // Older omp builds: no URI bridge, nothing to do.
+      // A refused registration leaves no URI bridge: nothing to do.
     }
   }, [HOST_URI_SCHEMES]);
 
@@ -1883,7 +1883,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (hookAliveRef.current && sessionIdRef.current === sid) {
         addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
       }
-      // Let the panel take another answer: omp never got this one.
+      // Let the panel take another answer: pi never got this one.
       if (locallyAnsweredDialogRef.current === request.id) locallyAnsweredDialogRef.current = null;
       return false;
     }
@@ -1927,7 +1927,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const endExtensionDialog = useCallback((id: UiDialogRequest["id"]) => {
-    // Another tab's answer or omp's own close; this tab's answer keeps its hand-off window.
+    // Another tab's answer or pi's own close; this tab's answer keeps its hand-off window.
     if (id !== locallyAnsweredDialogRef.current) {
       setExtensionDialog((current) => current?.id === id ? null : current);
     }
@@ -2249,7 +2249,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     [agentRunning, bashRunning, messages],
   );
   // Wall-clock of the last transcript change; bounds the poll so a permanently
-  // "awaiting a tool result" tail (crashed foreign omp, interrupted run) does
+  // "awaiting a tool result" tail (crashed foreign pi, interrupted run) does
   // not re-read the session file forever.
   const transcriptChangedAtRef = useRef(Date.now());
   useEffect(() => {
@@ -2266,10 +2266,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearInterval(timer);
   }, [externalRunActive, catchUp]);
 
-  // Sample omp's own tokensPerSecond (get_state) at a gauge-friendly cadence
-  // while a run is active; the 15s reconcile above is too slow for a gauge.
-  // On run end take one trailing sample: omp publishes its final throughput
-  // right around agent_end, possibly after the last in-run poll.
+  // Sample get_state's tokensPerSecond at a gauge-friendly cadence while a run
+  // is active; the 15s reconcile above is too slow for a gauge. On run end take
+  // one trailing sample, which may land after the last in-run poll. pi 1.5.2
+  // reports no tokensPerSecond, so the samples stay null.
   useEffect(() => {
     if (!agentRunning) {
       if (!wasRunningForGaugeRef.current) return;
@@ -2439,7 +2439,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (!agentRunningRef.current) break;
         // Capture fallback before clearing: if the run produced no visible
         // assistant content and we saw a quota error, surface it persistently
-        // even when omp sent no terminal notice.
+        // even when pi sent no terminal notice.
         const hadContent = runHadContentRef.current;
         const quotaMessage = lastQuotaErrorRef.current;
         const terminalError = readTerminalAgentError(event) ?? lastRunErrorRef.current;
@@ -2628,8 +2628,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setThinkingLevel(normalizeThinkingLevel(event.thinkingLevel as string | undefined));
         break;
       case "model_changed": {
-        // Bare event: omp switched the resolved model (explicit /model,
-        // retry-fallback, prewalk hand-off). No payload — sync from state.
+        // Bare event: the resolved model changed. No payload — sync from state.
+        // pi 1.5.2 never sends it.
         const sid = sessionIdRef.current;
         if (!sid) break;
         const token = beginAuthoritativeModelSync();
@@ -2771,7 +2771,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         break;
       }
       case "tool_execution_update": {
-        // omp streams the FULL accumulated partial result per output chunk, so
+        // pi streams the FULL accumulated partial result per output chunk, so
         // the newest frame replaces the previous snapshot (the SSE coalescer
         // already drops superseded frames within a display frame).
         const id = event.toolCallId as string;
@@ -2857,8 +2857,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
       case "subagent_lifecycle": {
-        // Roster fed by omp's subagent_lifecycle frames. Payload mirrors
-        // SubagentLifecyclePayload (oh-my-pi task/types.ts); defensive
+        // Roster fed by subagent_lifecycle frames, which tau's SubagentBridge
+        // (lib/pi/subagent-bridge.ts) builds from pi-subagents; defensive
         // parsing degrades to ignoring the frame, never breaking the run.
         const info = parseSubagentLifecycle(event.payload);
         if (!info) break;
@@ -3053,7 +3053,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Newer queued message/tool events belong to fields we will retain below.
       // Flush rather than dropping them when another snapshot field is recoverable.
       eventCoalescer.flush();
-      // A compaction keeps a running prompt alive (omp may compact mid-run), but alone it is no
+      // A compaction keeps a running prompt alive (pi may compact mid-run), but alone it is no
       // prompt run: nothing would end it with a reply, and settling it reported an empty response.
       const promptBusy = snapshot.isStreaming || snapshot.isPromptRunning;
       const busy = promptBusy || snapshot.isCompacting;
@@ -3096,7 +3096,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             && message.timestamp !== undefined ? { error: messageError, timestamp: message.timestamp } : null;
         }
       }
-      // omp's next delta applies to this snapshot, or completes deltas that arrived without their message.
+      // pi's next delta applies to this snapshot, or completes deltas that arrived without their message.
       eventCoalescer.seed(snapshot.streamingMessageId ?? null, snapshot.streamingMessage, snapshot.cursor.sequence, fields.message);
       if (fields.tools) {
         const preserve = fields.tools;
@@ -3115,7 +3115,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   };
 
   /** Holds a message in the outbox (docs/specs/2026-11-04-message-outbox-design.md): true once this browser has
-   * stored it, after which tau delivers it whatever this tab does next. It shows as a held bubble until omp has it. */
+   * stored it, after which tau delivers it whatever this tab does next. It shows as a held bubble until pi has it. */
   const holdMessage = useCallback(async (sid: string, mode: OutboxMode, message: string, images?: Pick<AttachedImage, "data" | "mimeType">[], uploads?: string[], uploadProofs?: Record<string, string>, replaces?: string) => {
     try {
       await addToOutbox({
@@ -3153,7 +3153,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/context?boundary=1`);
     if (res.status === 404) {
       // A session whose prompts so far were all local slash commands (skill
-      // activation, …) never started an agent run, so omp wrote no session
+      // activation, …) never started an agent run, so pi wrote no session
       // file yet. There is no prior run to diff against — proceed with an
       // empty baseline instead of failing the send.
       return [];
@@ -3168,7 +3168,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!trimmedMessage && !images?.length && !uploads?.length) return { status: "rejected" };
     if (bashRunningRef.current || editInFlightRef.current) return { status: "rejected" };
     if (initialHydrationPendingRef.current) return { status: "rejected" };
-    // Shell commands run during a turn too, as in omp's terminal: omp holds the
+    // Shell commands run during a turn too, as in pi's terminal: pi holds the
     // result back until a later prompt starts.
     const isBashCommand = !options?.promptOnly && !images?.length && !uploads?.length && trimmedMessage.startsWith("!");
     if (isBashCommand) {
@@ -3180,8 +3180,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     if (agentRunningRef.current) return { status: "rejected" };
     const isSlashCommandPrompt = !images?.length && !uploads?.length && trimmedMessage.startsWith("/");
-    // omp runs TUI-only commands such as `/guided-goal` nowhere but its own
-    // terminal, so over RPC the text is sent as an ordinary prompt and the turn
+    // pi runs its TUI builtins such as `/tree` nowhere but its own terminal,
+    // so over RPC the text is sent as an ordinary prompt and the turn
     // looks like it obeyed. Say so once per name instead of staying silent
     // (#167). The prompt itself is still sent: the roster is not proof that the
     // command is unavailable, and the user may mean the literal text.
@@ -3204,7 +3204,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     if (!isNew && session) {
       // The outbox owns delivery from here: Send ends once this browser has stored it, and the run state starts
-      // from omp's own frames when the web server dispatches it (agent_start), not from this click.
+      // from pi's own frames when the web server dispatches it (agent_start), not from this click.
       if (catchUp.view().leafId) {
         catchUp.select({ leafId: null, includePreCompaction: catchUp.view().includePreCompaction });
         void catchUp.request();
@@ -3250,10 +3250,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let promptIssued = false;
     try {
       let sentSessionId: string | null = null;
-      // The agent route degrades a prompt into omp's follow-up queue when a
-      // `!!` shell command owns the session (another tab or device started it,
-      // so this composer never saw a run). No turn starts then, and the
-      // optimistic one must not sit there spinning.
       if (isNew) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
@@ -3266,8 +3262,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         if (sid) {
           sentSessionId = sid;
-          // omp assigns the real id before the first prompt finishes. Promote
-          // now so the sidebar can show this active session during streaming.
+          // Promote now so the sidebar can show this active session during streaming.
           if (!ownerGone) {
             promoteNewSession(1, message);
             if (onSessionCreated) recoveryKey = sid;
@@ -3434,7 +3429,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    // As omp's Esc: a running turn is stopped first; a `!` command beside it keeps running.
+    // A running turn is stopped first; a `!` command beside it keeps running.
     if (bashRunningRef.current && !agentRunningRef.current) {
       try {
         await sendAgentCommand(sid, { type: "abort_bash" });
@@ -3517,7 +3512,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, catchUp, isNew, opts.chatInputRef, reloadActiveSessionHistory]);
 
-  // editPrompt: omp's `branch` drops the chosen user prompt from the fork and
+  // editPrompt: pi's `fork` drops the chosen user prompt from the fork and
   // returns its text — put it in the fork's composer (edit-and-resend).
   const handleFork = useCallback(async (entryId: string, editPrompt: boolean) => {
     if (bashRunningRef.current || agentRunningRef.current || forkInFlightRef.current || editInFlightRef.current) return;
@@ -3569,7 +3564,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       const sid = sessionIdRef.current;
       if (!sid) return;
-      // Show the pick at once: set_model may wait for omp to start.
+      // Show the pick at once: set_model may wait for pi to start.
       setCurrentModelOverride(choice);
       await sendAgentCommand(sid, { type: "set_model", provider, modelId });
       await refreshLiveModelState(sid);
@@ -3581,7 +3576,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       console.error("Failed to set model:", e);
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
       // The cached live model can predate an earlier successful pick whose
-      // refresh this pick superseded: re-read what omp runs. Only for the
+      // refresh this pick superseded: re-read what pi runs. Only for the
       // latest pick; a newer one's optimistic display would be cleared.
       const sid = sessionIdRef.current;
       if (!isNew && sid && pick === modelPickSeqRef.current) await refreshLiveModelState(sid);
@@ -3755,8 +3750,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         return false;
       }
       // Spawning a fresh chat takes seconds: the user may have left it. The
-      // question is still asked (omp keeps the answer in the session's BTW
-      // history), but an unmounted chat must not attach a stream (its cleanup
+      // question is still asked (tau's extension keeps the answer in the
+      // session file), but an unmounted chat must not attach a stream (its cleanup
       // already ran, so it would leak) nor promote itself — as in handleSend.
       const ownerGone = !hookAliveRef.current;
       // The session channel is observer-only: start the wrapper and attach
@@ -3767,7 +3762,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       const accepted = await sendBtw(sid, question, recordId);
       const ownerCurrent = hookAliveRef.current && sessionIdRef.current === sid;
-      // omp wrote the session to disk to ask: leave the unsaved new-chat view
+      // pi wrote the session to disk to ask: leave the unsaved new-chat view
       // (URL, sidebar) like a first prompt does. No-op for existing sessions.
       if (accepted && ownerCurrent) promoteNewSession();
       return ownerCurrent;
@@ -3878,10 +3873,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         default: {
-          // Web-native prompt commands (/goal, /plan, ...). omp's same-named
-          // builtins are TUI-only and never execute over RPC, so the palette
-          // shows these instead (CLIENT_BUILTIN_COMMAND_NAMES drops omp's
-          // copies). handleSend runs the full prompt pipeline — optimistic
+          // Web-native prompt commands (/goal, /plan, ...). pi has no such
+          // commands over RPC, so the palette shows these
+          // (CLIENT_BUILTIN_COMMAND_NAMES drops any same-named listed copies). handleSend runs the full prompt pipeline — optimistic
           // bubble, running state, settlement — with the expanded text.
           const expansion = expandWebSlashCommand(text);
           if (expansion.kind === "not-web") return { handled: false };
@@ -3920,9 +3914,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, askBtw, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen]);
 
-  // A steer or follow-up is held in the outbox like a prompt: its held bubble becomes omp's queue chip (queue_update)
-  // or, delivered at once, the user message omp echoes. A slash command keeps its text; the server sends it as a
-  // `prompt` with this streamingBehavior, the only command in which omp runs it.
+  // A steer or follow-up is held in the outbox like a prompt: its held bubble becomes pi's queue chip (queue_update)
+  // or, delivered at once, the user message pi echoes. A slash command keeps its text; the server sends it as a
+  // `prompt` with this streamingBehavior, the only command in which pi runs it.
   const handleQueued = useCallback(async (mode: "steer" | "followUp", message: string, images?: AttachedImage[], uploads?: string[], uploadProofs?: Record<string, string>) => {
     const sid = sessionIdRef.current;
     if (!sid || editInFlightRef.current) return false;
@@ -3935,7 +3929,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   heldMessagesRef.current = heldMessages;
   localOutboxRef.current = localOutbox;
   const heldDeletionsRef = useRef(new Set<string>());
-  /** Delete of a held bubble: one this browser still holds leaves IndexedDB; the server's only until dispatched (omp
+  /** Delete of a held bubble: one this browser still holds leaves IndexedDB; the server's only until dispatched (pi
    * may have it from then on, answered 409 outbox_dispatched). An uncertain bridge is a view of an id the server
    * settled, so only the browser's own copy of it (the worker still holds it if the server settled the id before the
    * worker saw its add receipt) leaves IndexedDB, and the row hides once that commits: a reload cannot bring it back. */
@@ -4023,7 +4017,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleToolPresetChange = useCallback(async (preset: ToolPreset) => {
     setToolPresetState(preset);
     setPreferredToolPreset(preset);
-    // The preset is applied at spawn time (--tools/--no-tools flags); omp's
+    // The preset is applied at spawn time (--tools/--no-tools flags); pi's
     // RPC protocol cannot change the toolset of an already-running session.
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
     if (sid) {
@@ -4069,7 +4063,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     completionScrollAllowedRef.current = end.getBoundingClientRect().bottom - container.getBoundingClientRect().bottom <= 24;
   }, []);
 
-  // Apply a run omp has going for `sid` to this chat: its phase, bridges, roster and settlement waits.
+  // Apply a run pi has going for `sid` to this chat: its phase, bridges, roster and settlement waits.
   const applyLiveRun = useCallback((sid: string, agentState: { running?: boolean; state?: AgentStateResponse }, compactionGen: number) => {
     if (agentState.state?.isCompacting !== undefined) applyNativeCompacting(agentState.state.isCompacting, compactionGen);
     if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {
@@ -4103,7 +4097,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       void waitForBashSettlement(sid);
     }
   }, [applyNativeCompacting, refreshSubagentRoster, registerHostTools, registerHostUriSchemes, waitForBashSettlement, waitForPromptSettlement]);
-  // Attach to a run omp has going for `sid` when this chat has no stream yet: on
+  // Attach to a run pi has going for `sid` when this chat has no stream yet: on
   // load, and when the running channel reports a run that started after the load
   // (another tab or device, or a send from a chat instance the user left).
   const attachLiveRun = useCallback((sid: string, agentState: { running?: boolean; state?: AgentStateResponse }, compactionGen: number) => {
@@ -4138,7 +4132,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   };
 
   // The sidebar's running badge comes from this channel; a chat showing that
-  // session without a stream rechecks omp and attaches, so it never needs a reload.
+  // session without a stream rechecks pi and attaches, so it never needs a reload.
   useEffect(() => {
     const sid = session?.id;
     if (!sid) return;

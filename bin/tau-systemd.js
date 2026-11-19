@@ -11,7 +11,7 @@ require("./node-version").exitIfUnsupportedNode();
 //   npx --yes --package=@ompweb-dev/tau@latest tau-systemd install
 //
 // `install` creates ~/.pi/agent/web-service.env. The file is deliberately
-// separate from the unit so port, hostname, password, and omp path can be
+// separate from the unit so port, hostname, password, and pi path can be
 // edited without reinstalling the service.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -93,11 +93,11 @@ function which(name, env = process.env) {
 }
 
 // Read the interpreter of a launcher script (e.g. `#!/usr/bin/env bun`).
-// Bun/npm global installs of omp are scripts that need their interpreter on
+// npm global installs of pi are scripts that need their interpreter on
 // PATH at service runtime; the generated unit must include its directory
 // (issue #116). Returns the raw interpreter token (e.g. `bun` or
 // `/opt/bun/bin/bun`), or null when the file is a native binary,
-// unreadable, or has no shebang. Symlinks are resolved first: the `omp` on
+// unreadable, or has no shebang. Symlinks are resolved first: the `pi` on
 // PATH is usually a link to the real launcher.
 function readLauncherInterpreter(binPath) {
   let target = binPath;
@@ -237,7 +237,7 @@ function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, 
   const interpreterDir = piBin ? launcherInterpreterDir(piBin) : null;
   const pathDirs = [
     ...(piBin ? [path.dirname(piBin)] : []),
-    // Launcher scripts (e.g. Bun/npm global installs of omp) run through an
+    // Launcher scripts (e.g. npm global installs of pi) run through an
     // interpreter resolved via `env`; without its directory the service
     // fails with exit 127 even though the binary itself is on PATH (#116).
     ...(interpreterDir ? [interpreterDir] : []),
@@ -368,7 +368,7 @@ function install(options = {}) {
   }, envPath);
 
   const wasActive = Object.fromEntries(UNITS.map((unit) => [unit, systemdQuery(["is-active", "--quiet", unit]).ok]));
-  // Restarting the daemon ends every omp run on this machine: only do it when its unit changed.
+  // Restarting the daemon ends every pi run on this machine: only do it when its unit changed.
   const hostUnitText = buildHostUnit(unitOptions);
   const hostUnitChanged = readFileOrNull(HOST_UNIT_PATH) !== hostUnitText;
   fs.mkdirSync(UNIT_DIR, { recursive: true });
@@ -433,7 +433,7 @@ function stop() {
   console.log(`stopped: ${unitNames(units)}`);
 }
 
-// Web unit only: restarting the daemon would end every omp run on this machine.
+// Web unit only: restarting the daemon would end every pi run on this machine.
 function restart() {
   systemctl(["restart", UNIT]);
   console.log(`restarted: ${UNIT_NAME}`);

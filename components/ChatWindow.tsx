@@ -70,7 +70,7 @@ interface Props {
   showToolCallsUnfolded?: boolean;
   /** "Expand thinking blocks by default": open each thinking block on mount. */
   expandThinkingByDefault?: boolean;
-  /** omp `hideThinkingBlock`: omit thinking from the transcript. */
+  /** pi `hideThinkingBlock`: omit thinking from the transcript. */
   hideThinkingBlock?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
@@ -217,7 +217,7 @@ interface CommittedTranscriptProps {
   isCompacting: boolean;
   /** A run started outside this UI looks active from the transcript tail (see
    *  `looksLikeRunningTurn`). Without it the newest turn of a session driven by
-   *  another `omp` process would never get a live tail; the transcript-tail
+   *  another pi process would never get a live tail; the transcript-tail
    *  heuristic supplies that missing case. */
   externalRunActive: boolean;
   isNew: boolean;
@@ -259,7 +259,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
 }: CommittedTranscriptProps) {
   const { t } = useI18n();
   const { toolResultsMap, lastAnchorIdx, visibleRefIndexByMessage } = conversationMeta;
-  // omp's `branch` command accepts a user entry only; see lib/chat-fork.ts.
+  // pi's `fork` command accepts a user entry only; see lib/chat-fork.ts.
   const forkTargets = useMemo(() => resolveForkTargets(messages, entryIds), [messages, entryIds]);
 
   const attachVisibleRef = (idx: number, refIndex: number) => (el: HTMLDivElement | null) => {
@@ -342,7 +342,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
     // folds like a finished one; off restores the flat tail.
     if (hideToolActivity) return false;
     // `sessionBusy` only goes true for a run tau owns, so a session driven
-    // by another `omp` process would never get a live tail; the transcript-tail
+    // by another pi process would never get a live tail; the transcript-tail
     // heuristic supplies that missing case.
     return (sessionBusy || externalRunActive || isStreaming) && row.endIndex === messages.length && row.userIndex === lastAnchorIdx;
   };
@@ -418,7 +418,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   useEffect(() => {
     ttsRef.current = tts;
   }, [tts]);
-  // omp calls onAgentEnd in the same tick as the state update that commits the
+  // The session hook calls onAgentEnd in the same tick as the state update that commits the
   // finished reply, so reading the transcript here would still see the previous
   // one. Flag it instead and speak from the render that carries it.
   const autoplayPendingRef = useRef(false);
@@ -478,7 +478,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
 
   const [generationSpeed, setGenerationSpeed] = useState<GenerationSpeedInfo | null>(null);
   const speedSamplesRef = useRef<number[]>([]);
-  // Source of truth is omp's own get_state.tokensPerSecond (polled by the
+  // Source of truth is get_state.tokensPerSecond (pi 1.5.2 does not report it; polled by the
   // session hook), not a client-side char-count estimate. Distinct reported
   // values feed the rolling AVG; repeated polls of the same value are ignored.
   const lastPublishedSpeedRef = useRef<number | null>(null);
@@ -806,7 +806,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     });
     return { toolResultsMap, lastAnchorIdx, hasCompaction, visibleRefIndexByMessage };
   }, [messages]);
-  // Runtime tool results span committed messages plus the tool calls omp is
+  // Runtime tool results span committed messages plus the tool calls pi is
   // still executing. A committed result always wins; the live snapshot only
   // covers the window between `tool_execution_start` and the toolResult message
   // landing, which is what makes the row show a running indicator and streamed
@@ -929,9 +929,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     return null;
   }, [bashRunning, pendingBash, isCompacting, agentRunning, streamState.streamingMessage, pendingToolHeaders.length, agentPhase, activeSubagentCount, currentTodoPhase, t, tn]);
 
-  // omp's ask tool uses formDialog whenever the UI has one; askDialog is its per-question fallback.
-  // Like omp's TUI, which swaps its editor for the ask, nothing is sent while either is open:
-  // a steer would interrupt the ask ("Ask interrupted by message").
+  // tau's ask tool opens askDialog (pi sends no formDialog). Nothing is sent while either is open:
+  // the user answers the ask first.
   const askOpen = extensionDialog?.method === "askDialog" || extensionDialog?.method === "formDialog";
   const hiddenComposerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1118,7 +1117,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
             >
               <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
                 <TauLogo size={26} />
-                <span className="omp-wordmark" style={{ fontSize: 18, color: "var(--text)", fontWeight: 600, letterSpacing: "0.02em", flexShrink: 0, whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>tau</span>
+                <span className="tau-wordmark" style={{ fontSize: 18, color: "var(--text)", fontWeight: 600, letterSpacing: "0.02em", flexShrink: 0, whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>tau</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -1253,7 +1252,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
               hideThinking={hideThinkingBlock}
             />
 
-            {/* After the live turn, in submission order: what omp does not have yet. */}
+            {/* After the live turn, in submission order: what pi does not have yet. */}
             {heldMessages.map((held) => (
               <HeldMessageView key={held.id} held={held} hostLabel={hostLabel} onDelete={deleteHeldMessage} onRetry={retryHeldMessage} />
             ))}
