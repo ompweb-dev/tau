@@ -44,8 +44,6 @@ const DENIED_NAMES: ReadonlySet<string> = new Set([
   "USERPROFILE",
   "HOMEDRIVE",
   "HOMEPATH",
-  "XDG_DATA_HOME",
-  "XDG_CONFIG_HOME",
   "PI_CODING_AGENT_DIR",
   "PI_CODING_AGENT_SESSION_DIR",
   // Mirrors lib/project-command-env.ts: stripped from every spawn, so a user

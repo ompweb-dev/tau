@@ -18,8 +18,7 @@ writeFileSync(path.join(root, "dist", "index.html"), "<!doctype html><html><head
 for (const dir of ["public", "node_modules"]) symlinkSync(path.join(repo, dir), path.join(root, dir), "junction");
 
 const ENV = { HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_PI_BIN: "/nonexistent/omp" };
-// XDG_DATA_HOME could move the blobs dir out of the temp home (lib/pi/paths.ts).
-const UNSET = ["TAU_PASSWORD_HASH", "TAU_PASSWORD", "TAU_TRUSTED_HEADER_SHA256", "XDG_DATA_HOME"];
+const UNSET = ["TAU_PASSWORD_HASH", "TAU_PASSWORD", "TAU_TRUSTED_HEADER_SHA256"];
 const saved = Object.fromEntries([...UNSET, ...Object.keys(ENV)].map((name) => [name, process.env[name]]));
 for (const name of UNSET) delete process.env[name];
 Object.assign(process.env, ENV);

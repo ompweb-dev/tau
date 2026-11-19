@@ -46,8 +46,7 @@ export async function POST(req: Request) {
     }
 
     // Isolated throwaway agent dir: the spawned pi sees only this candidate
-    // config (no stored credentials) and never touches ~/.pi. XDG overrides are
-    // cleared so the redirect always wins.
+    // config (no stored credentials) and never touches ~/.pi.
     tempDir = mkdtempSync(join(tmpdir(), "tau-model-test-"));
     writeFileSync(join(tempDir, "models.json"), serializeModelsConfig(config), "utf8");
 
@@ -55,7 +54,7 @@ export async function POST(req: Request) {
     const { models } = await runIsolatedUtilityCommand<{ models: PiModel[] }>(
       { type: "get_available_models" },
       {
-        env: { PI_CODING_AGENT_DIR: tempDir, XDG_DATA_HOME: "" },
+        env: { PI_CODING_AGENT_DIR: tempDir },
         timeoutMs: TEST_TIMEOUT_MS,
         signal: req.signal,
       },
