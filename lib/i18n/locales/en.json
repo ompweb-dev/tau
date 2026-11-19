@@ -659,6 +659,7 @@
   "directoryPicker.cloneOutputLabel": "git clone output",
   "errors.session_state_timeout": "pi status query timed out. The session was kept running. Try again shortly.",
   "errors.access_denied": "Access denied",
+  "errors.agent_dir_read_only": "pi's agent directory is read-only here. Use the settings pages to change pi's configuration.",
   "errors.outbox_dispatched": "This message is already being delivered.",
   "errors.outbox_scope_changed": "This message belongs to another tau installation or sign-in configuration.",
   "heldMessage.sending": "Sending…",

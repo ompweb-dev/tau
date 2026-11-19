@@ -12,7 +12,7 @@ import { pipeline } from "node:stream/promises";
 import { getAgentDir, sessionLocalRoot } from "../pi/paths";
 import { inspectUploadTargets, parseUploadConflictStrategy, validateUploadFileNames, type UploadConflictStrategy } from "../file-upload";
 import type { WorkspaceOwner, WorkspaceUploadResult } from "../workspace-types";
-import { authorizeWorkspaceDirectory } from "./workspace-roots";
+import { authorizeWritableDirectory } from "./workspace-roots";
 import { sessionPathKey } from "../paths";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
@@ -38,8 +38,11 @@ export const STAGED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const UPLOAD_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 let nameSteps: Promise<unknown> = Promise.resolve();
-/** Retention deletes by a file's stat: a publication must not put a new file at that name between the stat and the
- * unlink. Every such step (the sweep's per-file stat-and-unlink, a publication's rename or link) runs alone here. */
+/** Retention deletes by a file's stat: an attach must not put a new file at that name between the stat and the
+ * unlink. Every such step (the sweep's per-file stat-and-unlink, an attach's link or exclusive create) runs alone here.
+ * Files-panel publication does not take it: session upload folders live under the agent directory, which it refuses.
+ * shortcut: Windows' `<tmp>/tau-local` fallback is reachable only if a workspace root contains the temp directory;
+ * lock and stamp publication again if that case matters. */
 export function withUploadNameLock<T>(step: () => Promise<T>): Promise<T> {
   const run = nameSteps.then(step, step);
   nameSteps = run.catch(() => {});
@@ -370,7 +373,7 @@ export class StagedUploads {
           throw new HostOpError(409, "upload_destination_conflict", "The upload already has another destination");
         }
         if (receipt.result) return receipt.result;
-        const canonical = await authorizeWorkspaceDirectory(directory, owner);
+        const canonical = await authorizeWritableDirectory(directory, owner);
         if (canonical !== receipt.canonical || !sameIdentity(await identity(canonical), receipt.parent)) throw uncertainPublication();
         const target = join(canonical, name);
         try {
@@ -382,7 +385,7 @@ export class StagedUploads {
         return receipt.result;
       }
       if (meta.name !== name) throw new HostOpError(409, "upload_destination_conflict", "The file name differs from the staged upload");
-      const canonical = await authorizeWorkspaceDirectory(directory, owner);
+      const canonical = await authorizeWritableDirectory(directory, owner);
       const part = this.path(id, "part");
       if (this.open.has(id) || await sizeOf(part) !== meta.size) throw new HostOpError(409, "upload_incomplete", "The upload has not finished");
       const parent = await identity(canonical);
@@ -398,14 +401,11 @@ export class StagedUploads {
         source = await open(part, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
         const sourceInfo = await source.stat({ bigint: true });
         if (!sourceInfo.isFile() || sourceInfo.size !== BigInt(meta.size)) throw new HostOpError(409, "upload_incomplete", "The upload has not finished");
-        // An unstamped inode would carry its staging age into the folder: copy instead.
-        let copying = !await stampSent(part);
-        if (!copying) {
-          try { await link(part, candidate); }
-          catch (error) {
-            if (!["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes(errno(error) ?? "")) throw error;
-            copying = true;
-          }
+        let copying = false;
+        try { await link(part, candidate); }
+        catch (error) {
+          if (!["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes(errno(error) ?? "")) throw error;
+          copying = true;
         }
         if (copying) {
           candidateHandle = await open(candidate, "wx");
@@ -434,14 +434,14 @@ export class StagedUploads {
         receipt = { directory, canonical, name, conflict, candidate, identity: owned, parent };
         meta.workspace = receipt;
         await this.saveMeta(id, meta);
-        if (await authorizeWorkspaceDirectory(directory, owner) !== canonical || !sameIdentity(await identity(canonical), parent)
+        if (await authorizeWritableDirectory(directory, owner) !== canonical || !sameIdentity(await identity(canonical), parent)
           || !sameIdentity(await identity(candidate), owned)) throw uncertainPublication();
         const inspection = inspectUploadTargets(canonical, [name]);
         if (inspection.nonReplaceable.length) throw new HostOpError(409, "upload_conflict_non_replaceable", "A directory or symbolic link cannot be replaced");
         let skipped = false;
-        if (conflict === "overwrite") await withUploadNameLock(() => rename(candidate, target));
+        if (conflict === "overwrite") await rename(candidate, target);
         else {
-          try { await withUploadNameLock(() => link(candidate, target)); }
+          try { await link(candidate, target); }
           catch (error) {
             if (errno(error) !== "EEXIST") throw error;
             if (inspectUploadTargets(canonical, [name]).nonReplaceable.length) throw new HostOpError(409, "upload_conflict_non_replaceable", "A directory or symbolic link cannot be replaced");

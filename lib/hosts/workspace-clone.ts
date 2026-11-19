@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { cloneDirectoryName, type CloneFrame, type CloneProgress } from "../git-clone";
 import { createGitEnvironment } from "../project-command-env";
 import { HostOpError } from "./link-protocol";
-import { authorizeWorkspaceDirectory, grantWorkspaceRoot } from "./workspace-roots";
+import { authorizeWritableDirectory, grantWorkspaceRoot } from "./workspace-roots";
 
 const ID = /^[A-Za-z0-9-]{1,64}$/;
 const IDLE_MS = 120_000;
@@ -74,14 +74,14 @@ export class WorkspaceClones {
     let announced = false;
     let cleanupAttempted = false;
     try {
-      job.canonical = await authorizeWorkspaceDirectory(job.parent);
+      job.canonical = await authorizeWritableDirectory(job.parent);
       job.parentIdentity = await lstat(job.canonical, { bigint: true });
       job.target = join(job.canonical, name);
       if (job.controller.signal.aborted) { ready(); announced = true; job.terminal = { type: "cancelled", path: job.target }; return; }
       try { await mkdir(job.target); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new HostOpError(409, "clone_target_exists", `Already exists: ${job.target}`); throw error; }
       job.identity = await lstat(job.target, { bigint: true });
-      if (await authorizeWorkspaceDirectory(job.parent) !== job.canonical || !same(await lstat(job.canonical, { bigint: true }), job.parentIdentity)) throw new HostOpError(409, "clone_target_changed", "The clone parent changed");
+      if (await authorizeWritableDirectory(job.parent) !== job.canonical || !same(await lstat(job.canonical, { bigint: true }), job.parentIdentity)) throw new HostOpError(409, "clone_target_changed", "The clone parent changed");
       ready(); announced = true;
       const code = await runGitClone(job.url, job.target, job.controller.signal, (text) => this.output(job, text));
       if (code === 0 && !job.controller.signal.aborted) {

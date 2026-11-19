@@ -645,6 +645,7 @@
   "directoryPicker.cloneOutputLabel": "git clone 输出",
   "errors.session_state_timeout": "pi 状态查询超时。会话仍在运行，未被停止。请稍后重试。",
   "errors.access_denied": "访问被拒绝",
+  "errors.agent_dir_read_only": "pi 的代理目录在此处为只读。请通过设置页面更改 pi 的配置。",
   "errors.outbox_dispatched": "这条消息正在投递中。",
   "errors.outbox_scope_changed": "这条消息属于另一个 tau 安装或登录配置。",
   "heldMessage.sending": "发送中…",

@@ -17,14 +17,14 @@ import { isRecord } from "../type-guards";
 import type { GitOrigin, WorkspaceFileEvent, WorkspaceFileInfo, WorkspaceFileRequest, WorkspaceOps } from "../workspace-types";
 import { HostOpError } from "./link-protocol";
 import type { OpResult } from "./session-ops";
-import { authorizeWorkspaceDirectory, getWorkspaceRoots } from "./workspace-roots";
+import { assertOutsideAgentDir, authorizeWorkspaceDirectory, authorizeWritableDirectory, getWorkspaceRoots } from "./workspace-roots";
 import { WorkspaceReads } from "./workspace-reads";
 import { WorkspaceWatches } from "./workspace-watch";
 import { getGitFileDiff, getGitStatus } from "../git-changes";
 import { resolveGithubRepo } from "../github-repo";
 import { repositoryKey } from "../git-clone";
 import { createGitEnvironment } from "../project-command-env";
-import { addWorktree, findCurrentWorktreePath, listWorktrees, removeWorktree, resolveProject, type WorktreeInfo } from "../worktree";
+import { addWorktree, findCurrentWorktreePath, getRepoRoot, listWorktrees, removeWorktree, resolveProject, type WorktreeInfo } from "../worktree";
 import { projectIdentityKey } from "../paths";
 import { invalidateSessionListCache } from "../session-reader";
 import { grantWorkspaceRoot, invalidateWorkspaceRoots } from "./workspace-roots";
@@ -216,18 +216,21 @@ export function createWorkspaceService(uploads: StagedUploads, emit: (id: string
         isTopLevel: project.isTopLevel, currentWorktreePath: findCurrentWorktreePath(worktrees, directory), worktrees };
     }),
     addWorktree: (cwd, branch) => result(() => worktreeMutation(async () => {
-      const directory = await authorizeWorkspaceDirectory(cwd);
+      const directory = await authorizeWritableDirectory(cwd);
       if (typeof branch !== "string") throw invalid();
+      const repoRoot = await getRepoRoot(directory);
+      assertOutsideAgentDir(repoRoot, `${repoRoot}-worktrees`);
       const added = await addWorktree(directory, branch);
       grantWorkspaceRoot(added.path); invalidateSessionListCache(); invalidateWorkspaceRoots();
       return added;
     })),
     removeWorktree: (cwd, requested, force) => result(() => worktreeMutation(async () => {
-      const directory = await authorizeWorkspaceDirectory(cwd);
+      const directory = await authorizeWritableDirectory(cwd);
       if (typeof requested !== "string" || !path.isAbsolute(requested) || typeof force !== "boolean") throw invalid();
       const trees = await listWorktrees(directory);
       const selected = trees.find((tree) => findCurrentWorktreePath([tree], requested) !== null);
       if (!selected || fs.lstatSync(selected.path).isSymbolicLink()) throw new HostOpError(400, "not_a_worktree", "Not a worktree of this repository");
+      assertOutsideAgentDir(await getRepoRoot(directory), selected.path);
       await removeWorktree(directory, selected.path, force);
       invalidateSessionListCache(); invalidateWorkspaceRoots();
       return null;
@@ -238,7 +241,7 @@ export function createWorkspaceService(uploads: StagedUploads, emit: (id: string
       if (!Array.isArray(names) || names.length > 1000 || !names.every((name) => typeof name === "string")) throw invalid();
       const error = validateUploadFileNames(names);
       if (error) throw new HostOpError(400, "invalid_file_name", error);
-      return inspectUploadTargets(await authorizeWorkspaceDirectory(directory, owner), names);
+      return inspectUploadTargets(await authorizeWritableDirectory(directory, owner), names);
     }),
     publishUpload: (id, directory, name, conflict, owner) => result(() => uploads.publish(id, directory, name, conflict, owner)),
     listFiles: (input, showHidden) => result(async () => {

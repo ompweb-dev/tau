@@ -237,7 +237,7 @@ export async function registeredProjectFor(cwd: string): Promise<ProjectRegistry
 // ============================================================================
 
 /** Main repo root (parent of the shared .git dir), or throws for non-git dirs */
-async function getRepoRoot(cwd: string): Promise<string> {
+export async function getRepoRoot(cwd: string): Promise<string> {
   const commonDir = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   return realPathOrSelf(dirname(toNativePath(commonDir)));
 }

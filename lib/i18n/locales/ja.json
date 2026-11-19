@@ -645,6 +645,7 @@
   "directoryPicker.cloneOutputLabel": "git clone の出力",
   "errors.session_state_timeout": "piの状態取得がタイムアウトしました。セッションは停止せず維持しています。しばらくしてから再試行してください。",
   "errors.access_denied": "アクセスが拒否されました",
+  "errors.agent_dir_read_only": "pi のエージェントディレクトリはここでは読み取り専用です。pi の設定は設定画面から変更してください。",
   "errors.outbox_dispatched": "このメッセージはすでに配信中です。",
   "errors.outbox_scope_changed": "このメッセージは別の tau インストールまたはサインイン設定に属しています。",
   "heldMessage.sending": "送信中…",

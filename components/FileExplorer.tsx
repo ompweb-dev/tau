@@ -18,6 +18,7 @@ import {
 import { getFileIcon } from "./FileIcons";
 import { Tooltip } from "./ui/primitives";
 import { translate, useI18n } from "@/lib/i18n";
+import { formatApiError } from "@/lib/i18n/api-error";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   encodeFilePathForApi,
@@ -98,6 +99,7 @@ interface UploadResponse {
   conflicts?: string[];
   nonReplaceable?: string[];
   error?: string;
+  code?: string;
 }
 
 interface UploadSummary {
@@ -913,7 +915,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             signal: operation.controller.signal,
           });
           const data = await response.json() as UploadResponse;
-          if (!response.ok) throw new Error(data.error ?? translate("fileExplorer.uploadFailed", { status: response.status }));
+          if (!response.ok) throw new Error(data.error || data.code ? formatApiError(data) : translate("fileExplorer.uploadFailed", { status: response.status }));
           summary.uploaded.push(...data.uploaded ?? []);
           summary.skipped.push(...data.skipped ?? []);
           summary.errors.push(...data.errors ?? []);
@@ -957,7 +959,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       });
       const data = await response.json() as UploadResponse;
       if (!current() || operation.controller.signal.aborted) return;
-      if (!response.ok) throw new Error(data.error ?? translate("fileExplorer.uploadCheckFailed", { status: response.status }));
+      if (!response.ok) throw new Error(data.error || data.code ? formatApiError(data) : translate("fileExplorer.uploadCheckFailed", { status: response.status }));
       if (data.conflicts?.length) {
         setPendingConflict({ operation, conflicts: data.conflicts, nonReplaceable: data.nonReplaceable ?? [] });
         return;

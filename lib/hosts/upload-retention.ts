@@ -62,7 +62,7 @@ async function sweepDir(dir: string, cutoff: () => number | null): Promise<boole
   for (const name of names) {
     const file = join(dir, name);
     try {
-      // Locked from stat to unlink: a publication cannot replace this name with a fresh file in between.
+      // Locked from stat to unlink: an attach cannot put a fresh file at this name in between.
       const stop = await withUploadNameLock(async () => {
         const info = await lstat(file);
         if (!info.isFile()) return false;

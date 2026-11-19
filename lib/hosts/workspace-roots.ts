@@ -1,6 +1,6 @@
-import { realpathSync, readdirSync } from "node:fs";
+import { realpathSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getConfigAgentRoots, isFilePathAllowed, normalizeSlashes } from "../file-access";
 import { authorizeFileAccess } from "../file-authorization";
 import { filePathApiSegments } from "../file-paths";
@@ -10,6 +10,7 @@ import { HostOpError } from "./link-protocol";
 import type { WorkspaceOwner } from "../workspace-types";
 import { resolveProject } from "../worktree";
 import { isValidSessionId } from "../session-file-references-core";
+import { getAgentDir, getConfigRoot } from "../pi/paths";
 
 const grants = new Set<string>();
 let cached: { roots: Set<string>; until: number } | null = null;
@@ -63,4 +64,42 @@ export async function authorizeWorkspaceDirectory(directory: string, owner?: Wor
   if (!checked.ok) throw new HostOpError(checked.status, checked.code, checked.error);
   if (!checked.stat.isDirectory()) throw new HostOpError(400, "not_a_directory", "The destination is not a directory");
   return realpathSync(checked.filePath);
+}
+
+const identityOf = (path: string) => { const stat = statSync(path, { bigint: true }); return `${stat.dev}:${stat.ino}`; };
+
+/**
+ * The Files panel and other user-requested workspace writes never touch pi's agent directory or `~/.pi`: refuse when
+ * any target is that directory or below it. Each target's nearest existing ancestor is canonicalized (symlinks, `..`)
+ * and its ancestors compared by device and inode, so case or bind-mount aliases of the agent directory match too.
+ * Internal writes (composer attachments into a session's `local/uploads/`) do not come through here.
+ */
+export function assertOutsideAgentDir(...targets: string[]): void {
+  const protectedIds = new Set<string>();
+  for (const dir of [getAgentDir(), getConfigRoot()]) {
+    try { protectedIds.add(identityOf(realpathSync(dir))); } catch { /* A missing directory holds nothing to protect. */ }
+  }
+  if (!protectedIds.size) return;
+  for (const target of targets) {
+    let existing = resolve(target);
+    for (;;) {
+      try { existing = realpathSync(existing); break; }
+      catch {
+        const parent = dirname(existing);
+        if (parent === existing) throw new HostOpError(403, "agent_dir_read_only", "pi's agent directory is read-only here");
+        existing = parent;
+      }
+    }
+    for (let dir = existing; ; dir = dirname(dir)) {
+      if (protectedIds.has(identityOf(dir))) throw new HostOpError(403, "agent_dir_read_only", "pi's agent directory is read-only here");
+      if (dirname(dir) === dir) break;
+    }
+  }
+}
+
+/** `authorizeWorkspaceDirectory` for a directory the request will write into. */
+export async function authorizeWritableDirectory(directory: string, owner?: WorkspaceOwner): Promise<string> {
+  const canonical = await authorizeWorkspaceDirectory(directory, owner);
+  assertOutsideAgentDir(canonical);
+  return canonical;
 }
