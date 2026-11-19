@@ -11,8 +11,8 @@ import {
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 
 // GET /api/skills?cwd=<path>
-// Lists what omp resolves (`omp skill list --json`), falling back to a scan
-// of omp's skill roots on binaries that predate the command. Each skill
+// Lists the skills a pi session in cwd loads (discoverSkills scans the
+// directories pi reads, and `pi list` for package skills). Each skill
 // carries `togglable`, the same check PATCH applies. Without a cwd: the user
 // level only.
 export async function GET(req: Request) {
@@ -48,9 +48,8 @@ export async function PATCH(req: Request) {
     }
     if (!existsSync(filePath)) return Response.json({ error: "file not found", code: "file_not_found" }, { status: 404 });
     // Every user-owned root the scanner reads must be writable here, or skills
-    // in the compat dirs (~/.agents/skills — where the app's own global
-    // installs land, ~/.claude/skills, ~/.codex/skills, managed-skills) could
-    // be listed but never toggled. Session cwds cover the project-scope roots;
+    // in ~/.agents/skills (where the app's own global installs land) could be
+    // listed but never toggled. Session cwds cover the project-scope roots;
     // an optional cwd (already an allowed root) adds the project walk-up roots.
     // Plugin/registry skills stay read-only (see getSkillToggleRoots).
     const allowedRoots = await getSkillToggleRoots(cwd);
