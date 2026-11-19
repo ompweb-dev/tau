@@ -37,7 +37,7 @@ Options:
   -m, --mode <mode>       Execution mode: "start" or "dev" (default "start", Windows only)
       --no-autostart      Disable automatic startup on logon
       --start             Start tray manager immediately after installation (Windows)
-      --clean-config      Also delete ~/.omp/agent/web-service.json on uninstallation
+      --clean-config      Also delete ~/.pi/agent/web-service.json on uninstallation
       --json              Output status as JSON
   -h, --help              Show this help
   -v, --version           Show version

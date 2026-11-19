@@ -1,7 +1,7 @@
 "use strict";
 
 // Shared systemd EnvironmentFile helpers for the tau Linux service.
-// Runtime settings live in ~/.omp/agent/web-service.env so changing the
+// Runtime settings live in ~/.pi/agent/web-service.env so changing the
 // port, bind address, or password does not require regenerating the unit.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -13,7 +13,7 @@ const path = require("node:path");
 
 function getServiceEnvPath(home = os.homedir()) {
   const configuredDir = process.env.PI_CODING_AGENT_DIR?.replace(/^~(?=\/|$)/, home);
-  return path.join(configuredDir || path.join(home, ".omp", "agent"), "web-service.env");
+  return path.join(configuredDir || path.join(home, ".pi", "agent"), "web-service.env");
 }
 
 // Escape a value for a double-quoted systemd env-file assignment.

@@ -91,7 +91,7 @@ if (Test-Path $startupLnk) {
 # -----------------------------------------------------------------------------
 # 3. Clean Configuration (Optional)
 # -----------------------------------------------------------------------------
-$AgentDir = Join-Path $env:USERPROFILE ".omp\agent"
+$AgentDir = Join-Path $env:USERPROFILE ".pi\agent"
 $ConfigPath = Join-Path $AgentDir "web-service.json"
 
 if ($CleanConfig -and (Test-Path $ConfigPath)) {

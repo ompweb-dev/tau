@@ -93,7 +93,7 @@ async function workerRuntime(d: HostUpdateDescriptor): Promise<WorkerRuntime> {
 
 
 export function hostUpdateRoot(): string {
-  const agent = process.env.PI_CODING_AGENT_DIR ? resolve(process.env.PI_CODING_AGENT_DIR) : join(homedir(), process.env.PI_CONFIG_DIR || ".omp", "agent");
+  const agent = process.env.PI_CODING_AGENT_DIR ? resolve(process.env.PI_CODING_AGENT_DIR) : join(homedir(), process.env.PI_CONFIG_DIR || ".pi", "agent");
   return join(agent, "tau", "host-update");
 }
 export function assertOwnedPath(path: string, directory = false): void {

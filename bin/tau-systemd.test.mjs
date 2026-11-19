@@ -206,7 +206,7 @@ test("install creates the env file and unit with LAN settings", { skip: process.
     });
     assert.equal(result.status, 0, result.stderr);
 
-    const envPath = path.join(home, ".omp", "agent", "web-service.env");
+    const envPath = path.join(home, ".pi", "agent", "web-service.env");
     const unitPath = path.join(home, ".config", "systemd", "user", "tau.service");
     const written = parseServiceEnv(readFileSync(envPath, "utf8"));
     // The installer hashes TAU_PASSWORD: only the hash may reach the env
@@ -264,7 +264,7 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
     });
     assert.equal(ok.status, 0, ok.stderr);
     assert.equal(
-      parseServiceEnv(readFileSync(path.join(home, ".omp", "agent", "web-service.env"), "utf8")).TAU_PASSWORD_HASH,
+      parseServiceEnv(readFileSync(path.join(home, ".pi", "agent", "web-service.env"), "utf8")).TAU_PASSWORD_HASH,
       provided,
     );
 

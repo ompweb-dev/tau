@@ -146,8 +146,8 @@ export async function inspectInstalledHostSupervisor(options: SupervisorInspecti
     : env;
   const run = options.run ?? ((command, args) => runNative(command, args, commandEnv));
   const pathApi = platform === "win32" ? win32 : { basename, isAbsolute, join, relative, resolve, sep };
-  const agentDir = pathApi.resolve(env.PI_CODING_AGENT_DIR ?? pathApi.join(home, ".omp", "agent"));
-  const defaultAgentDir = pathApi.resolve(pathApi.join(home, ".omp", "agent"));
+  const agentDir = pathApi.resolve(env.PI_CODING_AGENT_DIR ?? pathApi.join(home, ".pi", "agent"));
+  const defaultAgentDir = pathApi.resolve(pathApi.join(home, ".pi", "agent"));
   const installDir = pathApi.resolve(env.TAU_PACKAGE_DIR ?? process.cwd());
   const inside = (value: string, directory: string) => {
     if (!pathApi.isAbsolute(value)) return false;

@@ -112,7 +112,7 @@ export class WorkspaceClones {
   private async cleanup(job: Job): Promise<void> {
     if (!await this.owns(job)) throw new HostOpError(409, "clone_cleanup_failed", `Could not safely remove ${job.target}: its identity changed`);
     // Capture before deleting: a replacement racing the old pathname is preserved, not recursively removed.
-    const quarantine = await mkdtemp(join(job.canonical, ".omp-clone-cleanup-"));
+    const quarantine = await mkdtemp(join(job.canonical, ".tau-clone-cleanup-"));
     const quarantineIdentity = await lstat(quarantine, { bigint: true });
     const captured = join(quarantine, "clone");
     try { await rename(job.target, captured); }

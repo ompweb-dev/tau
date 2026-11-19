@@ -435,7 +435,7 @@ function sanitizeHostname(val, fallback = "127.0.0.1") {
 // (the source the tray edits), then the Windows-style JSON config, then
 // defaults.
 function readTrayConfig(overrides = {}, env = process.env, home = os.homedir()) {
-  const agentDir = (env.PI_CODING_AGENT_DIR ?? path.join(home, ".omp", "agent")).replace(/^~(?=\/|$)/, home);
+  const agentDir = (env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent")).replace(/^~(?=\/|$)/, home);
   const configFile = path.join(agentDir, "web-service.json");
   const serviceEnv = readServiceEnv(path.join(agentDir, "web-service.env"));
   let jsonConfig = {};

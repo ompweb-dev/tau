@@ -55,7 +55,7 @@ test("sanitizeHostname trims strings and rejects empties", () => {
 test("readTrayConfig prefers CLI overrides over the service config file", () => {
   const home = mkdtempSync(path.join(tmpdir(), "tau-tray-"));
   try {
-    const agentDir = path.join(home, ".omp", "agent");
+    const agentDir = path.join(home, ".pi", "agent");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(path.join(agentDir, "web-service.json"), JSON.stringify({ port: 40001, hostname: "0.0.0.0" }));
 
@@ -265,7 +265,7 @@ test("writeServiceEnv writes atomically with mode 600 and readServiceEnv round-t
 test("readTrayConfig prefers the env file over the JSON config", () => {
   const home = mkdtempSync(path.join(tmpdir(), "tau-tray-"));
   try {
-    const agentDir = path.join(home, ".omp", "agent");
+    const agentDir = path.join(home, ".pi", "agent");
     mkdirSync(agentDir, { recursive: true });
     writeFileSync(path.join(agentDir, "web-service.json"), JSON.stringify({ port: 40001, hostname: "0.0.0.0" }));
     writeFileSync(path.join(agentDir, "web-service.env"), serializeServiceEnv({ PORT: "40200", TAU_HOSTNAME: "127.0.0.1" }));

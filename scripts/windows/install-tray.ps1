@@ -133,7 +133,7 @@ Ensure-IconFile
 # -----------------------------------------------------------------------------
 # 2. Initialize Service Configuration
 # -----------------------------------------------------------------------------
-$AgentDir = Join-Path $env:USERPROFILE ".omp\agent"
+$AgentDir = Join-Path $env:USERPROFILE ".pi\agent"
 if (!(Test-Path $AgentDir)) {
     New-Item -Path $AgentDir -ItemType Directory -Force | Out-Null
 }

@@ -16,7 +16,7 @@
 .PARAMETER OpenBrowser
     Switch to open the default web browser once the server is responsive.
 .PARAMETER ConfigPath
-    Path to configuration JSON file (default ~/.omp/agent/web-service.json).
+    Path to configuration JSON file (default ~/.pi/agent/web-service.json).
 #>
 
 param(
@@ -25,7 +25,7 @@ param(
     [string]$Mode = "",
     [switch]$Startup,
     [switch]$OpenBrowser,
-    [string]$ConfigPath = "$env:USERPROFILE\.omp\agent\web-service.json"
+    [string]$ConfigPath = "$env:USERPROFILE\.pi\agent\web-service.json"
 )
 
 # Load required .NET Windows Forms and Drawing assemblies
@@ -126,7 +126,7 @@ if (!$createdNew) {
 # -----------------------------------------------------------------------------
 # 3. Logging & Rotation
 # -----------------------------------------------------------------------------
-$LogDir = Join-Path $env:USERPROFILE ".omp\agent\logs"
+$LogDir = Join-Path $env:USERPROFILE ".pi\agent\logs"
 if (!(Test-Path $LogDir)) {
     New-Item -Path $LogDir -ItemType Directory -Force | Out-Null
 }
@@ -396,7 +396,7 @@ function Set-AutostartShortcut([bool]$enable) {
 
     # Update config file
     try {
-        $agentDir = Join-Path $env:USERPROFILE ".omp\agent"
+        $agentDir = Join-Path $env:USERPROFILE ".pi\agent"
         if (!(Test-Path $agentDir)) { New-Item -Path $agentDir -ItemType Directory -Force | Out-Null }
         $currentCfg = @{
             port = $EffectivePort
@@ -482,7 +482,7 @@ $contextMenu.Items.Add($script:MenuItemRestart) | Out-Null
 
 # Item 6: Toggle Start/Stop Server
 $script:MenuItemToggle = New-Object System.Windows.Forms.ToolStripMenuItem
-$script:MenuItemToggle.Text = "Stop Server (omp runs keep going)"
+$script:MenuItemToggle.Text = "Stop Server (pi runs keep going)"
 $script:MenuItemToggle.add_Click({
     if ($script:State -eq "Running" -or $script:State -eq "Starting") {
         Stop-WebServer
@@ -596,7 +596,7 @@ function Update-TrayUI {
     $script:NotifyIcon.Text = $tipText
 
     if ($script:State -eq "Running" -or $script:State -eq "Starting") {
-        $script:MenuItemToggle.Text = "Stop Server (omp runs keep going)"
+        $script:MenuItemToggle.Text = "Stop Server (pi runs keep going)"
         $script:MenuItemRestart.Enabled = $true
     } else {
         $script:MenuItemToggle.Text = "Start Server"

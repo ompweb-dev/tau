@@ -62,8 +62,8 @@ function versionSummary(pkg: PluginPackageInfo, t: (key: string, vars?: Record<s
 
 function installLocation(scope: PluginScope, cwd: string | null): string {
   return scope === "project" && cwd
-    ? `${shortenPath(cwd)}/.omp`
-    : "~/.omp/plugins";
+    ? `${shortenPath(cwd)}/.pi`
+    : "~/.pi/agent";
 }
 
 function findInstalledPackage(

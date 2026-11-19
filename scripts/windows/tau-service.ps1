@@ -8,7 +8,7 @@ param(
     [int]$Port = 0,
     [string]$Hostname = "",
     [string]$Mode = "",
-    [string]$ConfigPath = "$env:USERPROFILE\.omp\agent\web-service.json"
+    [string]$ConfigPath = "$env:USERPROFILE\.pi\agent\web-service.json"
 )
 
 $RepoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
@@ -54,7 +54,7 @@ try { $script:AppMutex = New-Object System.Threading.Mutex($true, $MutexName, [r
 if (!$createdNew) { Exit 0 }
 
 # Logging
-$LogDir = Join-Path $env:USERPROFILE ".omp\agent\logs"
+$LogDir = Join-Path $env:USERPROFILE ".pi\agent\logs"
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
 $LogFile = Join-Path $LogDir "tau-service.log"
 $OldLogFile = Join-Path $LogDir "tau-service.old.log"

@@ -30,7 +30,7 @@ $createdNew = $false
 try { $script:AppMutex = New-Object System.Threading.Mutex($true, "Local\TauHostDaemon_Instance_Mutex", [ref]$createdNew) } catch { $createdNew = $true }
 if (!$createdNew) { Exit 0 }
 
-$LogDir = Join-Path $env:USERPROFILE ".omp\agent\logs"
+$LogDir = Join-Path $env:USERPROFILE ".pi\agent\logs"
 if (!(Test-Path $LogDir)) { New-Item -Path $LogDir -ItemType Directory -Force | Out-Null }
 $LogFile = Join-Path $LogDir "tau-host.log"
 if ((Test-Path $LogFile) -and ((Get-Item $LogFile).Length -gt 5MB)) {

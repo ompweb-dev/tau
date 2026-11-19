@@ -388,7 +388,7 @@ export class StagedUploads {
       const parent = await identity(canonical);
       const target = join(canonical, name);
       // shortcut: a crash before the prepared receipt can leave a private sibling; add preparation journaling if automatic crash cleanup is required.
-      const candidate = join(canonical, `.omp-upload-${randomUUID()}`);
+      const candidate = join(canonical, `.tau-upload-${randomUUID()}`);
       let owned: FileIdentity | undefined;
       let source: FileHandle | undefined, candidateHandle: FileHandle | undefined, parentHandle: FileHandle | undefined;
       try {

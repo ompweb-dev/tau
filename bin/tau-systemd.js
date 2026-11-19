@@ -10,7 +10,7 @@ require("./node-version").exitIfUnsupportedNode();
 //   tau-systemd [install|uninstall|start|stop|restart|status|open]
 //   npx --yes --package=@ompweb-dev/tau@latest tau-systemd install
 //
-// `install` creates ~/.omp/agent/web-service.env. The file is deliberately
+// `install` creates ~/.pi/agent/web-service.env. The file is deliberately
 // separate from the unit so port, hostname, password, and omp path can be
 // edited without reinstalling the service.
 
@@ -400,9 +400,6 @@ function uninstall(options = {}) {
   fs.rmSync(HOST_UNIT_PATH, { force: true });
   systemctl(["daemon-reload"], { ignoreFailure: true });
   if (options.cleanConfig) {
-    const legacyConfig = path.join(HOME, ".omp", "agent", "web-service.json");
-    fs.rmSync(legacyConfig, { force: true });
-    console.log(`removed:   ${legacyConfig}`);
     fs.rmSync(ENV_PATH, { force: true });
     console.log(`removed:   ${ENV_PATH}`);
   }
