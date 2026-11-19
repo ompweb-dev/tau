@@ -99,7 +99,7 @@ test("hot reload of a shared worker dependency keeps the dev server listening", 
   await ready();
   const origin = `http://127.0.0.1:${port}`;
   assert.equal((await fetch(origin)).status, 200);
-  appendFileSync(path.join(source, "lib", "hosts", "link-protocol.ts"), '\nconsole.info("hot-reload-worker-probe");\n');
+  appendFileSync(path.join(source, "lib", "event-stream-protocol.ts"), '\nconsole.info("hot-reload-worker-probe");\n');
   await ready();
   assert.equal((await fetch(origin)).status, 200);
   assert.match(await (await fetch(`${origin}/event-stream-worker.js`)).text(), /hot-reload-worker-probe/);
