@@ -4,18 +4,15 @@ import * as path from "path";
 
 /**
  * Directory resolution mirroring @earendil-works/pi-coding-agent (config.ts & session-manager.ts).
- * Covered: PI_CODING_AGENT_DIR override and PI_CONFIG_DIR rename.
+ * Covered: the PI_CODING_AGENT_DIR override.
  */
 
-const CONFIG_DIR_NAME = ".pi";
+/** pi's config directory name, in the home directory and in a project. */
+export const CONFIG_DIR_NAME = ".pi";
 
-export function getConfigDirName(): string {
-  return process.env.PI_CONFIG_DIR || CONFIG_DIR_NAME;
-}
-
-/** Config root: ~/.pi (plus PI_CONFIG_DIR rename). */
+/** Config root: ~/.pi. */
 export function getConfigRoot(): string {
-  return path.join(homedir(), getConfigDirName());
+  return path.join(homedir(), CONFIG_DIR_NAME);
 }
 
 /** The agent state directory (~/.pi/agent). PI_CODING_AGENT_DIR overrides it. */

@@ -88,8 +88,7 @@ pi speaks JSON lines on stdin/stdout: commands answered by `{type:"response", id
 
 ### `lib/pi/` (pi foundations)
 
-- `paths.ts`: pi's directory rules. Agent dir `~/.pi/agent` (`PI_CODING_AGENT_DIR` overrides it, `PI_CONFIG_DIR`
-  renames `.pi`); sessions `<agent dir>/sessions/--<cwd with / \ : as ->--/` (`getSessionDirNameForCwd`); archive
+- `paths.ts`: pi's directory rules. Agent dir `~/.pi/agent` (`PI_CODING_AGENT_DIR` overrides it); sessions `<agent dir>/sessions/--<cwd with / \ : as ->--/` (`getSessionDirNameForCwd`); archive
   `<agent dir>/../archive/sessions`; `settings.json`, `models.json`; `getTauDataDir()` (`<agent dir>/tau`); `sessionLocalRoot`
   (a session's local directory, where uploads land: `<session file without .jsonl>/local`, Windows long paths
   `<tmp>/tau-local/<id>`).
@@ -284,7 +283,7 @@ The table is static imports, not a runtime glob, so `bun build --compile` bundle
 `TAU_PASSWORD`, `TAU_TRUSTED_HEADER` / `TAU_TRUSTED_HEADER_SECRET` / `TAU_TRUSTED_HEADER_SHA256`, `TAU_SESSION_COOKIE`,
 `TAU_SESSION_MAX_AGE_SECONDS`, `TAU_SECRET_ENV_VARS`, `TAU_DISABLE_AUTOUPDATE`, `TAU_DISCONNECT_DESTROY_MS`,
 `TAU_STT_ENDPOINT` / `TAU_STT_KEY` / `TAU_STT_MODEL`, `TAU_PUBLIC_*` (inlined into the browser bundle). pi's own:
-`PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`. `lib/project-command-env.ts` strips tau's secrets, `PORT` and
+`PI_CODING_AGENT_DIR`. `lib/project-command-env.ts` strips tau's secrets, `PORT` and
 `NODE_ENV` from every child environment.
 
 ### Tests (`npm test`, or `bun test --parallel <files>`)

@@ -44,8 +44,8 @@ merged unchanged.
   `TAU_PI_BIN` (the `pi` binary; default `pi` on `PATH`), `TAU_PASSWORD_HASH`,
   `TAU_TRUSTED_HEADER_SHA256`, `TAU_STT_*`, `TAU_DISABLE_AUTOUPDATE`.
   `TAU_PASSWORD` is accepted only as a migration step (see the security contract).
-- `PI_CODING_AGENT_DIR` (default `~/.pi/agent`) and `PI_CONFIG_DIR` are respected
-  because they identify the user's existing pi state. tau's own state lives in
+- `PI_CODING_AGENT_DIR` (default `~/.pi/agent`) is respected
+  because it identifies the user's existing pi state. tau's own state lives in
   `<agent dir>/tau/` and `<agent dir>/tau-settings.json`.
 - The UI displays its own version separately from the detected pi version; those
   versions may legitimately differ.

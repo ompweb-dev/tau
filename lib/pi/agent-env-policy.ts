@@ -47,7 +47,7 @@ const DENIED_NAMES: ReadonlySet<string> = new Set([
   "XDG_DATA_HOME",
   "XDG_CONFIG_HOME",
   "PI_CODING_AGENT_DIR",
-  "PI_CONFIG_DIR",
+  "PI_CODING_AGENT_SESSION_DIR",
   // Mirrors lib/project-command-env.ts: stripped from every spawn, so a user
   // override would be discarded without a word.
   "PORT",

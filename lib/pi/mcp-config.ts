@@ -1,7 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
-import { getAgentDir, getConfigDirName } from "./paths";
+import { CONFIG_DIR_NAME, getAgentDir } from "./paths";
 import { isRecord } from "../type-guards";
 
 const MAX_MCP_CONFIG_BYTES = 512 * 1024;
@@ -65,7 +65,7 @@ function discoverMcpConfigPaths(root: string): string[] {
   try {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       // pi's own project file is the project configuration, not another app's.
-      if (!entry.isDirectory() || !entry.name.startsWith(".") || entry.name === getConfigDirName()) continue;
+      if (!entry.isDirectory() || !entry.name.startsWith(".") || entry.name === CONFIG_DIR_NAME) continue;
       const directory = join(root, entry.name);
       paths.add(join(directory, "mcp.json"));
       paths.add(join(directory, "config.json"));
@@ -127,7 +127,7 @@ function stringRecord(value: unknown, name: string): void {
 /** The project file pi reads for a trusted project: `<cwd>/.pi/mcp.json` (pi uses the session cwd, not the git top level). */
 export function resolveMcpConfig(cwd: string): { root: string; path: string } {
   const root = resolve(cwd);
-  return { root, path: join(root, getConfigDirName(), "mcp.json") };
+  return { root, path: join(root, CONFIG_DIR_NAME, "mcp.json") };
 }
 
 export function readMcpConfig(cwd: string): { root: string; path: string; config: McpFile; exists: boolean } {

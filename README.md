@@ -123,7 +123,6 @@ ones included, runs under that daemon, so restarting the web server does not sto
 | `TAU_TRUSTED_HEADER_SHA256` | SHA-256 hex digest of a secret that a trusted reverse proxy sends in `X-Tau-Auth` (see [below](#skipping-the-password-behind-a-trusted-proxy)). |
 | `TAU_PI_BIN` | Path of the `pi` binary to run instead of the one on `PATH`. |
 | `PI_CODING_AGENT_DIR` | pi's agent directory (default `~/.pi/agent`); tau reads and writes the same one. |
-| `PI_CONFIG_DIR` | Name of pi's config directory in your home (default `.pi`). |
 | `TAU_NAME` | Display name in the browser title. `url`, `host` or `domain` derive it from the request's host name. |
 | `TAU_DISABLE_AUTOUPDATE` | `1`, `true`, `yes` or `on`: refuse in-app updates of the server and hosts. |
 | `TAU_STT_ENDPOINT`, `TAU_STT_KEY`, `TAU_STT_MODEL` | Voice transcription: the endpoint receives a multipart `file` (and `model`), with `TAU_STT_KEY` as a bearer token. Without an endpoint, voice input is off. |
@@ -366,7 +365,7 @@ tau uses pi's own files and adds a few of its own:
 | `~/.pi/agent/tau/` | tau state: host registry (`hosts.json`), the daemon's links (`host.json`), cluster (`pools.json`), sign-in key, notifications, message outbox, uploads. |
 | `~/.pi/agent/web-service.env` | Service settings written by `tau-systemd` (`web-service.json` on Windows). |
 
-All paths follow `PI_CODING_AGENT_DIR` and `PI_CONFIG_DIR`.
+All paths follow `PI_CODING_AGENT_DIR`.
 
 **Provider logins are per host.** tau never reads `auth.json` itself. Logins (OAuth and API keys) run inside pi through
 tau's companion extension (the `/tau_auth` command of `lib/pi/tau-extension.ts`), on the selected host's daemon; raw
@@ -375,7 +374,7 @@ keys and tokens stay with pi on that host. Choose the host in **Settings → API
 **Agent environment variables** (**Settings → System**) are added to every pi process started afterwards. Names that
 would redirect pi's state or tau's plumbing are refused: `PATH`, `PATHEXT`, `COMSPEC`, `SYSTEMROOT`, `WINDIR`,
 `NODE_OPTIONS`, `HOME`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`, `XDG_DATA_HOME`, `XDG_CONFIG_HOME`,
-`PI_CODING_AGENT_DIR`, `PI_CONFIG_DIR`, `PI_PROFILE`, `PORT`, `NODE_ENV`, and anything starting with `TAU_` or `_`.
+`PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `PORT`, `NODE_ENV`, and anything starting with `TAU_` or `_`.
 
 ## Security notes
 

@@ -104,7 +104,6 @@ tau systemd ... | tau launchd ...   Forward to tau-systemd / tau-launchd
 | `TAU_TRUSTED_HEADER_SHA256` | 信頼できるリバースプロキシが `X-Tau-Auth` で送るシークレットの SHA-256 ダイジェスト（16 進）。[下記](#信頼できるプロキシでのパスワード省略)を参照。 |
 | `TAU_PI_BIN` | `PATH` 上のものの代わりに実行する `pi` のパス。 |
 | `PI_CODING_AGENT_DIR` | pi のエージェントディレクトリ（既定 `~/.pi/agent`）。tau も同じものを読み書きします。 |
-| `PI_CONFIG_DIR` | ホーム内の pi 設定ディレクトリ名（既定 `.pi`）。 |
 | `TAU_NAME` | ブラウザのタイトルに出す表示名。`url`、`host`、`domain` ならリクエストのホスト名から作ります。 |
 | `TAU_DISABLE_AUTOUPDATE` | `1`、`true`、`yes`、`on`: サーバーとホストのアプリ内更新を拒否します。 |
 | `TAU_STT_ENDPOINT`、`TAU_STT_KEY`、`TAU_STT_MODEL` | 音声の文字起こし。エンドポイントはマルチパートの `file`（と `model`）を受け取り、`TAU_STT_KEY` は Bearer トークンとして送られます。エンドポイントがなければ音声入力はオフです。 |
@@ -301,11 +300,11 @@ tau は pi 自身のファイルを使い、いくつか独自のファイルを
 | `~/.pi/agent/tau/` | tau の状態: ホスト登録（`hosts.json`）、デーモンのリンク（`host.json`）、クラスター（`pools.json`）、サインイン鍵、通知、メッセージのアウトボックス、アップロード。 |
 | `~/.pi/agent/web-service.env` | `tau-systemd` が書くサービス設定（Windows では `web-service.json`）。 |
 
-すべてのパスは `PI_CODING_AGENT_DIR` と `PI_CONFIG_DIR` に従います。
+すべてのパスは `PI_CODING_AGENT_DIR` に従います。
 
 **プロバイダーのログインはホストごとです。** tau 自身は `auth.json` を読みません。ログイン（OAuth と API キー）は、選択したホストのデーモン上で、tau のコンパニオン拡張（`lib/pi/tau-extension.ts` の `/tau_auth` コマンド）を通して pi の中で行われます。生のキーやトークンはそのホストの pi にとどまります。そのホストでログインするには、**Settings → API Keys & Providers** でホストを選んでください。
 
-**エージェント環境変数**（**Settings → System**）は、保存後に起動するすべての pi プロセスに追加されます。pi の状態や tau の内部を変えてしまう名前は拒否されます: `PATH`、`PATHEXT`、`COMSPEC`、`SYSTEMROOT`、`WINDIR`、`NODE_OPTIONS`、`HOME`、`USERPROFILE`、`HOMEDRIVE`、`HOMEPATH`、`XDG_DATA_HOME`、`XDG_CONFIG_HOME`、`PI_CODING_AGENT_DIR`、`PI_CONFIG_DIR`、`PI_PROFILE`、`PORT`、`NODE_ENV`、および `TAU_` または `_` で始まるすべての名前。
+**エージェント環境変数**（**Settings → System**）は、保存後に起動するすべての pi プロセスに追加されます。pi の状態や tau の内部を変えてしまう名前は拒否されます: `PATH`、`PATHEXT`、`COMSPEC`、`SYSTEMROOT`、`WINDIR`、`NODE_OPTIONS`、`HOME`、`USERPROFILE`、`HOMEDRIVE`、`HOMEPATH`、`XDG_DATA_HOME`、`XDG_CONFIG_HOME`、`PI_CODING_AGENT_DIR`、`PI_CODING_AGENT_SESSION_DIR`、`PORT`、`NODE_ENV`、および `TAU_` または `_` で始まるすべての名前。
 
 ## セキュリティに関する注意
 

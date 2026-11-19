@@ -104,7 +104,6 @@ tau systemd ... | tau launchd ...   Forward to tau-systemd / tau-launchd
 | `TAU_TRUSTED_HEADER_SHA256` | 受信任的反向代理在 `X-Tau-Auth` 中傳送的密鑰的 SHA-256 摘要（十六進位），見[下文](#在受信任的代理後略過密碼)。 |
 | `TAU_PI_BIN` | 用來取代 `PATH` 上那個 `pi` 的執行檔路徑。 |
 | `PI_CODING_AGENT_DIR` | pi 的 agent 目錄（預設 `~/.pi/agent`）；tau 讀寫同一個目錄。 |
-| `PI_CONFIG_DIR` | 家目錄中 pi 設定目錄的名稱（預設 `.pi`）。 |
 | `TAU_NAME` | 瀏覽器標題中的顯示名稱。`url`、`host` 或 `domain` 表示取自請求的主機名稱。 |
 | `TAU_DISABLE_AUTOUPDATE` | `1`、`true`、`yes` 或 `on`：拒絕伺服器和主機的應用程式內更新。 |
 | `TAU_STT_ENDPOINT`、`TAU_STT_KEY`、`TAU_STT_MODEL` | 語音轉寫：端點接收 multipart 的 `file`（和 `model`），`TAU_STT_KEY` 作為 Bearer 權杖傳送。未設定端點時語音輸入關閉。 |
@@ -301,11 +300,11 @@ tau 使用 pi 自己的檔案，並增加幾個自己的檔案：
 | `~/.pi/agent/tau/` | tau 狀態：主機登錄表（`hosts.json`）、常駐程式的連結（`host.json`）、叢集（`pools.json`）、登入簽章金鑰、通知、訊息寄件匣、上傳。 |
 | `~/.pi/agent/web-service.env` | `tau-systemd` 寫入的服務設定（Windows 上為 `web-service.json`）。 |
 
-所有路徑都遵循 `PI_CODING_AGENT_DIR` 和 `PI_CONFIG_DIR`。
+所有路徑都遵循 `PI_CODING_AGENT_DIR`。
 
 **供應商登入依主機分別保存。** tau 自己從不讀取 `auth.json`。登入（OAuth 和 API 金鑰）在所選主機的常駐程式上、透過 tau 的隨附擴充功能（`lib/pi/tau-extension.ts` 中的 `/tau_auth` 指令）在 pi 內部完成；原始金鑰和權杖留在該主機的 pi 中。要在某台主機上登入，請在 **Settings → API Keys & Providers** 中選擇該主機。
 
-**代理環境變數**（**Settings → System**）會加到之後啟動的每個 pi 程序中。會改變 pi 狀態位置或 tau 內部機制的名稱會被拒絕：`PATH`、`PATHEXT`、`COMSPEC`、`SYSTEMROOT`、`WINDIR`、`NODE_OPTIONS`、`HOME`、`USERPROFILE`、`HOMEDRIVE`、`HOMEPATH`、`XDG_DATA_HOME`、`XDG_CONFIG_HOME`、`PI_CODING_AGENT_DIR`、`PI_CONFIG_DIR`、`PI_PROFILE`、`PORT`、`NODE_ENV`，以及所有以 `TAU_` 或 `_` 開頭的名稱。
+**代理環境變數**（**Settings → System**）會加到之後啟動的每個 pi 程序中。會改變 pi 狀態位置或 tau 內部機制的名稱會被拒絕：`PATH`、`PATHEXT`、`COMSPEC`、`SYSTEMROOT`、`WINDIR`、`NODE_OPTIONS`、`HOME`、`USERPROFILE`、`HOMEDRIVE`、`HOMEPATH`、`XDG_DATA_HOME`、`XDG_CONFIG_HOME`、`PI_CODING_AGENT_DIR`、`PI_CODING_AGENT_SESSION_DIR`、`PORT`、`NODE_ENV`，以及所有以 `TAU_` 或 `_` 開頭的名稱。
 
 ## 安全性說明
 

@@ -47,15 +47,14 @@ export function allowFileRoot(root: string): void {
 const ALLOWED_ROOTS_TTL_MS = 5_000;
 
 /**
- * pi's own config/agent roots: the config root (`~/.pi`, or whatever
- * `PI_CONFIG_DIR` renamed it to), the agent state dir (`~/.pi/agent`, or
+ * pi's own config/agent roots: the config root (`~/.pi`), the agent state dir (`~/.pi/agent`, or
  * `PI_CODING_AGENT_DIR`), and the ecosystem-standard agent rule/skill provider
  * dirs `~/.agents` and `~/.agent`. Global instruction files pi loads itself
  * (`~/.agents/AGENTS.md`, `~/.pi/agent/...`) used to 403 in the file viewer
  * because only workspaces were allowed roots (#135).
  *
  * Derived from lib/pi/paths.ts rather than re-implemented, so the
- * PI_CONFIG_DIR / PI_CODING_AGENT_DIR / XDG rules stay in one place.
+ * PI_CODING_AGENT_DIR rule stays in one place.
  * A directory that does not exist is harmless: isPathWithinRoots is a pure
  * string-prefix check and existingPathWithinRootsChecker() already swallows
  * realpathSync failures for stale roots.
