@@ -1855,7 +1855,7 @@ export class AgentSessionWrapper {
         this.rejectPendingHostTools("The web UI disconnected while the agent was waiting for this host tool", "own");
         this.rejectPendingHostUris("The web UI disconnected while the agent was waiting for this URI request");
         // The last tab left. Start (not extend) the reap clock, so a session
-        // that was never watched at all — predict_word, /api/agent/new — is
+        // that was never watched at all — /api/agent/new — is
         // cleaned up on the same schedule as one whose tab just closed.
         this.reapDeadline = Date.now() + this.disconnectDestroyMs;
         this.armReap();

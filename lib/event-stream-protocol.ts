@@ -94,7 +94,7 @@ export const NO_OMP_REPLY_COMMANDS: ReadonlySet<string> = new Set([
 
 const REPEATABLE_COMMANDS = ["set_host_tools", "set_host_uri_schemes", "outbox_add", "outbox_remove", "outbox_scope"];
 
-/** Commands that are repeatable by nature: `get_*` and `predict_word` only read, the outbox commands are idempotent by
+/** Commands that are repeatable by nature: `get_*` only read, the outbox commands are idempotent by
  * their message id (lib/message-outbox.ts), and the others register or record the same thing again. Safe to send again
  * after a resync, and not worth remembering for the (session, rid) dedupe, where they would only take room from
  * commands that change something (and be refused at the cap). Never `abort`: a resent one could stop a prompt that ran

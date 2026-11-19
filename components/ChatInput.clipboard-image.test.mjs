@@ -45,8 +45,8 @@ class TestFileReader {
 }
 globalThis.FileReader = TestFileReader;
 
-// jsdom 29 ships no matchMedia, and the composer reads one at mount for the
-// word-completion default (`(pointer: fine)`). Never match: desktop composer.
+// jsdom 29 ships no matchMedia, and the composer's layout hooks read one at
+// mount. Never match: desktop composer.
 window.matchMedia = (media) => ({
   media,
   matches: false,

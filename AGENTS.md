@@ -231,7 +231,6 @@ lib/
   types.ts             shared TypeScript types
   normalize.ts         normalizeToolCalls() — field name mismatch between file format and our types
   navigation-history.ts  pure back/forward view-history stack + shortcut matcher (⌘[/⌘], Alt+←/→)
-  word-prediction.ts   pure ghost-text arithmetic (advance/accept) for composer word prediction
   worktree.ts          project/worktree resolution and git worktree operations
 
 components/
@@ -263,7 +262,6 @@ components/
   SkillsConfig.tsx    modal for loaded/search/installable skills
   FileExplorer.tsx    file tree inside sidebar
   FileViewer.tsx      file content in a tab
-  GhostMirror.tsx     textarea overlay painting ghost-text word completion
   TabBar.tsx          tab bar (Chat + open file tabs)
   WorktreesPanel.tsx  file-panel Worktrees tab: list/switch/create/remove the active repo's worktrees
   ui/                 shared primitives: Dialog/Tooltip/Collapsible, fields, toast
@@ -278,7 +276,6 @@ hooks/
   usePrefersReducedMotion.ts OS reduce-motion preference (SMIL-safe)
   useTheme.ts              theme state (localStorage key "omp-theme"; top bar color → theme-color meta, "omp-theme-color" cookie and the manifest link's ?theme=, see lib/manifest-theme.ts)
   useNavigationHistory.ts  in-app back/forward stack (record/peek/commit/drop) for visited chat views
-  useWordPrediction.ts     debounced omp predict_word ghost text + feedback
   useBtw.ts                /btw records/active panel/history dialog fed by btw_* SSE frames
   useChatSearchHighlights.ts  find-in-page for the sidebar search: CSS Custom Highlight API paint + jump to a picked hit
 
@@ -1446,7 +1443,7 @@ during the wait.
     all links together passed 256 MiB and this one's socket was gone longest, or the server restarted):
     `welcome {resumed: false}`, both sides start over, every stream gets CONNECTING and subscribes again
     (fresh snapshots, as an SSE reconnect). Sent commands go again (same `rid`) when idempotent
-    (`isIdempotentCommand`: `get_*`, `predict_word`, `predict_word_feedback`, `set_host_tools`,
+    (`isIdempotentCommand`: `get_*`, `set_host_tools`,
     `set_host_uri_schemes`; never `abort`; the server does not remember those) or when the
     server is the same and their first send was within `COMMAND_DEDUPE_MS` (10 min; the server's
     `(session, rid)` dedupe answers a repeat with `deduped: true`), else 503 `transport_lost`
@@ -1536,7 +1533,7 @@ during the wait.
   `clearLiveToolResults()`). A side question must never be able to wipe the
   live view of the run happening beside it.
 - `get_btw_history` and `btw_cancel` never spawn or replace omp: the agent
-  route answers them like `predict_word` (`NO_SPAWN_REPLIES`: empty history,
+  route answers them itself (`NO_SPAWN_REPLIES`: empty history,
   `cancelled:false`) when no child is alive. History is re-read on every SSE
   open, from the visibility/online reconcile while a record runs, and after a
   cancel that found nothing running. `/btw` alone sends `get_state` first, so
@@ -1806,25 +1803,6 @@ during the wait.
   Sessions, wrapped in `.sidebar-nav-buttons`) disable on stack bounds, show
   the platform shortcut in their tooltip, and hide below a 240px sidebar via
   the `.sidebar-shell` container query (the keyboard shortcuts still work).
-
-### Composer word prediction (`hooks/useWordPrediction.ts`, `components/GhostMirror.tsx`)
-- Ghost text comes from omp's `predict_word` command (engine = omp's
-  `spelling.autocomplete` setting; omp applies the prose gates). Tab or →
-  accepts; accept/typed-past outcomes go back as `predict_word_feedback`.
-- Keystroke predictions never spawn or replace an omp child: the agent route
-  answers `{ suffix: null }` when no process is alive, so sessions that are not
-  running show no ghost text until the first send.
-- Ghost text paints only when the caret ends its line (the mirror overlay would
-  otherwise overlap typed text). Settings → Interface & Behavior → Word
-  completion (`lib/composer-prefs.ts`, localStorage `omp-web:word-completion`):
-  Auto (default) enables it only when the primary pointer is fine
-  (`(pointer: fine)` — mouse/trackpad; browsers cannot detect an on-screen
-  keyboard), Enabled/Disabled force it. Also skipped for
-  drafts past 20k chars (omp's prose-gate cap); an omp without `predict_word`
-  ("Unknown command") pauses requests for a minute.
-- Ghost state lives in a small external store (`useSyncExternalStore` in
-  `GhostMirror`), not ChatInput state: re-rendering the composer per ghost
-  change was the dominant per-keystroke cost.
 
 ### Composer file uploads (`docs/specs/2026-11-02-file-uploads-design.md`)
 - Images and text files go inline while they fit the inline budgets
