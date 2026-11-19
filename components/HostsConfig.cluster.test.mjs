@@ -26,10 +26,10 @@ afterEach(() => {
 const member = (hostId) => ({ hostId, projectsRoot: `/srv/${hostId}/tau-cluster`, provisioned: true, draining: false });
 const cluster = (...hostIds) => [{ id: "cluster", label: "Cluster", enabled: true, members: hostIds.map(member), projects: [] }];
 const hostRow = (overrides = {}) => ({
-  id: "local", label: "", status: "online", ompVersion: "omp/15.13.1", platform: "linux",
+  id: "local", label: "", status: "online", ompVersion: "1.5.2", platform: "linux",
   hostVersion: 10, serverVersion: 10, lastSeenAt: null, workspaceOps: ["gitOrigins"], ...overrides,
 });
-const linked = (id, label, overrides = {}) => hostRow({ id, label, allowAgentStart: false, shareCredentials: false, ...overrides });
+const linked = (id, label, overrides = {}) => hostRow({ id, label, allowAgentStart: false, ...overrides });
 
 /** `pools: null` makes GET /api/hosts fail, `"pending"` never answers it, a promise answers it once settled (null failing), and a function
  * is asked on every request (null failing); `home: null` makes GET /api/home fail. Other requests go to `respond`. */
@@ -92,8 +92,6 @@ const RESTART = "Restart the host service on this machine first";
 for (const [label, local, pools, reason] of [
   ["offline", { status: "offline" }, [], RESTART],
   ["without gitOrigins", { workspaceOps: [] }, cluster("h1"), RESTART],
-  // A restart does not update omp: the reason names what this machine needs.
-  ["on an omp too old to share credentials", { ompVersion: "omp/15.13.0" }, [], "Update omp on This machine to 15.13.1 or newer first"],
 ]) {
   test(`while this machine must join too and is ${label}, a non-member cannot join and says why; a member can still leave`, async (t) => {
     await showHosts(t, { hosts: [hostRow(local), linked("h1", "Laptop"), linked("h2", "Desk")], pools });
@@ -114,10 +112,6 @@ for (const [label, row, reason] of [
   ["offline", { status: "offline" }, "The host is offline"],
   ["no gitOrigins operation", { workspaceOps: [] }, "Update tau on this host first"],
   ["flagged needs-upgrade by the hub", { status: "needs-upgrade", hostVersion: 9 }, "Update tau on this host first"],
-  // Members always share credentials; the daemon refuses that below omp 15.13.1, and on an omp it cannot read.
-  ["on an omp too old to share credentials", { ompVersion: "omp/15.13.0" }, "Update omp on Laptop to 15.13.1 or newer first"],
-  ["on an unknown omp", { ompVersion: "omp/next" }, "Update omp on Laptop to 15.13.1 or newer first"],
-  ["on an outdated daemon and an old omp (the daemon first)", { workspaceOps: [], ompVersion: "omp/15.13.0" }, "Update tau on this host first"],
   ["without omp (its own status text is the reason)", { status: "omp-missing" }, "omp not installed"],
 ]) {
   test(`a host that is ${label} cannot join and says why`, async (t) => {
@@ -150,17 +144,6 @@ test("a member can always leave: offline or outdated never disables its switch",
   }
 });
 
-test("a member's provider-login toggle is on and disabled, described by the reason", async (t) => {
-  await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop"), linked("h2", "Desk")], pools: cluster("local", "h1") });
-  const forced = screen.getByRole("switch", { name: "Use this server's provider logins on Laptop" });
-  assert.equal(forced.getAttribute("aria-checked"), "true");
-  assert.equal(forced.disabled, true);
-  assert.equal(reasonOf(forced), "On while the host is in the cluster");
-  const other = screen.getByRole("switch", { name: "Use this server's provider logins on Desk" });
-  assert.equal(other.getAttribute("aria-checked"), "false");
-  assert.equal(other.disabled, false);
-});
-
 test("joining asks for the folder, prefilled from the host's home, and sends it", async (t) => {
   const { calls, user } = await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local") });
   await user.click(clusterSwitch("Laptop"));
@@ -169,7 +152,7 @@ test("joining asks for the folder, prefilled from the host's home, and sends it"
   await waitFor(() => assert.equal(folder.value, "/home/andre/tau-cluster"));
   assert.deepEqual(calls.filter((call) => call.url.startsWith("/api/home")), [{ method: "GET", url: "/api/home?hostId=h1" }]);
   assert.ok(within(dialog).getByText(/Its Git projects that match a cluster repository or can be added as one become cluster projects, unless they are inside or contain the cluster folder/));
-  assert.ok(within(dialog).getByText(/Laptop will use this machine's provider logins/));
+  assert.ok(within(dialog).getByText(/Laptop keeps its own provider logins/));
   assert.ok(within(dialog).getByText("It receives this machine's pi configuration (settings and packages, models, MCP servers, skills, prompts, extensions, context files), API keys and environment values included, in place of its own until it leaves; its own is kept and put back then."));
   assert.equal(calls.some((call) => call.method === "PUT"), false);
 
@@ -370,27 +353,16 @@ for (const [label, saved, reloads] of LOST) {
     await waitFor(() => assert.equal(remove.disabled, false));
   });
 }
-test("while the pools load, every switch and share toggle is disabled and nothing is sent", async (t) => {
-  const { calls, user } = await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop"), linked("h2", "Desk", { shareCredentials: true })], pools: "pending" });
+test("while the pools load, every switch is disabled and nothing is sent", async (t) => {
+  const { calls, user } = await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop"), linked("h2", "Desk")], pools: "pending" });
   for (const name of ["Laptop", "Desk"]) {
     const toggle = clusterSwitch(name);
     assert.equal(toggle.disabled, true);
     assert.equal(toggle.getAttribute("aria-describedby"), null, "no error text while still loading");
-    const share = screen.getByRole("switch", { name: `Use this server's provider logins on ${name}` });
-    assert.equal(share.disabled, true);
-    assert.equal(share.getAttribute("aria-describedby"), null);
     await user.click(toggle);
-    await user.click(share);
   }
   assert.deepEqual(calls.filter((call) => call.method !== "GET"), []);
   assert.equal(screen.queryByRole("dialog"), null);
-});
-
-test("when the pools failed to load, share toggles are disabled with poolsUnavailable", async (t) => {
-  await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop")], pools: null });
-  const share = screen.getByRole("switch", { name: "Use this server's provider logins on Laptop" });
-  assert.equal(share.disabled, true);
-  assert.equal(reasonOf(share), "The cluster configuration could not be loaded");
 });
 
 test("a hosts frame that carries pools recovers from a failed first request", async (t) => {
@@ -399,7 +371,6 @@ test("a hosts frame that carries pools recovers from a failed first request", as
   frame({ hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local") });
   await waitFor(() => assert.equal(clusterSwitch("Laptop").disabled, false));
   assert.equal(clusterSwitch("Laptop").getAttribute("aria-describedby"), null);
-  assert.equal(screen.getByRole("switch", { name: "Use this server's provider logins on Laptop" }).disabled, false);
 });
 
 for (const [label, late] of [["answers", []], ["fails", null]]) {
@@ -418,17 +389,6 @@ for (const [label, late] of [["answers", []], ["fails", null]]) {
     assert.equal(screen.queryByText("Could not load hosts. Retrying…"), null);
   });
 }
-
-test("a frame that removes a member returns its share toggle to the stored flag", async (t) => {
-  const { frame } = await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local", "h1") });
-  const share = () => screen.getByRole("switch", { name: "Use this server's provider logins on Laptop" });
-  assert.equal(share().getAttribute("aria-checked"), "true");
-  assert.equal(share().disabled, true);
-  frame({ hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local") });
-  await waitFor(() => assert.equal(share().getAttribute("aria-checked"), "false"));
-  assert.equal(share().disabled, false);
-  assert.equal(share().getAttribute("aria-describedby"), null);
-});
 
 test("the folder field is required", async (t) => {
   const { user } = await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local") });

@@ -16,7 +16,7 @@ import type { WorkspaceFileEvent } from "../workspace-types";
 /** 11: the same wire as 10, renumbered: prerelease daemons already sent 10 with omp RPC channel lines, which this
  * server cannot read. 10: channel stdin/stdout lines are the runner's `{t}` frames (`cmd`/`res`/`hello`/…), no longer omp RPC frames;
  * `open.launch.configVersion`, the `config_state` report and the `clusterConfig` op.
- * 9: `open.launch.shareCredentials`. 8: pool capacity reports, creation identity and project preparation. 7: shared host-owned channels, lifecycle,
+ * 9: `open.launch.shareCredentials` (removed with the auth broker). 8: pool capacity reports, creation identity and project preparation. 7: shared host-owned channels, lifecycle,
  * dialogs and callbacks. 6: composer uploads
  * `upload_ack` up message, the `uploadStart`/`uploadAbort`/`uploadAttach` ops. 5: a line over `pieceBytes` goes as
  * `part` messages and a large result as several binary frames, both sent fair across channels

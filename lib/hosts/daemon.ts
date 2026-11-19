@@ -14,7 +14,6 @@ import { DaemonLink, dialable, nextRedialDelay } from "./daemon-link";
 import { DaemonMaintenance } from "./daemon-maintenance";
 import { MAINTENANCE_API_VERSION, type MaintenanceOp } from "./maintenance-protocol";
 import { ChannelTable } from "./daemon-channels";
-import { credentialsEnv, serverFetch, startBrokerForwarder } from "./daemon-broker";
 import { createClusterConfig } from "./daemon-cluster-config";
 import { HostResumeTracker, type HostResumeEntry } from "./host-resume";
 import { CONFIG_VERSION_RE, CREATION_ID_RE, encodeLine, HostOpError, isHostOp, LINK_LIMITS, LINK_PROTOCOL_VERSION, SESSION_OP_PARAMS, type DownMessage, type OpenChannelRequest, type UnknownMessage } from "./link-protocol";
@@ -95,6 +94,20 @@ export interface HostDaemon {
   control(command: HostControlCommand): HostControlStatus;
 }
 type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[] };
+/**
+ * `path` under `route` (`/api/hosts/<name>/`) on a linked server, with that link's token; null when dot segments
+ * (also encoded) would climb out of `route`, which the route's own allow-list cannot see.
+ */
+function serverFetch(login: { url: string; token: string }, route: string, path: string, init: RequestInit): Promise<Response> | null {
+  const root = new URL(`${login.url.replace(/\/+$/, "")}${route}`).href;
+  const target = new URL(root + path);
+  if (!target.href.startsWith(root)) return null;
+  const headers = new Headers(init.headers);
+  headers.set("authorization", `Bearer ${login.token}`);
+  // A redirect would carry the link token on to whatever it names, on the same origin too: it is a failure, not a hop.
+  return fetch(target, { ...init, headers, redirect: "error" });
+}
+
 export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const explicit = options.url !== undefined && options.token !== undefined ? [{ url: options.url, token: options.token }] : options.links;
   const initial = explicit ?? readHostLinks();
@@ -139,7 +152,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     },
     log,
   });
-  const forwarder = startBrokerForwarder({ login: url => links.get(url)?.login ?? null, log });
   const channels = new ChannelTable({
     spawn: async launch => {
       if (drained) throw new HostOpError(409, "host_drained", "This host is locally drained for maintenance");
@@ -148,15 +160,12 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       catch (error) { if (!updateStateWarningLogged) log("could not read host update status: " + reason(error)); updateStateWarningLogged = true; }
       if (operation?.target === "tau" && hostUpdateBlocksNewWork(operation)) throw new HostOpError(409, "host_updating", "This host is updating its daemon; new sessions must wait");
       const resolved = launch.creationId === undefined ? resolveSpawnCwdResult(launch.recordedCwd ?? launch.cwd) : { cwd: launch.cwd, fellBack: false };
-      // A sharing session never starts on this host's own logins: no link, or no usable broker, refuses.
-      if (launch.credentialsServer !== undefined && !links.has(launch.credentialsServer)) throw new HostOpError(409, "credentials_link_gone", "The web server that shares its credentials with this session is no longer linked to this host");
-      const env = await credentialsEnv(launch, { forwarder, ompVersion: getPiVersion });
       // Never on this host's own configuration: the master's version is applied first, or the start is refused (spec K4).
       if (launch.configVersion !== undefined) {
-        if (launch.credentialsServer === undefined) throw new HostOpError(409, "cluster_config_failed", "A cluster session must start through the web server that shares its configuration");
-        await config.ensure(launch.configVersion, launch.credentialsServer);
+        if (launch.configServer === undefined) throw new HostOpError(409, "cluster_config_failed", "A cluster session must start through the web server that shares its configuration");
+        await config.ensure(launch.configVersion, launch.configServer);
       }
-      const spawned = await localHost.spawnRpc({ ...launch, cwd: resolved.cwd }, null, { env });
+      const spawned = await localHost.spawnRpc({ ...launch, cwd: resolved.cwd });
       return { ...spawned, fellBack: resolved.fellBack || spawned.fellBack };
     },
     prepareLaunch: launch => {
@@ -165,7 +174,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         || typeof launch.sessionFile !== "string" || typeof launch.advisor !== "boolean"
         || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))
         || !(launch.spawnModel === undefined || typeof launch.spawnModel === "string")
-        || !(launch.credentialsServer === undefined || typeof launch.credentialsServer === "string")
         || !(launch.creationId === undefined || typeof launch.creationId === "string" && CREATION_ID_RE.test(launch.creationId))) throw new HostOpError(400, "invalid_request", "Invalid spawn request");
       return { ...launch, recordedCwd: launch.recordedCwd ?? null, sessionFile: launch.sessionFile ? sessionsPath(launch.sessionFile) : "" };
     },
@@ -504,7 +512,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     resume.freeze();
     // The configuration first: its requests to a server are aborted at once, so no start waiting on them holds the stop.
     const configStopped = config.stop();
-    stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await channels.stop(); await configStopped; await forwarder.stop(); resume.dispose(); finish(code); })();
+    stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await channels.stop(); await configStopped; resume.dispose(); finish(code); })();
     return stopping;
   }
   // Links first: a recovered sharing session needs its link to start.

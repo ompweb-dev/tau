@@ -63,13 +63,15 @@ function bridgedToolResult(frame: WireFrame): WireFrame {
   return { type: "extension_ui_response", id: frame.id, value: JSON.stringify({ ...result, ...(frame.isError !== undefined ? { isError: Boolean(frame.isError) } : {}) }) };
 }
 const invalid = (message = "Invalid channel request") => new HostOpError(400, "invalid_request", message);
-/** A process start's launch, from what its opener asked: the wire never names the credentials server (it is the opening
- * link's own, and only when the hub asks), and a configuration version passes only in its one valid form. */
+/** A process start's launch, from what its opener asked: the wire never names the configuration server (it is the opening
+ * link's own), and a configuration version passes only in its one valid form. */
 function forStart(launch: SpawnRequest, link: DaemonLink, opener: SpawnRequest): SpawnRequest {
   const result = { ...launch };
-  delete result.shareCredentials; delete result.credentialsServer; delete result.configVersion;
-  if (opener.shareCredentials === true) result.credentialsServer = link.login.url;
-  if (typeof opener.configVersion === "string" && CONFIG_VERSION_RE.test(opener.configVersion)) result.configVersion = opener.configVersion;
+  delete result.configServer; delete result.configVersion;
+  if (typeof opener.configVersion === "string" && CONFIG_VERSION_RE.test(opener.configVersion)) {
+    result.configVersion = opener.configVersion;
+    result.configServer = link.login.url;
+  }
   return result;
 }
 
@@ -175,7 +177,7 @@ export class ChannelTable {
       channel.transport.onExit(() => exit.resolve());
       this.stopChannel(channel);
       await exit.promise;
-      // A new process: the opener's flags decide its credentials and configuration, as for any start (spec C6, K4).
+      // A new process: the opener decides its configuration, as for any start (spec K4).
       const launch = this.deps.prepareLaunch(forStart({ ...channel.launch, advisor: args.launch.advisor,
         ...(args.launch.spawnModel ? { spawnModel: args.launch.spawnModel } : {}) }, link, args.launch));
       const spawning = this.create(launch, channel.pending.sessionId, args.preparing ? link.id : undefined);
@@ -540,7 +542,7 @@ export class ChannelTable {
   running(): HostResumeEntry[] {
     // A recovered session starts on the version already applied: the resume manifest never names one.
     return [...this.channels.values()].filter(channel => (channel.lifecycle?.isRunning || channel.resuming) && channel.pending.sessionId && channel.launch.sessionFile && !channel.sessionMovePending)
-      .map(channel => { const launch = { ...channel.launch }; delete launch.configVersion; return { sessionId: channel.pending.sessionId!, launch }; });
+      .map(channel => { const launch = { ...channel.launch }; delete launch.configVersion; delete launch.configServer; return { sessionId: channel.pending.sessionId!, launch }; });
   }
   /** Resumes each entry once; returns the entries whose resume failed. */
   async recover(entries: HostResumeEntry[]): Promise<HostResumeEntry[]> {

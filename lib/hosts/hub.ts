@@ -42,11 +42,11 @@ import {
   UnknownMessageLog,
   type UpMessage,
 } from "./link-protocol";
-import { clusterOf, isClusterMember, sharesCredentials } from "./cluster";
+import { clusterOf, isClusterMember } from "./cluster";
 import { ClusterConfigError } from "./cluster-config";
 import { clusterConfigVersion } from "./cluster-config-server";
 import type { ConfigState } from "./daemon-cluster-config";
-import { customLocalLabel, DEFAULT_LOCAL_LABEL, HostRegistryUnreadableError, hostForToken, LOCAL_HOST_ID, loadHosts, readHosts, touchHost, type HostRecord } from "./registry";
+import { customLocalLabel, DEFAULT_LOCAL_LABEL, HostRegistryUnreadableError, hostForToken, LOCAL_HOST_ID, loadHosts, touchHost, type HostRecord } from "./registry";
 import type { SessionOps } from "./session-ops";
 import { confirmPooledChild, pooledStartForChild } from "./pool-starts";
 import { loadPools, type HostPool } from "./pools";
@@ -1561,20 +1561,9 @@ export class RemoteHost implements Host {
         throw new HostOpError(400, "invalid_request", "Invalid creation identity");
       }
     }
-    // A pure join (expectedChannel) starts nothing, so it is neither refused nor flagged. An unreadable registry or pool
-    // file refuses the start: a host that may be sharing must never run a session with its own stored logins.
-    let sharing = false;
+    // A pure join (expectedChannel) starts nothing, so it takes no configuration version.
     let configVersion: string | undefined;
     if (options?.expectedChannel === undefined && this.id !== LOCAL_HOST_ID) {
-      let record: HostRecord | undefined;
-      try {
-        record = readHosts().find((host) => host.id === this.id);
-      } catch (error) {
-        if (!(error instanceof HostRegistryUnreadableError)) throw error;
-        throw new HostOpError(503, "host_registry_unreadable", "The linked-hosts registry cannot be read; no session was started");
-      }
-      // A link that outlived its record (hosts.json deleted or hand-edited) cannot say whether it shares.
-      if (!record) throw new HostOpError(409, "host_unregistered", "This host is no longer in the linked-hosts registry; no session was started");
       const readPools = (): HostPool[] => {
         try {
           return loadPools();
@@ -1594,9 +1583,8 @@ export class RemoteHost implements Host {
         pools = readPools();
         if (!isClusterMember(pools, this.id)) configVersion = undefined;
       }
-      sharing = sharesCredentials(record, pools);
     }
-    const launch = { ...spawnRequest, ...(sharing ? { shareCredentials: true as const } : {}), ...(configVersion === undefined ? {} : { configVersion }) };
+    const launch = { ...spawnRequest, ...(configVersion === undefined ? {} : { configVersion }) };
     const opening: OpenChannelRequest = { sessionId, launch, ...options };
     // An open may wait for a cold child's `ready`, which sends nothing meanwhile.
     return await request(this.id, "open", opening, LINK_LIMITS.channelReadyMs + linkTimings.opTimeoutMs, (value) => {
@@ -1879,7 +1867,6 @@ export interface LinkedHostRow {
   platform: string | null;
   lastSeenAt: string | null;
   allowAgentStart: boolean;
-  shareCredentials: boolean;
   /** Link protocol version the daemon last presented; null before it ever dialed. */
   hostVersion: number | null;
   serverVersion: number;
@@ -1912,7 +1899,6 @@ export function listHosts(): LinkedHostRow[] {
       platform: maintenance?.platform ?? link?.platform ?? null,
       lastSeenAt: link?.lastSeenAt ?? record.lastSeenAt,
       allowAgentStart: record.allowAgentStart,
-      shareCredentials: record.shareCredentials,
       hostVersion: link?.hostVersion ?? maintenance?.protocolVersion ?? null,
       serverVersion: LINK_PROTOCOL_VERSION,
       workspaceOps: [...(link?.workspaceOps ?? [])],

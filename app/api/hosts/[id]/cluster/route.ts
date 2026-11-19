@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { comparableProjectPath } from "@/lib/comparable-path";
-import { CLUSTER_ID, CLUSTER_LABEL, CLUSTER_PROJECTS_DIR, ClusterError, clusterJoinBlock, isClusterMember, joinCluster, leaveCluster, MIN_SHARED_CREDENTIALS_OMP, type HostProjectFacts } from "@/lib/hosts/cluster";
+import { CLUSTER_ID, CLUSTER_LABEL, CLUSTER_PROJECTS_DIR, ClusterError, clusterJoinBlock, isClusterMember, joinCluster, leaveCluster, type HostProjectFacts } from "@/lib/hosts/cluster";
 import type { Host } from "@/lib/hosts/host";
-import { clusterConfigOp, getHost, getHostOmpVersion, listHosts, masterConfigVersion, notifyHostsChange } from "@/lib/hosts/hub";
+import { clusterConfigOp, getHost, listHosts, masterConfigVersion, notifyHostsChange } from "@/lib/hosts/hub";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { loadPools, poolProjectBindings, savePools, validatePools, type HostPool, type PoolMember, type PoolProject } from "@/lib/hosts/pools";
-import { LOCAL_HOST_ID, loadHosts } from "@/lib/hosts/registry";
+import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 import type { OpResult } from "@/lib/hosts/session-ops";
 import { hostSessions } from "@/lib/hosts/session-index";
-import { abortBrokerRequests } from "@/lib/omp/auth-broker";
 import { mergeProjects } from "@/lib/project-registry";
 import { isApiRequestOriginAllowed, shouldCheckApiRequestOrigin } from "@/lib/request-security";
 import { isRecord } from "@/lib/type-guards";
@@ -48,9 +47,8 @@ function valueOf<T>(result: OpResult<T>): T {
 }
 
 function requireReady(host: Host): void {
-  const block = clusterJoinBlock({ status: host.status(), ompVersion: getHostOmpVersion(host.id), supports: (operation) => host.supportsWorkspaceOp(operation) });
+  const block = clusterJoinBlock({ status: host.status(), supports: (operation) => host.supportsWorkspaceOp(operation) });
   if (block === null) return;
-  if (block === "omp-old") throw new HostOpError(409, "host_omp_too_old", `Update omp on ${host.label} to ${MIN_SHARED_CREDENTIALS_OMP} or newer first`);
   if (block !== "upgrade") throw new HostOpError(409, "host_offline", `${host.label} is offline`);
   throw host.id === LOCAL_HOST_ID
     ? new HostOpError(409, "host_restart_required", "Restart this machine's tau host daemon to join the cluster")
@@ -161,7 +159,6 @@ export async function DELETE(request: Request, { params }: Context) {
     }
     pools = leaveCluster(pools, id);
     savePools(pools);
-    if (loadHosts().find((record) => record.id === id)?.shareCredentials !== true) abortBrokerRequests(id);
     notifyHostsChange();
     // After the save, so no apply follows it (spec K6). A host that cannot take it now (offline or timed out) gets it
     // from the sync once it reports holding this server's configuration.
