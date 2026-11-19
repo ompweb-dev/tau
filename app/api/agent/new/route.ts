@@ -4,7 +4,7 @@ import { RpcCommandError } from "@/lib/omp/rpc-process";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { MAX_AGENT_COMMAND_REQUEST_BYTES } from "@/lib/image-attachments";
 import { validateAgentImages } from "@/lib/image-attachments";
-import { PoolStartError, startPooledSession } from "@/lib/hosts/pool-starts";
+import { PoolStartError, requireProviderLogin, startPooledSession } from "@/lib/hosts/pool-starts";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { isRecord } from "@/lib/type-guards";
 
@@ -86,6 +86,7 @@ export async function POST(req: Request) {
     }
     const target = resolveHostOrError(hostId);
     if ("response" in target) return target.response;
+    await requireProviderLogin(target.host, provider);
     const started = await startNewRpcSession(target.host, requestedCwd, toolNames, advisor === true, preparing);
     if (!started.ok) return opErrorResponse(started);
     const { session, realSessionId } = started.value;

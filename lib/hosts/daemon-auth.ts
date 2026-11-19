@@ -143,7 +143,8 @@ export function createDaemonAuth(options: { spawn?: (onFrame: (frame: RpcFrame) 
         case "providers": return { providers: await providers() };
         case "authenticated": {
           if (!authenticated || Date.now() - authenticated.at > AUTHENTICATED_TTL_MS) {
-            const ids = providers().then((list) => list.filter((entry) => entry.configured).map((entry) => entry.id));
+            // A models.json provider counts: a local model server needs no key, and pi cannot tell it from a missing one.
+            const ids = providers().then((list) => list.filter((entry) => entry.configured || entry.custom).map((entry) => entry.id));
             authenticated = { at: Date.now(), ids };
             ids.catch(() => { if (authenticated?.ids === ids) authenticated = null; });
           }

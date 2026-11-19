@@ -8,7 +8,7 @@ import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import type { ProjectLaunchConfig } from "../types";
 import type { Host } from "./host";
-import { adoptedChild, getHost, getHostCapacity, getHostLinkProtocol, isHostConfigCurrent, reconcilePooledChild } from "./hub";
+import { adoptedChild, authOp, getHost, getHostCapacity, getHostLinkProtocol, isHostConfigCurrent, reconcilePooledChild } from "./hub";
 import { CREATION_ID_RE, HostOpError, type HelloChannel } from "./link-protocol";
 import { loadPools, pathApi, selectPoolHost, type PoolHostSnapshot } from "./pools";
 
@@ -288,8 +288,66 @@ async function run(entry: PoolStart, start: Start, authorize?: (host: Host) => P
   } finally { unlock?.(); }
 }
 
-/** Reserve durably before host work; trusted authorization runs before preparation and never on completed replay. */
+const PROVIDERS_TTL_MS = 60_000;
+declare global {
+  var __tauHostProviders: Map<string, { at: number; providers: string[] }> | undefined;
+}
+const hostProviderCache = () => globalThis.__tauHostProviders ??= new Map();
+
+/** The providers `hostId` could authenticate when last asked, within a minute. */
+function cachedProviders(hostId: string): string[] | undefined {
+  const cached = hostProviderCache().get(hostId);
+  return cached && Date.now() - cached.at < PROVIDERS_TTL_MS ? cached.providers : undefined;
+}
+
+/** Asks the host's daemon (`auth` op, `authenticated`); null when it could not say, which is not cached. */
+async function fetchProviders(hostId: string): Promise<string[] | null> {
+  try {
+    const result = await authOp(hostId, { action: "authenticated" });
+    if (!isRecord(result) || !Array.isArray(result.providers)) return null;
+    const providers = result.providers.filter((id): id is string => typeof id === "string");
+    hostProviderCache().set(hostId, { at: Date.now(), providers });
+    return providers;
+  } catch {
+    return null;
+  }
+}
+
+/** Called after a login, key or logout through tau on that host. */
+export function forgetHostProviders(hostId: string): void {
+  hostProviderCache().delete(hostId);
+}
+
+/** Whether `hostId` can authenticate `provider`: true, false, or null when the host could not say. */
+export async function hostCanAuthenticate(hostId: string, provider: string): Promise<boolean | null> {
+  const providers = cachedProviders(hostId) ?? await fetchProviders(hostId);
+  return providers === null ? null : providers.includes(provider);
+}
+
+/** A start on one chosen host that names a provider fails, naming both, when that host has no login for it. A host that
+ * cannot say is not refused here: pi reports a missing login itself. */
+export async function requireProviderLogin(host: Host, provider: string | undefined): Promise<void> {
+  if (provider && await hostCanAuthenticate(host.id, provider) === false) {
+    throw new HostOpError(409, "host_provider_unavailable", `${host.label} is not logged in to ${provider}; log in from Settings → Models with ${host.label} selected`);
+  }
+}
+
+/** Reserve durably before host work; trusted authorization runs before preparation and never on completed replay.
+ * A start that names a provider goes only to a member logged in to it: members whose logins are not known yet are asked
+ * first; with all known, the reservation is durable when this returns, as without a provider. */
 export function startPooledSession(input: PoolCreateInput, start: Start, authorize?: (host: Host) => Promise<boolean>): Promise<PoolCreateResult> {
+  try {
+    const provider = isRecord(input) && isRecord(input.intent) && typeof input.intent.provider === "string" ? input.intent.provider : null;
+    if (!provider || readJournal().starts.some((entry) => entry.creationId === input.creationId)) return reservePooledSession(input, start, authorize, null, undefined);
+    const members = loadPools().find((pool) => pool.id === input.poolId)?.members.map((member) => member.hostId) ?? [];
+    const reserve = () => reservePooledSession(input, start, authorize, provider,
+      new Map(members.map((hostId) => [hostId, cachedProviders(hostId)?.includes(provider) === true])));
+    const unknown = members.filter((hostId) => !cachedProviders(hostId));
+    return unknown.length ? Promise.all(unknown.map(fetchProviders)).then(reserve) : reserve();
+  } catch (error) { return Promise.reject(error); }
+}
+
+function reservePooledSession(input: PoolCreateInput, start: Start, authorize: ((host: Host) => Promise<boolean>) | undefined, provider: string | null, authenticated: ReadonlyMap<string, boolean> | undefined): Promise<PoolCreateResult> {
   try {
     if (!isRecord(input) || typeof input.creationId !== "string" || !CREATION_ID_RE.test(input.creationId)
       || typeof input.poolId !== "string" || !CREATION_ID_RE.test(input.poolId) || typeof input.projectId !== "string" || !CREATION_ID_RE.test(input.projectId)
@@ -322,7 +380,7 @@ export function startPooledSession(input: PoolCreateInput, start: Start, authori
         const host = getHost(member.hostId);
         const linkProtocol = getHostLinkProtocol(member.hostId) ?? 0;
         // A cluster member behind the master's configuration stays in the map, marked, so selection skips it before any preparation.
-        if (host) snapshots.set(member.hostId, { status: host.status(), linkProtocol, configCurrent: isHostConfigCurrent(member.hostId), capacity: getHostCapacity(member.hostId) });
+        if (host) snapshots.set(member.hostId, { status: host.status(), linkProtocol, configCurrent: isHostConfigCurrent(member.hostId), capacity: getHostCapacity(member.hostId), ...(authenticated ? { canAuthenticate: authenticated.get(member.hostId) === true } : {}) });
       }
       const pending = new Map<string, number>();
       for (const current of journal.starts) {
@@ -332,9 +390,12 @@ export function startPooledSession(input: PoolCreateInput, start: Start, authori
       }
       const hostId = selectPoolHost(pool, snapshots, pending, performance.now());
       if (!hostId) {
-        // Say why only when members would be eligible but for the configuration.
-        const eligibleOnceCurrent = selectPoolHost(pool, new Map([...snapshots].map(([id, snapshot]) => [id, { ...snapshot, configCurrent: true }])), pending, performance.now()) !== null;
-        throw new PoolStartError(503, "pool_unavailable", eligibleOnceCurrent ? "The pool's workers are still receiving the cluster's configuration" : "No pool worker currently has eligible capacity");
+        // Say why only when members would be eligible but for the configuration, or but for the provider login.
+        const eligibleWith = (fields: Partial<PoolHostSnapshot>) => selectPoolHost(pool, new Map([...snapshots].map(([id, snapshot]) => [id, { ...snapshot, ...fields }])), pending, performance.now()) !== null;
+        if (provider && authenticated && eligibleWith({ canAuthenticate: undefined })) {
+          throw new PoolStartError(409, "pool_provider_unavailable", `No pool worker with capacity is logged in to ${provider}; log in on a worker from Settings → Models`);
+        }
+        throw new PoolStartError(503, "pool_unavailable", eligibleWith({ configCurrent: true }) ? "The pool's workers are still receiving the cluster's configuration" : "No pool worker currently has eligible capacity");
       }
       const member = pool.members.find((candidate) => candidate.hostId === hostId)!;
       const cloneRoot = project.clonePaths[hostId] ?? pathApi(member.projectsRoot).join(member.projectsRoot, project.id);

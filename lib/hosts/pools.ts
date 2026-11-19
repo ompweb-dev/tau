@@ -15,6 +15,8 @@ export interface PoolHostSnapshot {
   /** False for a cluster member that is not on the master's configuration (`isHostConfigCurrent`); it is never chosen. */
   configCurrent: boolean;
   capacity: CapacitySnapshot | null;
+  /** False when the start asks for a provider this member has no login for; it is never chosen. */
+  canAuthenticate?: boolean;
 }
 
 export interface PoolMember {
@@ -182,7 +184,7 @@ export function selectPoolHost(
   for (const member of pool.members) {
     if (!member.provisioned || member.draining) continue;
     const report = snapshots.get(member.hostId);
-    if (!report || report.status !== "online" || !report.capacity || !report.configCurrent) continue;
+    if (!report || report.status !== "online" || !report.capacity || !report.configCurrent || report.canAuthenticate === false) continue;
     const { sample, receivedAt } = report.capacity;
     if (!nonnegative(receivedAt) || receivedAt > now || now - receivedAt > 15_000) continue;
     const { effectiveCpus, load1, busyFraction, stealFraction, availableMemoryBytes, activeSessions } = sample;

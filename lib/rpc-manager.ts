@@ -47,7 +47,7 @@ import { LOCAL_HOST_ID } from "./hosts/registry";
 import type { OpResult } from "./hosts/session-ops";
 import { hostForSessionId, invalidateHostSessionList, listSessionsAllHosts, sessionSpawnTarget } from "./hosts/session-index";
 import { loadPools, poolProjectBindings } from "./hosts/pools";
-import { PoolStartError, startPooledSession } from "./hosts/pool-starts";
+import { PoolStartError, requireProviderLogin, startPooledSession } from "./hosts/pool-starts";
 import { comparableProjectPath } from "./comparable-path";
 import type { SessionLiveSnapshot, SessionLiveToolEvent, SessionStreamCursor } from "./session-sync";
 
@@ -3523,6 +3523,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
       const host = getHost(input.hostId);
       if (!host) throw new Error(`Unknown host: ${input.hostId}`);
       if (!(await authorizeHost(host))) throw new Error(`The user declined to start a session on ${host.label}.`);
+      await requireProviderLogin(host, input.provider);
       const preparing = !!(input.prompt || input.name || (input.provider && input.modelId));
       const started = await startNewRpcSession(host, input.cwd, undefined, undefined, preparing);
       if (!started.ok) throw new Error(started.error);
