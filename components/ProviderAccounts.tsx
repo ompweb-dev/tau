@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
-import { planForStoredAccount, summarizeProviderAccounts } from "@/lib/provider-accounts";
-import { useProviderUsage } from "./AppShell-provider-usage";
 import { ConfirmDialog } from "./ui/field";
 
 interface StoredAccount {
@@ -17,15 +15,10 @@ interface StoredAccount {
 
 /**
  * The credential pi stores for one provider on one host (auth.json keeps one per provider), removed through that
- * host's daemon. A failed listing falls back to the read-only list the usage report gives.
+ * host's daemon.
  */
 export function ProviderAccounts({ providerId, hostId, enabled, onChanged }: { providerId: string; hostId: string; enabled: boolean; onChanged: () => void }) {
   const { t } = useI18n();
-  const { snapshot, loading: usageLoading } = useProviderUsage(enabled ? `provider=${encodeURIComponent(providerId)}` : null);
-  const usageAccounts = useMemo(
-    () => (snapshot ? summarizeProviderAccounts(snapshot.reports, providerId) : []),
-    [snapshot, providerId],
-  );
   const [stored, setStored] = useState<{ supported: boolean; accounts: StoredAccount[] } | null>(null);
   const [version, setVersion] = useState(0);
   const [confirm, setConfirm] = useState<StoredAccount | null>(null);
@@ -37,7 +30,6 @@ export function ProviderAccounts({ providerId, hostId, enabled, onChanged }: { p
     const controller = new AbortController();
     fetch(`/api/auth/accounts/${encodeURIComponent(providerId)}?hostId=${encodeURIComponent(hostId)}`, { signal: controller.signal })
       .then((res) => res.json() as Promise<{ supported?: boolean; accounts?: StoredAccount[]; error?: string }>)
-      // A failed listing degrades to the usage-based list rather than hiding accounts.
       .then((d) => {
         if (d.error) setError(d.error);
         setStored({ supported: d.supported === true, accounts: d.accounts ?? [] });
@@ -71,10 +63,8 @@ export function ProviderAccounts({ providerId, hostId, enabled, onChanged }: { p
   };
 
   if (!enabled) return null;
-  const loading = stored === null || (!stored.supported && usageLoading);
-  const rows = stored?.supported
-    ? stored.accounts.map((a) => ({ key: String(a.credentialId), label: a.label, title: a.detail, plan: planForStoredAccount(a.label, stored.accounts.map((b) => b.label), usageAccounts), account: a }))
-    : usageAccounts.map((u) => ({ key: u.key, label: u.label ?? t("modelsConfig.accountNumber", { index: u.index ?? 1 }), title: u.label, plan: u.plan, account: null }));
+  const loading = stored === null;
+  const rows = stored?.supported ? stored.accounts.map((a) => ({ key: String(a.credentialId), label: a.label, title: a.detail, account: a })) : [];
   if (!loading && rows.length === 0 && !error) return null;
 
   return (
@@ -92,20 +82,17 @@ export function ProviderAccounts({ providerId, hostId, enabled, onChanged }: { p
               style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: "var(--text)", padding: "4px 8px", background: "var(--bg-subtle)", borderRadius: "var(--radius-control)" }}
             >
               <span title={row.title} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.label}</span>
-              {row.plan && <span style={{ color: "var(--text-dim)" }}>{row.plan}</span>}
-              {row.account?.type === "api_key" && <span style={{ color: "var(--text-dim)" }}>{t("modelsConfig.accountApiKey")}</span>}
-              {row.account && (
-                <button
-                  type="button"
-                  onClick={() => setConfirm(row.account)}
-                  disabled={busy}
-                  aria-label={t("modelsConfig.disconnectAccount", { label: row.label })}
-                  title={t("modelsConfig.disconnectAccount", { label: row.label })}
-                  style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "none", border: "1px solid color-mix(in srgb, var(--status-error) 30%, transparent)", borderRadius: 5, color: "var(--status-error)", cursor: busy ? "not-allowed" : "pointer", fontSize: 11 }}
-                >
-                  <LogOut size={11} aria-hidden="true" /> {t("modelsConfig.disconnect")}
-                </button>
-              )}
+              {row.account.type === "api_key" && <span style={{ color: "var(--text-dim)" }}>{t("modelsConfig.accountApiKey")}</span>}
+              <button
+                type="button"
+                onClick={() => setConfirm(row.account)}
+                disabled={busy}
+                aria-label={t("modelsConfig.disconnectAccount", { label: row.label })}
+                title={t("modelsConfig.disconnectAccount", { label: row.label })}
+                style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "none", border: "1px solid color-mix(in srgb, var(--status-error) 30%, transparent)", borderRadius: 5, color: "var(--status-error)", cursor: busy ? "not-allowed" : "pointer", fontSize: 11 }}
+              >
+                <LogOut size={11} aria-hidden="true" /> {t("modelsConfig.disconnect")}
+              </button>
             </li>
           ))}
         </ul>

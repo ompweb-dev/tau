@@ -26,7 +26,6 @@ async function renderSystemTab(t, { appUpdate = null, onRequestAppUpdate = noop 
       toolCallsDefaultCollapsed: false, onToolCallsDefaultCollapsedChange: noop,
       hideToolActivity: false, onHideToolActivityChange: noop,
       expandThinkingByDefault: false, onExpandThinkingByDefaultChange: noop, onHideThinkingBlockChange: noop,
-      providerUsageVisible: false, onProviderUsageVisibleChange: noop,
       scopeNativeSelectAll: false, onScopeNativeSelectAllChange: noop,
       openUrlAutomatically: false, onOpenUrlAutomaticallyChange: noop,
       cwd: null, remoteHost: false, sessionId: null,

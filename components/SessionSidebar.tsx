@@ -6,7 +6,6 @@ import { useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { ProjectLaunchConfigDialog } from "./ProjectLaunchConfigDialog";
-import { ProviderUsageBar } from "./ProviderUsageBar";
 import { Tooltip } from "./ui/primitives";
 import { toast } from "./ui/toast";
 import { clearLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
@@ -93,8 +92,6 @@ interface Props {
   /** Host the open add-workspace picker is for (this machine when absent). */
   addProjectHostId?: string;
   setAddProjectOpen: (open: boolean, hostId?: string) => void;
-  /** Shows the provider usage bar above Settings; toggle lives in Settings. */
-  usageVisible?: boolean;
   /** Opens the app settings (pinned sidebar footer row). */
   onOpenSettings?: () => void;
   /** True when an omp/tau update is available — shows a badge on the gear. */
@@ -143,7 +140,7 @@ function loadCollapsedHosts(): Set<string> {
   }
 }
 
-export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, optimisticSession, onSelectSession, onNewSession, initialSessionId, initialSessionHostId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, selectedHostId: selectedHostIdProp, selectedLogicalProjectKey, onCwdChange, onWorkspaceOptionsChange, onWorktreeContextChange, addProjectOpen, addProjectHostId = LOCAL_HOST_ID, setAddProjectOpen, usageVisible = true, onOpenSettings, onOpenArchive, navigation, updateAvailable, settingsOpen = false, onClose, onSearchQueryChange, onOpenSearchMatch }: Props) {
+export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, optimisticSession, onSelectSession, onNewSession, initialSessionId, initialSessionHostId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, selectedHostId: selectedHostIdProp, selectedLogicalProjectKey, onCwdChange, onWorkspaceOptionsChange, onWorktreeContextChange, addProjectOpen, addProjectHostId = LOCAL_HOST_ID, setAddProjectOpen, onOpenSettings, onOpenArchive, navigation, updateAvailable, settingsOpen = false, onClose, onSearchQueryChange, onOpenSearchMatch }: Props) {
 
 
   const { t } = useI18n();
@@ -1878,8 +1875,6 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
           })}
         </div>
 
-      {/* Provider usage bar — pinned above Settings */}
-      {usageVisible && <ProviderUsageBar />}
       {/* Pinned footer: Settings */}
       <div style={{ borderTop: "1px solid var(--border)", flexShrink: 0 }}>
         <button

@@ -47,7 +47,6 @@ import * as ompVersion from "@/app/api/omp-version/route";
 import * as plugins from "@/app/api/plugins/route";
 import * as projectsClone from "@/app/api/projects/clone/route";
 import * as projects from "@/app/api/projects/route";
-import * as providerUsage from "@/app/api/provider-usage/route";
 import * as providersEnable from "@/app/api/providers/enable/route";
 import * as sessionsIdArchive from "@/app/api/sessions/[id]/archive/route";
 import * as sessionsIdAutoName from "@/app/api/sessions/[id]/auto-name/route";
@@ -148,7 +147,6 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "plugins": plugins,
   "projects/clone": projectsClone,
   "projects": projects,
-  "provider-usage": providerUsage,
   "providers/enable": providersEnable,
   "sessions/[id]/archive": sessionsIdArchive,
   "sessions/[id]/auto-name": sessionsIdAutoName,
