@@ -8,21 +8,14 @@ import { isRecord } from "../type-guards";
  * Unknown fields are preserved untouched.
  */
 
-export interface ModelThinkingConfig {
-  mode?: string;
-  efforts?: string[];
-  defaultLevel?: string;
-  effortMap?: Record<string, string>;
-  [key: string]: unknown;
-}
-
 export interface ModelDefinition {
   id: string;
   name?: string;
   api?: string;
   baseUrl?: string;
   reasoning?: boolean;
-  thinking?: ModelThinkingConfig;
+  /** Value sent per thinking level; null marks a level unsupported. */
+  thinkingLevelMap?: Record<string, string | null>;
   input?: string[];
   contextWindow?: number;
   maxTokens?: number;

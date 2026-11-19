@@ -31,12 +31,7 @@ export interface PiModel {
   contextWindow?: number;
   maxTokens?: number;
   input?: string[];
-  thinking?: {
-    mode?: string;
-    efforts?: string[];
-    requiresEffort?: boolean;
-    defaultLevel?: string;
-  };
+  thinkingLevelMap?: Record<string, string | null>;
   [key: string]: unknown;
 }
 
@@ -115,7 +110,7 @@ export interface WebSessionState {
   autoCompactionEnabled: boolean;
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
-  model?: ModelLike & { name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } };
+  model?: ModelLike & { name?: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> };
   messageCount: number;
   queuedMessageCount: number;
   queuedMessages: QueuedMessages;

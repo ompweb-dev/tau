@@ -32,12 +32,7 @@ export interface PiModel {
   provider: string;
   api?: string;
   reasoning?: boolean;
-  thinking?: {
-    mode?: string;
-    efforts?: string[];
-    defaultLevel?: string;
-    effortMap?: Record<string, string>;
-  };
+  thinkingLevelMap?: Record<string, string | null>;
   input?: string[];
   contextWindow?: number | null;
   maxTokens?: number | null;

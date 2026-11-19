@@ -37,20 +37,16 @@ export type OAuthLoginState =
   | { phase: "success" }
   | { phase: "error"; message: string };
 
-// A model's `thinking` config as tau writes it. pi 1.5.2 does not read it (it reads `thinkingLevelMap`).
-export interface ThinkingConfig {
-  mode?: string;
-  efforts?: string[];
-  defaultLevel?: string;
-  effortMap?: Record<string, string>;
-}
+// pi's `thinkingLevelMap`: the value sent for a level, null when the model does not support it; an absent level
+// keeps pi's default (supported through high; xhigh and max unsupported).
+export type ThinkingLevelMap = Record<string, string | null>;
 
 export interface ModelEntry {
   id: string;
   name?: string;
   api?: string;
   reasoning?: boolean;
-  thinking?: ThinkingConfig;
+  thinkingLevelMap?: ThinkingLevelMap;
   input?: string[];
   contextWindow?: number;
   maxTokens?: number;

@@ -1,8 +1,8 @@
 /**
  * Thinking-level resolution for the CURRENT model in the composer.
  *
- * `/api/models` carries each pickable model's baked effort ladder as
- * `["off", ...efforts]`. A running session's `get_state` resolves the model
+ * `/api/models` carries each pickable model's ladder, computed from pi's
+ * `reasoning` and `thinkingLevelMap` as pi-ai's getSupportedThinkingLevels does. A running session's `get_state` resolves the model
  * pi is ACTUALLY using — which can differ from the session file's model
  * entry (a disabled/renamed provider falls back to the default model, and the
  * catalog only lists enabled providers). When the catalog misses the current
@@ -16,7 +16,8 @@ export interface ThinkingModelMeta {
   modelId: string;
   name?: string;
   reasoning?: boolean;
-  thinking?: { efforts?: string[] };
+  /** pi's per-level wire value; null marks a level unsupported. */
+  thinkingLevelMap?: Record<string, string | null>;
 }
 
 export const DEFAULT_THINKING_LEVELS: readonly string[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -30,10 +31,13 @@ export function selectableThinkingLevels(available: readonly string[] | null | u
   return [...ordered, ...remaining];
 }
 
-/** "off" is always a valid selector; concrete efforts come from the model. */
-export function thinkingLevelsForMeta(meta: ThinkingModelMeta): string[] {
+/** pi-ai's getSupportedThinkingLevels: unmapped levels are supported through high; xhigh and max only when mapped. */
+export function thinkingLevelsForMeta(meta: Pick<ThinkingModelMeta, "reasoning" | "thinkingLevelMap">): string[] {
   if (!meta.reasoning) return ["off"];
-  return ["off", ...(meta.thinking?.efforts ?? [])];
+  return ["off", "minimal", "low", "medium", "high", "xhigh", "max"].filter((level) => {
+    const mapped = meta.thinkingLevelMap?.[level];
+    return mapped !== null && (mapped !== undefined || (level !== "xhigh" && level !== "max"));
+  });
 }
 
 /**

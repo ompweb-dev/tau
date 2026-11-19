@@ -47,7 +47,7 @@ import {
   type ConnectedProvider,
   type RuntimeModelEntry,
   type Selection,
-  type ThinkingConfig,
+  type ThinkingLevelMap,
   type ThinkingLevel,
 } from "./ModelsConfig-types";
 import {
@@ -317,56 +317,33 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
 }
 
 // ── Thinking levels editor ────────────────────────────────────────────────────
-// Edits a model's `thinking` config: `efforts` lists the enabled levels, and
-// `effortMap` overrides the string sent on the wire for a level. When every
-// row is Default the config is omitted. pi 1.5.2 reads `thinkingLevelMap`
-// instead and ignores this shape.
+// Edits a model's `thinkingLevelMap`: Default leaves a level out, Disabled
+// maps it to null, Custom to the value sent on the wire. When every row is
+// Default the map is omitted.
 
 
 function ThinkingEditor({
   value,
   onChange,
 }: {
-  value: ThinkingConfig | undefined;
-  onChange: (v: ThinkingConfig | undefined) => void;
+  value: ThinkingLevelMap | undefined;
+  onChange: (v: ThinkingLevelMap | undefined) => void;
 }) {
   const { t } = useI18n();
-  const efforts = value?.efforts;
-  const effortMap = value?.effortMap ?? {};
 
   const setLevel = (level: ThinkingLevel, entry: string | null | "omit") => {
-    // entry: "omit" → enabled with the default wire value; null → level
-    // disabled (excluded from efforts); string → enabled with a custom value.
-    const included = new Set<string>(efforts ?? [...THINKING_LEVELS]);
-    const map: Record<string, string> = { ...effortMap };
-    if (entry === null) {
-      included.delete(level);
-      delete map[level];
-    } else {
-      included.add(level);
-      if (entry === "omit") delete map[level];
-      else map[level] = entry;
-    }
-    const ordered = THINKING_LEVELS.filter((l) => included.has(l));
-    if (ordered.length === 0 || (ordered.length === THINKING_LEVELS.length && Object.keys(map).length === 0)) {
-      onChange(undefined);
-      return;
-    }
-    onChange({
-      ...(value ?? {}),
-      mode: value?.mode ?? "effort",
-      efforts: ordered,
-      effortMap: Object.keys(map).length ? map : undefined,
-    });
+    const map: ThinkingLevelMap = { ...value };
+    if (entry === "omit") delete map[level];
+    else map[level] = entry;
+    onChange(Object.keys(map).length ? map : undefined);
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {THINKING_LEVELS.map((level) => {
-        const disabled = efforts !== undefined && !efforts.includes(level);
-        const raw = disabled ? null : effortMap[level];
+        const raw = value?.[level];
         const state: "omit" | "null" | "string" =
-          disabled ? "null" : typeof raw === "string" ? "string" : "omit";
+          raw === null ? "null" : typeof raw === "string" ? "string" : "omit";
         const strVal = typeof raw === "string" ? raw : "";
         const color = LEVEL_COLORS[level];
 
@@ -611,10 +588,10 @@ function ModelDetail({
           }
         >
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            {model.thinking && (
+            {model.thinkingLevelMap && (
               <button
                 type="button"
-                onClick={() => set("thinking", undefined)}
+                onClick={() => set("thinkingLevelMap", undefined)}
                 style={{
                   fontSize: 10,
                   padding: "3px 9px",
@@ -633,8 +610,8 @@ function ModelDetail({
             )}
           </div>
           <ThinkingEditor
-            value={model.thinking}
-            onChange={(v) => set("thinking", v)}
+            value={model.thinkingLevelMap}
+            onChange={(v) => set("thinkingLevelMap", v)}
           />
         </FieldGroup>
       )}

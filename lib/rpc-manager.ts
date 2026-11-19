@@ -1693,7 +1693,7 @@ export class AgentSessionWrapper {
             provider: state.model.provider,
             name: state.model.name,
             reasoning: state.model.reasoning,
-            thinking: state.model.thinking ? { efforts: state.model.thinking.efforts } : undefined,
+            thinkingLevelMap: state.model.thinkingLevelMap,
           }
         : undefined,
       messageCount: state.messageCount,

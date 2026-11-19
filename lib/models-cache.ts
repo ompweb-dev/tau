@@ -3,6 +3,8 @@ export interface ModelsData {
   modelList: { id: string; name: string; provider: string }[];
   defaultModel: { provider: string; modelId: string } | null;
   thinkingLevels: Record<string, string[]>;
+  /** pi's per-model `thinkingLevelMap`, for models that carry one. */
+  thinkingLevelMaps?: Record<string, Record<string, string | null>>;
   connectedProviders?: { id: string; name: string }[];
   modelError?: string;
 }

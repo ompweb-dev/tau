@@ -176,7 +176,7 @@ export interface LastAssistantTextResponse {
 // Shape of lib/rpc-manager's WebSessionState as seen over HTTP.
 export type AgentStateResponse = {
   // Raw get_state passthrough: the resolved model pi is actually running.
-  model?: { provider: string; id: string; name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } };
+  model?: { provider: string; id: string; name?: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> };
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
   thinkingLevel?: string;
@@ -202,9 +202,9 @@ export function normalizeThinkingLevel(level: string | undefined): ThinkingLevel
 }
 
 /** Narrow the live state's model (PiModel: id-based) to the composer's shape. */
-export function toThinkingModelMeta(model: { provider?: string; id?: string; name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } } | null | undefined): ThinkingModelMeta | null {
+export function toThinkingModelMeta(model: { provider?: string; id?: string; name?: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> } | null | undefined): ThinkingModelMeta | null {
   if (!model?.provider || !model.id) return null;
-  return { provider: model.provider, modelId: model.id, name: model.name, reasoning: model.reasoning, thinking: model.thinking };
+  return { provider: model.provider, modelId: model.id, name: model.name, reasoning: model.reasoning, thinkingLevelMap: model.thinkingLevelMap };
 }
 
 export type AgentPhase =

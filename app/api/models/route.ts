@@ -2,6 +2,7 @@ import { statSync } from "fs";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, withSafeModelLoadFailure, type ModelsData } from "@/lib/models-cache";
 import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type PiModel } from "@/lib/pi/rpc-utility";
 import { getModelsConfigPath } from "@/lib/pi/paths";
+import { thinkingLevelsForMeta } from "@/lib/thinking-levels";
 
 // The pi model registry (auth + models.json) is global, not per-cwd, so one
 // cache entry serves every request. The ?cwd= query parameter is still
@@ -44,13 +45,6 @@ function compareModelEntries(
     || modelNameCollator.compare(a.id, b.id);
 }
 
-// "off" is always a valid selector; the concrete efforts come from the model's
-// baked thinking metadata.
-function thinkingLevelsFor(model: PiModel): string[] {
-  if (!model.reasoning) return ["off"];
-  return ["off", ...(model.thinking?.efforts ?? [])];
-}
-
 async function loadModels(): Promise<ModelsData> {
   const availableResponse = await runUtilityCommand<{ models?: unknown }>(
     { type: "get_available_models" },
@@ -71,8 +65,9 @@ async function loadModels(): Promise<ModelsData> {
 
   const nameMap = new Map<string, string>();
   const thinkingLevels: Record<string, string[]> = {};
+  const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
   const modelList = available
-    .map((m) => ({ id: m.id, name: m.name, provider: m.provider, thinkingLevels: thinkingLevelsFor(m), contextWindow: m.contextWindow ?? undefined, maxTokens: m.maxTokens ?? undefined }))
+    .map((m) => ({ id: m.id, name: m.name, provider: m.provider, thinkingLevels: thinkingLevelsForMeta(m), contextWindow: m.contextWindow ?? undefined, maxTokens: m.maxTokens ?? undefined }))
     .sort(compareModelEntries);
   // tau's companion extension reports pi's providers (lib/hosts/daemon-auth.ts reads the same list per host).
   const loginResponse = await runUtilityExtension<{ providers?: unknown }>("tau_auth", { action: "providers" }, 30_000);
@@ -87,7 +82,8 @@ async function loadModels(): Promise<ModelsData> {
   for (const m of available) {
     const key = `${m.provider}:${m.id}`;
     nameMap.set(key, m.name);
-    thinkingLevels[key] = thinkingLevelsFor(m);
+    thinkingLevels[key] = thinkingLevelsForMeta(m);
+    if (m.thinkingLevelMap) thinkingLevelMaps[key] = m.thinkingLevelMap;
   }
 
   // pi resolves the default model at session start; a --no-session utility
@@ -108,7 +104,7 @@ async function loadModels(): Promise<ModelsData> {
   }
 
   return withModelRuntimeError(
-    { models: Object.fromEntries(nameMap), modelList, defaultModel, thinkingLevels, connectedProviders },
+    { models: Object.fromEntries(nameMap), modelList, defaultModel, thinkingLevels, thinkingLevelMaps, connectedProviders },
     undefined,
   );
 }
