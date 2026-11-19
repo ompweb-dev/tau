@@ -702,7 +702,7 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
   - **Settings.** Rows carry `clusterConfig { …state, owned, current }` (`listHosts`); the member line shows
     current, updating (none while `masterConfigError` is set), failed (reason), held by another server, needs update (`clusterJoinBlock` says "upgrade"), and the MCP commands
     missing there. For a cluster session on another member (`isClusterTarget` with a member host) the MCP,
-    Skills, Plugins and Agents panels use no cwd and no session (the user-level routes above); MCP alone keeps
+    Skills and Plugins panels use no cwd and no session (the user-level routes above); MCP alone keeps
     the session for `?attach=1`, read-only (`McpConfig liveOnly`).
 - **Remote paths never reach `allowFileRoot`** or any other main-side
   filesystem check: they mean nothing on main. `startNewRpcSession` calls
@@ -943,7 +943,7 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
   instead of lapsing a held row by its clock (later opens only read the version).
   Async restore streams archives with fixed 256 MiB compressed and
   expanded limits, rejecting unsupported IDs before archive consumption.
-- **Not yet remote:** Skills/Plugins/Agents/MCP settings for a host outside the cluster (cluster
+- **Not yet remote:** Skills/Plugins/MCP settings for a host outside the cluster (cluster
   members run this machine's, see "Cluster configuration").
 - **Transcript search is per host.** `/api/sessions/search` asks each linked daemon to score only
   its own active conversations, then streams the score maps in sidebar host order. An offline,

@@ -473,7 +473,7 @@ the cluster keeps its own configuration, managed on that machine.
   *updating…*, *failed* with the reason, *held by another ompweb server*, or that the host needs
   an update, and the MCP server commands in the mirrored files that are not installed there.
   When this machine's configuration cannot be mirrored, one message names the file, and no
-  member line says *updating…*. For a session or project of the cluster, the Models, settings, MCP, Skills, Plugins and Agents
+  member line says *updating…*. For a session or project of the cluster, the Models, settings, MCP, Skills and Plugins
   screens say that changes apply to every member, and so does **Settings → System** next to the
   agent environment variables. For a session on another member they act on
   this machine's user-level configuration, which the member runs; that session's and project's
@@ -875,7 +875,7 @@ Notes:
   private quarantine and the error gives its location; inspect it before removing
   or restoring anything.
 - **Not available on remote hosts yet:** the Skills,
-  Plugins, Agents and MCP settings, for a host outside the cluster (a cluster member uses
+  Plugins and MCP settings, for a host outside the cluster (a cluster member uses
   this machine's: see [above](#cluster-members-use-this-machines-omp-configuration)).
   Transcript search still scans this machine.
 - **Agent-started sessions:** with agent tools enabled, an agent can pass a `host`
@@ -1027,7 +1027,7 @@ Stop it with `Stop-ScheduledTask ompweb-host`, then end the running host with
 - **macOS launchd Service**: LaunchAgent that starts at login, restarts on crash, and logs under `~/Library/Logs/ompweb`.
 - **Linux systemd Service & Tray**: User service that starts at login and restarts on crash, plus a StatusNotifierItem tray icon with service controls (KDE Plasma and compatible desktops).
 - **Notifications**: Desktop and mobile (PWA) notifications for finished tasks, questions waiting for an answer, failed runs, and automatic model switches, with Web Push when served over HTTPS. See [Notifications](#notifications).
-- **Web-based Settings** (11 tabs): Interface & Behavior, Safety & Approvals, AI Model Defaults, API Keys & Providers, Usage, Agent & Intelligence (advisor, memory, compaction), Agents, Extensions & Tools (MCP, skills, plugins), Hosts, Notifications, System.
+- **Web-based Settings** (10 tabs): Interface & Behavior, Safety & Approvals, AI Model Defaults, API Keys & Providers, Usage, Agent & Intelligence (advisor, memory, compaction), Extensions & Tools (MCP, skills, plugins), Hosts, Notifications, System.
 - **Slash Commands & Shortcuts**: Quick prompts (`/plan`, `/review`, `/fix`, `/test`, etc.), `⌘K` / `Ctrl+K` palette, and model/reasoning cycling.
 - **UI Themes & Localization**: Warm paper light/dark themes plus an omp.sh-inspired midnight (`omp`) theme, chat font size & interface scale, with full English, Chinese (简体中文), and Japanese (日本語) translations.
 
