@@ -11,8 +11,6 @@ import type { ApprovedReleasePin, HostUpdateOperation, HostUpdateTarget } from "
 import type { UpgradeLaunch, UpgradeProcess } from "../upgrade-process";
 import type * as ProcessRuntime from "../upgrade-process";
 import type * as IdentityRuntime from "../process-identity";
-import type * as JitiRuntime from "jiti";
-import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { setTimeout as pause } from "node:timers/promises";
@@ -44,14 +42,12 @@ export interface HostUpdateDescriptor {
   hostArgs: string[];
   cwd: string;
   daemonPid: number;
-  /** The daemon as inspected when claimed: its process identity and verified supervisor, persisted verbatim. stop/restart re-verify it. Absent on a descriptor an earlier engine wrote: the worker inspects the still-running daemon itself. */
-  process?: UpgradeProcess;
-  /** Earlier engines' proof of the daemon's identity (a recycled pid is never signalled); only read when `process` is absent. */
-  daemonIdentity?: string | null;
+  /** The daemon as inspected when claimed: its process identity and verified supervisor, persisted verbatim. stop/restart re-verify it. */
+  process: UpgradeProcess;
   managerPath?: string;
   restartOnly?: boolean;
-  /** Binary release source; absent only on a legacy restart-only descriptor, which downloads nothing. */
-  releaseRepo?: string;
+  /** Binary release source. */
+  releaseRepo: string;
   releasePin?: ApprovedReleasePin;
   requireReleasePin?: boolean;
   /** Full staging and preflight stop at a durable gate until this operation is committed or cancelled. */
@@ -68,7 +64,7 @@ interface WorkerRuntime {
   identity: typeof IdentityRuntime;
 }
 
-async function workerRuntime(d: HostUpdateDescriptor): Promise<WorkerRuntime> {
+async function workerRuntime(): Promise<WorkerRuntime> {
   // Runtime-selected: a copied worker cannot import these statically (its `../` specifiers resolve outside the attempt directory).
   const embedded = async () => ({ process: await import("../upgrade-process"), identity: await import("../process-identity") });
   // A compiled binary embeds these modules; its worker has no copies beside it.
@@ -82,13 +78,7 @@ async function workerRuntime(d: HostUpdateDescriptor): Promise<WorkerRuntime> {
   }
   // Run from source under Bun (the web server's own runtime, tests).
   if (typeof Bun !== "undefined") return embedded();
-  // A legacy restart-only updater copied no dependencies. validateDescriptor checked this owned package and its identity first.
-  const { createJiti } = createRequire(join(d.installDir, "package.json"))("jiti") as typeof JitiRuntime;
-  const jiti = createJiti(import.meta.url);
-  return {
-    process: await jiti.import<typeof ProcessRuntime>(join(d.installDir, "lib", "upgrade-process.ts")),
-    identity: await jiti.import<typeof IdentityRuntime>(join(d.installDir, "lib", "process-identity.ts")),
-  };
+  throw new Error("The host update worker's lifecycle modules are missing beside it");
 }
 
 
@@ -693,12 +683,9 @@ export async function moveHostRelease(from: string, to: string): Promise<void> {
     }
   }
 }
-/** The daemon's verified process and supervisor: the snapshot the claim persisted or, for a descriptor an earlier engine wrote, inspected now against its recorded identity. */
-async function daemonProcess(d: HostUpdateDescriptor, runtime: WorkerRuntime): Promise<UpgradeProcess> {
-  if (d.process) return { ...d.process, current: { ...d.process.current } };
-  if (!runtime.identity.isProcessAlive(d.daemonPid)) throw new Error("The host daemon is no longer running, so its supervisor cannot be inspected; restart it manually");
-  if (d.daemonIdentity && await runtime.identity.processStartIdentity(d.daemonPid) !== d.daemonIdentity) throw new Error("The recorded host daemon is no longer the process with this pid (process identity mismatch); refusing to signal it");
-  return runtime.process.inspectUpgradeProcess({ pid: d.daemonPid, installDir: d.installDir, role: "host", launch: hostLaunch(d) });
+/** The daemon's verified process and supervisor: the snapshot the claim persisted. */
+function daemonProcess(d: HostUpdateDescriptor): UpgradeProcess {
+  return { ...d.process, current: { ...d.process.current } };
 }
 /** A forced update's commit: from here the daemon accepts no new sessions (it reads this file at each start). */
 function markCommitting(id: string): void {
@@ -771,10 +758,9 @@ async function launchDaemon(d: HostUpdateDescriptor, plan: UpgradeProcess, runti
 function validateDescriptor(path: string): HostUpdateDescriptor {
   const root = ensureHostUpdateRoot();
   assertOwnedPath(path);
-  const d = JSON.parse(readFileSync(path, "utf8")) as HostUpdateDescriptor & { systemd?: { unit?: unknown; user?: unknown } | null };
+  const d = JSON.parse(readFileSync(path, "utf8")) as HostUpdateDescriptor;
   if (!/^[a-zA-Z0-9-]{1,80}$/.test(d.id) || resolve(path) !== join(root, d.id, "descriptor.json") || !HOST_VERSION_PATTERN.test(d.version) || !HOST_VERSION_PATTERN.test(d.fromVersion) || d.target !== "tau" || !["npm", "bun", "binary"].includes(d.installMethod) || !isAbsolute(d.installDir) || !isAbsolute(d.runtime) || !isAbsolute(d.cwd) || !Number.isSafeInteger(d.daemonPid) || d.daemonPid <= 1 || !Array.isArray(d.hostArgs) || d.hostArgs.some((arg) => arg !== "--allow-http")) throw new Error("Invalid host update descriptor");
-  // A v10 daemon copies this new worker after the shared web installation has already been replaced.
-  if (d.releaseRepo === undefined ? d.restartOnly !== true : typeof d.releaseRepo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(d.releaseRepo)) throw new Error("Invalid host update descriptor");
+  if (typeof d.releaseRepo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(d.releaseRepo)) throw new Error("Invalid host update descriptor");
   if (d.restartOnly !== undefined && typeof d.restartOnly !== "boolean") throw new Error("Invalid host restart-only descriptor");
   if (d.prepareOnly !== undefined && typeof d.prepareOnly !== "boolean") throw new Error("Invalid host update descriptor");
   if (d.compatibility !== undefined && (!Number.isSafeInteger(d.compatibility.min) || !Number.isSafeInteger(d.compatibility.max) || d.compatibility.min < 1 || d.compatibility.max < d.compatibility.min)) throw new Error("Invalid host update descriptor: compatibility");
@@ -783,12 +769,10 @@ function validateDescriptor(path: string): HostUpdateDescriptor {
   if (d.releasePin !== undefined) d.releasePin = validateApprovedReleasePin(d.releasePin, d.version, d.releaseRepo);
   if (d.releasePin && d.restartOnly) throw new Error("An existing installation cannot be adopted as an approved release without artifact evidence");
   if (d.receipt !== undefined && (!d.receipt || !Number.isSafeInteger(d.receipt.min) || !Number.isSafeInteger(d.receipt.max) || d.receipt.min < 1 || d.receipt.max < d.receipt.min)) throw new Error("Invalid host update descriptor: the approved protocol range");
-  // The daemon's process snapshot, or what an earlier engine recorded instead: an identity, or the service it had verified.
-  if (d.process !== undefined ? typeof d.process !== "object" || d.process === null || Array.isArray(d.process) : !(d.systemd || (typeof d.daemonIdentity === "string" && d.daemonIdentity && d.daemonIdentity.length <= 200))) throw new Error("Invalid host update descriptor: the daemon's process identity is missing");
+  if (typeof d.process !== "object" || d.process === null || Array.isArray(d.process)) throw new Error("Invalid host update descriptor: the daemon's process identity is missing");
   assertOwnedPath(dirname(path), true);
   const state = readHostUpdateState();
   if (state?.operation.id !== d.id || state.operation.state !== "running" || state.operation.version !== d.version || state.daemonPid !== d.daemonPid) throw new Error("Host update descriptor does not own the running operation");
-  if (d.systemd && (typeof d.systemd.unit !== "string" || !/^[a-zA-Z0-9_.@\\:-]+\.service$/.test(d.systemd.unit) || /^tau-api(?:[.@-]|$)/i.test(d.systemd.unit) || typeof d.systemd.user !== "boolean")) throw new Error("Refusing to control a non-host service");
   const info = lstatSync(d.installDir);
   if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(d.installDir) !== resolve(d.installDir) || (process.getuid && info.uid !== process.getuid()) || (process.platform !== "win32" && (info.mode & 0o022))) throw new Error("Unsupported or unsafe host installation layout");
   const parent = lstatSync(dirname(d.installDir));
@@ -818,7 +802,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
   let nonce: string | undefined;
   try {
     d = validateDescriptor(path);
-    runtime = await workerRuntime(d);
+    runtime = await workerRuntime();
     const workerLease = join(dirname(path), "worker.lock");
     try { writeFileSync(workerLease, String(process.pid), { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return 1; throw error; }
@@ -829,7 +813,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     writeHostUpdateJson(join(hostUpdateRoot(), "status.json"), { ...state, workerPid: process.pid });
     // Give the host op response time to reach the web server before any stop.
     await pause(500);
-    plan = await daemonProcess(d, runtime);
+    plan = daemonProcess(d);
     await runtime.process.assertUpgradeProcessControl(plan);
     let release: string | undefined;
     if (!d.restartOnly) {
@@ -839,7 +823,6 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
       staging = join(dirname(d.installDir), `.tau-staging-${d.id}`);
       mkdirSync(staging, { mode: 0o700 });
       stagingCreated = true;
-      if (!d.releaseRepo) throw new Error("The host update has no verified release repository");
       release = d.installMethod === "binary"
         ? await stageBinary({ version: d.version, releaseRepo: d.releaseRepo, releasePin: d.releasePin, requireReleasePin: d.requireReleasePin }, staging)
         : await stagePackage({ version: d.version, installMethod: d.installMethod, managerPath: d.managerPath, releasePin: d.releasePin, requireReleasePin: d.requireReleasePin }, staging);
