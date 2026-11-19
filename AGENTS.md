@@ -183,7 +183,6 @@ lib/
     watch-store.ts     `<agent dir>/omp-web/github-watches.sqlite` (WAL): watches, cursors, pending updates, posted comment ids, read grants; `removeSessionWatches`/`renameSession` do nothing when the file does not exist (a session delete never creates, or on Windows holds open, a store)
     watcher.ts         60 s poller: pending row, then a `prompt` outbox add, then the cursor on acceptance
     tools.ts           the five tools (`GITHUB_TOOL_NAMES`, `GITHUB_REPLAY_SAFE_TOOLS`), run after agent-tools' enabled and rate checks
-  provider-accounts.ts distinct omp accounts per provider from `omp usage` reports (Models → provider detail)
   agent-client.ts      agent commands from the tab: POST /api/agent/[id], or the worker's browser link in the `ws` transport; records each command's `action` sample
   agent-command.ts     `runAgentCommand`: the one command path behind POST /api/agent/[id] and a browser link's `cmd`
   browser-link.ts      `/api/events/link`: Bun `websocket` handler for the browser link (sequencing, pieces, resume, `(session, rid)` dedupe)
@@ -1772,7 +1771,7 @@ during the wait.
 - `/api/omp-update` keeps only `restart`, an explicit server-side maintenance API for existing callers. The settings UI and AppShell no longer use it as a global update control or send a server-wide session restart after a host update.
 
 ### Auth and model config
-- Auth flows go through `ompweb-omp` commands (`get_login_providers`, `login`, `get_logout_accounts`, `logout`) against the omp child process; credentials live in omp's `agent.db` (SQLite) which omp-web never touches directly. `/api/auth/accounts/[provider]` lists stored accounts and removes one by `credentialId`; omp without those commands reports `supported: false` and the UI falls back to the read-only `omp usage` account list.
+- Auth flows go through `ompweb-omp` commands (`get_login_providers`, `login`, `get_logout_accounts`, `logout`) against the omp child process; credentials live in omp's `agent.db` (SQLite) which omp-web never touches directly. `/api/auth/accounts/[provider]` lists stored accounts and removes one by `credentialId`; omp without those commands reports `supported: false` and the UI lists no accounts.
 - Linked hosts with `shareCredentials` read this machine's credentials through `lib/omp/auth-broker.ts`, the `omp auth-broker serve` child (the token comes from `omp auth-broker token` and stays in the server process; a refused token stops the child and the next request starts a new one). The broker reloads the store on every snapshot, so a login or logout in Settings reaches every omp process a sharing host starts afterwards; a running process picks it up the next time it is used (omp stops listening for updates after 20 seconds without activity and resumes on its next use) and keeps the access tokens and API keys it has already loaded until it ends.
 - The Models panel reads and writes `models.yml` in the omp agent directory (`~/.omp/agent/models.yml`, `.yaml` fallback).
 - API-key status endpoints must never return the raw key.
