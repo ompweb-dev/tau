@@ -5,9 +5,9 @@ if (process.argv.includes("--version")) {
   console.log("18.15.0-multi-server-test");
   process.exit(0);
 }
-const sessionId = process.env.OMP_MULTI_SESSION_ID;
-const sessionFile = process.env.OMP_MULTI_SESSION_FILE;
-const record = (entry) => fs.appendFileSync(process.env.OMP_MULTI_LOG, `${JSON.stringify({ pid: process.pid, ...entry })}\n`);
+const sessionId = process.env.PI_MULTI_SESSION_ID;
+const sessionFile = process.env.PI_MULTI_SESSION_FILE;
+const record = (entry) => fs.appendFileSync(process.env.PI_MULTI_LOG, `${JSON.stringify({ pid: process.pid, ...entry })}\n`);
 const send = (frame) => process.stdout.write(`${JSON.stringify(frame)}\n`);
 const out = (event) => send(event);
 const resumed = process.argv.includes("--session");
@@ -73,7 +73,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
         result: { content: [{ type: "text", text: "one shared result" }],
           ...(args.message === "from B" ? { details: { largeResult: "x".repeat(1_100_000) } } : {}) }, isError: false });
       timer = setInterval(() => {
-        if (args.message === "slow" && !fs.existsSync(process.env.OMP_MULTI_RELEASE_FILE)) return;
+        if (args.message === "slow" && !fs.existsSync(process.env.PI_MULTI_RELEASE_FILE)) return;
         assistant.content[0].text = "one two";
         out({ type: "message_update", messageId: `a${n}`, message: { role: "assistant" },
           assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: " two" } });

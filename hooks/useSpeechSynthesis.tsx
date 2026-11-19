@@ -5,8 +5,8 @@ import { sanitizeTextForSpeech } from "@/lib/speech-sanitizer";
 
 export const TTS_AUTOPLAY_PREF_KEY = "omp-tts-autoplay";
 export const TTS_VOICE_PREF_KEY = "omp-tts-voice";
-export const TTS_PREF_EVENT = "omp-tts-pref-change";
-export const TTS_STATE_EVENT = "omp-tts-state-change";
+export const TTS_PREF_EVENT = "tau-tts-pref-change";
+export const TTS_STATE_EVENT = "tau-tts-state-change";
 
 export interface SpeechSynthesisState {
   isSupported: boolean;

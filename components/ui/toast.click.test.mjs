@@ -164,7 +164,7 @@ test("a push the service worker showed reloads the list from the server; other m
     await post("junk");
     await post({ type: "something-else" });
     assert.deepEqual(requests, []);
-    await post({ type: "omp-notification-shown", notification: { type: "error", title: "Pushed", body: "Run failed", tag: "s7:error", sessionId: "s7" } });
+    await post({ type: "tau-notification-shown", notification: { type: "error", title: "Pushed", body: "Run failed", tag: "s7:error", sessionId: "s7" } });
     assert.deepEqual(requests, [["GET", "/api/notifications/history"]]);
     assert.deepEqual(notificationHistory.get().map((e) => e.id), ["s7:error"]);
   } finally {

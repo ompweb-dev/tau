@@ -127,7 +127,7 @@ type SettingIndexEntry = {
   fallbackSection: string;
   fallbackLabel: string;
   fallbackDesc: string;
-  scope?: "UI" | "Native OMP" | "Workspace";
+  scope?: "UI" | "Native pi" | "Workspace";
 };
 
 const SETTING_INDEX: SettingIndexEntry[] = [
@@ -148,13 +148,13 @@ const SETTING_INDEX: SettingIndexEntry[] = [
   { id: "message-during-active-run", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.messageDuringActiveRun", descKey: "settingsConfig.messageDuringActiveRunDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Message during active run", fallbackDesc: "What composer does on submit while agent runs. Steer interrupts; Queue follow-up delivers after finish.", scope: "UI" },
   { id: "connection-diagnostics", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.connectionDiagnostics", descKey: "settingsConfig.connectionDiagnosticsDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Show connection diagnostics", fallbackDesc: "Adds a Connection tab to the right panel showing the connection this browser uses (WebSocket or server-sent events), its status and delivery latency statistics. Applies to this browser only.", scope: "UI" },
   // AI Model Defaults
-  { id: "reasoning", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.reasoning", descKey: "settingsConfig.reasoningDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Reasoning", fallbackDesc: "Default effort level for thinking-capable models.", scope: "Native OMP" },
-  { id: "thinking-blocks", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.thinkingBlocks", descKey: "settingsConfig.thinkingBlocksDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Hide Thinking Blocks", fallbackDesc: "Hide model reasoning from output view.", scope: "Native OMP" },
+  { id: "reasoning", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.reasoning", descKey: "settingsConfig.reasoningDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Reasoning", fallbackDesc: "Default effort level for thinking-capable models.", scope: "Native pi" },
+  { id: "thinking-blocks", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.thinkingBlocks", descKey: "settingsConfig.thinkingBlocksDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Hide Thinking Blocks", fallbackDesc: "Hide model reasoning from output view.", scope: "Native pi" },
   // Context Compaction
-  { id: "automatic-compaction", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.automaticCompaction", descKey: "settingsConfig.automaticCompactionDesc", fallbackSection: "Context Compaction", fallbackLabel: "Automatic Compaction", fallbackDesc: "Compact context before model context limit is hit.", scope: "Native OMP" },
+  { id: "automatic-compaction", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.automaticCompaction", descKey: "settingsConfig.automaticCompactionDesc", fallbackSection: "Context Compaction", fallbackLabel: "Automatic Compaction", fallbackDesc: "Compact context before model context limit is hit.", scope: "Native pi" },
   // Automatic Retry
-  { id: "automatic-retry", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.retryToggle", descKey: "settingsConfig.retryToggleDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Automatic Retry", fallbackDesc: "Retry failed turns automatically.", scope: "Native OMP" },
-  { id: "max-attempts", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.maxAttempts", descKey: "settingsConfig.maxAttemptsDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Max Attempts", fallbackDesc: "Retry limit before giving up.", scope: "Native OMP" },
+  { id: "automatic-retry", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.retryToggle", descKey: "settingsConfig.retryToggleDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Automatic Retry", fallbackDesc: "Retry failed turns automatically.", scope: "Native pi" },
+  { id: "max-attempts", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.maxAttempts", descKey: "settingsConfig.maxAttemptsDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Max Attempts", fallbackDesc: "Retry limit before giving up.", scope: "Native pi" },
   // Usage & Analytics
   { id: "usage-summary", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.title", descKey: "settingsTabs.usage.description", fallbackSection: "Usage", fallbackLabel: "Usage & Analytics", fallbackDesc: "Tokens, costs, cache analytics, and model breakdown", scope: "UI" },
   { id: "token-cost", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.rawTokenCost", descKey: "usageConfig.billedAtFullRate", fallbackSection: "Usage", fallbackLabel: "Raw Token Cost", fallbackDesc: "Token expenditure across providers and models", scope: "UI" },
@@ -185,7 +185,7 @@ function SearchResultsList({ results, query, onSelect }: { results: SearchResult
   const isMobile = useIsMobile();
   const formatScope = (s?: string) => {
     if (s === "UI") return t("settingsConfig.chipUI");
-    if (s === "Native OMP") return t("settingsConfig.chipNativeOMP");
+    if (s === "Native pi") return t("settingsConfig.chipNativePi");
     if (s === "Workspace") return t("settingsConfig.chipWorkspace");
     return s;
   };
@@ -739,7 +739,7 @@ function NotificationSettingsPanel() {
 }
 
 /** `disabled` only dims the row; the child control must be disabled itself. */
-function NativeSetting({ label, description, scope, searchId, disabled, children }: { label: string; description: string; scope?: "UI" | "Native OMP" | "Workspace"; searchId?: string; disabled?: boolean; children: ReactNode }) {
+function NativeSetting({ label, description, scope, searchId, disabled, children }: { label: string; description: string; scope?: "UI" | "Native pi" | "Workspace"; searchId?: string; disabled?: boolean; children: ReactNode }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const highlightId = useContext(SettingsHighlightContext);
@@ -751,7 +751,7 @@ function NativeSetting({ label, description, scope, searchId, disabled, children
 
   const formatScope = (s?: string) => {
     if (s === "UI") return t("settingsConfig.chipUI");
-    if (s === "Native OMP") return t("settingsConfig.chipNativeOMP");
+    if (s === "Native pi") return t("settingsConfig.chipNativePi");
     if (s === "Workspace") return t("settingsConfig.chipWorkspace");
     return s;
   };
@@ -1251,7 +1251,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                       onChange={(next) => {
                         setSoundEnabled(next);
                         try { localStorage.setItem("omp-sound-enabled", String(next)); } catch { /* storage fallback */ }
-                        window.dispatchEvent(new CustomEvent("omp-sound-pref-change", { detail: next }));
+                        window.dispatchEvent(new CustomEvent("tau-sound-pref-change", { detail: next }));
                       }}
                     />
                   </NativeSetting>
@@ -1387,7 +1387,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: "var(--text-md)", color: "var(--text-muted)", lineHeight: 1.45 }}>{t("settingsConfig.modelDefaultsDesc")}</p>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-                  <NativeSetting searchId="reasoning" label={t("settingsConfig.reasoning")} description={t("settingsConfig.reasoningDesc")} scope="Native OMP">
+                  <NativeSetting searchId="reasoning" label={t("settingsConfig.reasoning")} description={t("settingsConfig.reasoningDesc")} scope="Native pi">
                     <ThemedSelect
                       style={nativeSelectStyle}
                       value={nativeSettings?.defaultThinkingLevel ?? "medium"}
@@ -1395,7 +1395,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                       options={["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((l) => (({ value: l, label: l })))}
                     />
                   </NativeSetting>
-                  <NativeSetting searchId="thinking-blocks" label={t("settingsConfig.thinkingBlocks")} description={t("settingsConfig.thinkingBlocksDesc")} scope="Native OMP">
+                  <NativeSetting searchId="thinking-blocks" label={t("settingsConfig.thinkingBlocks")} description={t("settingsConfig.thinkingBlocksDesc")} scope="Native pi">
                     <ToggleSwitch
                       checked={nativeSettings?.hideThinkingBlock ?? false}
                       onChange={(checked) => { patchSettings({ hideThinkingBlock: checked }); onHideThinkingBlockChange?.(checked); }}
@@ -1448,7 +1448,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <div className="settings-section-title" style={{ fontSize: 13.5, fontWeight: 600, margin: 0 }}>{t("settingsConfig.contextCompaction")}</div>
                   <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.45 }}>{t("settingsConfig.contextCompactionDesc")}</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4, width: "100%" }}>
-                    <NativeSetting searchId="automatic-compaction" label={t("settingsConfig.automaticCompaction")} description={t("settingsConfig.automaticCompactionDesc")} scope="Native OMP">
+                    <NativeSetting searchId="automatic-compaction" label={t("settingsConfig.automaticCompaction")} description={t("settingsConfig.automaticCompactionDesc")} scope="Native pi">
                       <ToggleSwitch
                         checked={nativeSettings?.compaction?.enabled ?? true}
                         onChange={(checked) => patchSection("compaction", { enabled: checked })}
@@ -1462,13 +1462,13 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <div className="settings-section-title" style={{ fontSize: 13.5, fontWeight: 600, margin: 0 }}>{t("settingsConfig.automaticRetry")}</div>
                   <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.45 }}>{t("settingsConfig.automaticRetryDesc")}</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4, width: "100%" }}>
-                    <NativeSetting searchId="automatic-retry" label={t("settingsConfig.retryToggle")} description={t("settingsConfig.retryToggleDesc")} scope="Native OMP">
+                    <NativeSetting searchId="automatic-retry" label={t("settingsConfig.retryToggle")} description={t("settingsConfig.retryToggleDesc")} scope="Native pi">
                       <ToggleSwitch
                         checked={nativeSettings?.retry?.enabled ?? true}
                         onChange={(checked) => patchSection("retry", { enabled: checked })}
                       />
                     </NativeSetting>
-                    <NativeSetting searchId="max-attempts" label={t("settingsConfig.maxAttempts")} description={t("settingsConfig.maxAttemptsDesc")} scope="Native OMP">
+                    <NativeSetting searchId="max-attempts" label={t("settingsConfig.maxAttempts")} description={t("settingsConfig.maxAttemptsDesc")} scope="Native pi">
                       <ThemedSelect
                         style={nativeSelectStyle}
                         value={String(nativeSettings?.retry?.maxRetries ?? 3)}

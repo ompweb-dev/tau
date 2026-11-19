@@ -61,8 +61,8 @@ export function useAudio() {
       enabledRef.current = detail;
       setEnabled(detail);
     };
-    window.addEventListener("omp-sound-pref-change", onPrefChange);
-    return () => window.removeEventListener("omp-sound-pref-change", onPrefChange);
+    window.addEventListener("tau-sound-pref-change", onPrefChange);
+    return () => window.removeEventListener("tau-sound-pref-change", onPrefChange);
   }, []);
 
   const unlockAudio = useCallback((force = false) => {

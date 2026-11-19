@@ -303,7 +303,7 @@ function normalizeCwd(cwd: string): string {
  * binary: `omp --export <sessionPath> <outPath>` (the output path is the first
  * positional argument; verified against oh-my-pi main.ts/flag-tables.ts).
  */
-async function runOmpExport(filePath: string, outputPath: string): Promise<void> {
+async function runPiExport(filePath: string, outputPath: string): Promise<void> {
   const bin = resolvePiBin();
   if (!bin) {
     throw new Error(PI_NOT_FOUND);
@@ -632,10 +632,10 @@ export const sessionOps: SessionOps = {
     if (!filePath) return sessionNotFound();
     const tempDir = join(tmpdir(), "tau-export");
     mkdirSync(tempDir, { recursive: true });
-    const fileName = `omp-session-${basename(filePath, ".jsonl")}.html`;
+    const fileName = `tau-session-${basename(filePath, ".jsonl")}.html`;
     const outputPath = join(tempDir, `${randomUUID()}.html`);
     try {
-      await runOmpExport(filePath, outputPath);
+      await runPiExport(filePath, outputPath);
       return ok({ html: readFileSync(outputPath, "utf8"), fileName });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

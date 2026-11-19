@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { isValidOmpProfile } from "@/lib/omp-profile";
+import { isValidProfileName } from "@/lib/profile-name";
 import { useI18n } from "@/lib/i18n";
 import type { ProjectLaunchConfig } from "@/lib/types";
 import { Dialog, DialogContent, DialogTitle } from "./ui/primitives";
@@ -20,7 +20,7 @@ export function ProjectLaunchConfigDialog({ projectPath, initialConfig, onClose,
   const [extraArgs, setExtraArgs] = useState(initialConfig?.extraArgs?.join("\n") ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const profileInvalid = profile !== "" && !isValidOmpProfile(profile);
+  const profileInvalid = profile !== "" && !isValidProfileName(profile);
 
   /** Shape the form contents into the structured config the API uses. */
   const buildConfig = (): ProjectLaunchConfig | null => {

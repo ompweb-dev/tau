@@ -1,5 +1,5 @@
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { disposeUtilityRpc, runUtilityCommand, type OmpModel } from "@/lib/pi/rpc-utility";
+import { disposeUtilityRpc, runUtilityCommand, type PiModel } from "@/lib/pi/rpc-utility";
 import { readNativeSettings, writeNativeSettings, type NativeSettings } from "@/lib/pi/settings-config";
 import { assertNoAmbiguousModelScopes } from "@/lib/model-scope";
 
@@ -23,10 +23,10 @@ export async function PUT(request: Request) {
       try {
         const response = await runUtilityCommand<{ models?: unknown }>({ type: "get_available_models" }, 120_000);
         if (Array.isArray(response.models)) {
-          const models = response.models.filter((model): model is OmpModel => (
+          const models = response.models.filter((model): model is PiModel => (
             typeof model === "object" && model !== null
-            && typeof (model as OmpModel).id === "string"
-            && typeof (model as OmpModel).provider === "string"
+            && typeof (model as PiModel).id === "string"
+            && typeof (model as PiModel).provider === "string"
           ));
           assertNoAmbiguousModelScopes(body.settings.enabledModels, models);
         }

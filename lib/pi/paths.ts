@@ -98,7 +98,7 @@ const WINDOWS_LOCAL_ROOT_MAX_CHARS = 180;
 export function sessionLocalRoot(sessionFile: string, sessionId: string, platform: NodeJS.Platform = process.platform): string {
   const candidate = path.resolve(path.dirname(sessionFile), path.basename(sessionFile, ".jsonl"), "local");
   if (platform === "win32" && candidate.length >= WINDOWS_LOCAL_ROOT_MAX_CHARS) {
-    return path.join(tmpdir(), "omp-local", sessionId.replace(/[^a-zA-Z0-9_.-]/g, "_"));
+    return path.join(tmpdir(), "tau-local", sessionId.replace(/[^a-zA-Z0-9_.-]/g, "_"));
   }
   return candidate;
 }

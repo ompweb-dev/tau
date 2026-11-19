@@ -62,12 +62,12 @@ export function mergeRecoveredText(current: string, { text, replace }: DraftReco
 
 // globalThis so dev Fast Refresh doesn't wipe drafts mid-typing.
 declare global {
-  var __ompChatDrafts: Map<string, ChatDraft> | undefined;
-  var __ompChatDraftListeners: Set<() => void> | undefined;
-  var __ompChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
-  var __ompChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
-  var __ompChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
-  var __ompChatDraftSubmissions: Set<DraftSubmission> | undefined;
+  var __tauChatDrafts: Map<string, ChatDraft> | undefined;
+  var __tauChatDraftListeners: Set<() => void> | undefined;
+  var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
+  var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
+  var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
+  var __tauChatDraftSubmissions: Set<DraftSubmission> | undefined;
 }
 
 const MAX_DRAFTS = 50;
@@ -83,7 +83,7 @@ function isDraftUpload(value: unknown): value is ChatDraftUpload {
     && (upload.proof === undefined || typeof upload.proof === "string");
 }
 
-const drafts: Map<string, ChatDraft> = (globalThis.__ompChatDrafts ??= readStoredDrafts());
+const drafts: Map<string, ChatDraft> = (globalThis.__tauChatDrafts ??= readStoredDrafts());
 
 function readStoredDrafts(): Map<string, ChatDraft> {
   const stored = new Map<string, ChatDraft>();
@@ -128,11 +128,11 @@ function readStoredDrafts(): Map<string, ChatDraft> {
   return stored;
 }
 
-const listeners = (globalThis.__ompChatDraftListeners ??= new Set<() => void>());
-const recoveryListeners = (globalThis.__ompChatDraftRecoveryListeners ??= new Set<(key: string, recovery: DraftRecovery) => void>());
-const consumptionListeners = (globalThis.__ompChatDraftConsumptionListeners ??= new Set<(key: string, snapshot: ChatDraft) => void>());
-const revisions = (globalThis.__ompChatDraftRevisions ??= { byKey: new Map<string, number>(), last: 0 });
-const submissions = (globalThis.__ompChatDraftSubmissions ??= new Set<DraftSubmission>());
+const listeners = (globalThis.__tauChatDraftListeners ??= new Set<() => void>());
+const recoveryListeners = (globalThis.__tauChatDraftRecoveryListeners ??= new Set<(key: string, recovery: DraftRecovery) => void>());
+const consumptionListeners = (globalThis.__tauChatDraftConsumptionListeners ??= new Set<(key: string, snapshot: ChatDraft) => void>());
+const revisions = (globalThis.__tauChatDraftRevisions ??= { byKey: new Map<string, number>(), last: 0 });
+const submissions = (globalThis.__tauChatDraftSubmissions ??= new Set<DraftSubmission>());
 
 export function hasUnsentDrafts(): boolean {
   return drafts.size > 0;

@@ -52,7 +52,7 @@ export function itemKeyOf(target: { owner: string; repo: string; number: number;
 }
 
 declare global {
-  var __ompGithubWatchStore: { path: string; db: Database } | undefined;
+  var __tauGithubWatchStore: { path: string; db: Database } | undefined;
 }
 
 const SCHEMA = `
@@ -88,12 +88,12 @@ const storePath = (): string => join(storeDir(), "github-watches.sqlite");
 function db(): Database {
   const dir = storeDir();
   const path = storePath();
-  const cached = globalThis.__ompGithubWatchStore;
+  const cached = globalThis.__tauGithubWatchStore;
   if (cached?.path === path) return cached.db;
   const database = open(dir, path);
   // Only a working store replaces the cached one; a failed open leaves it usable.
   closeWatchStore();
-  globalThis.__ompGithubWatchStore = { path, db: database };
+  globalThis.__tauGithubWatchStore = { path, db: database };
   return database;
 }
 
@@ -103,13 +103,13 @@ function db(): Database {
  */
 function existingDb(): Database | undefined {
   const path = storePath();
-  return globalThis.__ompGithubWatchStore?.path === path || existsSync(path) ? db() : undefined;
+  return globalThis.__tauGithubWatchStore?.path === path || existsSync(path) ? db() : undefined;
 }
 
 /** Closes the cached store. `close(true)` finalizes the statements still alive: without it the file stays open until GC, and Windows keeps it locked. */
 export function closeWatchStore(): void {
-  globalThis.__ompGithubWatchStore?.db.close(true);
-  globalThis.__ompGithubWatchStore = undefined;
+  globalThis.__tauGithubWatchStore?.db.close(true);
+  globalThis.__tauGithubWatchStore = undefined;
 }
 
 function open(dir: string, path: string): Database {

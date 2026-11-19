@@ -54,7 +54,7 @@ export interface ConnectionDiagnostics {
 /** Commands whose successful reply does not confirm an omp round trip, so their reply times say nothing about omp:
  * answered by the web app itself when no omp child is alive (lib/agent-command.ts NO_SPAWN_REPLIES), or forwarded to
  * omp without awaiting its reply (lib/rpc-manager.ts dispatchCommand). */
-export const NO_OMP_REPLY_COMMANDS: ReadonlySet<string> = new Set([
+export const NO_PI_REPLY_COMMANDS: ReadonlySet<string> = new Set([
   "get_btw_history", "btw_cancel",
   "host_tool_result", "host_uri_result", "ui_response", "ui_input",
   "outbox_add", "outbox_remove", "outbox_scope",

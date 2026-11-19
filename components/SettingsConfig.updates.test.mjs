@@ -42,7 +42,7 @@ const buttonLabels = (container) => [...container.querySelectorAll("button")].ma
 
 test("System keeps web-server updates but never checks or updates the host runtime", async (t) => {
   let requested = false;
-  const { container, requests } = await renderSystemTab(t, {
+  const { container } = await renderSystemTab(t, {
     appUpdate: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, selfUpdateSupported: true },
     onRequestAppUpdate: () => { requested = true; },
   });

@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { isValidOmpProfile } from "@/lib/omp-profile";
+import { isValidProfileName } from "@/lib/profile-name";
 import { useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
 import { appendProgress, cloneDirectoryName } from "@/lib/git-clone";
@@ -137,7 +137,7 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   const hasUncommittedPath = !pool && pathInput.trim() !== currentPath;
   const cloneName = cloneUrl.trim() ? cloneDirectoryName(cloneUrl) : null;
   const cloneTarget = cloneName && currentPath ? `${currentPath.replace(/[\\/]+$/, "")}${currentPath.includes("\\") ? "\\" : "/"}${cloneName}` : null;
-  const profileInvalid = profile.trim() !== "" && !isValidOmpProfile(profile.trim());
+  const profileInvalid = profile.trim() !== "" && !isValidProfileName(profile.trim());
   const canSelect = Boolean(pool ? pathInput.trim() : currentPath) && !loading && !hasUncommittedPath && !locked && (!cloneUrl.trim() || cloneName !== null) && !profileInvalid;
   const goDisabled = loading || locked || !pathInput.trim();
   const canNavigateUp = !locked && (Boolean(parentDirectory) || isWindowsDriveRoot(currentPath));

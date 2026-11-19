@@ -150,12 +150,12 @@ export function useNotifications({ sessionId, locale, onOpenSession }: { session
     const onWorkerMessage = (message: MessageEvent) => {
       const data: unknown = message.data;
       if (!isRecord(data)) return;
-      if (data.type === "omp-open-session" && typeof data.sessionId === "string") {
+      if (data.type === "tau-open-session" && typeof data.sessionId === "string") {
         openSession(data.sessionId);
         return;
       }
       // A push the service worker showed while this tab was open: the server recorded it; fetch the list.
-      if (data.type === "omp-notification-shown") void notificationHistory.load();
+      if (data.type === "tau-notification-shown") void notificationHistory.load();
     };
     // This tab's own channel: the server delivers here while it is open, on any
     // view (the chat, Settings, ...), and counts the tab as reachable.

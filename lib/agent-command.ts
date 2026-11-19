@@ -38,12 +38,12 @@ export function commandErrorResponse(error: unknown): Response {
 }
 
 declare global {
-  var __ompSendFences: Map<string, Promise<void>> | undefined;
+  var __tauSendFences: Map<string, Promise<void>> | undefined;
 }
 
 // globalThis, like the rpc-manager registry: survives a `bun --hot` re-evaluation.
 function sendFences(): Map<string, Promise<void>> {
-  return (globalThis.__ompSendFences ??= new Map());
+  return (globalThis.__tauSendFences ??= new Map());
 }
 
 /** Everything POST /api/agent/[id] does once the body is parsed; shared with

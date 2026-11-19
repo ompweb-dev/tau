@@ -34,7 +34,7 @@ self.addEventListener("push", (event) => {
       });
       // Open tabs list it in their Notifications tab, like a notification the page showed itself.
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const client of windows) client.postMessage({ type: "omp-notification-shown", notification: shown });
+      for (const client of windows) client.postMessage({ type: "tau-notification-shown", notification: shown });
     })(),
   );
 });
@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
           // other page (the sign-in screen after the cookie expired) loads the
           // session URL, which the sign-in screen carries through as `next`.
           if (new URL(client.url).pathname === "/") {
-            if (sessionId) client.postMessage({ type: "omp-open-session", sessionId });
+            if (sessionId) client.postMessage({ type: "tau-open-session", sessionId });
           } else {
             await client.navigate(url);
           }

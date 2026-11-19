@@ -173,7 +173,7 @@ export function createWorkspaceService(uploads: StagedUploads, emit: (id: string
     }),
     defaultCwd: () => result(async () => {
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const directory = path.join(homedir(), `omp-cwd-${date}`);
+      const directory = path.join(homedir(), `tau-cwd-${date}`);
       fs.mkdirSync(directory, { recursive: true });
       const cwd = fs.realpathSync(directory);
       grantWorkspaceRoot(cwd);

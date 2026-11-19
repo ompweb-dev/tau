@@ -27,8 +27,8 @@ import type {
 } from "./usage-types";
 
 declare global {
-  var __ompUsageDatabase: Database | undefined;
-  var __ompUsageDatabasePath: string | undefined;
+  var __tauUsageDatabase: Database | undefined;
+  var __tauUsageDatabasePath: string | undefined;
 }
 
 /**
@@ -122,8 +122,8 @@ function migrateUsageDatabase(db: Database): void {
 export function getUsageDatabase(customPath?: string): Database {
   const targetPath = customPath || getUsageDbPath();
 
-  const cached = globalThis.__ompUsageDatabase;
-  if (cached && globalThis.__ompUsageDatabasePath === targetPath) {
+  const cached = globalThis.__tauUsageDatabase;
+  if (cached && globalThis.__tauUsageDatabasePath === targetPath) {
     // The connection lives on globalThis and outlives a dev hot reload, so the
     // database may still have the layout of the code that opened it.
     try {
@@ -158,21 +158,21 @@ export function getUsageDatabase(customPath?: string): Database {
     throw err;
   }
 
-  globalThis.__ompUsageDatabase = db;
-  globalThis.__ompUsageDatabasePath = targetPath;
+  globalThis.__tauUsageDatabase = db;
+  globalThis.__tauUsageDatabasePath = targetPath;
   return db;
 }
 
 /** Close the usage database instance. `close(true)` finalizes the statements still alive: without it the file stays open until GC, and Windows keeps it locked. */
 export function closeUsageDatabase(): void {
-  if (globalThis.__ompUsageDatabase) {
+  if (globalThis.__tauUsageDatabase) {
     try {
-      globalThis.__ompUsageDatabase.close(true);
+      globalThis.__tauUsageDatabase.close(true);
     } catch {
       // Ignore
     }
-    globalThis.__ompUsageDatabase = undefined;
-    globalThis.__ompUsageDatabasePath = undefined;
+    globalThis.__tauUsageDatabase = undefined;
+    globalThis.__tauUsageDatabasePath = undefined;
   }
 }
 

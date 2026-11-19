@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { hasUnsentDrafts, subscribeDrafts } from "@/lib/draft-store";
 
-const HISTORY_KEY = "__ompSidebarHistory";
+const HISTORY_KEY = "__tauSidebarHistory";
 type SidebarEntry = {
   id: string;
   entry: "base" | "top";
@@ -124,10 +124,10 @@ export function useSidebarHistory({ active, ready, sidebarOpen, setSidebarOpen, 
       setRestoreVersion((version) => version + 1);
     };
     const onSidebarPopState = (event: Event) => onPopState((event as CustomEvent<PopStateEvent>).detail);
-    window.addEventListener("omp:sidebar-popstate", onSidebarPopState);
+    window.addEventListener("tau:sidebar-popstate", onSidebarPopState);
     window.addEventListener("pageshow", onPageShow);
     return () => {
-      window.removeEventListener("omp:sidebar-popstate", onSidebarPopState);
+      window.removeEventListener("tau:sidebar-popstate", onSidebarPopState);
       window.removeEventListener("pageshow", onPageShow);
     };
   }, [leaveFromBase, writeEntry]);

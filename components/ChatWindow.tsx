@@ -175,11 +175,11 @@ function assistantSpeech(
 }
 
 // Retain the last successful value across welcome-screen remounts, not reloads.
-let lastKnownOmpVersion: string | undefined;
+let lastKnownPiVersion: string | undefined;
 
-export function OmpRuntimeVersion() {
+export function PiRuntimeVersion() {
   const { t } = useI18n();
-  const [version, setVersion] = useState<string | null | undefined>(lastKnownOmpVersion);
+  const [version, setVersion] = useState<string | null | undefined>(lastKnownPiVersion);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/pi-version")
@@ -189,14 +189,13 @@ export function OmpRuntimeVersion() {
       })
       .then((data: { version: string | null } | null) => {
         if (cancelled) return;
-        // omp reports "omp/17.1.3"; show just the number next to the label.
-        const nextVersion = typeof data?.version === "string" ? data.version.trim().replace(/^omp\//, "") : "";
-        lastKnownOmpVersion = nextVersion || undefined;
+        const nextVersion = typeof data?.version === "string" ? data.version.trim() : "";
+        lastKnownPiVersion = nextVersion || undefined;
         setVersion(nextVersion || null);
       })
       .catch(() => {
         if (cancelled) return;
-        setVersion(lastKnownOmpVersion ?? null);
+        setVersion(lastKnownPiVersion ?? null);
       });
     return () => {
       cancelled = true;
@@ -1137,7 +1136,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
                   web <span style={{ color: "var(--text)" }}>v{process.env.TAU_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
                 </span>
-                <OmpRuntimeVersion />
+                <PiRuntimeVersion />
               </div>
             </div>
             <div className="empty-session-intro">

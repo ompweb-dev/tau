@@ -1,6 +1,6 @@
 import { statSync } from "fs";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, withSafeModelLoadFailure, type ModelsData } from "@/lib/models-cache";
-import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type OmpModel } from "@/lib/pi/rpc-utility";
+import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type PiModel } from "@/lib/pi/rpc-utility";
 import { getModelsConfigPath } from "@/lib/pi/paths";
 
 // The omp model registry (auth + models.yml) is global, not per-cwd, so one
@@ -9,7 +9,7 @@ import { getModelsConfigPath } from "@/lib/pi/paths";
 const MODELS_CACHE_KEY = "global";
 
 declare global {
-  var __ompModelsConfigFingerprint: string | undefined;
+  var __tauModelsConfigFingerprint: string | undefined;
 }
 
 function refreshModelsIfConfigChanged(): void {
@@ -23,8 +23,8 @@ function refreshModelsIfConfigChanged(): void {
     // its later creation.
   }
 
-  const previous = globalThis.__ompModelsConfigFingerprint;
-  globalThis.__ompModelsConfigFingerprint = fingerprint;
+  const previous = globalThis.__tauModelsConfigFingerprint;
+  globalThis.__tauModelsConfigFingerprint = fingerprint;
   if (previous !== undefined && previous !== fingerprint) {
     // The utility process reads models.yml once at startup. External edits
     // therefore need the same invalidation as the web editor's PUT route.
@@ -46,7 +46,7 @@ function compareModelEntries(
 
 // "off" is always a valid selector; the concrete efforts come from the model's
 // baked thinking metadata (omp: getSupportedEfforts = reasoning ? efforts : []).
-function thinkingLevelsFor(model: OmpModel): string[] {
+function thinkingLevelsFor(model: PiModel): string[] {
   if (!model.reasoning) return ["off"];
   return ["off", ...(model.thinking?.efforts ?? [])];
 }
@@ -58,10 +58,10 @@ async function loadModels(): Promise<ModelsData> {
   );
   const available = Array.isArray(availableResponse.models)
     ? availableResponse.models
-        .filter((model): model is OmpModel => (
+        .filter((model): model is PiModel => (
           typeof model === "object" && model !== null
-          && typeof (model as OmpModel).id === "string"
-          && typeof (model as OmpModel).provider === "string"
+          && typeof (model as PiModel).id === "string"
+          && typeof (model as PiModel).provider === "string"
         ))
         .map((model) => ({
           ...model,

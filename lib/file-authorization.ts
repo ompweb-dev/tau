@@ -5,7 +5,7 @@ import {
   isExistingFilePathAllowed,
   isExistingPathWithinRoots,
   isFilePathAllowed,
-  isOmpSecretFile,
+  isPiSecretFile,
   isWindowsAbsolutePath,
   normalizeSlashes,
   resolveRequestedFilePath,
@@ -82,7 +82,7 @@ export async function authorizeFileAccess(
     await isFilePathReferencedBySession(filePath, sessionId);
   if (!allowedByRoot && !localRoot && !allowedBySessionReference) return ACCESS_DENIED;
   // Authorize the namespace before canonical secret probing touches the filesystem.
-  if (isOmpSecretFile(filePath)) return ACCESS_DENIED;
+  if (isPiSecretFile(filePath)) return ACCESS_DENIED;
 
   let realPath: string;
   try {

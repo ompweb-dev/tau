@@ -69,12 +69,12 @@ interface HubState {
 }
 
 declare global {
-  var __ompMaintenanceHub: HubState | undefined;
+  var __tauMaintenanceHub: HubState | undefined;
 }
 
 // globalThis, like the application hub: survives a `bun --hot` re-evaluation.
 function hub(): HubState {
-  return (globalThis.__ompMaintenanceHub ??= { links: new Map(), listeners: new Set(), frozen: false });
+  return (globalThis.__tauMaintenanceHub ??= { links: new Map(), listeners: new Set(), frozen: false });
 }
 
 const refuse = (error: string, status: number) => Response.json({ error }, { status, headers: { "cache-control": "no-store" } });

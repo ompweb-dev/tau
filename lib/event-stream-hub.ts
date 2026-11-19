@@ -56,13 +56,13 @@ interface SubscriptionHandle {
 }
 
 declare global {
-  var __ompEventStreamConnections: Map<string, EventStreamConnection> | undefined;
-  var __ompServerId: string | undefined;
+  var __tauEventStreamConnections: Map<string, EventStreamConnection> | undefined;
+  var __tauServerId: string | undefined;
 }
 
 /** Random per process: a reconnecting client compares it to learn whether the server restarted. */
 export function serverId(): string {
-  return (globalThis.__ompServerId ??= randomUUID());
+  return (globalThis.__tauServerId ??= randomUUID());
 }
 
 /** Where a connection's frames go: an SSE response body (tests supply their own). */
@@ -120,7 +120,7 @@ class SseSink implements FrameSink {
 }
 
 function connections(): Map<string, EventStreamConnection> {
-  return (globalThis.__ompEventStreamConnections ??= new Map());
+  return (globalThis.__tauEventStreamConnections ??= new Map());
 }
 
 export function getEventStreamConnection(connectionId: string): EventStreamConnection | undefined {

@@ -22,7 +22,7 @@ test("has expected constants", () => {
   assert.equal(DEFAULT_LIMIT, 10);
   assert.equal(MIN_LIMIT, 1);
   assert.equal(MAX_LIMIT, 100);
-  assert.equal(RECENT_RUNS_LIMIT_CHANGE_EVENT, "omp-recent-runs-limit-change");
+  assert.equal(RECENT_RUNS_LIMIT_CHANGE_EVENT, "tau-recent-runs-limit-change");
 });
 
 test("resolves presets 10, 15, 20 and custom limits", () => {

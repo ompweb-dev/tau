@@ -1,7 +1,7 @@
 // Durations derived from transport samples (lib/event-stream-worker.ts, lib/agent-client.ts), shared by
 // scripts/transport-metrics.ts and the worker's live diagnostics so both compute the same numbers. Browser-safe.
 
-import { NO_OMP_REPLY_COMMANDS } from "./event-stream-protocol";
+import { NO_PI_REPLY_COMMANDS } from "./event-stream-protocol";
 import { asNumber } from "./type-guards";
 
 type Sample = Record<string, unknown>;
@@ -75,8 +75,8 @@ export function summarizeDurations(values: number[]): DurationSummary {
   };
 }
 
-export type DiagnosticMetric = "upMs" | "transportMs" | "ompMs" | "serverMs" | "totalMs" | "eventMs";
-const METRIC_ORDER: DiagnosticMetric[] = ["upMs", "transportMs", "ompMs", "serverMs", "totalMs", "eventMs"];
+export type DiagnosticMetric = "upMs" | "transportMs" | "piMs" | "serverMs" | "totalMs" | "eventMs";
+const METRIC_ORDER: DiagnosticMetric[] = ["upMs", "transportMs", "piMs", "serverMs", "totalMs", "eventMs"];
 
 export interface DiagnosticStat extends DurationSummary {
   transport: string;
@@ -102,8 +102,8 @@ export function diagnosticStats(samples: Sample[]): DiagnosticStat[] {
       const totalMs = totalMsOf(s);
       // A backward clock step during the command makes its round trip (and so its transport share) meaningless.
       if (totalMs !== undefined && totalMs >= 0) add(transport, "transportMs", transportMsOf(s));
-      if (typeof s.type === "string" && NO_OMP_REPLY_COMMANDS.has(s.type)) continue;
-      if (s.type === "get_state") add(transport, "ompMs", serverMsOf(s));
+      if (typeof s.type === "string" && NO_PI_REPLY_COMMANDS.has(s.type)) continue;
+      if (s.type === "get_state") add(transport, "piMs", serverMsOf(s));
       add(transport, "serverMs", serverMsOf(s));
       if (totalMs !== undefined && totalMs >= 0) add(transport, "totalMs", totalMs);
     } else if (s.metric === "event") {

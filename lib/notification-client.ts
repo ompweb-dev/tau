@@ -193,7 +193,7 @@ async function subscribeForPush(): Promise<boolean> {
 }
 
 /** Window event (detail: session id) asking the app to open a notification's session. */
-export const OPEN_SESSION_EVENT = "omp-open-session";
+export const OPEN_SESSION_EVENT = "tau-open-session";
 
 /**
  * Show a system notification the same way the service worker shows pushes.

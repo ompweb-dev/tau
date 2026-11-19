@@ -91,13 +91,13 @@ type OutboxState = {
 };
 
 declare global {
-  var __ompOutboxStore: { path: string; db: Database; schema?: string } | undefined;
-  var __ompOutbox: OutboxState | undefined;
+  var __tauOutboxStore: { path: string; db: Database; schema?: string } | undefined;
+  var __tauOutbox: OutboxState | undefined;
 }
 
 // globalThis, like the rpc-manager registry: survives a `bun --hot` re-evaluation.
-function outbox(): NonNullable<typeof globalThis.__ompOutbox> {
-  const state = (globalThis.__ompOutbox ??= { busy: new Set(), listeners: new Map(), pendingNotifications: new Map(), notifiedRevisions: new Map(), listenerProgress: new Map(), started: false });
+function outbox(): NonNullable<typeof globalThis.__tauOutbox> {
+  const state = (globalThis.__tauOutbox ??= { busy: new Set(), listeners: new Map(), pendingNotifications: new Map(), notifiedRevisions: new Map(), listenerProgress: new Map(), started: false });
   state.pendingNotifications ??= new Map();
   state.notifiedRevisions ??= new Map();
   state.listenerProgress ??= new Map();
@@ -108,7 +108,7 @@ function outbox(): NonNullable<typeof globalThis.__ompOutbox> {
 function db(): Database {
   const dir = join(getAgentDir(), "tau");
   const path = join(dir, "outbox.db");
-  const cached = globalThis.__ompOutboxStore;
+  const cached = globalThis.__tauOutboxStore;
   // A `bun --hot` reload keeps a connection the previous code migrated: reopen when the migration changed.
   const schema = `${OUTBOX_SCHEMA}${OUTBOX_CHANGE_SCHEMA}${COLUMNS}${RECEIPT_PIN_SCHEMA}`;
   if (cached?.path === path && cached.schema === schema) return cached.db;
@@ -153,7 +153,7 @@ function db(): Database {
     throw error;
   }
   cached?.db.close(true);
-  globalThis.__ompOutboxStore = { path, db: database, schema };
+  globalThis.__tauOutboxStore = { path, db: database, schema };
   return database;
 }
 
@@ -172,7 +172,7 @@ export function listOutboxReceiptPins(): { sessionId: string; entryId: string }[
 
 /** Closes the cached store. `close(true)` finalizes the statements still alive: without it the file stays open until GC, and Windows keeps it locked. */
 export function closeOutboxStore(): void {
-  const state = globalThis.__ompOutbox;
+  const state = globalThis.__tauOutbox;
   if (state) {
     clearInterval(state.maintenance);
     clearInterval(state.changes);
@@ -189,8 +189,8 @@ export function closeOutboxStore(): void {
     state.startupRetry = undefined;
     state.started = false;
   }
-  globalThis.__ompOutboxStore?.db.close(true);
-  globalThis.__ompOutboxStore = undefined;
+  globalThis.__tauOutboxStore?.db.close(true);
+  globalThis.__tauOutboxStore = undefined;
 }
 
 /** Main-issued completion authority is committed before "done"; replays never renew its original staging lifetime. */
@@ -707,7 +707,7 @@ export function pumpOutbox(sessionId: string): void {
   const release = () => {
     for (const key of keys) busy.delete(key);
     for (const key of keys) if (state.wakes?.delete(key)) queueMicrotask(() => {
-      if (globalThis.__ompOutbox === state && state.started) pumpOutbox(key);
+      if (globalThis.__tauOutbox === state && state.started) pumpOutbox(key);
     });
   };
   void deliver(next).then((outcome) => {
@@ -761,13 +761,13 @@ export function startOutbox(): void {
     console.warn(`[tau] outbox startup failed: ${error instanceof Error ? error.message : String(error)}`);
     state.startupRetry = setTimeout(() => {
       state.startupRetry = undefined;
-      if (globalThis.__ompOutbox === state) startOutbox();
+      if (globalThis.__tauOutbox === state) startOutbox();
     }, RETRY_MS);
     state.startupRetry.unref?.();
     return;
   }
   process.once("exit", closeOutboxStore);
-  const detachHello = onHostHello(() => { if (globalThis.__ompOutbox === state && state.started) pumpAll(); });
+  const detachHello = onHostHello(() => { if (globalThis.__tauOutbox === state && state.started) pumpAll(); });
   // Restores can finish after the caller's timeout, without another hello or a successful route reply. Re-read only
   // the host that signalled a change, and wake only sessions it now lists with held work. Coalesce bursts, but do
   // not lose a second change arriving while the first list is in flight.
@@ -821,13 +821,13 @@ export function startOutbox(): void {
   const wakes = (state.wakes ??= new Set());
   const detachSessionChanges = onHostSessionsChanged((hostId) => { void wakeHost(hostId); });
   const detachFrames = tapSessionFrames((wrapper, event) => {
-    if (globalThis.__ompOutbox === state && state.started) onChildExit(wrapper, event);
+    if (globalThis.__tauOutbox === state && state.started) onChildExit(wrapper, event);
   });
   const detachMoves = onSessionMove((from) => {
-    if (globalThis.__ompOutbox === state && state.started) publish(from);
+    if (globalThis.__tauOutbox === state && state.started) publish(from);
   });
   const detachAsks = onAskClosed((sessionId) => {
-    if (globalThis.__ompOutbox !== state || !state.started) return;
+    if (globalThis.__tauOutbox !== state || !state.started) return;
     // A delivery that saw the ask open may still hold the claim: leave a wake for its release.
     if (sessionKeys(sessionId).some((key) => state.busy.has(key))) wakes.add(sessionId);
     else pumpOutbox(sessionId);
@@ -849,7 +849,7 @@ export function startOutbox(): void {
   };
   // A live owner at boot can die later without another add or hello. Recover its claim, never resend it.
   const maintenance = setInterval(() => {
-    if (globalThis.__ompOutbox !== state) { clearInterval(maintenance); return; }
+    if (globalThis.__tauOutbox !== state) { clearInterval(maintenance); return; }
     try {
       const rows = db().prepare("SELECT DISTINCT session_id FROM entries WHERE state = 'delivering'").all() as { session_id: string }[];
       for (const { session_id } of rows) pumpOutbox(session_id);
@@ -865,7 +865,7 @@ export function startOutbox(): void {
   let observed: Database | undefined;
   const pending = state.pendingNotifications;
   const changes = setInterval(() => {
-    if (globalThis.__ompOutbox !== state) { clearInterval(changes); return; }
+    if (globalThis.__tauOutbox !== state) { clearInterval(changes); return; }
     if (state.listeners.size === 0) { pending.clear(); return; }
     try {
       const store = db();
@@ -1096,7 +1096,7 @@ function schedulePump(sessionId: string): void {
   const retries = (state.retries ??= new Set());
   const timer = setTimeout(() => {
     retries.delete(timer);
-    if (globalThis.__ompOutbox === state) pumpOutbox(sessionId);
+    if (globalThis.__tauOutbox === state) pumpOutbox(sessionId);
   }, RETRY_MS);
   retries.add(timer);
   timer.unref?.();

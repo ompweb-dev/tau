@@ -178,7 +178,7 @@ const AUTH_STDERR = /gh auth login|not logged (?:in|into)|HTTP 401|bad credentia
 const LOGIN_CACHE_MS = 60_000;
 
 declare global {
-  var __ompGhLogin: { run: GhRunner; login: string; at: number } | undefined;
+  var __tauGhLogin: { run: GhRunner; login: string; at: number } | undefined;
 }
 
 /**
@@ -190,7 +190,7 @@ export async function checkGh(
   run: GhRunner = defaultGhRunner,
   now: () => number = Date.now,
 ): Promise<{ login: string }> {
-  const cached = globalThis.__ompGhLogin;
+  const cached = globalThis.__tauGhLogin;
   if (cached && cached.run === run && now() - cached.at < LOGIN_CACHE_MS) {
     return { login: cached.login };
   }
@@ -205,7 +205,7 @@ export async function checkGh(
     throw error;
   }
   const login = stdout.trim();
-  globalThis.__ompGhLogin = { run, login, at: now() };
+  globalThis.__tauGhLogin = { run, login, at: now() };
   return { login };
 }
 

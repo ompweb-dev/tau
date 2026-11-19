@@ -55,8 +55,8 @@ const creationStates: Record<CreationState, true> = { preparing: true, starting:
 const initializationStates: Record<InitializationState, true> = { pending: true, running: true, complete: true, unknown: true, failed: true };
 
 declare global {
-  var __ompPoolStarts: Map<string, Promise<PoolCreateResult>> | undefined;
-  var __ompPoolLaunchLocks: Map<string, Promise<void>> | undefined;
+  var __tauPoolStarts: Map<string, Promise<PoolCreateResult>> | undefined;
+  var __tauPoolLaunchLocks: Map<string, Promise<void>> | undefined;
 }
 
 /** Carries a retained real identity even when its first command's outcome is unknown. */
@@ -249,7 +249,7 @@ async function run(entry: PoolStart, start: Start, authorize?: (host: Host) => P
       entry = update(entry.creationId, (current) => { current.prepared = prepared.value; });
     }
     // The worker reads its registry at spawn: keep a project's config update and child identity in one launch turn.
-    const locks = globalThis.__ompPoolLaunchLocks ??= new Map();
+    const locks = globalThis.__tauPoolLaunchLocks ??= new Map();
     const key = `${journalPath()}\0${entry.hostId}\0${entry.cloneRoot}`;
     const previous = locks.get(key);
     const gate = Promise.withResolvers<void>();
@@ -356,7 +356,7 @@ function reservePooledSession(input: PoolCreateInput, start: Start, authorize: (
     const journal = readJournal();
     let entry = journal.starts.find((candidate) => candidate.creationId === input.creationId);
     const key = `${journalPath()}\0${input.creationId}`;
-    const inflight = globalThis.__ompPoolStarts ??= new Map();
+    const inflight = globalThis.__tauPoolStarts ??= new Map();
     if (entry) {
       if (entry.requestFingerprint !== requestFingerprint) throw conflict();
       const pending = inflight.get(key);

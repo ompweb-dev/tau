@@ -148,8 +148,8 @@ const pressEnter = () => act(async () => { fireEvent.keyDown(screen.getByRole("t
 
 /** Reuse the uploads server suite's loopback daemon fixture so ID-bound PUTs reach real staged files. */
 async function uploadOwner(t) {
-  const scratch = mkdtempSync(join(tmpdir(), "omp-composer-owner-"));
-  const previous = { agentDir: process.env.PI_CODING_AGENT_DIR, ompBin: process.env.TAU_PI_BIN };
+  const scratch = mkdtempSync(join(tmpdir(), "tau-composer-owner-"));
+  const previous = { agentDir: process.env.PI_CODING_AGENT_DIR, piBin: process.env.TAU_PI_BIN };
   process.env.PI_CODING_AGENT_DIR = join(scratch, "agent");
   process.env.TAU_PI_BIN = join(scratch, "no-omp");
   const linkRoute = await import("../app/api/hosts/link/route.ts");
@@ -178,7 +178,7 @@ async function uploadOwner(t) {
     hub.flushLinkSamples();
     closeNotificationStore();
     closeOutboxStore();
-    for (const [key, value] of [["PI_CODING_AGENT_DIR", previous.agentDir], ["TAU_PI_BIN", previous.ompBin]]) {
+    for (const [key, value] of [["PI_CODING_AGENT_DIR", previous.agentDir], ["TAU_PI_BIN", previous.piBin]]) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }

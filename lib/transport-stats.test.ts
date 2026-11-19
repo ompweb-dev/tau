@@ -34,11 +34,11 @@ test("diagnostic rows split by transport; omp delivery counts get_state only", (
   const value = (transport: string, metric: string) => rows.find((r) => r.transport === transport && r.metric === metric);
   assert.deepEqual(rows.map((r) => `${r.transport} ${r.metric} ${r.count}`), [
     "sse eventMs 1",
-    "ws upMs 2", "ws transportMs 2", "ws ompMs 1", "ws serverMs 2", "ws totalMs 2",
+    "ws upMs 2", "ws transportMs 2", "ws piMs 1", "ws serverMs 2", "ws totalMs 2",
   ]);
   assert.equal(value("ws", "upMs")?.p50, 10);
   assert.equal(value("ws", "transportMs")?.max, 30);
-  assert.equal(value("ws", "ompMs")?.max, 20);
+  assert.equal(value("ws", "piMs")?.max, 20);
   assert.equal(value("ws", "serverMs")?.max, 30);
   assert.equal(value("sse", "eventMs")?.p50, 5);
 });
@@ -56,7 +56,7 @@ test("diagnostics exclude unconfirmed deliveries and failed commands from succes
   assert.deepEqual(diagnosticStats(failed), []);
   const rows = diagnosticStats([...failed, { ...base, outcome: "ok", status: 200, gotAt: 10, recvAt: 2, repliedAt: 5 }]);
   assert.deepEqual(rows.map((row) => [row.metric, row.count, row.mean]), [
-    ["transportMs", 1, 7], ["ompMs", 1, 3], ["serverMs", 1, 3], ["totalMs", 1, 10],
+    ["transportMs", 1, 7], ["piMs", 1, 3], ["serverMs", 1, 3], ["totalMs", 1, 10],
   ]);
 });
 

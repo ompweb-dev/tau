@@ -26,7 +26,7 @@ export interface RetentionRoots {
 function defaultRoots(): RetentionRoots {
   return {
     sessions: getSessionsDir(), archive: getArchivedSessionsDir(),
-    tmp: process.platform === "win32" ? { dir: join(tmpdir(), "omp-local"), namespace: uploadOwnerNamespace() } : null,
+    tmp: process.platform === "win32" ? { dir: join(tmpdir(), "tau-local"), namespace: uploadOwnerNamespace() } : null,
   };
 }
 

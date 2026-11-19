@@ -88,10 +88,10 @@ const MAX_TOMBSTONES = 20;
 
 declare global {
   // globalThis survives a `bun --hot` re-evaluation; a module-level Map does not.
-  var __ompSttJobs: Map<string, SttJob> | undefined;
+  var __tauSttJobs: Map<string, SttJob> | undefined;
 }
 
-const store = (globalThis.__ompSttJobs ??= new Map<string, SttJob>());
+const store = (globalThis.__tauSttJobs ??= new Map<string, SttJob>());
 
 function view(job: SttJob): SttJobView {
   return { id: job.id, status: job.status, error: job.error };

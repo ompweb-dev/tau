@@ -40,8 +40,8 @@ export function CommandPaletteMount(props: Props) {
       setLoaded(true);
       setOpenRequest((request) => request + 1);
     };
-    window.addEventListener("omp:open-command-palette", onOpenRequest);
-    return () => window.removeEventListener("omp:open-command-palette", onOpenRequest);
+    window.addEventListener("tau:open-command-palette", onOpenRequest);
+    return () => window.removeEventListener("tau:open-command-palette", onOpenRequest);
   }, []);
 
   if (!loaded) return null;

@@ -487,7 +487,7 @@ export class StagedUploads {
     if (!meta || size === null) throw new HostOpError(404, "upload_missing", "The upload is gone: attach the file again");
     if (this.open.has(id) || size !== meta.size) throw new HostOpError(409, "upload_incomplete", "The upload has not finished");
     const local = sessionLocalRoot(sessionFile, sessionId);
-    const relativeDir = local === join(tmpdir(), "omp-local", sessionId)
+    const relativeDir = local === join(tmpdir(), "tau-local", sessionId)
       ? `${UPLOADS_LOCAL_DIR}/${uploadOwnerNamespace(this.agentDir)}` : UPLOADS_LOCAL_DIR;
     const dir = join(local, relativeDir);
     await mkdir(dir, { recursive: true });

@@ -1427,7 +1427,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     [t],
   );
 
-  // Externally reported commands (extension/prompt/skill/ompBuiltin) group
+  // Externally reported commands (extension/prompt/skill/piBuiltin) group
   // below the client built-ins; any name the web UI intercepts itself —
   // whether an omp builtin or a user extension — is dropped so each command
   // appears exactly once and the client interception behavior is unchanged.
@@ -1435,8 +1435,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     () => (slashCommands ?? []).flatMap((command): SlashCommandPaletteItem[] => {
       const source = command.source as string;
       if (CLIENT_BUILTIN_COMMAND_NAMES.has(command.name)) return [];
-      if (source === "builtin" || source === "ompBuiltin") {
-        return [{ name: command.name, description: command.description, source: "ompBuiltin" }];
+      if (source === "builtin" || source === "piBuiltin") {
+        return [{ name: command.name, description: command.description, source: "piBuiltin" }];
       }
       return [command];
     }),
@@ -2123,10 +2123,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       if (event.key === null || event.key === COMPOSER_MODELS_STORAGE_KEY) refresh();
     };
     refresh();
-    window.addEventListener("omp-composer-models-change", refresh);
+    window.addEventListener("tau-composer-models-change", refresh);
     window.addEventListener("storage", refreshFromStorage);
     return () => {
-      window.removeEventListener("omp-composer-models-change", refresh);
+      window.removeEventListener("tau-composer-models-change", refresh);
       window.removeEventListener("storage", refreshFromStorage);
     };
   }, []);

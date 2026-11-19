@@ -107,7 +107,7 @@ function untilEnd(body: ReadableStream<Uint8Array>, end: () => void): ReadableSt
 
 // Dev mounts the HTML import here, and pages fetch it so they pass the gate and renderIndex as in prod.
 // It is the same public shell that /login serves without a session.
-const DEV_INDEX = "/__omp_dev_index";
+const DEV_INDEX = "/__tau_dev_index";
 
 async function devIndex(server: Bun.Server<ServerSocketData>): Promise<string> {
   const url = new URL(DEV_INDEX, server.url);

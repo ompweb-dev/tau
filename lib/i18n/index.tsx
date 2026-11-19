@@ -35,10 +35,10 @@ interface I18nState {
 }
 
 declare global {
-  var __ompI18nState: I18nState | undefined;
+  var __tauI18nState: I18nState | undefined;
 }
 
-const state: I18nState = (globalThis.__ompI18nState ??= {
+const state: I18nState = (globalThis.__tauI18nState ??= {
   listeners: new Set(),
   locale: null,
   hydrated: false,

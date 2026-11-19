@@ -233,10 +233,10 @@ function validateHostname(value) {
 // host units share the env file: same user, same HOME and PI_CODING_AGENT_DIR,
 // so both read the same <agent dir>/tau/host.json.
 function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath }) {
-  const ompBin = extraEnv.TAU_PI_BIN ?? null;
-  const interpreterDir = ompBin ? launcherInterpreterDir(ompBin) : null;
+  const piBin = extraEnv.TAU_PI_BIN ?? null;
+  const interpreterDir = piBin ? launcherInterpreterDir(piBin) : null;
   const pathDirs = [
-    ...(ompBin ? [path.dirname(ompBin)] : []),
+    ...(piBin ? [path.dirname(piBin)] : []),
     // Launcher scripts (e.g. Bun/npm global installs of omp) run through an
     // interpreter resolved via `env`; without its directory the service
     // fails with exit 127 even though the binary itself is on PATH (#116).
@@ -321,11 +321,11 @@ function install(options = {}) {
   }
 
   // An explicit pi for the service; without it the service finds pi on PATH.
-  const ompBin = process.env.TAU_PI_BIN || null;
-  if (ompBin && !isExecutableFile(ompBin)) fail(`TAU_PI_BIN=${ompBin} is not executable`);
+  const piBin = process.env.TAU_PI_BIN || null;
+  if (piBin && !isExecutableFile(piBin)) fail(`TAU_PI_BIN=${piBin} is not executable`);
   // Note: the missing-interpreter check lives in runCli (before the Linux
   // gate) so it fails loudly on every platform; install() only reuses the
-  // resolved ompBin for the unit + env file.
+  // resolved piBin for the unit + env file.
 
   let port;
   let hostname;
@@ -348,7 +348,7 @@ function install(options = {}) {
   const envPath = getServiceEnvPath();
   const unitOptions = {
     tauBin,
-    env: ompBin ? { TAU_PI_BIN: ompBin } : {},
+    env: piBin ? { TAU_PI_BIN: piBin } : {},
     home: HOME,
     envPath,
   };
@@ -363,7 +363,7 @@ function install(options = {}) {
     ...(process.env.TAU_NAME ? { TAU_NAME: process.env.TAU_NAME } : {}),
     ...(passwordHash ? { TAU_PASSWORD_HASH: passwordHash } : {}),
     ...(process.env.TAU_TRUSTED_HEADER_SHA256 ? { TAU_TRUSTED_HEADER_SHA256: process.env.TAU_TRUSTED_HEADER_SHA256 } : {}),
-    ...(ompBin ? { TAU_PI_BIN: ompBin } : {}),
+    ...(piBin ? { TAU_PI_BIN: piBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   }, envPath);
 
@@ -536,13 +536,13 @@ async function runCli(argv = process.argv.slice(2)) {
   // An TAU_PI_BIN launcher script whose interpreter is nowhere on PATH
   // would install a unit that can only fail later with exit 127 (issue #116) — fail now.
   if (command === "install") {
-    const ompBin = process.env.TAU_PI_BIN || null;
-    if (ompBin && !isExecutableFile(ompBin)) {
-      fail(`TAU_PI_BIN=${ompBin} is not executable`);
-    } else if (ompBin && readLauncherInterpreter(ompBin) && !launcherInterpreterDir(ompBin)) {
+    const piBin = process.env.TAU_PI_BIN || null;
+    if (piBin && !isExecutableFile(piBin)) {
+      fail(`TAU_PI_BIN=${piBin} is not executable`);
+    } else if (piBin && readLauncherInterpreter(piBin) && !launcherInterpreterDir(piBin)) {
       fail(
-        `omp at ${ompBin} is a launcher script whose interpreter ` +
-        `(${readLauncherInterpreter(ompBin)}) was not found on PATH; ` +
+        `omp at ${piBin} is a launcher script whose interpreter ` +
+        `(${readLauncherInterpreter(piBin)}) was not found on PATH; ` +
         `install that runtime (or point TAU_PI_BIN at a standalone binary) and reinstall`,
       );
     }

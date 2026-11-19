@@ -65,7 +65,7 @@ interface WatcherState {
 }
 
 declare global {
-  var __ompGithubWatcher: WatcherState | undefined;
+  var __tauGithubWatcher: WatcherState | undefined;
 }
 
 async function defaultDeliver(sessionId: string, id: string, message: string, origin?: MessageOrigin): Promise<Delivery> {
@@ -317,7 +317,7 @@ async function preparePoll(state: WatcherState): Promise<boolean> {
 
 /** One pass over every watched item, now. Does nothing while Agent tools is off. */
 export async function pollOnce(): Promise<void> {
-  const state = globalThis.__ompGithubWatcher;
+  const state = globalThis.__tauGithubWatcher;
   if (!state || !(await preparePoll(state))) return;
   for (const itemKey of itemsOf()) await pollItem(state, itemKey);
 }
@@ -352,7 +352,7 @@ function cycle(state: WatcherState): void {
 }
 
 export function startGithubWatcher(deps: WatcherDeps = {}): void {
-  if (globalThis.__ompGithubWatcher) return;
+  if (globalThis.__tauGithubWatcher) return;
   const state: WatcherState = {
     deps: { run: deps.run ?? defaultGhRunner, deliver: deps.deliver ?? defaultDeliver, now: deps.now ?? Date.now, schedule: deps.schedule ?? defaultSchedule },
     cancels: new Set(),
@@ -361,7 +361,7 @@ export function startGithubWatcher(deps: WatcherDeps = {}): void {
     refused: new Set(),
     stopped: false,
   };
-  globalThis.__ompGithubWatcher = state;
+  globalThis.__tauGithubWatcher = state;
   process.once("exit", stopGithubWatcher);
   // Lazy for the same reason as the default deliver: rpc-manager loads the agent tools that load this module.
   void import("../rpc-manager")
@@ -380,13 +380,13 @@ export function startGithubWatcher(deps: WatcherDeps = {}): void {
 }
 
 export function stopGithubWatcher(): void {
-  const state = globalThis.__ompGithubWatcher;
+  const state = globalThis.__tauGithubWatcher;
   if (!state) return;
   state.stopped = true;
   for (const cancel of state.cancels) cancel();
   state.cancels.clear();
   state.detachMove?.();
   process.off("exit", stopGithubWatcher);
-  globalThis.__ompGithubWatcher = undefined;
+  globalThis.__tauGithubWatcher = undefined;
   closeWatchStore();
 }

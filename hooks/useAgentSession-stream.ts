@@ -204,7 +204,7 @@ export function normalizeThinkingLevel(level: string | undefined): ThinkingLevel
   return level as ThinkingLevelOption;
 }
 
-/** Narrow the live state's model (OmpModel: id-based) to the composer's shape. */
+/** Narrow the live state's model (PiModel: id-based) to the composer's shape. */
 export function toThinkingModelMeta(model: { provider?: string; id?: string; name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } } | null | undefined): ThinkingModelMeta | null {
   if (!model?.provider || !model.id) return null;
   return { provider: model.provider, modelId: model.id, name: model.name, reasoning: model.reasoning, thinking: model.thinking };

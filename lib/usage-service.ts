@@ -44,14 +44,14 @@ export const MAX_USAGE_CACHE_BYTES = 64 * 1024 * 1024; // 64 MiB
 let usageCacheApproxBytes = 0;
 
 declare global {
-  var __ompUsageCache: Map<string, SessionUsageCacheEntry> | undefined;
+  var __tauUsageCache: Map<string, SessionUsageCacheEntry> | undefined;
 }
 
 function getUsageCache(): Map<string, SessionUsageCacheEntry> {
-  if (!globalThis.__ompUsageCache) {
-    globalThis.__ompUsageCache = new Map();
+  if (!globalThis.__tauUsageCache) {
+    globalThis.__tauUsageCache = new Map();
   }
-  return globalThis.__ompUsageCache;
+  return globalThis.__tauUsageCache;
 }
 
 function estimateUsageEntryBytes(entry: SessionUsageCacheEntry): number {
@@ -79,7 +79,7 @@ function setUsageCacheEntry(filePath: string, entry: SessionUsageCacheEntry): vo
 
 /** Clear in-memory usage cache (useful on session mutation or manual refresh). */
 export function invalidateUsageCache(): void {
-  globalThis.__ompUsageCache?.clear();
+  globalThis.__tauUsageCache?.clear();
   usageCacheApproxBytes = 0;
 }
 

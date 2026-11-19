@@ -33,7 +33,7 @@ import { publishNotification } from "./notification-hub";
 import { eventWithToolResultImageUrls } from "./media-cache";
 import type {
   BashResultInfo,
-  OmpModel,
+  PiModel,
   RpcAvailableSlashCommand,
   RpcSessionState,
   SessionStatsInfo,
@@ -562,7 +562,7 @@ export class AgentSessionWrapper {
   }
 
   private notifyAskClosed(): void {
-    for (const listener of globalThis.__ompAskClosedListeners ?? []) listener(this._sessionId);
+    for (const listener of globalThis.__tauAskClosedListeners ?? []) listener(this._sessionId);
   }
 
   /** Local history navigation is busy control work, not an interruptible model turn. */
@@ -1512,7 +1512,7 @@ export class AgentSessionWrapper {
         // notifyRunningChange apply to their listener sets.
       }
     }
-    for (const tap of globalThis.__ompFrameTaps ?? []) {
+    for (const tap of globalThis.__tauFrameTaps ?? []) {
       try {
         tap(this, event as AgentEvent);
       } catch {
@@ -2394,7 +2394,7 @@ export class AgentSessionWrapper {
 
       case "set_model": {
         const { provider, modelId } = command as { provider: string; modelId: string };
-        const model = await this.proc.sendCommand<OmpModel>({ type: "set_model", provider, modelId }, preserveUnknownDelivery ? PROMPT_ACK_TIMEOUT_MS : undefined);
+        const model = await this.proc.sendCommand<PiModel>({ type: "set_model", provider, modelId }, preserveUnknownDelivery ? PROMPT_ACK_TIMEOUT_MS : undefined);
         invalidateModelsCache();
         this.invalidateSessionLists();
         return { id: model.id, provider: model.provider };
@@ -2778,19 +2778,19 @@ export interface RunningSessionUpdate {
 
 
 declare global {
-  var __ompSessions: Map<string, AgentSessionWrapper> | undefined;
-  var __ompStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
-  var __ompRunningListeners: Set<(update: RunningSessionUpdate) => void> | undefined;
-  var __ompHostToolListeners: Set<(call: CrossSessionHostToolEvent) => void> | undefined;
-  var __ompExitedSessions: Map<string, ExitedRpcSession> | undefined;
-  var __ompFrameTaps: Set<(wrapper: AgentSessionWrapper, event: AgentEvent) => void> | undefined;
-  var __ompSessionMoveListeners: Set<(from: string, to: string) => void> | undefined;
-  var __ompAskClosedListeners: Set<(sessionId: string) => void> | undefined;
-  var __ompNativeWrites: WeakSet<object> | undefined;
+  var __tauSessions: Map<string, AgentSessionWrapper> | undefined;
+  var __tauStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
+  var __tauRunningListeners: Set<(update: RunningSessionUpdate) => void> | undefined;
+  var __tauHostToolListeners: Set<(call: CrossSessionHostToolEvent) => void> | undefined;
+  var __tauExitedSessions: Map<string, ExitedRpcSession> | undefined;
+  var __tauFrameTaps: Set<(wrapper: AgentSessionWrapper, event: AgentEvent) => void> | undefined;
+  var __tauSessionMoveListeners: Set<(from: string, to: string) => void> | undefined;
+  var __tauAskClosedListeners: Set<(sessionId: string) => void> | undefined;
+  var __tauNativeWrites: WeakSet<object> | undefined;
 }
 
 function nativeWrites(): WeakSet<object> {
-  return (globalThis.__ompNativeWrites ??= new WeakSet());
+  return (globalThis.__tauNativeWrites ??= new WeakSet());
 }
 
 /** True once some wrapper began writing this submitted command to omp's stdin; never before. */
@@ -2799,8 +2799,8 @@ export function nativeWriteStarted(command: object): boolean {
 }
 
 function getExitedMap(): Map<string, ExitedRpcSession> {
-  if (!globalThis.__ompExitedSessions) globalThis.__ompExitedSessions = new Map();
-  return globalThis.__ompExitedSessions;
+  if (!globalThis.__tauExitedSessions) globalThis.__tauExitedSessions = new Map();
+  return globalThis.__tauExitedSessions;
 }
 
 export function getExitedRpcSessions(): ExitedRpcSession[] {
@@ -2819,8 +2819,8 @@ export function clearExitedRpcSession(sessionId: string): boolean {
 }
 
 function getRegistry(): Map<string, AgentSessionWrapper> {
-  if (!globalThis.__ompSessions) {
-    globalThis.__ompSessions = new Map();
+  if (!globalThis.__tauSessions) {
+    globalThis.__tauSessions = new Map();
     const cleanup = () => {
       // Children dying from here on are the shutdown, not finished runs.
       markShuttingDown();
@@ -2832,12 +2832,12 @@ function getRegistry(): Map<string, AgentSessionWrapper> {
     process.once("SIGINT", cleanup);
     process.once("SIGTERM", cleanup);
   }
-  return globalThis.__ompSessions;
+  return globalThis.__tauSessions;
 }
 
 function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> {
-  if (!globalThis.__ompStartLocks) globalThis.__ompStartLocks = new Map();
-  return globalThis.__ompStartLocks;
+  if (!globalThis.__tauStartLocks) globalThis.__tauStartLocks = new Map();
+  return globalThis.__tauStartLocks;
 }
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
@@ -2886,8 +2886,8 @@ export function getLiveRpcSessionIds(): string[] {
 // ----------------------------------------------------------------------------
 
 function getRunningListeners(): Set<(update: RunningSessionUpdate) => void> {
-  if (!globalThis.__ompRunningListeners) globalThis.__ompRunningListeners = new Set();
-  return globalThis.__ompRunningListeners;
+  if (!globalThis.__tauRunningListeners) globalThis.__tauRunningListeners = new Set();
+  return globalThis.__tauRunningListeners;
 }
 
 /** Subscribe to running-session-id changes and session-list refreshes. */
@@ -2900,7 +2900,7 @@ export function subscribeRunningSessions(listener: (update: RunningSessionUpdate
 /** See every wrapper's frames after its listeners, without counting as a subscriber (the reapers ignore it):
  * server bookkeeping such as the message outbox's late hand-off. */
 export function tapSessionFrames(tap: (wrapper: AgentSessionWrapper, event: AgentEvent) => void): () => void {
-  const taps = (globalThis.__ompFrameTaps ??= new Set());
+  const taps = (globalThis.__tauFrameTaps ??= new Set());
   taps.add(tap);
   return () => { taps.delete(tap); };
 }
@@ -2909,14 +2909,14 @@ const isAskRequest = (event: UnsequencedAgentEvent | undefined): boolean => even
 
 /** A session's last open ask closed (answered, cancelled, expired or its child gone): the outbox's held steers may go. */
 export function onAskClosed(listener: (sessionId: string) => void): () => void {
-  const listeners = (globalThis.__ompAskClosedListeners ??= new Set());
+  const listeners = (globalThis.__tauAskClosedListeners ??= new Set());
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 }
 
 /** Confirmed ownership moves only, after registry aliases exist and before observers see the new identity. */
 export function onSessionMove(listener: (from: string, to: string) => void): () => void {
-  const listeners = (globalThis.__ompSessionMoveListeners ??= new Set());
+  const listeners = (globalThis.__tauSessionMoveListeners ??= new Set());
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 }
@@ -2929,8 +2929,8 @@ export function onSessionMove(listener: (from: string, to: string) => void): () 
 // ----------------------------------------------------------------------------
 
 function getHostToolListeners(): Set<(call: CrossSessionHostToolEvent) => void> {
-  if (!globalThis.__ompHostToolListeners) globalThis.__ompHostToolListeners = new Set();
-  return globalThis.__ompHostToolListeners;
+  if (!globalThis.__tauHostToolListeners) globalThis.__tauHostToolListeners = new Set();
+  return globalThis.__tauHostToolListeners;
 }
 
 /** Subscribe to host tool calls for sessions no tab is currently watching. */
@@ -3010,15 +3010,15 @@ async function resumeSession({ id, hostId }: InterruptibleSession): Promise<void
  * (empty array = all tools disabled); ignored when resuming.
  */
 declare global {
-  var __ompAgentToolGuard: AgentToolGuard | undefined;
+  var __tauAgentToolGuard: AgentToolGuard | undefined;
 }
 
 /** Process-wide loop/spam guard for server agent tools (#275). Stored on
  * globalThis like the session registry so a hot reload does not silently
  * reset the chain depths mid-loop. */
 function getAgentToolGuard(): AgentToolGuard {
-  if (!globalThis.__ompAgentToolGuard) globalThis.__ompAgentToolGuard = new AgentToolGuard();
-  return globalThis.__ompAgentToolGuard;
+  if (!globalThis.__tauAgentToolGuard) globalThis.__tauAgentToolGuard = new AgentToolGuard();
+  return globalThis.__tauAgentToolGuard;
 }
 
 /** omp's command for each agent-tool delivery; the `Record` makes a new delivery fail to compile until it is mapped. */
@@ -3384,7 +3384,7 @@ export async function startRpcSession(
     if (sessionFile && realSessionId !== sessionId) {
       registry.set(sessionId, created);
       created.keepMovedFromId(sessionId);
-      for (const listener of globalThis.__ompSessionMoveListeners ?? []) listener(sessionId, realSessionId);
+      for (const listener of globalThis.__tauSessionMoveListeners ?? []) listener(sessionId, realSessionId);
     }
     // A successful respawn supersedes the crash record.
     clearExitedRpcSession(sessionId);
@@ -3408,7 +3408,7 @@ function registerSession(created: AgentSessionWrapper): void {
     // A move keeps the old ids routable; a branch/new/switch serves another conversation, so every old key goes.
     if (!options?.keepOldId) for (const [key, wrapper] of registry) if (wrapper === created) registry.delete(key);
     registry.set(newId, created);
-    if (options?.keepOldId) for (const listener of globalThis.__ompSessionMoveListeners ?? []) listener(oldId, newId);
+    if (options?.keepOldId) for (const listener of globalThis.__tauSessionMoveListeners ?? []) listener(oldId, newId);
     notifyRunningChange({ refreshSessionList: true });
   });
   registry.set(created.sessionId, created);

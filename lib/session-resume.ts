@@ -29,15 +29,15 @@ interface TrackerState {
 }
 
 declare global {
-  var __ompResumeTracker: TrackerState | undefined;
+  var __tauResumeTracker: TrackerState | undefined;
 }
 
 // On globalThis so it survives a `bun --hot` re-evaluation. Created on first
 // use, which claims the previous runs' lists before anything in this run can
 // overwrite them.
 function tracker(): TrackerState {
-  globalThis.__ompResumeTracker ??= { leftover: readLeftover(), sessions: new Map(), drops: new Map(), shuttingDown: false };
-  return globalThis.__ompResumeTracker;
+  globalThis.__tauResumeTracker ??= { leftover: readLeftover(), sessions: new Map(), drops: new Map(), shuttingDown: false };
+  return globalThis.__tauResumeTracker;
 }
 
 // Each tau instance keeps its own list, named by pid, so two instances

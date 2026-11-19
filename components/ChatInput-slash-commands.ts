@@ -1,6 +1,6 @@
 import { WEB_SLASH_COMMANDS } from "@/lib/web-slash-commands";
 
-export type SlashCommandSource = "builtin" | "extension" | "prompt" | "skill" | "ompBuiltin";
+export type SlashCommandSource = "builtin" | "extension" | "prompt" | "skill" | "piBuiltin";
 
 export type SlashCommandPaletteItem = {
   name: string;
@@ -32,14 +32,14 @@ export const BUILTIN_SLASH_COMMAND_DEFS: { name: string; descriptionKey: string;
 
 export const CLIENT_BUILTIN_COMMAND_NAMES = new Set(BUILTIN_SLASH_COMMAND_DEFS.map((def) => def.name));
 
-export const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill", "ompBuiltin"];
+export const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill", "piBuiltin"];
 
 export const SLASH_SOURCE_GROUP_LABEL_KEYS: Record<SlashCommandSource, string> = {
   builtin: "chatInput.groupBuiltin",
   extension: "chatInput.groupExtensions",
   prompt: "chatInput.groupPrompts",
   skill: "chatInput.groupSkills",
-  ompBuiltin: "chatInput.groupPiBuiltin",
+  piBuiltin: "chatInput.groupPiBuiltin",
 };
 
 export const SLASH_SOURCE_ORDER: Record<SlashCommandSource, number> = {
@@ -47,7 +47,7 @@ export const SLASH_SOURCE_ORDER: Record<SlashCommandSource, number> = {
   extension: 1,
   prompt: 2,
   skill: 3,
-  ompBuiltin: 4,
+  piBuiltin: 4,
 };
 
 export function slashMatchRank(command: SlashCommandPaletteItem, query: string): number {

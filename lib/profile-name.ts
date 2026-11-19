@@ -21,7 +21,7 @@ const WINDOWS_RESERVED_BASE = new Set([
 ]);
 
 /** True when `name` is a profile name omp will accept (empty input is "no profile" and valid). */
-export function isValidOmpProfile(name: string): boolean {
+export function isValidProfileName(name: string): boolean {
   if (!name) return true;
   if (!PROFILE_NAME_PATTERN.test(name)) return false;
   // A leading dot is already impossible (the pattern starts with [a-z0-9]),

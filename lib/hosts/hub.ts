@@ -211,12 +211,12 @@ interface HubState {
 }
 
 declare global {
-  var __ompHostHub: HubState | undefined;
+  var __tauHostHub: HubState | undefined;
 }
 
 // globalThis, like the rpc-manager registry: survives a `bun --hot` re-evaluation.
 function hub(): HubState {
-  globalThis.__ompHostHub ??= {
+  globalThis.__tauHostHub ??= {
     links: new Map(),
     changeListeners: new Set(),
     helloListeners: new Set(),
@@ -229,12 +229,12 @@ function hub(): HubState {
     configSync: undefined,
   };
   // A state kept from before a field existed (`bun --hot`) lacks it.
-  globalThis.__ompHostHub.linkSamples ??= { samples: [], file: "", timer: undefined };
-  globalThis.__ompHostHub.uploadListeners ??= new Set();
-  globalThis.__ompHostHub.fileListeners ??= new Map();
-  globalThis.__ompHostHub.sessionChangeListeners ??= new Set();
-  globalThis.__ompHostHub.masterConfig ??= { version: null, error: null };
-  return globalThis.__ompHostHub;
+  globalThis.__tauHostHub.linkSamples ??= { samples: [], file: "", timer: undefined };
+  globalThis.__tauHostHub.uploadListeners ??= new Set();
+  globalThis.__tauHostHub.fileListeners ??= new Map();
+  globalThis.__tauHostHub.sessionChangeListeners ??= new Set();
+  globalThis.__tauHostHub.masterConfig ??= { version: null, error: null };
+  return globalThis.__tauHostHub;
 }
 
 /** The daemon changed its session files, including a restore that completed after its RPC timed out. */

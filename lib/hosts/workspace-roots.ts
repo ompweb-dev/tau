@@ -46,7 +46,7 @@ export async function getWorkspaceRoots(owner?: WorkspaceOwner): Promise<Set<str
   for (const grant of grants) roots.add(grant);
   try {
     for (const entry of readdirSync(homedir(), { withFileTypes: true })) {
-      if (entry.isDirectory() && /^omp-cwd-\d{8}$/.test(entry.name)) roots.add(normalizeSlashes(join(homedir(), entry.name)));
+      if (entry.isDirectory() && /^tau-cwd-\d{8}$/.test(entry.name)) roots.add(normalizeSlashes(join(homedir(), entry.name)));
     }
   } catch { /* A missing home does not authorize any scratch directory. */ }
   for (const root of getConfigAgentRoots()) roots.add(root);

@@ -155,14 +155,14 @@ function persistCompletedUpload(id: string, upload: Upload): string {
 }
 
 declare global {
-  var __ompUploads: Map<string, Upload> | undefined;
-  var __ompPendingAborts: Map<string, Set<string>> | undefined;
+  var __tauUploads: Map<string, Upload> | undefined;
+  var __tauPendingAborts: Map<string, Set<string>> | undefined;
 }
 
 // globalThis, like the rpc-manager registry: survives a `bun --hot` re-evaluation.
 function uploads(): Map<string, Upload> {
-  if (!globalThis.__ompUploads) {
-    globalThis.__ompUploads = new Map();
+  if (!globalThis.__tauUploads) {
+    globalThis.__tauUploads = new Map();
     onUploadEvent(onHostEvent);
     onHostHello((hostId) => {
       const ids = pendingAborts().get(hostId);
@@ -171,12 +171,12 @@ function uploads(): Map<string, Upload> {
       for (const id of ids) deliverAbort(hostId, id);
     });
   }
-  return globalThis.__ompUploads;
+  return globalThis.__tauUploads;
 }
 
 /** Aborts a host could not take (offline, timed out): sent again on its next hello. In memory only. */
 function pendingAborts(): Map<string, Set<string>> {
-  return (globalThis.__ompPendingAborts ??= new Map());
+  return (globalThis.__tauPendingAborts ??= new Map());
 }
 
 function deliverAbort(hostId: string, id: string): Promise<void> {

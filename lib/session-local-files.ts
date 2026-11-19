@@ -4,7 +4,7 @@
 // `sessionLocalRoot` (omp's rule, shared with composer uploads) names its directory, never the cwd or viewed session.
 import { realpathSync, statSync, type Stats } from "node:fs";
 import path from "node:path";
-import { isExistingPathWithinRoots, isOmpSecretFile, isPathWithinRoots } from "./file-access";
+import { isExistingPathWithinRoots, isPiSecretFile, isPathWithinRoots } from "./file-access";
 import { getSessionsDir, sessionLocalRoot } from "./pi/paths";
 import { readSessionHeaderSync } from "./pi/session-files";
 import { isValidSessionId } from "./session-file-references-core";
@@ -73,7 +73,7 @@ export async function resolveSessionLocalFile(
   const outside = resolvesOutside(located.root, target);
   if (outside === null) return { ok: false, status: 503, code: "local_root_unavailable", error: "The session's local:// directory could not be checked" };
   if (outside) return { ok: false, status: 403, code: "access_denied", error: "Access denied" };
-  if (isOmpSecretFile(target)) return { ok: false, status: 403, code: "access_denied", error: "Access denied" };
+  if (isPiSecretFile(target)) return { ok: false, status: 403, code: "access_denied", error: "Access denied" };
   let stat: Stats;
   try {
     stat = statSync(target);

@@ -2072,7 +2072,7 @@ export function AppShell({ appName }: { appName: string }) {
         onNewSession={() => {
           // An empty cwd is truthy, so showChat would render the shell while
           // useAgentSession refuses to start — every send a silent no-op.
-          // Fall back to the server's default cwd (~/omp-cwd-<date>) instead.
+          // Fall back to the server's default cwd (~/tau-cwd-<date>) instead.
           if (activeCwd || activePoolProject) {
             handleNewSession(randomUUID(), activeCwd, activeHostId, activePoolProject ?? undefined);
             return;
@@ -2293,7 +2293,7 @@ export function AppShell({ appName }: { appName: string }) {
                       mobileToolsRef.current.open = false;
                       setActiveTopPanel(null);
                     }
-                    window.dispatchEvent(new Event("omp:open-command-palette"));
+                    window.dispatchEvent(new Event("tau:open-command-palette"));
                   }}
                   title={`${t("commandPalette.label")} (Ctrl/⌘ K)`}
                   aria-label={t("commandPalette.label")}

@@ -84,12 +84,12 @@ function install(pkgArg?: string): void {
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
   // An explicit pi for the service; without it the service finds pi on PATH.
-  const ompBin = process.env.TAU_PI_BIN || null;
-  if (ompBin) {
+  const piBin = process.env.TAU_PI_BIN || null;
+  if (piBin) {
     try {
-      fs.accessSync(ompBin, fs.constants.X_OK);
+      fs.accessSync(piBin, fs.constants.X_OK);
     } catch {
-      fail(`TAU_PI_BIN=${ompBin} is not executable`);
+      fail(`TAU_PI_BIN=${piBin} is not executable`);
     }
   }
 
@@ -109,7 +109,7 @@ function install(pkgArg?: string): void {
   // manager's own directory must be reachable too when present.
   const asdfBin = which("asdf");
   const svcPath = [
-    ...(ompBin ? [path.dirname(ompBin)] : []),
+    ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
     path.dirname(nodeBin),
@@ -126,7 +126,7 @@ function install(pkgArg?: string): void {
     TAU_HOSTNAME: hostname,
     TAU_NO_OPEN: noOpen,
     ...(passwordHash ? { TAU_PASSWORD_HASH: passwordHash } : {}),
-    ...(ompBin ? { TAU_PI_BIN: ompBin } : {}),
+    ...(piBin ? { TAU_PI_BIN: piBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
   const envXml = Object.entries(env)

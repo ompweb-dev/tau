@@ -646,7 +646,7 @@ export function getLeafEntryId(entries: SessionEntry[]): string | null {
 
 export type SessionStatus = "complete" | "interrupted" | "aborted" | "error" | "pending" | "unknown";
 
-export interface OmpSessionInfo {
+export interface PiSessionInfo {
   path: string;
   id: string;
   cwd: string;
@@ -947,7 +947,7 @@ function readTextSlices(
 }
 
 /**
- * Scan a single session file into an OmpSessionInfo using only a 4 KiB prefix
+ * Scan a single session file into an PiSessionInfo using only a 4 KiB prefix
  * window (plus a 32 KiB tail window when `withStatus` is set). Faithful port
  * of omp's scanSessionFile — messageCount is a prefix-derived lower bound.
  */
@@ -955,7 +955,7 @@ export function scanSessionInfo(
   filePath: string,
   withStatus = true,
   knownStat?: { size: number; mtime: Date },
-): OmpSessionInfo | undefined {
+): PiSessionInfo | undefined {
   try {
     const [content, suffix, size, mtime] = readTextSlices(
       filePath,
@@ -1019,11 +1019,11 @@ export function scanSessionInfo(
 interface SessionScanCacheEntry {
   size: number;
   mtimeMs: number;
-  info: OmpSessionInfo;
+  info: PiSessionInfo;
 }
 
 declare global {
-  var __ompSessionScanCache: Map<string, SessionScanCacheEntry> | undefined;
+  var __tauSessionScanCache: Map<string, SessionScanCacheEntry> | undefined;
 }
 
 const MAX_SESSION_SCAN_CACHE_ENTRIES = 2048;
@@ -1035,8 +1035,8 @@ function scanCacheKey(filePath: string): string {
 }
 
 function getSessionScanCache(): Map<string, SessionScanCacheEntry> {
-  if (!globalThis.__ompSessionScanCache) globalThis.__ompSessionScanCache = new Map();
-  return globalThis.__ompSessionScanCache;
+  if (!globalThis.__tauSessionScanCache) globalThis.__tauSessionScanCache = new Map();
+  return globalThis.__tauSessionScanCache;
 }
 
 /** Invalidate the memoized scan (prefix/suffix window info) for ONE session
@@ -1046,7 +1046,7 @@ function getSessionScanCache(): Map<string, SessionScanCacheEntry> {
  * updates, reparent rewrites, delete-while-open) so the list scan picks up the
  * new window without dropping every other session's scan memo. */
 export function invalidateSessionScanCache(filePath: string): void {
-  globalThis.__ompSessionScanCache?.delete(scanCacheKey(filePath));
+  globalThis.__tauSessionScanCache?.delete(scanCacheKey(filePath));
 }
 
 /** Clear EVERY per-file scan memo. Used by the full list-cache flush for
@@ -1055,12 +1055,12 @@ export function invalidateSessionScanCache(filePath: string): void {
  * same-size + same-mtime rewrite would keep serving the OLD scan summary
  * (old title / old parent link) to the sidebar. */
 export function invalidateAllSessionScanCaches(): void {
-  globalThis.__ompSessionScanCache?.clear();
+  globalThis.__tauSessionScanCache?.clear();
 }
 
 /** scanSessionInfo memoized on (path, size, mtimeMs). Callers must treat the
  * returned info as immutable — cache hits share one object. */
-function scanSessionInfoCached(filePath: string): OmpSessionInfo | undefined {
+function scanSessionInfoCached(filePath: string): PiSessionInfo | undefined {
   let stat: { size: number; mtime: Date; mtimeMs: number };
   try {
     stat = statSync(filePath);
@@ -1102,11 +1102,11 @@ function scanSessionInfoCached(filePath: string): OmpSessionInfo | undefined {
  * requests (sidebar poll, page loads) into a single stat. Per-file scanning is
  * still memoized by scanSessionInfoCached on (size, mtimeMs).
  */
-export async function listAllSessionInfos(): Promise<OmpSessionInfo[]> {
+export async function listAllSessionInfos(): Promise<PiSessionInfo[]> {
   const sessionsRoot = getSessionsDir();
   const files = await listSessionFiles(sessionsRoot);
 
-  const sessions: OmpSessionInfo[] = [];
+  const sessions: PiSessionInfo[] = [];
   for (const file of files) {
     const info = scanSessionInfoCached(file);
     if (info) sessions.push(info);
@@ -1122,7 +1122,7 @@ interface SessionFileListCacheEntry {
 }
 
 declare global {
-  var __ompSessionFileListCache: Map<string, SessionFileListCacheEntry> | undefined;
+  var __tauSessionFileListCache: Map<string, SessionFileListCacheEntry> | undefined;
 }
 
 /** Cached walk of `<sessionsRoot>/<project>/*.jsonl`, keyed on the root's
@@ -1132,7 +1132,7 @@ declare global {
  * behaves this way in some configurations). Callers that know a session
  * changed must therefore also call invalidateSessionFileListCache(). */
 export function invalidateSessionFileListCache(): void {
-  globalThis.__ompSessionFileListCache?.clear();
+  globalThis.__tauSessionFileListCache?.clear();
 }
 
 export async function listSessionFiles(sessionsRoot: string): Promise<string[]> {
@@ -1142,8 +1142,8 @@ export async function listSessionFiles(sessionsRoot: string): Promise<string[]> 
   } catch {
     return [];
   }
-  if (!globalThis.__ompSessionFileListCache) globalThis.__ompSessionFileListCache = new Map();
-  const cache = globalThis.__ompSessionFileListCache;
+  if (!globalThis.__tauSessionFileListCache) globalThis.__tauSessionFileListCache = new Map();
+  const cache = globalThis.__tauSessionFileListCache;
   const cached = cache.get(sessionsRoot);
   if (cached && cached.rootMtimeMs === rootStat.mtimeMs) {
     // Windows/NTFS: root mtime may not bump when a file is added inside a project subdir.

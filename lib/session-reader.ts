@@ -13,7 +13,7 @@ import {
   MAX_SESSION_LOAD_BYTES,
   readSessionHeaderSync,
   resolveBlobRefsInEntries,
-  type OmpSessionInfo,
+  type PiSessionInfo,
   type ResolveBlobOptions,
 } from "./pi/session-files";
 import type {
@@ -55,10 +55,10 @@ function matchParentSessionId(
 }
 
 async function loadAllSessions(): Promise<SessionInfo[]> {
-  const ompSessions: OmpSessionInfo[] = await listAllSessionInfos();
+  const piSessions: PiSessionInfo[] = await listAllSessionInfos();
   const pathToId = new Map<string, string>();
   const knownIds = new Set<string>();
-  for (const s of ompSessions) {
+  for (const s of piSessions) {
     pathToId.set(sessionPathKey(s.path), s.id);
     knownIds.add(s.id);
   }
@@ -66,7 +66,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
   // Resolve each unique cwd to its project root (main repo shared by all
   // worktrees). resolveProject caches per-cwd, so this is cheap after warmup.
   // Bound concurrency so 100+ unique cwds don't spawn 100 parallel git processes.
-  const uniqueCwds = [...new Set(ompSessions.map((s) => s.cwd).filter(Boolean))];
+  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
   const CONCURRENCY = 6;
   for (let i = 0; i < uniqueCwds.length; i += CONCURRENCY) {
@@ -76,7 +76,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
     }));
   }
 
-  return ompSessions.map((s) => {
+  return piSessions.map((s) => {
     cacheSessionPath(s.id, s.path);
     const project = s.cwd ? projectByCwd.get(s.cwd) : undefined;
     return {
@@ -192,12 +192,12 @@ export function invalidateSessionListCache(): void {
   // Drop cached entry parses so a mutation preserving size+mtime (rare) can
   // never serve stale entries; the (size, mtimeMs) key already invalidates
   // the common case, this closes the remaining window.
-  globalThis.__ompSessionEntriesCache?.clear();
-  globalThis.__ompSessionHistoryIndexes?.clear();
+  globalThis.__tauSessionEntriesCache?.clear();
+  globalThis.__tauSessionHistoryIndexes?.clear();
   // Unknown-source changes (full-flush fallback) have no known path to target
   // with invalidateSessionEntriesCache: clear every per-file SCAN memo too, or
   // an unknown same-size + same-mtime rewrite would keep serving the OLD list
-  // summary (stale title/parent) from __ompSessionScanCache.
+  // summary (stale title/parent) from __tauSessionScanCache.
   invalidateAllSessionScanCaches();
 }
 
@@ -224,9 +224,9 @@ export function invalidateSessionCaches(filePath?: string): void {
  * The key is normalized with sessionPathKey so Windows case/spacing variants
  * still hit the same entry. */
 export function invalidateSessionEntriesCache(filePath: string): void {
-  globalThis.__ompSessionEntriesCache?.delete(sessionPathKey(filePath));
-  for (const [key, index] of globalThis.__ompSessionHistoryIndexes ?? []) {
-    if (index.pathKey === sessionPathKey(filePath)) globalThis.__ompSessionHistoryIndexes?.delete(key);
+  globalThis.__tauSessionEntriesCache?.delete(sessionPathKey(filePath));
+  for (const [key, index] of globalThis.__tauSessionHistoryIndexes ?? []) {
+    if (index.pathKey === sessionPathKey(filePath)) globalThis.__tauSessionHistoryIndexes?.delete(key);
   }
   invalidateSessionScanCache(filePath);
 }
@@ -339,7 +339,7 @@ interface SessionEntriesCacheEntry {
 }
 
 declare global {
-  var __ompSessionEntriesCache: Map<string, SessionEntriesCacheEntry> | undefined;
+  var __tauSessionEntriesCache: Map<string, SessionEntriesCacheEntry> | undefined;
 }
 
 const MAX_SESSION_ENTRIES_CACHE_ENTRIES = 32;
@@ -348,8 +348,8 @@ const MAX_SESSION_ENTRIES_CACHE_ENTRIES = 32;
 const MAX_SESSION_ENTRIES_CACHE_BYTES = 256 * 1024 * 1024;
 
 function getSessionEntriesCache(): Map<string, SessionEntriesCacheEntry> {
-  if (!globalThis.__ompSessionEntriesCache) globalThis.__ompSessionEntriesCache = new Map();
-  return globalThis.__ompSessionEntriesCache;
+  if (!globalThis.__tauSessionEntriesCache) globalThis.__tauSessionEntriesCache = new Map();
+  return globalThis.__tauSessionEntriesCache;
 }
 
 function loadSessionEntriesCached(filePath: string): SessionEntry[] {
@@ -499,12 +499,12 @@ function toDisplayEntries(entries: SessionEntry[], options: ResolveBlobOptions):
 // hot-reload safety; bounded by the number of distinct files being read
 // concurrently, and entries are removed as soon as their parse settles.
 declare global {
-  var __ompEntriesInFlight: Map<string, Promise<SessionEntry[]>> | undefined;
+  var __tauEntriesInFlight: Map<string, Promise<SessionEntry[]>> | undefined;
 }
 
 function getInFlightEntries(): Map<string, Promise<SessionEntry[]>> {
-  if (!globalThis.__ompEntriesInFlight) globalThis.__ompEntriesInFlight = new Map();
-  return globalThis.__ompEntriesInFlight;
+  if (!globalThis.__tauEntriesInFlight) globalThis.__tauEntriesInFlight = new Map();
+  return globalThis.__tauEntriesInFlight;
 }
 
 /** Deduplicated display-path entry read. Semantically identical to
@@ -582,7 +582,7 @@ interface SessionHistoryIndex {
 }
 
 declare global {
-  var __ompSessionHistoryIndexes: Map<string, SessionHistoryIndex> | undefined;
+  var __tauSessionHistoryIndexes: Map<string, SessionHistoryIndex> | undefined;
 }
 
 // Independent of the 256 MiB RAW parse cache: only offsets, IDs and selected
@@ -680,7 +680,7 @@ function buildHistoryIndex(
 /** Rebuild on any file-version change: growth alone cannot prove that old
  * offsets survived a prefix rewrite. Both readers share the same bounded LRU. */
 function getSessionHistoryIndex(filePath: string, leafId?: string, includePreCompaction = false) {
-  const cache = globalThis.__ompSessionHistoryIndexes ??= new Map();
+  const cache = globalThis.__tauSessionHistoryIndexes ??= new Map();
   const pathKey = sessionPathKey(filePath);
   const key = JSON.stringify([pathKey, leafId ?? null, includePreCompaction]);
   let stat: Stats | undefined;

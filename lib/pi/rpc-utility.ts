@@ -28,7 +28,7 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
 
 /** Minimal mirror of omp's Model (packages/catalog/src/types.ts) — only the
  * fields the models/auth routes read. Everything else passes through opaque. */
-export interface OmpModel {
+export interface PiModel {
   id: string;
   name: string;
   provider: string;
@@ -53,12 +53,12 @@ interface UtilityRpcState {
 }
 
 declare global {
-  var __ompUtilityRpcState: UtilityRpcState | undefined;
+  var __tauUtilityRpcState: UtilityRpcState | undefined;
 }
 
 function getState(): UtilityRpcState {
-  if (!globalThis.__ompUtilityRpcState) {
-    globalThis.__ompUtilityRpcState = { proc: null, idleTimer: null, queue: Promise.resolve() };
+  if (!globalThis.__tauUtilityRpcState) {
+    globalThis.__tauUtilityRpcState = { proc: null, idleTimer: null, queue: Promise.resolve() };
     // Mirror the session registry in lib/rpc-manager.ts: dispose the shared
     // utility omp process on server shutdown so it does not outlive the server.
     // Idempotent and safe to call any time (clears the idle timer + disposes).
@@ -67,7 +67,7 @@ function getState(): UtilityRpcState {
     process.once("SIGINT", cleanup);
     process.once("SIGTERM", cleanup);
   }
-  return globalThis.__ompUtilityRpcState;
+  return globalThis.__tauUtilityRpcState;
 }
 
 /**
@@ -78,7 +78,7 @@ function getState(): UtilityRpcState {
  * idle kill and disposes the live child.
  */
 export function disposeUtilityRpc(): void {
-  const state = globalThis.__ompUtilityRpcState;
+  const state = globalThis.__tauUtilityRpcState;
   if (!state) return;
   if (state.idleTimer) {
     clearTimeout(state.idleTimer);

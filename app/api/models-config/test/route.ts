@@ -7,7 +7,7 @@ import {
   serializeModelsConfig,
   validateModelsConfig,
 } from "@/lib/pi/models-config";
-import { type OmpModel, runIsolatedUtilityCommand } from "@/lib/pi/rpc-utility";
+import { type PiModel, runIsolatedUtilityCommand } from "@/lib/pi/rpc-utility";
 import { isRecord } from "@/lib/type-guards";
 
 // Registry resolution (spawn + model discovery), not a completion round-trip:
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     writeFileSync(join(tempDir, "models.json"), serializeModelsConfig(config), "utf8");
 
     const startedAt = Date.now();
-    const { models } = await runIsolatedUtilityCommand<{ models: OmpModel[] }>(
+    const { models } = await runIsolatedUtilityCommand<{ models: PiModel[] }>(
       { type: "get_available_models" },
       {
         env: { PI_CODING_AGENT_DIR: tempDir, PI_PROFILE: "", XDG_DATA_HOME: "" },

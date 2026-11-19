@@ -86,12 +86,12 @@ export function getConfigAgentRoots(): string[] {
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
-const OMP_ENV_NAME = /^\.env(?:\.|$)/i;
-const OMP_SECRET_NAME = /^(?:\.?agent\.db(?:[-.~].*)?|\.?models\.(?:yml|yaml|json)(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?|\.env(?:\..*)?)$/i;
+const PI_ENV_NAME = /^\.env(?:\.|$)/i;
+const PI_SECRET_NAME = /^(?:\.?agent\.db(?:[-.~].*)?|\.?models\.(?:yml|yaml|json)(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?|\.env(?:\..*)?)$/i;
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
 
 /** Request metadata failures retain a 404; incomplete credential ownership metadata throws a 503. */
-export function isOmpSecretFile(filePath: string): boolean {
+export function isPiSecretFile(filePath: string): boolean {
   let requestUnavailable = false;
   const markRequestUnavailable = () => { requestUnavailable = true; };
   // Follow the original path before any lexical normalization: link/.. is
@@ -102,13 +102,13 @@ export function isOmpSecretFile(filePath: string): boolean {
   const parents = new Set([path.dirname(requested), resolvedOrSelf(path.dirname(filePath), markRequestUnavailable)].map(comparablePath));
   let metadataUnavailable = false;
   const markUnavailable = () => { metadataUnavailable = true; };
-  const configDirs = ompConfigDirs([filePath, requested], markUnavailable, markRequestUnavailable);
+  const configDirs = piConfigDirs([filePath, requested], markUnavailable, markRequestUnavailable);
   const agentDirs = [getAgentDir(), ...configDirs.map((dir) => path.join(dir, "agent"))];
   const requestedIdentity = fileIdentity(filePath, markRequestUnavailable);
   const identity = requestedIdentity && requestedIdentity.nlink > 1 && requestedIdentity.ino > 0 ? requestedIdentity : null;
   for (const dir of new Set([...agentDirs, ...configDirs])) {
     const agentDir = agentDirs.includes(dir);
-    const namePattern = agentDir ? OMP_SECRET_NAME : OMP_ENV_NAME;
+    const namePattern = agentDir ? PI_SECRET_NAME : PI_ENV_NAME;
     if (namePattern.test(name) && (parents.has(comparablePath(dir)) || parents.has(comparablePath(resolvedOrSelf(dir, markUnavailable))))) return true;
     const names = new Set(agentDir ? ["agent.db", "models.yml", "models.yaml", "models.json", ".env"] : [".env"]);
     try {
@@ -138,7 +138,7 @@ export function isOmpSecretFile(filePath: string): boolean {
           const suffix = candidate.startsWith(basename) ? candidate.slice(basename.length)
             : candidate.startsWith(`.${basename}`) ? candidate.slice(basename.length + 1) : null;
           // Apply the same agent.db copy/editor rule to a renamed canonical database.
-          if (suffix !== null && OMP_SECRET_NAME.test(`agent.db${suffix}`)) {
+          if (suffix !== null && PI_SECRET_NAME.test(`agent.db${suffix}`)) {
             if (isUtf8(entry)) sidecars.add(name);
             else metadataUnavailable = true;
           }
@@ -167,7 +167,7 @@ export function isOmpSecretFile(filePath: string): boolean {
 }
 
 /** Default and genuine named-profile config roots, both loaded by omp's env.ts. */
-function ompConfigDirs(filePaths: string[], onUnavailable: () => void, onRequestUnavailable: () => void): string[] {
+function piConfigDirs(filePaths: string[], onUnavailable: () => void, onRequestUnavailable: () => void): string[] {
   const configRoot = getConfigRoot();
   const profiles = path.join(configRoot, "profiles");
   const dirs = new Set([configRoot]);

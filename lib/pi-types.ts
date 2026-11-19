@@ -26,7 +26,7 @@ export interface ToolInfo {
 }
 
 /** Subset of omp's Model (pi-ai) that the web UI reads; extra fields pass through. */
-export interface OmpModel {
+export interface PiModel {
   id: string;
   provider: string;
   name?: string;
@@ -77,7 +77,7 @@ export interface ClientMessageStatus {
 
 /** Mirror of omp's RpcSessionState (the raw `get_state` payload). */
 export interface RpcSessionState {
-  model?: OmpModel;
+  model?: PiModel;
   thinkingLevel: string | undefined;
   isStreaming: boolean;
   isCompacting: boolean;

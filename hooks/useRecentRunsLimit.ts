@@ -16,7 +16,7 @@ export const DEFAULT_PRESET: RecentRunsLimitPreset = "10";
 export const DEFAULT_LIMIT = 10;
 export const MIN_LIMIT = 1;
 export const MAX_LIMIT = 100;
-export const RECENT_RUNS_LIMIT_CHANGE_EVENT = "omp-recent-runs-limit-change";
+export const RECENT_RUNS_LIMIT_CHANGE_EVENT = "tau-recent-runs-limit-change";
 
 const listeners = new Set<() => void>();
 

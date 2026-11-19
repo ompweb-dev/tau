@@ -52,11 +52,11 @@ interface HubState {
 }
 
 declare global {
-  var __ompNotificationHub: HubState | undefined;
+  var __tauNotificationHub: HubState | undefined;
 }
 
 function hub(): HubState {
-  return (globalThis.__ompNotificationHub ??= { presence: new Map(), streams: new Map() });
+  return (globalThis.__tauNotificationHub ??= { presence: new Map(), streams: new Map() });
 }
 
 export function getVapidPublicKey(): string {

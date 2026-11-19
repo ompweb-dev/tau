@@ -1151,7 +1151,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
     if (visibleModelKeys === null) return;
     try {
       localStorage.setItem(COMPOSER_MODELS_STORAGE_KEY, JSON.stringify([...visibleModelKeys]));
-      window.dispatchEvent(new Event("omp-composer-models-change"));
+      window.dispatchEvent(new Event("tau-composer-models-change"));
     } catch {
       // Storage is optional UI state; a disabled or full store must not break settings.
     }
