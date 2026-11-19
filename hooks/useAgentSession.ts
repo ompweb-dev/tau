@@ -978,20 +978,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   // Monotonic sequence for authoritative model syncs. Every async sync
-  // (state fetch, model_changed GET) captures a token at START and only
-  // applies its snapshot if it is still the newest — a slow stale response
-  // can never clobber a newer one (e.g. an old model_changed GET landing
-  // after the user picked another model).
+  // (state fetch) captures a token at START and only applies its snapshot if
+  // it is still the newest — a slow stale response can never clobber a newer
+  // one (e.g. an old refresh landing after the user picked another model).
   const beginAuthoritativeModelSync = useCallback((): number => {
     authoritativeModelSeqRef.current += 1;
     return authoritativeModelSeqRef.current;
   }, []);
 
-  // Authoritative resolved-model sync (model_changed / config_update events,
-  // post-command refreshes). A runtime model switch (retry-fallback, prewalk
-  // hand-off, /model) supersedes the user's last explicit pick — the composer
-  // must reflect the model actually running. `token` guards stale async
-  // snapshots; synchronous event payloads apply unconditionally. Returns
+  // Authoritative resolved-model sync (post-command refreshes). The model pi
+  // reports supersedes the user's last explicit pick — the composer must
+  // reflect the model actually running. `token` guards stale async
+  // snapshots; a call without one applies unconditionally. Returns
   // whether the snapshot was applied — callers must drop ALL state derived
   // from a stale response (including its thinking level), not just the model.
   const applyAuthoritativeModel = useCallback((model: ThinkingModelMeta | null, token?: number): boolean => {
@@ -2625,40 +2623,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "thinking_level_changed":
         authoritativeModelSeqRef.current += 1;
-        setThinkingLevel(normalizeThinkingLevel(event.thinkingLevel as string | undefined));
+        setThinkingLevel(normalizeThinkingLevel(event.level as string | undefined));
         break;
-      case "model_changed": {
-        // Bare event: the resolved model changed. No payload — sync from state.
-        // pi 1.5.2 never sends it.
-        const sid = sessionIdRef.current;
-        if (!sid) break;
-        const token = beginAuthoritativeModelSync();
-        void fetch(`/api/agent/${encodeURIComponent(sid)}`)
-          .then((r) => (r.ok ? r.json() as Promise<{ state?: AgentStateResponse }> : null))
-          .then((d) => {
-            if (!d?.state?.model) return;
-            if (sessionIdRef.current !== sid) return;
-            const applied = applyAuthoritativeModel(toThinkingModelMeta(d.state.model), token);
-            if (!applied) return; // stale snapshot — drop its thinking level too
-            if (d.state.thinkingLevel !== undefined) setThinkingLevel(normalizeThinkingLevel(d.state.thinkingLevel));
-            setUsageLimit(d.state.usageLimit);
-            if (d.state.autoRetryEnabled !== undefined) setAutoRetryEnabled(d.state.autoRetryEnabled);
-            if (d.state.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(d.state.autoCompactionEnabled);
-            if (d.state.steeringMode !== undefined) setSteeringMode(d.state.steeringMode);
-            if (d.state.followUpMode !== undefined) setFollowUpMode(d.state.followUpMode);
-          })
-          .catch(() => {});
-        break;
-      }
-      case "config_update": {
-        // Payload event: model + thinkingLevel snapshot after a
-        // config-affecting slash command (e.g. /model).
-        const model = event.model as { provider?: string; id?: string; name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } } | undefined;
-        if (model) applyAuthoritativeModel(toThinkingModelMeta(model));
-        else if (event.thinkingLevel !== undefined) authoritativeModelSeqRef.current += 1;
-        if (event.thinkingLevel !== undefined) setThinkingLevel(normalizeThinkingLevel(event.thinkingLevel as string | undefined));
-        break;
-      }
       case "available_commands_update": {
         const commands = (event.commands as RpcAvailableSlashCommand[] | undefined) ?? [];
         knownSlashCommandNamesRef.current = commands.map((command) => command.name);

@@ -4697,6 +4697,17 @@ test("file metadata refresh preserves an active RPC model and thinking choice", 
   assert.equal(w.latest.data.context.model.modelId, "persisted-model", "data context still reflects confirmed disk metadata");
 });
 
+test("pi's thinking_level_changed {level} reaches the composer", async () => {
+  resetWorld();
+  primeSession("s1", [userMsg("u0", "q")]);
+  world.agents.set("s1", { running: true, state: { model: { provider: "test", id: "m" }, thinkingLevel: "low" } });
+  const w = await mountSession("s1");
+  await act(async () => { lastEs().open(); });
+  await settle();
+  await act(async () => { lastEs().emit({ type: "thinking_level_changed", level: "high" }); });
+  assert.equal(w.latest.thinkingLevel, "high");
+});
+
 test("a held file snapshot cannot roll back a newer RPC model choice", async () => {
   resetWorld();
   primeSession("s1", [userMsg("u0", "q")]);
@@ -4792,31 +4803,6 @@ test("a refused pick after a successful one shows the model omp now runs", async
   await act(async () => { releaseStaleRefresh({ value: { running: true, state: { model: { provider: "test", id: "old-model" } } } }); await first; });
   await settle();
   assert.equal(w.latest.displayModel.modelId, "model-a", "the superseded refresh cannot roll it back");
-});
-
-test("a delayed pick response preserves a newer runtime model when refresh fails", async () => {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  world.agents.set("s1", { running: true, state: { model: { provider: "anthropic", id: "claude-test" } } });
-  const w = await mountSession("s1");
-  await act(async () => { lastEs().open(); });
-  await settle();
-  let finishPick;
-  world.holds.push({
-    match: (method, _url, body) => method === "POST" && body?.type === "set_model",
-    produce: () => new Promise((resolve) => { finishPick = resolve; }),
-  });
-  let command;
-  await act(async () => { command = w.latest.handleModelChange("test", "picked"); await sleep(20); });
-  assert.equal(w.latest.displayModel.modelId, "picked");
-  await act(async () => { lastEs().emit({ type: "config_update", model: { provider: "test", id: "runtime" } }); });
-  world.holds.push({
-    match: (method, url) => method === "GET" && /\/api\/sessions\/s1\/state/.test(url),
-    produce: async () => ({ status: 503, value: {} }),
-  });
-  await act(async () => { finishPick({ value: {} }); await command; });
-  await settle();
-  assert.equal(w.latest.displayModel.modelId, "runtime");
 });
 
 test("a failed pick cannot invalidate a newer cycle refresh", async () => {
