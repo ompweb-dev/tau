@@ -1328,7 +1328,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
       if (!p) return null;
       return <ApiKeyDetail key={`${authHost}:${p.id}`} provider={p} hostId={authHost} onRefresh={() => { loadApiKeyProviders(); void loadRuntimeModels(); }} />;
     }
-    if (selection.type === "registry") return <NativeRegistryDetail models={runtimeModels} connectedProviders={connectedProviders} onChanged={loadRuntimeModels} />;
+    if (selection.type === "registry") return <NativeRegistryDetail models={runtimeModels} onChanged={loadRuntimeModels} />;
     if (selection.type === "fallbacks") return <RetryFallbackDetail />;
     if (selection.type === "picker") {
       const pickerQuery = composerPickerSearch.trim().toLowerCase();

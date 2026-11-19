@@ -132,7 +132,7 @@ app/api/
   models/route.ts                 GET { models, modelList, defaultModel }
   models-config/route.ts          GET/PUT — read/write ~/.omp/agent/models.yml
   models-config/test/route.ts     POST test a configured model/provider
-  omp-settings/route.ts           GET/PUT native config.yml settings (allow-listed)
+  omp-settings/route.ts           GET/PUT the allow-listed keys of pi's global settings.json (`lib/omp/settings-config.ts`: default thinking level, hide thinking blocks, enabled models, retry and compaction toggles)
   web-settings/route.ts           GET/PUT omp-web's own server settings (auto-resume, agent tools, agent env, browser transport; a transport change is pushed to every open browser)
   mcp/route.ts                    GET/POST/PUT/DELETE project MCP servers; `GET ?sessionId=&attach=1` reads a running session's live MCP status and never starts one (a cluster session on another member)
   plugins/route.ts                GET/POST plugin management (shells out to `omp plugin`); without `cwd`, the user level only (omp runs in the agent directory; a `project` scope POST without `cwd` is 400 `cwd_required`)

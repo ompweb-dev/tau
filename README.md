@@ -1027,7 +1027,7 @@ Stop it with `Stop-ScheduledTask ompweb-host`, then end the running host with
 - **macOS launchd Service**: LaunchAgent that starts at login, restarts on crash, and logs under `~/Library/Logs/ompweb`.
 - **Linux systemd Service & Tray**: User service that starts at login and restarts on crash, plus a StatusNotifierItem tray icon with service controls (KDE Plasma and compatible desktops).
 - **Notifications**: Desktop and mobile (PWA) notifications for finished tasks, questions waiting for an answer, failed runs, and automatic model switches, with Web Push when served over HTTPS. See [Notifications](#notifications).
-- **Web-based Settings** (10 tabs): Interface & Behavior, Safety & Approvals, AI Model Defaults, API Keys & Providers, Usage, Agent & Intelligence (memory, compaction), Extensions & Tools (MCP, skills, plugins), Hosts, Notifications, System.
+- **Web-based Settings** (9 tabs): Interface & Behavior, AI Model Defaults, API Keys & Providers, Usage, Agent & Intelligence (memory, compaction), Extensions & Tools (MCP, skills, plugins), Hosts, Notifications, System.
 - **Slash Commands & Shortcuts**: Quick prompts (`/plan`, `/review`, `/fix`, `/test`, etc.), `⌘K` / `Ctrl+K` palette, and model/reasoning cycling.
 - **UI Themes & Localization**: Warm paper light/dark themes plus an omp.sh-inspired midnight (`omp`) theme, chat font size & interface scale, with full English, Chinese (简体中文), and Japanese (日本語) translations.
 

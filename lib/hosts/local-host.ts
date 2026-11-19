@@ -4,7 +4,6 @@ import { comparableProjectPath } from "../comparable-path";
 import { isValidOmpProfile } from "../omp-profile";
 import { getAgentEnvOverrides } from "../omp/agent-env";
 import { spawnPiTransport } from "../omp/rpc-process";
-import { readNativeSettings } from "../omp/settings-config";
 import { isReservedLaunchArg, loadProjectRegistry } from "../project-registry";
 import { invalidateSessionEntriesCache, invalidateSessionListCache, invalidateSessionListMeta } from "../session-reader";
 import { PRESET_FULL } from "../tool-presets";
@@ -157,12 +156,7 @@ export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
     }
   },
   autoApproveExtension() {
-    // Only the "Allow tool: <name>" confirmation is covered (see the wrapper).
-    try {
-      return readNativeSettings().settings.tools?.approval?.extension === "allow";
-    } catch {
-      // A malformed config must not prevent normal interactive approval.
-      return false;
-    }
+    // pi has no setting for it: the "Allow tool: <name>" confirmation is always asked.
+    return false;
   },
 };

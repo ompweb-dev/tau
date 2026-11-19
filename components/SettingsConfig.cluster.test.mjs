@@ -66,7 +66,7 @@ for (const [tab, [path, urls]] of Object.entries(PANELS)) {
   });
 }
 
-test("on another member MCP shows the session's live status read-only, the user-level MCP settings and no project editor", async (t) => {
+test("on another member MCP shows the session's live status read-only and no project editor", async (t) => {
   const requests = recordRequests(t);
   render(createElement(SettingsConfig, { ...settingsProps, activeTab: "mcp", remoteHost: true, cluster: true }));
   assert.ok(await screen.findByText("connected"));
@@ -74,7 +74,6 @@ test("on another member MCP shows the session's live status read-only, the user-
   assert.equal(screen.queryByText("Open a conversation to enable, disable, or reload MCP servers."), null);
   assert.equal(screen.getByRole("switch", { name: "Enable demo" }).disabled, true);
   assert.equal(screen.getByRole("button", { name: "Reload MCP" }).disabled, true);
-  assert.ok(screen.getByText("Load Project MCP Servers"));
   assert.equal(screen.queryByText("Project MCP Servers"), null);
   assert.deepEqual(requests.filter((request) => request.method !== "GET" && request.url.startsWith("/api/mcp")), []);
 });
@@ -116,7 +115,7 @@ test("a cluster session on this machine changes nothing but the notice", async (
   assert.equal(asked.true, `/api/mcp?${new URLSearchParams({ cwd: MEMBER_CWD, sessionId: MEMBER_SESSION, live: "0" })}`);
 });
 
-for (const tab of ["models", "safety"]) {
+for (const tab of ["models"]) {
   test(`the ${tab} tab, which edits the mirrored configuration, shows the notice for a cluster session only`, async (t) => {
     recordRequests(t);
     render(createElement(SettingsConfig, { ...settingsProps, activeTab: tab, remoteHost: true, cluster: true }));

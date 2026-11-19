@@ -102,13 +102,10 @@ export interface ConnectedProvider {
 
 export type NativeRegistrySettings = {
   enabledModels?: string[];
-  disabledProviders?: string[];
-  modelProviderOrder?: string[];
-  registryHasScopedEntries?: boolean;
 };
 
 export type RetrySettings = {
-  retry?: { enabled?: boolean; maxRetries?: number; modelFallback?: boolean; fallbackRevertPolicy?: "cooldown-expiry" | "never"; fallbackChains?: Record<string, string[]> };
+  retry?: { enabled?: boolean; maxRetries?: number };
 };
 export const COMPOSER_MODELS_STORAGE_KEY = "omp-composer-models";
 // omp's models.yml ApiSchema (config/models-config-schema.ts)
