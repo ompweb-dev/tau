@@ -39,7 +39,6 @@ type ChannelDeps = {
   spawn(launch: SpawnRequest): Promise<SpawnResult>;
   prepareLaunch(launch: SpawnRequest): SpawnRequest;
   sessionId?(file: string): string | null;
-  autoApproveExtension?(): boolean;
   log(message: string): void;
   runningChanged?(): void;
   sessionsChanged?(): void;
@@ -182,7 +181,7 @@ export class ChannelTable {
   /** `continuous`: the link already holds every output line in order (a server restart on the same link). */
   private snapshot(channel: Channel, link: DaemonLink, joined: boolean, continuous: boolean): OpenChannelResult {
     return { ch: channel.ch, joined, pending: this.pendingFor(channel, link), streaming: channel.snapshot.whole(), cwd: channel.cwd,
-      fellBack: channel.fellBack, autoApproveExtension: this.deps.autoApproveExtension?.() ?? false,
+      fellBack: channel.fellBack,
       ...(continuous ? { continuous: true } : {}) };
   }
 
@@ -449,8 +448,8 @@ export class ChannelTable {
     if (op !== null && !extension && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
       return refuse("session_busy", "Another web app is editing this session's history; retry once it finishes");
     }
-    if (op === "branch" || op === "new_session" || op === "switch_session") channel.sessionMovePending = false;
-    if (op !== null && ["set_subagent_subscription", "set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
+    if (op === "fork" || op === "new_session" || op === "switch_session") channel.sessionMovePending = false;
+    if (op !== null && ["set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
     if (extension && /^\/tau_host_tools\b/.test(frame.message as string)) throw invalid("This command is owned by the host daemon");
     let out = frame, id: string | null = null;
     if (isReply) {

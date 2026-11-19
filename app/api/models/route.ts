@@ -1,8 +1,7 @@
 import { statSync } from "fs";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, withSafeModelLoadFailure, type ModelsData } from "@/lib/models-cache";
-import { disposeUtilityRpc, runUtilityCommand, type OmpModel } from "@/lib/omp/rpc-utility";
+import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type OmpModel } from "@/lib/omp/rpc-utility";
 import { getModelsConfigPath } from "@/lib/omp/paths";
-import { readAnthropicSlowMode } from "@/lib/omp/settings-config";
 
 // The omp model registry (auth + models.yml) is global, not per-cwd, so one
 // cache entry serves every request. The ?cwd= query parameter is still
@@ -52,18 +51,6 @@ function thinkingLevelsFor(model: OmpModel): string[] {
   return ["off", ...(model.thinking?.efforts ?? [])];
 }
 
-// OMP's /fast maps to a priority service tier. These are the provider families
-// OMP currently resolves for that control (ModelControls.setFastMode).
-function supportsFastMode(model: OmpModel): boolean {
-  return model.provider === "anthropic" || model.provider === "openai" || model.provider === "google";
-}
-
-// Copy of omp's AgentSession#slowModeTarget for the composer's Slow toggle
-// before omp runs: Claude low priority on `anthropic`, else the flex tier of
-// the OpenAI/Google service-tier families. Live get_state wins once omp runs.
-// ponytail: provider-only; OpenRouter's openai/google ids need omp's model identity.
-const SLOW_MODE_PROVIDERS: Record<string, true> = { anthropic: true, openai: true, "openai-codex": true, google: true, "google-vertex": true };
-
 async function loadModels(): Promise<ModelsData> {
   const availableResponse = await runUtilityCommand<{ models?: unknown }>(
     { type: "get_available_models" },
@@ -85,22 +72,17 @@ async function loadModels(): Promise<ModelsData> {
   const nameMap = new Map<string, string>();
   const thinkingLevels: Record<string, string[]> = {};
   const modelList = available
-    .map((m) => ({ id: m.id, name: m.name, provider: m.provider, thinkingLevels: thinkingLevelsFor(m), supportsFastMode: supportsFastMode(m), supportsSlowMode: SLOW_MODE_PROVIDERS[m.provider] === true, contextWindow: m.contextWindow ?? undefined, maxTokens: m.maxTokens ?? undefined }))
+    .map((m) => ({ id: m.id, name: m.name, provider: m.provider, thinkingLevels: thinkingLevelsFor(m), contextWindow: m.contextWindow ?? undefined, maxTokens: m.maxTokens ?? undefined }))
     .sort(compareModelEntries);
-  const loginResponse = await runUtilityCommand<{ providers?: unknown }>(
-    { type: "get_login_providers" },
-    30_000,
-  );
-  const loginProviders = Array.isArray(loginResponse.providers)
-    ? loginResponse.providers.filter((provider): provider is { id: string; name: string; authenticated: boolean } => (
+  // tau's companion extension reports pi's providers (lib/hosts/daemon-auth.ts reads the same list per host).
+  const loginResponse = await runUtilityExtension<{ providers?: unknown }>("tau_auth", { action: "providers" }, 30_000);
+  const connectedProviders = (Array.isArray(loginResponse.providers) ? loginResponse.providers : [])
+    .filter((provider): provider is { id: string; name: string; configured: boolean } => (
       typeof provider === "object" && provider !== null
       && typeof (provider as { id?: unknown }).id === "string"
       && typeof (provider as { name?: unknown }).name === "string"
-      && typeof (provider as { authenticated?: unknown }).authenticated === "boolean"
+      && (provider as { configured?: unknown }).configured === true
     ))
-    : [];
-  const connectedProviders = loginProviders
-    .filter((provider) => provider.authenticated)
     .map((provider) => ({ id: provider.id, name: provider.name }));
   for (const m of available) {
     const key = `${m.provider}:${m.id}`;
@@ -140,11 +122,9 @@ const EMPTY_MODELS: ModelsData = {
 
 export async function GET() {
   refreshModelsIfConfigChanged();
-  // Outside the cache: `/slow` on a Claude model rewrites config.yml.
-  const anthropicSlowMode = readAnthropicSlowMode();
   try {
-    return Response.json({ ...await loadModelsWithCache(MODELS_CACHE_KEY, () => loadModels()), anthropicSlowMode });
+    return Response.json(await loadModelsWithCache(MODELS_CACHE_KEY, () => loadModels()));
   } catch {
-    return Response.json({ ...withSafeModelLoadFailure(EMPTY_MODELS), anthropicSlowMode });
+    return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }
 }

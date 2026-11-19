@@ -45,19 +45,6 @@ function readJsonObject(): { path: string; data: Record<string, unknown> } {
   return { path, data: parsed };
 }
 
-/** Claude slow mode: `providers.anthropic.slowMode: "auto"` (default off).
- *  An unreadable config counts as off. */
-export function readAnthropicSlowMode(): boolean {
-  try {
-    const { data } = readJsonObject();
-    const providers = isRecord(data.providers) ? data.providers : {};
-    const anthropic = isRecord(providers.anthropic) ? providers.anthropic : {};
-    return (anthropic.slowMode ?? data["providers.anthropic.slowMode"]) === "auto";
-  } catch {
-    return false;
-  }
-}
-
 /** Returns the persisted values only; omitted keys keep pi's defaults. */
 export function readNativeSettings(): { path: string; settings: NativeSettings } {
   const { path, data } = readJsonObject();

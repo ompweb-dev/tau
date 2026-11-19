@@ -143,7 +143,6 @@ export class WebRpcError extends Error {
 // Commands forwarded to omp verbatim (request shape already matches rpc-types).
 const PASSTHROUGH_COMMANDS = new Set([
   "abort",
-  "abort_and_prompt",
   "set_thinking_level",
   "cycle_thinking_level",
   "cycle_model",
@@ -152,25 +151,16 @@ const PASSTHROUGH_COMMANDS = new Set([
   "set_auto_retry",
   "abort_retry",
   "abort_bash",
-  "set_todos",
   "set_steering_mode",
   "set_follow_up_mode",
-  "set_interrupt_mode",
-  "get_branch_messages",
   "get_messages",
-  "get_messages_page",
   "export_html",
-  "handoff",
-  "get_subagent_messages",
-  "set_subagent_subscription",
-  "get_login_providers",
-  "login",
 ]);
 
 // Commands that can carry user-attached images to the model. All of them must
 // pass the same server-side per-image/count/aggregate validation before the
 // payload reaches omp — a client is free to POST any of them directly.
-const IMAGE_BEARING_COMMANDS = new Set(["prompt", "steer", "follow_up", "abort_and_prompt"]);
+const IMAGE_BEARING_COMMANDS = new Set(["prompt", "steer", "follow_up"]);
 
 // pi-web commands with no omp RPC equivalent. The UI tolerates these failing.
 const UNSUPPORTED_COMMANDS: Record<string, string> = {
@@ -434,7 +424,6 @@ export class AgentSessionWrapper {
   /** Positive evidence for this run, retained after native completion but before disk append. */
   private responseObserved = false;
   private responseRunActive = false;
-  private fastModeEnabled = false;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Lazily-armed deadline for tearing down a session nobody is watching. */
   private reapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -793,7 +782,6 @@ export class AgentSessionWrapper {
     try {
       if (!this.hostOwnedLifecycle) {
         await this.proc.waitReady(READY_TIMEOUT_MS);
-        await this.proc.sendCommand({ type: "set_subagent_subscription", level: "events" }).catch(() => {});
       }
       const state = await this.getStateWithTimeout(STARTUP_COMMAND_TIMEOUT_MS);
       this.applyIdentity(state);
@@ -845,7 +833,6 @@ export class AgentSessionWrapper {
     try {
       if (!this.hostOwnedLifecycle) {
         await this.proc.waitReady();
-        await optional({ type: "set_subagent_subscription", level: "events" });
       }
       // omp's state has no shell-command flag: a `!!` command the lost server started
       // leaves bashRunning false, and its result arrives as an unsolicited response.
@@ -901,7 +888,6 @@ export class AgentSessionWrapper {
     this._sessionName = state.sessionName;
     this.streaming = state.isStreaming;
     this.compacting = state.isCompacting;
-    this.fastModeEnabled = state.fastModeEnabled ?? state.fastMode ?? this.fastModeEnabled;
     // The path cache resolves ids to files on this machine only (file authorization).
     if (this._sessionFile && this.host.id === LOCAL_HOST_ID) cacheSessionPath(this._sessionId, this._sessionFile);
     if (moved) {
@@ -1098,10 +1084,7 @@ export class AgentSessionWrapper {
         return;
       }
       case "ui_request":
-        if (this.trackUiRequest(event)) {
-          notifyRunningChange();
-          return;
-        }
+        this.trackUiRequest(event);
         break;
       case "ui_end":
         this.forgetPendingUiRequest(String(event.id));
@@ -1284,23 +1267,11 @@ export class AgentSessionWrapper {
     return promise;
   }
 
-  /** Records a runner dialog as pending; true when it was answered here (auto-approve) and must not reach the browser. */
-  private trackUiRequest(event: UnsequencedAgentEvent): boolean {
+  /** Records a runner dialog as pending. */
+  private trackUiRequest(event: UnsequencedAgentEvent): void {
     const id = String(event.id);
     if (!this.serverUiRequests.has(id) && "serverPayload" in event) delete event.serverPayload;
     const args = Array.isArray(event.args) ? event.args : [];
-    if (this.host.autoApproveExtension()) {
-      // Only tool approvals and the “Allow tool: <name>” confirmation are covered.
-      // Other extension prompts, including login/editor confirmations, remain interactive.
-      const value = event.method === "approve" ? "once"
-        : event.method === "confirm" && typeof args[0] === "string" && /^allow tool\s*:/i.test(args[0]) ? true
-        : undefined;
-      if (value !== undefined) {
-        this.forgetPendingUiRequest(id);
-        this.proc.sendFrame({ type: "ui_response", id: event.id, value });
-        return true;
-      }
-    }
     // Pending until answered or ended (replayed to newly-attached SSE listeners so dialogs survive reconnects).
     this.forgetPendingUiRequest(id);
     // The dialog options are the last positional argument: (questions|html|prompt, options) or (title, x, options).
@@ -1313,7 +1284,6 @@ export class AgentSessionWrapper {
       this.uiExpiryTimers.set(id, timer);
     }
     this.pendingUiRequests.set(id, event);
-    return false;
   }
 
   /** Keeps the extension status/widget state a newly attached tab is sent. */
@@ -1841,7 +1811,6 @@ export class AgentSessionWrapper {
       isCompacting: state.isCompacting,
       autoCompactionEnabled: state.autoCompactionEnabled,
       autoRetryEnabled: state.autoRetryEnabled,
-      interruptMode: state.interruptMode,
       steeringMode: state.steeringMode,
       followUpMode: state.followUpMode,
       model: state.model
@@ -1861,15 +1830,6 @@ export class AgentSessionWrapper {
       contextUsage: state.contextUsage ?? null,
       systemPrompt: state.systemPrompt?.join("\n\n") ?? "",
       thinkingLevel: state.thinkingLevel ?? "off",
-      // The child's per-family tier map is authoritative: it changes when the
-      // model switches families (isFastModeEnabled is family-scoped) or when
-      // the runtime auto-disables priority (e.g. after an Anthropic reject).
-      // The wrapper's own flag is only the spawn-time cache.
-      fastModeEnabled: state.fastModeEnabled ?? state.fastMode ?? this.fastModeEnabled,
-      fastModeActive: state.fastModeActive,
-      slowModeSupported: state.slowModeSupported ?? false,
-      slowModeEnabled: state.slowModeEnabled ?? false,
-      slowModeScope: state.slowModeScope,
       usageLimit: state.usageLimit,
       todoPhases: state.todoPhases ?? [],
       extensionStatuses: Array.from(this.extensionStatuses, ([key, text]) => ({ key, text })),
@@ -2082,7 +2042,6 @@ export class AgentSessionWrapper {
           await this.adopt([...(spawned.pending ?? []), ...(spawned.streaming ? [spawned.streaming] : [])]);
         } else {
           await proc.waitReady(READY_TIMEOUT_MS);
-          await proc.sendCommand({ type: "set_subagent_subscription", level: "events" }).catch(() => {});
         }
         const state = await proc.sendCommand<RpcSessionState>({ type: "get_state" }, STARTUP_COMMAND_TIMEOUT_MS);
         this.applyIdentity(state);
@@ -2283,9 +2242,6 @@ export class AgentSessionWrapper {
     if (unsupported) throw new RpcCommandError(type, unsupported, "unsupported");
 
     switch (type) {
-      case "set_subagent_subscription":
-        if (this.hostOwnedLifecycle) return null;
-        return this.proc.sendCommand(command as { type: string; [key: string]: unknown });
       case "prompt": {
         // A `!!` shell command owns the session until it exits (omp rejects a
         // prompt then, and treating that as a hard error tore down the client's
@@ -2444,19 +2400,6 @@ export class AgentSessionWrapper {
         invalidateModelsCache();
         this.invalidateSessionLists();
         return { id: model.id, provider: model.provider };
-      }
-
-      case "set_fast_mode": {
-        const enabled = command.enabled === true;
-        const result = await this.proc.sendCommand<{ enabled?: boolean; active?: boolean }>({ type: "set_fast_mode", enabled });
-        this.fastModeEnabled = result?.enabled ?? enabled;
-        return { enabled: this.fastModeEnabled, active: result?.active ?? false };
-      }
-
-      case "set_slow_mode": {
-        const enabled = command.enabled === true;
-        const result = await this.proc.sendCommand<{ enabled?: boolean }>({ type: "set_slow_mode", enabled });
-        return { enabled: result?.enabled ?? enabled };
       }
 
       case "edit_message":
@@ -2711,11 +2654,6 @@ export class AgentSessionWrapper {
 
       default: {
         if (PASSTHROUGH_COMMANDS.has(type)) {
-          if (type === "abort_and_prompt") {
-            this.responseObserved = false;
-            this.responseRunActive = false;
-            this.streamSequence += 1;
-          }
           const result: unknown = await this.sendNativeMessageCommand(
             command as { type: string },
             preserveUnknownDelivery && type === "set_thinking_level" ? PROMPT_ACK_TIMEOUT_MS : undefined,

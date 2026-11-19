@@ -152,20 +152,6 @@ test("never renders a null percentage, an invalid date, or a past reset clock", 
   );
 });
 
-test("shows the Slow toggle only when omp reports /slow applies, pressed when enabled", () => {
-  const render = (props) => renderToStaticMarkup(
-    React.createElement(ChatInput, { async onSend() { return { status: "accepted" }; }, isStreaming: false, onSlowModeChange() {}, ...props }),
-  );
-  // Older omp omits the field; an unsupported model reports false.
-  for (const props of [{}, { slowModeSupported: false, slowModeEnabled: true }]) {
-    assert.doesNotMatch(render(props), /composer-slow-control/);
-  }
-  assert.match(
-    render({ slowModeSupported: true, slowModeEnabled: true }),
-    /<button[^>]*class="composer-slow-control"[^>]*aria-pressed="true"/,
-  );
-});
-
 test("keeps the model selector visible when a model error leaves no options", () => {
   const html = renderToStaticMarkup(
     React.createElement(ChatInput, {

@@ -399,7 +399,6 @@ const onlineHost = {
   spawnRpc: async () => { throw new Error("this test never spawns"); },
   sessionFileExists: async (path) => existsSync(path),
   invalidateSessionLists() {},
-  autoApproveExtension: () => false,
 };
 const { isUnknownSlashCommand, slashCommandName, runHostTool } = await import("@/hooks/useAgentSession-stream");
 const toastCalls = testToastCalls;
@@ -1797,52 +1796,6 @@ for (const result of ["visible answer", "provider failure"]) {
   });
 }
 
-test("interrupt captures saved entries newer than the last rendered transcript", async () => {
-    resetWorld();
-    primeSession("s1", [userMsg("u0", "old question")]);
-    const { w } = await startRun("s1", "question");
-    primeSession("s1", [userMsg("u0", "old question"), userMsg("u1", "question"), assistantMsg("a1", "Previous answer")]);
-    const fullReads = () => world.calls.filter((c) => c.method === "GET" && c.url.startsWith("/api/sessions/s1?")).length;
-    const promptCommands = () => world.calls.filter((c) => c.method === "POST" && ["prompt", "abort_and_prompt"].includes(c.body?.type)).length;
-    const readsBefore = fullReads();
-    const promptsBefore = promptCommands();
-    let releaseBoundary;
-    world.holds.push({
-      match: (method, url) => method === "GET" && url === "/api/sessions/s1/context?boundary=1",
-      produce: () => new Promise((resolve) => {
-        const entryIds = [...world.sessions.get("s1").entryIds];
-        releaseBoundary = () => resolve({ value: { entryIds } });
-      }),
-    });
-    let submission;
-    await act(async () => {
-      submission = w.latest.handleInterruptAndReply("question");
-      await sleep(30);
-    });
-    const replacement = lastEs();
-    await act(async () => {
-      replacement.open();
-      await sleep(20);
-      assert.ok(releaseBoundary, "the persisted-ID boundary must be read immediately before dispatch");
-      assert.equal(promptCommands(), promptsBefore, "dispatch waits for the boundary, including interrupt-and-reply");
-      assert.equal(fullReads(), readsBefore, "pre-prompt boundary capture must not request transcript bodies");
-      releaseBoundary();
-      await submission;
-      replacement.emit({ type: "agent_end", isTerminal: true });
-      replacement.emit({ type: "agent_start" });
-      await Promise.resolve();
-    });
-    // The replacement never persisted a new user entry or answer.
-    await act(async () => {
-      visibilityState = "visible";
-      document.dispatchEvent(new Event("visibilitychange"));
-      await sleep(60);
-    });
-    await settle();
-    assert.equal(w.latest.agentRunning, false);
-    assert.equal(w.latest.notices.filter((n) => n.type === "error").length, 1, "previous answer must not count as replacement success");
-});
-
 test("tool activity and turn_end errors do not count as a successful answer", async () => {
   resetWorld();
   primeSession("s1", [userMsg("u0", "q")]);
@@ -1990,56 +1943,6 @@ test("agent_end with isTerminal=false is an async delivery pause, not a completi
   assert.equal(w.latest.streamState.isStreaming, true);
 });
 
-test("abort_and_prompt: the aborted run's terminal agent_end is consumed, the new run keeps streaming", async () => {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  const { w, es } = await startRun("s1", "q1");
-  await act(async () => {
-    es.emit({ type: "agent_start" });
-    es.emit({ type: "message_update", message: assistantMsg("a1", "old run streaming") });
-    await Promise.resolve();
-  });
-  await settle(90);
-  assert.equal(w.latest.agentRunning, true);
-
-  let interruptPromise;
-  await act(async () => {
-    interruptPromise = w.latest.handleInterruptAndReply("replacement prompt");
-    await sleep(30);
-  });
-  // ensureEventsConnected replaces the stream: open the new one so the
-  // connect promise settles and abort_and_prompt fires.
-  const esRun = lastEs();
-  await act(async () => {
-    esRun.open();
-    await interruptPromise;
-  });
-  assert.equal(
-    callsTo("POST", "/api/agent/").some((c) => c.body?.type === "abort_and_prompt"),
-    true,
-    "abort_and_prompt command must be sent",
-  );
-
-  // The aborted run's terminal agent_end arrives over the CURRENT stream
-  // (abort settles): consumed by the pending-interrupt guard.
-  await act(async () => {
-    esRun.emit({ type: "agent_end", isTerminal: true });
-    await Promise.resolve();
-  });
-  await settle(90);
-  assert.equal(w.latest.agentRunning, true, "the replacement run must still be running");
-
-  // The NEW run streams on.
-  await act(async () => {
-    esRun.emit({ type: "agent_start" });
-    esRun.emit({ type: "message_update", message: assistantMsg("a2", "new run streaming") });
-    await Promise.resolve();
-  });
-  await settle(90);
-  assert.equal(w.latest.agentRunning, true);
-  assert.equal(w.latest.streamState.streamingMessage?.content?.[0]?.text, "new run streaming");
-});
-
 test("send tolerates a missing session file (local-only slash commands) and still dispatches", async () => {
   resetWorld();
   // A session whose only prompts were local slash commands never started an
@@ -2067,64 +1970,6 @@ test("send tolerates a missing session file (local-only slash commands) and stil
   );
   assert.equal(w.latest.agentRunning, false, "the outbox does not start a turn before agent_start");
   assert.equal(w.latest.notices.length, 0, "no failed-send notice");
-});
-
-test("a reconcile response that straddles a run boundary is dropped by the run-id fence", async () => {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  const { w, es } = await startRun("s1", "q1");
-  await act(async () => {
-    es.emit({ type: "agent_start" });
-    es.emit({ type: "message_update", message: assistantMsg("a1", "streaming") });
-    await Promise.resolve();
-  });
-  await settle(90);
-
-  // todo_reminder triggers the mid-run reconcile poll; hold its response.
-  let releaseReconcile;
-  const reconcileDone = new Promise((resolve) => {
-    releaseReconcile = () => resolve({ status: 200, value: { running: false, state: { systemPrompt: "STALE-RUN" } } });
-  });
-  world.holds.push({
-    match: (method, url) => method === "GET" && url.includes("/api/agent/s1"),
-    produce: () => reconcileDone,
-  });
-  await act(async () => {
-    es.emit({ type: "todo_reminder" });
-    await sleep(30);
-  });
-  assert.ok(callsTo("GET", "/api/agent/s1").length > 0, "reconcile poll must be in flight");
-
-  // The user interrupts-and-replies while the poll is in flight: the run id
-  // advances, so the stale response must be discarded entirely.
-  let interruptPromise;
-  await act(async () => {
-    interruptPromise = w.latest.handleInterruptAndReply("next run");
-    await sleep(30);
-  });
-  const esRun = lastEs();
-  await act(async () => {
-    esRun.open();
-    await interruptPromise;
-  });
-  await act(async () => {
-    releaseReconcile();
-    await sleep(30);
-  });
-  await settle();
-  assert.equal(w.latest.agentRunning, true, "stale reconcile must not finish the new run");
-  assert.notEqual(w.latest.systemPrompt, "STALE-RUN", "stale reconcile must not apply its snapshot");
-
-  // The replacement run completes normally afterwards: the next terminal
-  // agent_end (no pending interrupt) ends the turn.
-  await act(async () => {
-    esRun.emit({ type: "agent_end", isTerminal: true }); // consumed: pending interrupt from abort_and_prompt
-    esRun.emit({ type: "agent_start" }); // the replacement run actually starts
-    esRun.emit({ type: "agent_end", isTerminal: true }); // ...and finishes
-    await Promise.resolve();
-  });
-  await settle();
-  assert.equal(w.latest.agentRunning, false);
 });
 
 test("ISSUE #187 the context ring fills mid-run while the agent is still streaming", async () => {
@@ -3085,7 +2930,7 @@ test("/btw mid-run asks a side question, never a prompt, and streams its answer 
   });
   assert.deepEqual(result, { handled: true });
   const posted = postedSince(before);
-  assert.deepEqual(posted.filter((b) => ["prompt", "steer", "follow_up", "abort_and_prompt"].includes(b?.type)), []);
+  assert.deepEqual(posted.filter((b) => ["prompt", "steer", "follow_up"].includes(b?.type)), []);
   assert.deepEqual(posted.filter((b) => b?.type === "btw"), [{ type: "btw", question: "what is 2+2" }]);
 
   await act(async () => {
@@ -3532,38 +3377,6 @@ test("a terminal event fences a held busy snapshot and does not revive streaming
   assert.equal(w.latest.agentRunning, false);
   assert.equal(w.latest.streamState.streamingMessage, null);
   assert.equal(w.latest.messages.at(-1).content[0].text, "final answer");
-});
-
-test("a replacement prompt fences held history and keeps its optimistic user until disk confirms an ID", async () => {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  const { w } = await startStreamingRun("s1");
-  const release = holdNextSync("s1", syncSnapshot("s1", liveSnapshot("s1", 2, assistantMsg("a1", "old run"))));
-  await act(async () => {
-    publishSessionsChanged(["s1"]);
-    await sleep(20);
-    const interrupt = w.latest.handleInterruptAndReply("new prompt");
-    await sleep(20);
-    const replacement = lastEs();
-    replacement.open();
-    await interrupt;
-    replacement.emit({ type: "agent_end", isTerminal: true });
-    replacement.emit({ type: "agent_start" });
-    replacement.emit({ type: "message_update", message: assistantMsg("a2", "new run") });
-    release();
-  });
-  await settle(90);
-  assert.equal(w.latest.agentRunning, true);
-  assert.equal(w.latest.streamState.streamingMessage?.content[0].text, "new run");
-  assert.equal(w.latest.messages.at(-1).content, "new prompt");
-  assert.deepEqual(w.latest.entryIds, ["e0"], "optimistic messages have no invented entry ID");
-  await act(async () => {
-    appendEntry("s1", userMsg("native", "new prompt (expanded by native)"));
-    publishSessionsChanged(["s1"]);
-  });
-  await settle();
-  assert.equal(w.latest.messages.at(-1).content, "new prompt (expanded by native)");
-  assert.equal(w.latest.messages.length, 2);
 });
 
 test("branch navigation fences held catch-up and preserves the selected pre-compaction view", async () => {
@@ -5045,7 +4858,7 @@ for (const selected of ["active", "branch", "pre-compaction"]) {
       });
       let fullLoad;
       await act(async () => {
-        fullLoad = selected === "active" ? w.latest.handleHandoff()
+        fullLoad = selected === "active" ? w.latest.handleCompact()
           : selected === "branch" ? w.changeLeaf("branch") : w.latest.togglePreCompactionHistory();
         await sleep(20);
         publishSessionsChanged(["s1"]);
@@ -5097,7 +4910,7 @@ test("a late full load cannot overwrite a newly selected branch", async () => {
     produce: () => new Promise((resolve) => { release = () => resolve({ value: { sessionId: "s1", tree: [], leafId: old.leafId, context: old } }); }),
   });
   let refresh;
-  await act(async () => { refresh = w.latest.handleHandoff(); await sleep(20); });
+  await act(async () => { refresh = w.latest.handleCompact(); await sleep(20); });
   const branch = { messages: [userMsg("b0", "new selected branch")], entryIds: ["branch-entry"], leafId: "branch" };
   world.views.set("s1:branch:false", branch);
   await act(async () => { await w.changeLeaf("branch"); });
@@ -5119,7 +4932,7 @@ test("a late full load cannot overwrite a newly started run", async () => {
     produce: () => new Promise((resolve) => { release = () => resolve({ value: { sessionId: "s1", tree: [], leafId: old.leafId, context: old } }); }),
   });
   let refresh;
-  await act(async () => { refresh = w.latest.handleHandoff(); await sleep(20); });
+  await act(async () => { refresh = w.latest.handleCompact(); await sleep(20); });
   let sending;
   await act(async () => { sending = w.latest.handleSend("new question"); await sleep(30); });
   const es = lastEs();
@@ -5357,103 +5170,6 @@ test("the usage-limit badge appears mid-run and clears when the run ends without
   await act(async () => { es.emit({ type: "agent_end", isTerminal: true }); });
   await settle();
   assert.equal(w.latest.usageLimit, undefined);
-});
-
-test("the Slow toggle follows omp's per-model state and is cleared by a switch to an unsupported model", async () => {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  world.agents.set("s1", { running: true, state: { model: SLOW_MODEL, slowModeSupported: true, slowModeEnabled: true } });
-  const w = await mountSession("s1");
-  assert.equal(w.latest.slowModeSupported, true);
-  assert.equal(w.latest.slowModeEnabled, true);
-
-  // A model without /slow reports supported:false and omits enabled; the
-  // persisted Claude setting may still be on, but it must not show as pressed.
-  world.agents.set("s1", { running: true, state: { model: { provider: "openrouter", id: "other" }, slowModeSupported: false } });
-  await act(async () => { lastEs().emit({ type: "model_changed" }); });
-  await settle();
-  assert.equal(w.latest.slowModeSupported, false);
-  assert.equal(w.latest.slowModeEnabled, false);
-});
-
-/** Mounts s1 with Slow at `enabled`, answers the next set_slow_mode with `answer`, and parks the follow-up state refresh so only the command's answer can move the toggle. */
-async function mountSlowToggle(enabled, answer) {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  world.agents.set("s1", { running: true, state: { model: SLOW_MODEL, slowModeSupported: true, slowModeEnabled: enabled, slowModeScope: "global" } });
-  const w = await mountSession("s1");
-  assert.equal(w.latest.slowModeEnabled, enabled);
-  world.holds.push({
-    match: (method, _url, body) => method === "POST" && body?.type === "set_slow_mode",
-    produce: async () => answer,
-  });
-  world.holds.push({
-    match: (method, url) => method === "GET" && url === "/api/sessions/s1/state",
-    produce: () => new Promise(() => {}),
-  });
-  return w;
-}
-
-for (const enabled of [false, true]) {
-  test(`turning Slow ${enabled ? "on" : "off"} sends set_slow_mode and applies omp's answer`, async () => {
-    const w = await mountSlowToggle(!enabled, { value: { success: true, data: { enabled } } });
-    const posted = world.calls.length;
-    await act(async () => { await w.latest.handleSlowModeChange(enabled); });
-    const command = world.calls.slice(posted).find((call) => call.body?.type === "set_slow_mode");
-    assert.deepEqual(command?.body, { type: "set_slow_mode", enabled });
-    assert.equal(w.latest.slowModeEnabled, enabled);
-    assert.deepEqual(w.latest.notices, []);
-  });
-}
-
-test("a refused set_slow_mode leaves the toggle as it was and shows omp's error", async () => {
-  const refusal = "Slow mode is unavailable for the current model.";
-  const w = await mountSlowToggle(false, { status: 400, value: { error: refusal } });
-  await act(async () => { await w.latest.handleSlowModeChange(true); });
-  assert.equal(w.latest.slowModeEnabled, false);
-  assert.deepEqual(w.latest.notices.map((n) => [n.type, n.message]), [["error", refusal]]);
-});
-
-test("before omp runs, Slow comes from the catalog and the Claude setting; live state then wins", async () => {
-  resetWorld();
-  world.models = {
-    models: {}, defaultModel: null, anthropicSlowMode: true,
-    modelList: [{ id: SLOW_MODEL.id, name: "Claude", provider: SLOW_MODEL.provider, supportsSlowMode: true }],
-  };
-  primeSession("s1", [userMsg("u0", "q")]);
-  world.sessions.get("s1").model = { provider: SLOW_MODEL.provider, modelId: SLOW_MODEL.id };
-  const w = await mountSession("s1");
-  assert.equal(w.latest.slowModeSupported, true);
-  assert.equal(w.latest.slowModeEnabled, true);
-  assert.equal(w.latest.slowModeScope, "global");
-
-  // Clicking spawns omp; one that reports no support for the model hides it.
-  world.holds.push({
-    match: (method, _url, body) => method === "POST" && body?.type === "set_slow_mode",
-    produce: async () => { world.agents.set("s1", { running: true, state: { model: SLOW_MODEL, slowModeSupported: false } }); return { value: { success: true, data: { enabled: false } } }; },
-  });
-  await act(async () => { await w.latest.handleSlowModeChange(false); });
-  await settle();
-  assert.equal(w.latest.slowModeSupported, false);
-  assert.equal(w.latest.slowModeEnabled, false);
-});
-
-test("the Slow scope follows omp's state and clears with support", async () => {
-  resetWorld();
-  primeSession("s1", [userMsg("u0", "q")]);
-  world.agents.set("s1", { running: true, state: { model: SLOW_MODEL, slowModeSupported: true, slowModeEnabled: false, slowModeScope: "global" } });
-  const w = await mountSession("s1");
-  assert.equal(w.latest.slowModeScope, "global");
-
-  world.agents.set("s1", { running: true, state: { model: { provider: "openai", id: "gpt-test" }, slowModeSupported: true, slowModeEnabled: false, slowModeScope: "session" } });
-  await act(async () => { lastEs().emit({ type: "model_changed" }); });
-  await settle();
-  assert.equal(w.latest.slowModeScope, "session");
-
-  world.agents.set("s1", { running: true, state: { model: { provider: "openrouter", id: "other" }, slowModeSupported: false } });
-  await act(async () => { lastEs().emit({ type: "model_changed" }); });
-  await settle();
-  assert.equal(w.latest.slowModeScope, undefined);
 });
 
 test("HTTP discovery of a new wrapper replaces an old still-open stream before hydrating it", async () => {
@@ -5720,11 +5436,10 @@ test("a refused pick after a successful one shows the model omp now runs", async
 test("a delayed pick response preserves a newer runtime model when refresh fails", async () => {
   resetWorld();
   primeSession("s1", [userMsg("u0", "q")]);
-  world.agents.set("s1", { running: true, state: { model: SLOW_MODEL, slowModeSupported: true } });
+  world.agents.set("s1", { running: true, state: { model: { provider: "anthropic", id: "claude-test" } } });
   const w = await mountSession("s1");
   await act(async () => { lastEs().open(); });
   await settle();
-  assert.equal(w.latest.slowModeSupported, true);
   let finishPick;
   world.holds.push({
     match: (method, _url, body) => method === "POST" && body?.type === "set_model",
@@ -5733,7 +5448,6 @@ test("a delayed pick response preserves a newer runtime model when refresh fails
   let command;
   await act(async () => { command = w.latest.handleModelChange("test", "picked"); await sleep(20); });
   assert.equal(w.latest.displayModel.modelId, "picked");
-  assert.equal(w.latest.slowModeSupported, false, "old model controls are unavailable during the switch");
   await act(async () => { lastEs().emit({ type: "config_update", model: { provider: "test", id: "runtime" } }); });
   world.holds.push({
     match: (method, url) => method === "GET" && /\/api\/sessions\/s1\/state/.test(url),

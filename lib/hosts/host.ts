@@ -44,7 +44,6 @@ export interface Host {
   spawnRpc(request: SpawnRequest, sessionId?: string | null, options?: { preparing?: boolean; expectedChannel?: string }): Promise<SpawnResult>;
   sessionFileExists(path: string): Promise<boolean>;
   invalidateSessionLists(sessionFile?: string): void;
-  autoApproveExtension(): boolean;
   /** Session and project file operations, run on this host. */
   readonly sessionOps: SessionOps;
   readonly workspaceOps: WorkspaceOps;

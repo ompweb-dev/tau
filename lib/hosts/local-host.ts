@@ -161,8 +161,4 @@ export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
       invalidateSessionListCache();
     }
   },
-  autoApproveExtension() {
-    // pi has no setting for it: the "Allow tool: <name>" confirmation is always asked.
-    return false;
-  },
 };

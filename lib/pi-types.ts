@@ -15,8 +15,6 @@ export type UsageLimitState =
   | { stage: "low_priority"; resetsAtSec: number; allowanceLeftPercent?: number }
   | { stage: "wrap_up"; resetsAtSec?: number; extraUsage: boolean };
 
-export type SlowModeScope = "session" | "global";
-
 export interface ModelLike {
   id: string;
   provider: string;
@@ -85,7 +83,6 @@ export interface RpcSessionState {
   isCompacting: boolean;
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
-  interruptMode: "immediate" | "wait";
   sessionFile?: string;
   sessionId: string;
   sessionName?: string;
@@ -103,15 +100,6 @@ export interface RpcSessionState {
   todoPhases: TodoPhase[];
   systemPrompt?: string[];
   contextUsage?: { tokens: number; contextWindow: number; percent: number };
-  fastMode?: boolean;
-  fastModeEnabled?: boolean;
-  fastModeActive?: boolean;
-  /** `/slow` applies to the active model (omp ≥ slow-mode RPC). */
-  slowModeSupported?: boolean;
-  /** Slow setting for the active model; false whenever unsupported. */
-  slowModeEnabled?: boolean;
-  /** Present iff supported: `global` = persisted omp config shared by every session/terminal; `session` = this session's flex tier. */
-  slowModeScope?: SlowModeScope;
   /** Structured provider usage-limit state; absent outside wrap-up and low priority. */
   usageLimit?: UsageLimitState;
   /** omp's reported output throughput; null/undefined when not generating. */
@@ -133,7 +121,6 @@ export interface WebSessionState {
   /** Web-observed current-run response; not a persisted-history cursor. */
   responseObserved?: boolean;
   autoCompactionEnabled: boolean;
-  interruptMode: "immediate" | "wait";
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
   model?: ModelLike & { name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } };
@@ -144,11 +131,6 @@ export interface WebSessionState {
   contextUsage: ContextUsage | null;
   systemPrompt: string;
   thinkingLevel: string;
-  fastModeEnabled: boolean;
-  fastModeActive?: boolean;
-  slowModeSupported: boolean;
-  slowModeEnabled: boolean;
-  slowModeScope?: SlowModeScope;
   usageLimit?: UsageLimitState;
   autoRetryEnabled?: boolean;
   tokensPerSecond?: number | null;

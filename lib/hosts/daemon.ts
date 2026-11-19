@@ -179,7 +179,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         || !(launch.creationId === undefined || typeof launch.creationId === "string" && CREATION_ID_RE.test(launch.creationId))) throw new HostOpError(400, "invalid_request", "Invalid spawn request");
       return { ...launch, recordedCwd: launch.recordedCwd ?? null, sessionFile: launch.sessionFile ? sessionsPath(launch.sessionFile) : "" };
     },
-    autoApproveExtension: () => localHost.autoApproveExtension(), log,
+    log,
     runningChanged: () => { try { resume.recordRunning(channels.running()); } catch (error) { log("could not save interrupted sessions: " + reason(error)); } },
     sessionsChanged,
     channelsChanged,
@@ -279,7 +279,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   function makeLink(login: HostLink, primary: boolean): DaemonLink {
     const link = new DaemonLink(login, "l" + ++linkId, { allowHttp: options.allowHttp, primary, log, keepOnVersionMismatch: true,
       hello: (link, replay) => encodeLine({ type: "hello", v: link.version, ompVersion, tauVersion: packageJson.version,
-        workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), platform: process.platform, home: homedir(), autoApproveExtension: localHost.autoApproveExtension(),
+        workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), platform: process.platform, home: homedir(),
         ack: link.ackedDown, channels: channels.listing(link, replay),
         link: { id: link.id, notifier: notifierId === link.id } }),
       handleDown,

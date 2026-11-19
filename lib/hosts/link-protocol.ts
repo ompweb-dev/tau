@@ -65,15 +65,15 @@ export const LINK_CLOSE = { goingAway: 1001, invalidData: 1007, policy: 1008, to
 
 /** Native commands that append to, replace or resume the active history: a history edit fences them on every link. */
 export const HISTORY_MUTATING_COMMANDS = new Set([
-  "edit_message", "prompt", "steer", "follow_up", "followUp", "abort", "abort_and_prompt",
+  "edit_message", "prompt", "steer", "follow_up", "followUp", "abort",
   "abort_and_restore_queue", "clear_queue",
-  "fork", "branch", "new_session", "switch_session", "compact", "abort_compaction",
-  "reload", "bash", "abort_bash", "handoff", "set_todos", "set_session_name",
+  "fork", "new_session", "switch_session", "compact", "abort_compaction",
+  "reload", "bash", "abort_bash", "set_session_name",
   "set_model", "cycle_model", "set_thinking_level", "cycle_thinking_level",
-  "set_fast_mode", "set_slow_mode", "set_auto_compaction", "set_auto_retry", "abort_retry",
+  "set_auto_compaction", "set_auto_retry", "abort_retry",
 ]);
 /** Commands whose user message a peer's identical echo could be mistaken for. */
-export const MESSAGE_COMMANDS = new Set(["prompt", "steer", "follow_up", "followUp", "abort_and_prompt"]);
+export const MESSAGE_COMMANDS = new Set(["prompt", "steer", "follow_up", "followUp"]);
 /** Shared-channel marker a daemon puts in the other members' output when one link writes a message command. */
 export const PEER_MESSAGE_FRAME = "peer_message_command";
 /** Shared-channel frame `{t, outcome}` a daemon puts in the other members' output for one link's `prompt_result` or
@@ -117,7 +117,7 @@ export type HostOpName = (typeof HOST_OP_NAMES)[number];
 
 export type OpenChannelRequest = { sessionId: string | null; launch: SpawnRequest; preparing?: boolean; expectedChannel?: string };
 /** `continuous`: the opening link was already a member and got every output line in order, so `streaming` repeats lines it has. */
-export type OpenChannelResult = { ch: string; joined: boolean; pending: string[] | null; streaming: string | null; cwd: string; fellBack: boolean; autoApproveExtension: boolean; continuous?: boolean };
+export type OpenChannelResult = { ch: string; joined: boolean; pending: string[] | null; streaming: string | null; cwd: string; fellBack: boolean; continuous?: boolean };
 
 /** A failed host op, as carried by `res {ok: false, error}`. */
 export class HostOpError extends Error {
@@ -170,8 +170,6 @@ export type UpMessage =
       workspaceOps?: string[];
       platform: string;
       home: string;
-      /** omp's `tools.approval.extension: allow` on the host: a run adopted after a web restart had no spawn to report it. */
-      autoApproveExtension: boolean;
       ack: number;
       channels: HelloChannel[];
     }
@@ -498,7 +496,6 @@ export function decodeUp(line: string): UpMessage | UnknownMessage {
         ...(o.link === undefined ? {} : { link: helloLink(o.link) }),
         platform: str(o, "platform"),
         home: str(o, "home"),
-        autoApproveExtension: bool(o, "autoApproveExtension"),
         ack: seqNum(o, "ack"),
         channels: channels(o),
       };

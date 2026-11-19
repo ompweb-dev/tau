@@ -11,7 +11,7 @@ import type {
 } from "@/lib/types";
 import type { EventStream } from "@/lib/event-stream";
 import type { ThinkingModelMeta } from "@/lib/thinking-levels";
-import type { QueuedMessages, RpcAvailableSlashCommand, SlowModeScope, TodoPhase, UsageLimitState } from "@/lib/pi-types";
+import type { QueuedMessages, RpcAvailableSlashCommand, TodoPhase, UsageLimitState } from "@/lib/pi-types";
 import type {
   SubagentHistoryEntry,
   SubagentInfo,
@@ -181,14 +181,8 @@ export type AgentStateResponse = {
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
   thinkingLevel?: string;
-  fastModeEnabled?: boolean;
-  fastModeActive?: boolean;
-  slowModeSupported?: boolean;
-  slowModeEnabled?: boolean;
-  slowModeScope?: SlowModeScope;
   usageLimit?: UsageLimitState;
   autoRetryEnabled?: boolean;
-  interruptMode?: "immediate" | "wait";
   autoCompactionEnabled?: boolean;
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
@@ -462,7 +456,7 @@ export function readCompactResult(result: unknown, reason: string): CompactResul
 
 /** Shared construction for an outgoing prompt: the optimistic user bubble
  * (display shape with nested image blocks) and omp's RPC payload shape
- * (flat image objects). Used by both handleSend and handleInterruptAndReply
+ * (flat image objects). Used by handleSend
  * so the two paths cannot drift apart. */
 export function buildOutgoingPrompt(
   message: string,
@@ -494,7 +488,7 @@ export interface AttachedImage {
 }
 
 export type SelectedModel = { provider: string; modelId: string };
-export type ModelEntry = { id: string; name: string; provider: string; supportsFastMode?: boolean; supportsSlowMode?: boolean; contextWindow?: number; maxTokens?: number };
+export type ModelEntry = { id: string; name: string; provider: string; contextWindow?: number; maxTokens?: number };
 export type ModelsResponse = {
   models: Record<string, string>;
   modelList?: ModelEntry[];
@@ -502,8 +496,6 @@ export type ModelsResponse = {
   thinkingLevels?: Record<string, string[]>;
   thinkingLevelMaps?: Record<string, Record<string, string | null>>;
   modelError?: string;
-  /** omp's `providers.anthropic.slowMode` is `auto` (read fresh per request). */
-  anthropicSlowMode?: boolean;
 };
 
 export type SlashCommandsResponse = {

@@ -43,7 +43,7 @@ import { toast } from "@/components/ui/toast";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { validateOutgoingPrompt } from "@/lib/image-attachments";
 import { createActiveGoal, parseActiveGoal, type ActiveGoal, type ActivePlan } from "@/lib/web-mode-state";
-import type { HostToolDefinition, HostUriSchemeDefinition, RpcAvailableSlashCommand, SessionStatsInfo, SlowModeScope, TodoPhase, UsageLimitState } from "@/lib/pi-types";
+import type { HostToolDefinition, HostUriSchemeDefinition, RpcAvailableSlashCommand, SessionStatsInfo, TodoPhase, UsageLimitState } from "@/lib/pi-types";
 import { isRecord } from "@/lib/type-guards";
 import { subscribeSessionsChanged } from "@/lib/session-change-bus";
 import { EVENT_STREAM_CLOSED, EVENT_STREAM_OPEN, addToOutbox, dropFromOutbox, newOutboxId, openEventStream, reconcileOutbox, subscribeOutbox, type EventStream, type LocalOutboxEntry } from "@/lib/event-stream";
@@ -444,22 +444,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [toolPreset, setToolPreset] = useState<ToolPreset>("full");
   useEffect(() => { setToolPreset(getPreferredToolPreset()); }, []);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
-  const [fastModeEnabled, setFastModeEnabled] = useState(false);
-  const [fastModeActive, setFastModeActive] = useState<boolean | undefined>(undefined);
-  // `/slow` for the active model, as omp reports it: false whenever the model
-  // cannot use it, so it is re-read from every state, never carried over.
-  // Undefined support = no live omp state; the composer then falls back to
-  // the model catalog (see slowModeSupported below).
-  const [liveSlowModeSupported, setSlowModeSupported] = useState<boolean | undefined>(undefined);
-  const [liveSlowModeEnabled, setSlowModeEnabled] = useState(false);
-  const [liveSlowModeScope, setSlowModeScope] = useState<SlowModeScope | undefined>(undefined);
-  // omp's shared `providers.anthropic.slowMode` setting, from /api/models.
-  const [anthropicSlowMode, setAnthropicSlowMode] = useState(false);
   // omp's provider usage-limit stage (wrap-up allowance / /slow low priority).
   const [usageLimit, setUsageLimit] = useState<UsageLimitState | undefined>(undefined);
-  // Runtime session modes returned by get_state and changed via RPC
-  // (set_interrupt_mode / set_auto_compaction).
-  const [interruptMode, setInterruptMode] = useState<"immediate" | "wait">("immediate");
+  // Runtime session modes returned by get_state and changed via RPC (set_auto_compaction).
   const [autoCompactionEnabled, setAutoCompactionEnabled] = useState(true);
   const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
   // Queue delivery modes (set_steering_mode / set_follow_up_mode).
@@ -635,10 +622,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     compactionGenRef.current += 1;
     setCompacting(localCompactionsRef.current > 0 || autoCompactingRef.current);
   }, [setCompacting]);
-  // Set while an interrupt-and-reply (abort_and_prompt) is in flight: the
-  // aborted turn's terminal agent_end must not tear down the new run that is
-  // starting. Cleared on the new run's agent_start (or the intercept itself).
-  const interruptReplyPendingRef = useRef(false);
   // Session id with a remove/promote command in flight: one at a time, so a
   // double click cannot act on a second same-text queue entry.
   const queuedRemovalRef = useRef<{ sessionId: string } | null>(null);
@@ -730,7 +713,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const authoritativeModelSeqRef = useRef(0);
   const modelCommandPendingRef = useRef(0);
   const modelPickSeqRef = useRef(0);
-  const [modelSwitchesPending, setModelSwitchesPending] = useState(0);
   const syncActionsRef = useRef<{
     live: (snapshot: SessionLiveSnapshot, fields: SessionLiveFields) => void;
     subscribe: (force: boolean) => boolean;
@@ -842,18 +824,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             : data?.context.model ?? pendingModel)),
     [isNew, newSessionModel, newSessionDefaultModel, currentModelOverride, liveModelMeta, data?.context.model, pendingModel],
   );
-
-  // Without live omp state (new or idle session), predict omp's own answer
-  // from the catalog: Claude low priority is the shared config setting
-  // (global); the flex tier is per session and starts off.
-  const catalogSlowModel = liveSlowModeSupported === undefined && displayModel
-    ? modelList.find((m) => m.provider === displayModel.provider && m.id === displayModel.modelId && m.supportsSlowMode)
-    : undefined;
-  const slowModeSupported = modelSwitchesPending === 0 && (liveSlowModeSupported ?? Boolean(catalogSlowModel));
-  const slowModeEnabled = catalogSlowModel ? catalogSlowModel.provider === "anthropic" && anthropicSlowMode : liveSlowModeEnabled;
-  const slowModeScope: SlowModeScope | undefined = catalogSlowModel
-    ? (catalogSlowModel.provider === "anthropic" ? "global" : "session")
-    : liveSlowModeScope;
 
   const sessionStats = useMemo(() => {
     if (sessionStatsOverride) return sessionStatsOverride;
@@ -1053,20 +1023,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (agentState.state?.thinkingLevel !== undefined) {
         setThinkingLevel(normalizeThinkingLevel(agentState.state.thinkingLevel));
       }
-      // Fast mode is family-scoped in omp: switching to a fast-supported
-      // model flips the child's state without any event, so the composer
-      // toggle must re-sync from the refreshed state.
-      if (agentState.state?.fastModeEnabled !== undefined) {
-        setFastModeEnabled(agentState.state.fastModeEnabled);
-      }
-      setFastModeActive(agentState.state?.fastModeActive);
-      // No omp process: back to the catalog fallback.
-      setSlowModeSupported(agentState.running ? (agentState.state?.slowModeSupported ?? false) : undefined);
-      setSlowModeEnabled(agentState.state?.slowModeEnabled ?? false);
-      setSlowModeScope(agentState.state?.slowModeScope);
       setUsageLimit(agentState.state?.usageLimit);
       if (agentState.state?.autoRetryEnabled !== undefined) setAutoRetryEnabled(agentState.state.autoRetryEnabled);
-      if (agentState.state?.interruptMode !== undefined) setInterruptMode(agentState.state.interruptMode);
       if (agentState.state?.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(agentState.state.autoCompactionEnabled);
       if (agentState.state?.steeringMode !== undefined) setSteeringMode(agentState.state.steeringMode);
       if (agentState.state?.followUpMode !== undefined) setFollowUpMode(agentState.state.followUpMode);
@@ -1176,14 +1134,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt || null);
           if (modelApplied && liveState.thinkingLevel !== undefined) setThinkingLevel(normalizeThinkingLevel(liveState.thinkingLevel));
-          if (liveState.fastModeEnabled !== undefined) setFastModeEnabled(liveState.fastModeEnabled);
-          setFastModeActive(liveState.fastModeActive);
-          setSlowModeSupported(agentState.running ? (liveState.slowModeSupported ?? false) : undefined);
-          setSlowModeEnabled(liveState.slowModeEnabled ?? false);
-          setSlowModeScope(liveState.slowModeScope);
           setUsageLimit(liveState.usageLimit);
           if (liveState.autoRetryEnabled !== undefined) setAutoRetryEnabled(liveState.autoRetryEnabled);
-          if (liveState.interruptMode !== undefined) setInterruptMode(liveState.interruptMode);
           if (liveState.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(liveState.autoCompactionEnabled);
           if (liveState.steeringMode !== undefined) setSteeringMode(liveState.steeringMode);
           if (liveState.followUpMode !== undefined) setFollowUpMode(liveState.followUpMode);
@@ -1192,7 +1144,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.todoPhases !== undefined) setTodoPhases(liveState.todoPhases ?? []);
           applyQueueStateSnapshot(queueRevision, liveState.queuedMessages);
         } else if (!agentState.running) {
-          setSlowModeSupported(undefined);
           applyQueueStateSnapshot(queueRevision, null);
         }
         if (showLoading) setLoading(false);
@@ -2466,7 +2417,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         catchUp.invalidate();
         contextRequestSeqRef.current += 1;
         responseRunVersionRef.current += 1;
-        interruptReplyPendingRef.current = false;
         agentRunningRef.current = true;
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
@@ -2482,13 +2432,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "agent_end": {
         // isTerminal === false means an async delivery resumes this run soon.
         if (event.isTerminal === false) break;
-        // An interrupt-and-reply aborts the current turn: its terminal
-        // agent_end arrives while abort_and_prompt is already starting the new
-        // run — keep the running state alive for it.
-        if (interruptReplyPendingRef.current) {
-          interruptReplyPendingRef.current = false;
-          break;
-        }
         runsEndedRef.current += 1;
         clearTerminalReconcileTimer();
         catchUp.invalidate();
@@ -2586,14 +2529,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               if (!applied) return; // stale snapshot — drop everything derived from it
               if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt || null);
-              // Fast mode is family-scoped in omp: re-sync from the terminal
-              // state so a run that switched models/families never leaves the
-              // composer toggle stuck on a stale value.
-              if (d.state?.fastModeEnabled !== undefined) setFastModeEnabled(d.state.fastModeEnabled);
-              setFastModeActive(d.state?.fastModeActive);
-              setSlowModeSupported(d.state?.slowModeSupported ?? false);
-              setSlowModeEnabled(d.state?.slowModeEnabled ?? false);
-              setSlowModeScope(d.state?.slowModeScope);
               setUsageLimit(d.state?.usageLimit);
               if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
               if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
@@ -2708,14 +2643,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             const applied = applyAuthoritativeModel(toThinkingModelMeta(d.state.model), token);
             if (!applied) return; // stale snapshot — drop its thinking level too
             if (d.state.thinkingLevel !== undefined) setThinkingLevel(normalizeThinkingLevel(d.state.thinkingLevel));
-            if (d.state.fastModeEnabled !== undefined) setFastModeEnabled(d.state.fastModeEnabled);
-            setFastModeActive(d.state.fastModeActive);
-            setSlowModeSupported(d.state.slowModeSupported ?? false);
-            setSlowModeEnabled(d.state.slowModeEnabled ?? false);
-            setSlowModeScope(d.state.slowModeScope);
             setUsageLimit(d.state.usageLimit);
             if (d.state.autoRetryEnabled !== undefined) setAutoRetryEnabled(d.state.autoRetryEnabled);
-            if (d.state.interruptMode !== undefined) setInterruptMode(d.state.interruptMode);
             if (d.state.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(d.state.autoCompactionEnabled);
             if (d.state.steeringMode !== undefined) setSteeringMode(d.state.steeringMode);
             if (d.state.followUpMode !== undefined) setFollowUpMode(d.state.followUpMode);
@@ -3434,77 +3363,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
 
-  /** Abort the running agent and send the message as a fresh prompt
-   * (abort_and_prompt). Only valid mid-run; the old turn's agent_end is
-   * consumed by the pending-interrupt guard so the new run keeps streaming. */
-  const handleInterruptAndReply = useCallback(async (message: string, images?: AttachedImage[]): Promise<boolean> => {
-    const trimmedMessage = message.trim();
-    if (!trimmedMessage && !images?.length) return false;
-    const sid = sessionIdRef.current;
-    if (!sid || !agentRunningRef.current || editInFlightRef.current) return false;
-
-    // Same dispatch boundary as handleSend: refuse a body the agent route
-    // would reject with 413 before the optimistic bubble and run state exist.
-    const promptError = validateOutgoingPrompt(trimmedMessage, images);
-    if (promptError) {
-      addNotice({ type: "error", message: promptError });
-      return false;
-    }
-
-    clearTerminalReconcileTimer();
-    // Advance the run generation so late agent_end / prompt_error / stale
-    // loadSession from the aborted turn cannot stop or clobber the replacement.
-    const promptRunId = ++promptRunIdRef.current;
-    promptDispatchPendingRef.current = true;
-    runHadContentRef.current = false;
-    lastQuotaErrorRef.current = null;
-    lastRunErrorRef.current = null;
-    runErrorAssistantRef.current = null;
-    independentRunErrorRef.current = null;
-    const previousRunEntryIds = runPreviousEntryIdsRef.current;
-    runPreviousEntryIdsRef.current = null;
-
-    const { userMsg, piImages: interruptPiImages } = buildOutgoingPrompt(message, images);
-    setOptimisticUserMessage(userMsg);
-    catchUp.invalidate();
-    eventCoalescer.reset();
-    interruptReplyPendingRef.current = true;
-    pendingScrollToUserRef.current = true;
-    completionScrollAllowedRef.current = true;
-    userScrollIntentUntilRef.current = 0;
-    try {
-      await ensureEventsConnected(sid);
-      void refreshSubagentRoster(sid);
-      const previousEntryIds = await snapshotRunEntries(sid);
-      if (promptRunIdRef.current === promptRunId && sessionIdRef.current === sid) {
-        runPreviousEntryIdsRef.current = previousEntryIds;
-      }
-      await sendAgentCommand(sid, {
-        type: "abort_and_prompt",
-        message: trimmedMessage,
-        ...(interruptPiImages?.length ? { images: interruptPiImages } : {}),
-      });
-      if (promptRunIdRef.current === promptRunId) promptDispatchPendingRef.current = false;
-      return true;
-    } catch (e) {
-      if (promptRunIdRef.current !== promptRunId || sessionIdRef.current !== sid) return false;
-      promptDispatchPendingRef.current = false;
-      console.error("Failed to interrupt and reply:", e);
-      if (promptRunIdRef.current === promptRunId && sessionIdRef.current === sid) {
-        runPreviousEntryIdsRef.current = previousRunEntryIds;
-      }
-      interruptReplyPendingRef.current = false;
-      setOptimisticUserMessage(null);
-      // The reply may be lost after the interrupt ran: the composer must not offer the text again (a resend would
-      // interrupt the replacement turn), as in handleSend. Otherwise the interrupt never started: hand the text back.
-      const mayHaveRun = toastStoppedSend(e);
-      if (mayHaveRun === null) addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-      if (mayHaveRun) return true;
-      if (trimmedMessage) opts.chatInputRef?.current?.insertIfEmpty(trimmedMessage, { promptOnly: true });
-      return false;
-    }
-  }, [addNotice, catchUp, eventCoalescer, ensureEventsConnected, refreshSubagentRoster, clearTerminalReconcileTimer, opts.chatInputRef, snapshotRunEntries]);
-
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (bashRunningRef.current || editInFlightRef.current) return;
     // Invalidate snapshots and recovery waiters from before this local command.
@@ -3754,7 +3612,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     modelCommandPendingRef.current += 1;
     const choice = { provider, modelId };
     const pick = ++modelPickSeqRef.current;
-    setModelSwitchesPending((count) => count + 1);
     try {
       if (isNew) {
         setNewSessionModel({ provider, modelId });
@@ -3785,41 +3642,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const sid = sessionIdRef.current;
       if (!isNew && sid && pick === modelPickSeqRef.current) await refreshLiveModelState(sid);
     } finally {
-      setModelSwitchesPending((count) => count - 1);
       modelCommandPendingRef.current -= 1;
     }
   }, [isNew, setNewSessionModel, refreshLiveModelState, addNotice]);
-
-  const handleFastModeChange = useCallback(async (enabled: boolean) => {
-    // A brand-new session has no runtime yet: the model picker updates local
-    // state (so the Fast button appears), but set_fast_mode is a live-process
-    // command — without spawning the session the click silently no-ops.
-    const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current ?? await ensureNewSession();
-    if (!sid) return;
-    try {
-      const result = await sendAgentCommand<{ enabled?: boolean; active?: boolean }>(sid, { type: "set_fast_mode", enabled });
-      setFastModeEnabled(result?.enabled ?? enabled);
-      setFastModeActive(result?.active);
-      void refreshLiveModelState(sid);
-    } catch (error) {
-      console.error("Failed to change Fast mode:", error);
-      addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
-    }
-  }, [addNotice, ensureNewSession, refreshLiveModelState]);
-
-  const handleSlowModeChange = useCallback(async (enabled: boolean) => {
-    // Before omp runs, the toggle comes from the catalog: spawn it like Fast.
-    const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current ?? await ensureNewSession();
-    if (!sid) return;
-    try {
-      const result = await sendAgentCommand<{ enabled?: boolean }>(sid, { type: "set_slow_mode", enabled });
-      setSlowModeEnabled(result?.enabled ?? enabled);
-      void refreshLiveModelState(sid);
-    } catch (error) {
-      console.error("Failed to change Slow mode:", error);
-      addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
-    }
-  }, [addNotice, ensureNewSession, refreshLiveModelState]);
 
   /** Toggle automatic retry for transient model failures. */
   const handleAutoRetryChange = useCallback(async (enabled: boolean) => {
@@ -3830,19 +3655,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await sendAgentCommand(sid, { type: "set_auto_retry", enabled });
     } catch (error) {
       setAutoRetryEnabled((current) => (current === enabled ? !enabled : current));
-      addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
-    }
-  }, [addNotice]);
-
-  /** Change how steering interrupts the running agent (immediate vs wait). */
-  const handleInterruptModeChange = useCallback(async (mode: "immediate" | "wait") => {
-    const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
-    if (!sid) return;
-    setInterruptMode(mode);
-    try {
-      await sendAgentCommand(sid, { type: "set_interrupt_mode", mode });
-    } catch (error) {
-      console.error("Failed to change interrupt mode:", error);
       addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
     }
   }, [addNotice]);
@@ -3934,18 +3746,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice]);
 
-  const handleHandoff = useCallback(async () => {
-    const sid = sessionIdRef.current;
-    if (!sid || isCompactingRef.current || agentRunningRef.current || bashRunningRef.current || editInFlightRef.current) return;
-    try {
-      await sendAgentCommand(sid, { type: "handoff" });
-      await loadSession(sid, true);
-      void refreshLiveModelState(sid);
-    } catch (error) {
-      addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
-    }
-  }, [addNotice, loadSession, refreshLiveModelState]);
-
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid || isCompactingRef.current || isCompacting || editInFlightRef.current) return;
@@ -3981,7 +3781,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setModelThinkingLevelMaps(d.thinkingLevelMaps ?? {});
       const nextModelList = d.modelList ?? [];
       setModelList(nextModelList);
-      setAnthropicSlowMode(d.anthropicSlowMode === true);
       if (isNew) {
         const match = d.defaultModel
           ? nextModelList.find((m) => m.id === d.defaultModel?.modelId && m.provider === d.defaultModel?.provider)
@@ -4709,7 +4508,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, showPreCompactionHistory, streamState,
-    agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, fastModeEnabled, fastModeActive, slowModeSupported, slowModeEnabled, slowModeScope, usageLimit, autoRetryEnabled, interruptMode, autoCompactionEnabled, steeringMode, followUpMode,
+    agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, usageLimit, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
     liveModelMeta,
     retryInfo, contextUsage, systemPrompt, forkingEntryId, editingEntryId,
     isCompacting, compactError, compactResult, tokensPerSecond, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,
@@ -4722,9 +4521,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, messagesEndRef, scrollContainerRef,
     pendingScrollToUserRef, initialScrollDoneRef, holdScrollPosition,
     // Actions
-    handleSend, handleAbort, handleFork, handleEdit, handleModelChange, handleFastModeChange, handleSlowModeChange, handleAutoRetryChange, handleInterruptModeChange, handleAutoCompactionChange, handleSteeringModeChange, handleFollowUpModeChange, handleCycleModel, handleCycleThinkingLevel, handleAbortRetry, handleInterruptAndReply,
+    handleSend, handleAbort, handleFork, handleEdit, handleModelChange, handleAutoRetryChange, handleAutoCompactionChange, handleSteeringModeChange, handleFollowUpModeChange, handleCycleModel, handleCycleThinkingLevel, handleAbortRetry,
     retrySession: () => { const sid = sessionIdRef.current; if (sid) void loadSession(sid, true, true); },
-    handleCompact, handleHandoff, handleSteer, handleFollowUp, handleAbortCompaction,
+    handleCompact, handleSteer, handleFollowUp, handleAbortCompaction,
     heldMessages, deleteHeldMessage, retryHeldMessage,
     handleBuiltinSlashCommand, togglePreCompactionHistory,
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands, clearQueuedMessages, setActiveLeafId, setData, setMessages,

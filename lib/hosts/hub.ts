@@ -162,7 +162,6 @@ interface Link {
   recoveryHome?: string;
   recoveryInventory?: HelloChannel[];
   recovery?: { id: string; channel?: string; lines: Set<string>; phase?: "prepare" | "commit" | "cancel"; requestId?: string };
-  autoApprove: boolean;
   notifier: boolean;
   /** The socket whose hello this link took; null while the daemon has none. */
   socket: LinkSocket | null;
@@ -294,7 +293,6 @@ function linkFor(id: string): Link {
       workspaceOps: new Set(),
       platform: null,
       lastSeenAt: null,
-      autoApprove: false,
       notifier: true,
       socket: null,
       downSeq: 0,
@@ -772,7 +770,6 @@ function openLink(link: Link, ws: LinkSocket, hello: Hello): void {
   link.platform = hello.platform;
   link.recoveryHome = hello.home;
   link.recoveryInventory = hello.channels;
-  link.autoApprove = hello.autoApproveExtension;
   sawDaemon(link);
   persistLastSeen(link);
   clearInterval(link.pingTimer);
@@ -1488,11 +1485,10 @@ export class RemoteRpcTransport implements RpcTransport {
   }
 }
 
-function isSpawnResult(value: unknown): value is { cwd: string; fellBack: boolean; autoApproveExtension: boolean } {
+function isSpawnResult(value: unknown): value is { cwd: string; fellBack: boolean } {
   return isRecord(value)
     && typeof value.cwd === "string"
-    && typeof value.fellBack === "boolean"
-    && typeof value.autoApproveExtension === "boolean";
+    && typeof value.fellBack === "boolean";
 }
 
 function isOpenResult(value: unknown): value is OpenChannelResult {
@@ -1595,7 +1591,6 @@ export class RemoteHost implements Host {
       transport.spawned = true;
       transport.noteOpen(opening);
       link.channels.set(value.ch, transport);
-      link.autoApprove = value.autoApproveExtension;
       // An adopting wrapper already gets every line of a continuous member, held here: the snapshot would repeat them out of order.
       const streaming = value.continuous === true && !transport.listening ? null : value.streaming;
       transport.replayOpen(value.pending, value.streaming);
@@ -1612,10 +1607,6 @@ export class RemoteHost implements Host {
   invalidateSessionLists(sessionFile?: string): void {
     // Best effort, like the local cache drop.
     request(this.id, "invalidateSessionLists", { path: sessionFile }).catch(() => {});
-  }
-
-  autoApproveExtension(): boolean {
-    return linkFor(this.id).autoApprove;
   }
 }
 

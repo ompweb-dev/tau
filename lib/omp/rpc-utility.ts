@@ -2,8 +2,8 @@ import { homedir } from "os";
 import { RpcProcess } from "./rpc-process";
 
 /**
- * Shared short-lived `omp` utility process for global registry/auth queries
- * (get_available_models, get_login_providers, get_state). These commands do
+ * Shared short-lived `pi` utility process for global registry/auth queries
+ * (get_available_models, get_state, `/tau_auth providers`). These commands do
  * not belong to any user session, so they run against a single lazily-started
  * RPC process that is killed after ~60s of inactivity. Access is serialized:
  * the omp RPC loop handles one command at a time anyway, and serialization
@@ -44,14 +44,6 @@ export interface OmpModel {
   contextWindow?: number | null;
   maxTokens?: number | null;
   cost?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
-}
-
-/** Entry of the get_login_providers response (modes/rpc/rpc-types.ts). */
-export interface OmpLoginProvider {
-  id: string;
-  name: string;
-  available: boolean;
-  authenticated: boolean;
 }
 
 interface UtilityRpcState {

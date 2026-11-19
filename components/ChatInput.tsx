@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, memo, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Mic, Paperclip, Plus, RotateCw, Shrink, Snail, Terminal, Wrench, X } from "lucide-react";
+import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Mic, Paperclip, Plus, RotateCw, Shrink, Terminal, Wrench, X } from "lucide-react";
 import { getSubmitDuringRunBehavior } from "@/lib/composer-prefs";
 import type { BuiltinSlashCommandResult, CompactResultInfo, PromptSendOptions, PromptSubmissionResult, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { ActiveGoal, ActivePlan } from "@/lib/web-mode-state";
@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/field";
 import { useDictation } from "@/hooks/useDictation";
 import { toastBtwError } from "@/hooks/useBtw";
-import type { GenerationSpeedInfo, SessionStatsInfo, SlowModeScope, UsageLimitState } from "@/lib/pi-types";
+import type { GenerationSpeedInfo, SessionStatsInfo, UsageLimitState } from "@/lib/pi-types";
 import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
@@ -189,22 +189,12 @@ interface Props {
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
-  modelList?: { id: string; name: string; provider: string; supportsFastMode?: boolean }[];
+  modelList?: { id: string; name: string; provider: string }[];
   modelError?: string | null;
   modelsLoading?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
-  fastModeEnabled?: boolean;
-  fastModeActive?: boolean;
   /** omp's structured provider usage-limit state, shown as a warning chip. */
   usageLimit?: UsageLimitState;
-  fastModeSupported?: boolean;
-  onFastModeChange?: (enabled: boolean) => void;
-  /** omp reports `/slow` applies to the active model (absent on older omp). */
-  slowModeSupported?: boolean;
-  slowModeEnabled?: boolean;
-  /** `global` = shared persisted omp setting; `session` = this session only. */
-  slowModeScope?: SlowModeScope;
-  onSlowModeChange?: (enabled: boolean) => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactResult?: CompactResultInfo | null;
@@ -350,7 +340,7 @@ function menuDropStyle(placement: MenuPlacement, maxHeight: number | null): Reac
 }
 
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange, fastModeEnabled, fastModeActive, usageLimit, fastModeSupported, onFastModeChange, slowModeSupported, slowModeEnabled, slowModeScope, onSlowModeChange,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange, usageLimit,
   onAbortCompaction, isCompacting, compactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, modelNameOverride,
   toolPreset, onToolPresetChange,
@@ -3556,74 +3546,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                   </div>
                 )}
               </div>
-            )}
-
-            {/* Fast toggle — only for models that support fast mode. Stays
-                visible while the agent runs (disabled) so it does not look
-                like fast mode was reset; the toggle affects the family tier
-                for the next prompt. */}
-            {fastModeSupported && onFastModeChange && (
-              <button
-                type="button"
-                className="composer-fast-control"
-                onClick={() => { if (isStreaming) return; onFastModeChange(!fastModeEnabled); }}
-                disabled={isStreaming}
-                title={fastModeEnabled && fastModeActive === false ? "Fast mode is enabled but inactive for this model" : `Turn OMP Fast mode ${fastModeEnabled ? "off" : "on"} for this model`}
-                aria-label={t("chatInput.fastLabel")}
-                aria-pressed={fastModeEnabled}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  height: "var(--control-height-sm)",
-                  padding: "0 8px",
-                  background: fastModeEnabled ? "var(--bg-selected)" : "none",
-                  border: "none",
-                  borderRadius: 7,
-                  color: fastModeEnabled && fastModeActive === false ? "var(--status-warning)" : fastModeEnabled ? "var(--accent)" : "var(--text-muted)",
-                  cursor: isStreaming ? "not-allowed" : "pointer",
-                  opacity: isStreaming ? 0.5 : 1,
-                  fontSize: "var(--text-sm)",
-                  fontWeight: 600,
-                  transition: "background var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-                <span>{t("chatInput.fastLabel")}</span>
-              </button>
-            )}
-
-            {/* Slow toggle — only when omp reports /slow applies to the
-                active model. A `global` scope is a persisted omp setting
-                shared by every session; `session` is this session's flex
-                tier — the tooltip says which. */}
-            {slowModeSupported && onSlowModeChange && (
-              <button
-                type="button"
-                className="composer-slow-control"
-                onClick={() => { if (isStreaming) return; onSlowModeChange(!slowModeEnabled); }}
-                disabled={isStreaming}
-                title={t(slowModeScope === "global" ? "chatInput.slowTitleGlobal" : "chatInput.slowTitleSession")}
-                aria-label={t("chatInput.slowLabel")}
-                aria-pressed={slowModeEnabled}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  height: "var(--control-height-sm)",
-                  padding: "0 8px",
-                  background: slowModeEnabled ? "var(--bg-selected)" : "none",
-                  border: "none",
-                  borderRadius: 7,
-                  color: slowModeEnabled ? "var(--accent)" : "var(--text-muted)",
-                  cursor: isStreaming ? "not-allowed" : "pointer",
-                  opacity: isStreaming ? 0.5 : 1,
-                  fontSize: "var(--text-sm)",
-                  fontWeight: 600,
-                  transition: "background var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                }}
-              >
-                <Snail size={11} aria-hidden="true" />
-                <span>{t("chatInput.slowLabel")}</span>
-              </button>
             )}
 
             {/* Provider usage-limit stage (wrap-up allowance or /slow low

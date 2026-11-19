@@ -443,7 +443,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
 
   const {
     loading, error, messages, entryIds, showPreCompactionHistory, streamState,
-    agentRunning, bashRunning, pendingBash, deferredBash, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel, fastModeEnabled, fastModeActive, slowModeSupported, slowModeEnabled, slowModeScope, usageLimit,
+    agentRunning, bashRunning, pendingBash, deferredBash, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel, usageLimit,
     externalRunActive,
     toolPreset,
     liveModelMeta,
@@ -462,7 +462,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     heldMessages, deleteHeldMessage, retryHeldMessage,
     clearQueuedMessages,
     handleBuiltinSlashCommand, togglePreCompactionHistory,
-    handleThinkingLevelChange, handleFastModeChange, handleSlowModeChange, handleCycleModel, handleCycleThinkingLevel, handleAbortRetry, loadSlashCommands,
+    handleThinkingLevelChange, handleCycleModel, handleCycleThinkingLevel, handleAbortRetry, loadSlashCommands,
     handleToolPresetChange,
     btw, askBtw,
     resolveUploadHost,
@@ -985,15 +985,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       toolPreset={toolPreset}
       onToolPresetChange={handleToolPresetChange}
-      fastModeEnabled={fastModeEnabled}
-      fastModeActive={fastModeActive}
       usageLimit={usageLimit}
-      fastModeSupported={Boolean(displayModelValue && modelList.some((entry) => entry.provider === displayModelValue.provider && entry.id === displayModelValue.modelId && entry.supportsFastMode))}
-      onFastModeChange={session || isNew ? handleFastModeChange : undefined}
-      slowModeSupported={slowModeSupported}
-      slowModeEnabled={slowModeEnabled}
-      slowModeScope={slowModeScope}
-      onSlowModeChange={session || isNew ? handleSlowModeChange : undefined}
       onAbortRetry={session ? handleAbortRetry : undefined}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}

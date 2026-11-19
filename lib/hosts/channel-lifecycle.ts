@@ -90,7 +90,7 @@ export class ChannelLifecycle {
     if (id !== null) {
       this.commands.add(id);
       const op = frame.type;
-      if (op === "prompt" || op === "abort_and_prompt" || op === "steer" || op === "follow_up" || op === "followUp") {
+      if (op === "prompt" || op === "steer" || op === "follow_up" || op === "followUp") {
         const queued = op === "steer" || op === "follow_up" || op === "followUp"
           || frame.streamingBehavior === "steer" || frame.streamingBehavior === "followUp";
         if (queued) this.awaitingQueue.set(id, false);
