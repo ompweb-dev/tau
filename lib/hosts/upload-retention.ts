@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { lstat, readdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { getAgentDir, getArchivedSessionsDir, getSessionsDir } from "../omp/paths";
+import { getAgentDir, getArchivedSessionsDir, getSessionsDir } from "../pi/paths";
 import { isRecord } from "../type-guards";
 import { isUploadRetentionDays } from "../upload-limits";
 import { HostOpError } from "./link-protocol";

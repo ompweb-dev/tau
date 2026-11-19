@@ -4,7 +4,7 @@ import { homedir } from "os";
 import * as path from "path";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { createChildProcessEnvironment } from "./project-command-env";
 
 const execFileAsync = promisify(execFile);

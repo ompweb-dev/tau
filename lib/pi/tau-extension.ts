@@ -8,7 +8,7 @@
  *   4. `/btw` side questions (`/tau_btw`)
  *   5. History Edit (`/tau_edit`)
  *   6. Provider logins (`/tau_auth`), read and written through pi's own model runtime
- * pi-subagents needs no bridge here: tau reads its tool progress and `subagent-async` widget (lib/omp/subagent-bridge.ts).
+ * pi-subagents needs no bridge here: tau reads its tool progress and `subagent-async` widget (lib/pi/subagent-bridge.ts).
  */
 
 interface PiUI {

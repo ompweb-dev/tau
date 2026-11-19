@@ -6,8 +6,8 @@ import {
   type ProviderConfig,
   serializeModelsConfig,
   validateModelsConfig,
-} from "@/lib/omp/models-config";
-import { type OmpModel, runIsolatedUtilityCommand } from "@/lib/omp/rpc-utility";
+} from "@/lib/pi/models-config";
+import { type OmpModel, runIsolatedUtilityCommand } from "@/lib/pi/rpc-utility";
 import { isRecord } from "@/lib/type-guards";
 
 // Registry resolution (spawn + model discovery), not a completion round-trip:

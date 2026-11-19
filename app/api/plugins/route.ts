@@ -1,9 +1,9 @@
 import { execFile } from "child_process";
 import { existsSync, promises as fs } from "fs";
 import { basename, join } from "path";
-import { ANSI_RE, parsePiListOutput } from "@/lib/omp/plugins-cli";
-import { PI_NOT_FOUND, resolvePiBin } from "@/lib/omp/omp-cli";
-import { ensureAgentDir } from "@/lib/omp/paths";
+import { ANSI_RE, parsePiListOutput } from "@/lib/pi/plugins-cli";
+import { PI_NOT_FOUND, resolvePiBin } from "@/lib/pi/pi-cli";
+import { ensureAgentDir } from "@/lib/pi/paths";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import type {

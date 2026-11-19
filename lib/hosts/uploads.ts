@@ -9,7 +9,7 @@ import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { getAgentDir, sessionLocalRoot } from "../omp/paths";
+import { getAgentDir, sessionLocalRoot } from "../pi/paths";
 import { inspectUploadTargets, parseUploadConflictStrategy, validateUploadFileNames, type UploadConflictStrategy } from "../file-upload";
 import type { WorkspaceOwner, WorkspaceUploadResult } from "../workspace-types";
 import { authorizeWorkspaceDirectory } from "./workspace-roots";

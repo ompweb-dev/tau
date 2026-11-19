@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "../omp/paths";
-import { RpcCommandError } from "../omp/rpc-process";
+import { getAgentDir } from "../pi/paths";
+import { RpcCommandError } from "../pi/rpc-process";
 import { sessionWorktreeName, type PreparedPoolProject } from "../pooled-projects";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";

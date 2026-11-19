@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join, posix, win32 } from "node:path";
 import { comparableProjectPath } from "../comparable-path";
 import { cloneDirectoryName } from "../git-clone";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import { isReservedLaunchArg, type ProjectRegistryEntry } from "../project-registry";
 import { isRecord } from "../type-guards";
 import type { ManagedProject } from "../types";

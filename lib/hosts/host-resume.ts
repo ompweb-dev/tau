@@ -1,8 +1,8 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { getAgentDir, getSessionsDir } from "../omp/paths";
-import { readSessionHeaderSync } from "../omp/session-files";
+import { getAgentDir, getSessionsDir } from "../pi/paths";
+import { readSessionHeaderSync } from "../pi/session-files";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import { loadWebServerSettings } from "../web-settings";

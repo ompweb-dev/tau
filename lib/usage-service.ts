@@ -1,7 +1,7 @@
 import { statSync } from "fs";
 import { basename, join } from "path";
-import { readModelsConfig } from "./omp/models-config";
-import { forEachFileLineSync, invalidateSessionFileListCache, readSessionHeaderSync } from "./omp/session-files";
+import { readModelsConfig } from "./pi/models-config";
+import { forEachFileLineSync, invalidateSessionFileListCache, readSessionHeaderSync } from "./pi/session-files";
 import { SUBAGENT_ID_RE } from "./subagent-types";
 import { isRecord } from "./type-guards";
 import {

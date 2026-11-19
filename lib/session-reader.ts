@@ -1,6 +1,6 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync, statSync, type Stats } from "fs";
 import { normalize as normalizePath } from "path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { isClientMessageId } from "./client-message-ids";
 import {
@@ -15,7 +15,7 @@ import {
   resolveBlobRefsInEntries,
   type OmpSessionInfo,
   type ResolveBlobOptions,
-} from "./omp/session-files";
+} from "./pi/session-files";
 import type {
   AgentMessage,
   CompactionEntry,

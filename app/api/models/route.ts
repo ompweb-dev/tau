@@ -1,7 +1,7 @@
 import { statSync } from "fs";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, withSafeModelLoadFailure, type ModelsData } from "@/lib/models-cache";
-import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type OmpModel } from "@/lib/omp/rpc-utility";
-import { getModelsConfigPath } from "@/lib/omp/paths";
+import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type OmpModel } from "@/lib/pi/rpc-utility";
+import { getModelsConfigPath } from "@/lib/pi/paths";
 
 // The omp model registry (auth + models.yml) is global, not per-cwd, so one
 // cache entry serves every request. The ?cwd= query parameter is still

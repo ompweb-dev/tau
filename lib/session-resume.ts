@@ -3,7 +3,7 @@ import { uptime } from "os";
 import { resolve } from "path";
 import { isLinkUp } from "./hosts/host";
 import { adoptedChild, getHost, hostOwnsLifecycle, onHostHello } from "./hosts/hub";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { isValidSessionId } from "./session-file-references-core";
 import { isRecord } from "./type-guards";
 import { loadWebServerSettings } from "./web-settings";

@@ -1,7 +1,7 @@
 import { apiErrorResponse, hostOfflineResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { startRpcSession, getRpcSession, getRpcSessionKeys, WebRpcError, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { sessionSpawnTarget } from "@/lib/hosts/session-index";
-import { RpcCommandError } from "@/lib/omp/rpc-process";
+import { RpcCommandError } from "@/lib/pi/rpc-process";
 import { RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { attachUploads, forgetUploads, takeUploads, type OutboxUploadReceipt } from "@/lib/uploads";
 import { runOutboxCommand } from "@/lib/message-outbox";

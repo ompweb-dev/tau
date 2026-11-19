@@ -6,7 +6,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { createConnection, createServer, type Server } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 
 export type HostControlCommand = "status" | "drain" | "resume";
 export interface HostControlStatus {

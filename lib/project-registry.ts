@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, 
 import { homedir } from "os";
 import { isAbsolute, resolve } from "path";
 import { comparableProjectPath } from "./comparable-path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import type { ManagedProject, ProjectLaunchConfig } from "./types";
 
 // ============================================================================

@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSyn
 import { homedir } from "os";
 import path from "path";
 import { isUtf8 } from "node:buffer";
-import { getAgentDir, getConfigRoot } from "./omp/paths";
+import { getAgentDir, getConfigRoot } from "./pi/paths";
 import { isWindowsAbsolutePath } from "./paths";
 import { hostSessions } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
@@ -54,7 +54,7 @@ const ALLOWED_ROOTS_TTL_MS = 5_000;
  * (`~/.agents/AGENTS.md`, `~/.omp/agent/...`) used to 403 in the file viewer
  * because only workspaces were allowed roots (#135).
  *
- * Derived from lib/omp/paths.ts rather than re-implemented, so the
+ * Derived from lib/pi/paths.ts rather than re-implemented, so the
  * PI_CONFIG_DIR / PI_CODING_AGENT_DIR / XDG rules stay in one place.
  * A directory that does not exist is harmless: isPathWithinRoots is a pure
  * string-prefix check and existingPathWithinRootsChecker() already swallows

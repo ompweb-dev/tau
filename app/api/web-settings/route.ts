@@ -1,5 +1,5 @@
 import { syncInterruptibleSessions } from "@/lib/rpc-manager";
-import { parseAgentEnvText, sanitizeAgentEnvValues, type AgentEnvParseResult } from "@/lib/omp/agent-env";
+import { parseAgentEnvText, sanitizeAgentEnvValues, type AgentEnvParseResult } from "@/lib/pi/agent-env";
 import { pushUploadRetention } from "@/lib/hosts/upload-retention-sync";
 import { loadWebServerSettings, readWebServerSettingsFromDisk, saveWebServerSettings, type GithubActionsOperation, type GithubActionsPermission, type WebServerSettings } from "@/lib/web-settings";
 import { isRecord } from "@/lib/type-guards";
@@ -14,7 +14,7 @@ export async function GET() {
   }
 }
 
-/** Never surface a variable lib/omp/agent-env.ts would refuse to spawn with. */
+/** Never surface a variable lib/pi/agent-env.ts would refuse to spawn with. */
 function readSettings(): WebServerSettings {
   const settings = readWebServerSettingsFromDisk();
   return { ...settings, agentEnv: sanitizeAgentEnvValues(settings.agentEnv).values };

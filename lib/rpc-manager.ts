@@ -1,12 +1,12 @@
-// The "rpc" in this file's name (and in RpcProcess/RpcTransport, lib/omp/rpc-*.ts) is a leftover: sessions no
+// The "rpc" in this file's name (and in RpcProcess/RpcTransport, lib/pi/rpc-*.ts) is a leftover: sessions no
 // longer use omp's RPC mode. They run on tau's own omp runner channel (docs/specs/2026-11-12-omp-runner-design.md).
 import { createHash, randomUUID } from "crypto";
 import { validateAgentImages } from "./image-attachments";
 import { hasVisibleAssistantContent } from "./assistant-response";
 import { applyMessageDelta, isDeltaUpdate, withStreamedArguments } from "./message-delta";
 import { invalidateModelsCache } from "./models-cache";
-import { RpcCommandError, RpcCommandTimeoutError, RpcProcess, type RpcFrame } from "./omp/rpc-process";
-import type { RpcTransport } from "./omp/rpc-transport";
+import { RpcCommandError, RpcCommandTimeoutError, RpcProcess, type RpcFrame } from "./pi/rpc-process";
+import type { RpcTransport } from "./pi/rpc-transport";
 import { cacheSessionPath } from "./session-reader";
 import { allowFileRoot } from "./file-access";
 import { loadWebServerSettings } from "./web-settings";

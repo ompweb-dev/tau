@@ -5,7 +5,7 @@ import { linkSync, lstatSync, readFileSync, type Stats, unlinkSync, writeFileSyn
 import { type FileHandle, mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import { isRecord } from "../type-guards";
 
 const loginFile = () => join(getAgentDir(), "tau", "host.json");

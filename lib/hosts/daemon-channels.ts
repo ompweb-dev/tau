@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SpawnRequest, SpawnResult } from "./host";
-import type { RpcTransport } from "../omp/rpc-transport";
-import { readSessionHeaderSync } from "../omp/session-files";
+import type { RpcTransport } from "../pi/rpc-transport";
+import { readSessionHeaderSync } from "../pi/session-files";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import type { DaemonLink } from "./daemon-link";

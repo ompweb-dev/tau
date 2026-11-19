@@ -1,6 +1,6 @@
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { disposeUtilityRpc, runUtilityCommand, type OmpModel } from "@/lib/omp/rpc-utility";
-import { readNativeSettings, writeNativeSettings, type NativeSettings } from "@/lib/omp/settings-config";
+import { disposeUtilityRpc, runUtilityCommand, type OmpModel } from "@/lib/pi/rpc-utility";
+import { readNativeSettings, writeNativeSettings, type NativeSettings } from "@/lib/pi/settings-config";
 import { assertNoAmbiguousModelScopes } from "@/lib/model-scope";
 
 export function GET() {

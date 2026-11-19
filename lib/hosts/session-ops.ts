@@ -13,8 +13,8 @@ import { promisify } from "util";
 import { comparableProjectPath } from "../comparable-path";
 import { MAX_SESSION_SEARCH_QUERY_LENGTH, searchSessions as searchSessionContent } from "../session-content-search";
 import { mediaFilePath } from "../media-cache";
-import { PI_NOT_FOUND, resolvePiBin, wrapWindowsScript } from "../omp/omp-cli";
-import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "../omp/archive";
+import { PI_NOT_FOUND, resolvePiBin, wrapWindowsScript } from "../pi/pi-cli";
+import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "../pi/archive";
 import {
   archiveSessionFileWithArtifacts,
   buildSessionTree,
@@ -27,7 +27,7 @@ import {
   readSessionHeaderSync,
   setSessionTitle,
   writeSessionFileAtomicSync,
-} from "../omp/session-files";
+} from "../pi/session-files";
 import { preparePoolProject, type PreparedPoolProject } from "../pooled-projects";
 import { projectIdentityKey, sessionPathKey } from "../paths";
 import {

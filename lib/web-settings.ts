@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { resolve } from "path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { DEFAULT_UPLOAD_RETENTION_DAYS, isUploadRetentionDays } from "./upload-limits";
 import { isRecord } from "./type-guards";
 
@@ -27,7 +27,7 @@ export interface WebServerSettings {
   githubActionsPermissions: GithubActionsPermissions;
   /**
    * Environment variables merged into the `omp` child process (issue #104).
-   * Stored as a validated record; lib/omp/agent-env.ts owns the policy and
+   * Stored as a validated record; lib/pi/agent-env.ts owns the policy and
    * re-checks every name before handing it to a spawn.
    */
   agentEnv: Record<string, string>;
@@ -44,7 +44,7 @@ const DEFAULTS: WebServerSettings = {
   uploadRetentionDays: DEFAULT_UPLOAD_RETENTION_DAYS,
 };
 
-/** String-valued entries only — the allow-list lives in lib/omp/agent-env.ts. */
+/** String-valued entries only — the allow-list lives in lib/pi/agent-env.ts. */
 function readAgentEnvRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
   const entries: Array<[string, string]> = [];

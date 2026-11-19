@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 
 const UNCERTAIN = "The GitHub Actions write outcome is unknown. Inspect existing runs with github_run_list or github_read before deciding whether to try again; the operation was not replayed.";
 

@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { getSubmitDuringRunBehavior, setSubmitDuringRunBehavior, type SubmitDuringRunBehavior } from "@/lib/composer-prefs";
 import dynamic from "@/lib/dynamic";
 import { ArrowLeft, Copy, Download, RefreshCw, RotateCcw, Search, Monitor, Play, Square, Trash2, X } from "lucide-react";
-import { formatAgentEnvText, parseAgentEnvText, type AgentEnvErrorLabels } from "@/lib/omp/agent-env-policy";
+import { formatAgentEnvText, parseAgentEnvText, type AgentEnvErrorLabels } from "@/lib/pi/agent-env-policy";
 import { isRecord } from "@/lib/type-guards";
 import { Alert } from "@/components/ui/field";
 import { ThemedSelect } from "@/components/ui/primitives";
@@ -62,7 +62,7 @@ type WindowsServiceStatus = {
   version: string;
 };
 
-/** pi's settings.json keys Settings edits (lib/omp/settings-config.ts). */
+/** pi's settings.json keys Settings edits (lib/pi/settings-config.ts). */
 type NativeSettings = {
   defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   hideThinkingBlock?: boolean;
@@ -473,7 +473,7 @@ function UploadRetentionSetting() {
 }
 
 /** Server-side tau setting (issue #104): KEY=VALUE text injected into the
- * `omp` child process. Parsing/validation lives in lib/omp/agent-env.ts; this only
+ * `omp` child process. Parsing/validation lives in lib/pi/agent-env.ts; this only
  * feeds it localized messages and renders the result. `cluster`: the members run it too (spec K1). */
 function AgentEnvSetting({ cluster }: { cluster: boolean }) {
   const { t } = useI18n();

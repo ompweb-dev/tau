@@ -5,8 +5,8 @@
 import { realpathSync, statSync, type Stats } from "node:fs";
 import path from "node:path";
 import { isExistingPathWithinRoots, isOmpSecretFile, isPathWithinRoots } from "./file-access";
-import { getSessionsDir, sessionLocalRoot } from "./omp/paths";
-import { readSessionHeaderSync } from "./omp/session-files";
+import { getSessionsDir, sessionLocalRoot } from "./pi/paths";
+import { readSessionHeaderSync } from "./pi/session-files";
 import { isValidSessionId } from "./session-file-references-core";
 import { resolveSessionPath } from "./session-reader";
 

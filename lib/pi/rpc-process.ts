@@ -5,7 +5,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { sanitizeProjectCommandEnvironment } from "../project-command-env";
 import { isRecord } from "../type-guards";
-import { PI_NOT_FOUND, resolvePiBin } from "./omp-cli";
+import { PI_NOT_FOUND, resolvePiBin } from "./pi-cli";
 import { type RpcTransport, spawnLocalRpcTransport } from "./rpc-transport";
 import { LINK_LIMITS } from "../hosts/link-protocol";
 import { SubagentBridge } from "./subagent-bridge";
@@ -122,7 +122,7 @@ export function resolveTauExtensionPath(): string | null {
   }
   try {
     const here = dirname(fileURLToPath(import.meta.url));
-    const candidate = join(here, "..", "pi", "tau-extension.ts");
+    const candidate = join(here, "tau-extension.ts");
     if (existsSync(candidate)) return candidate;
   } catch {
     // Compiled binary: import.meta.url is Bun's virtual /$bunfs/; TAU_PACKAGE_DIR above is its directory.

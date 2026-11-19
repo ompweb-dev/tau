@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, statSync } from "fs";
 import { Database } from "bun:sqlite";
 import { basename, dirname, join } from "path";
-import { readModelsConfig, type ModelsFileConfig } from "./omp/models-config";
-import { getAgentDir, getSessionsDir } from "./omp/paths";
-import { listSessionArtifactTranscripts, listSessionFiles } from "./omp/session-files";
+import { readModelsConfig, type ModelsFileConfig } from "./pi/models-config";
+import { getAgentDir, getSessionsDir } from "./pi/paths";
+import { listSessionArtifactTranscripts, listSessionFiles } from "./pi/session-files";
 import {
   formatChartDateLabel,
   formatFullDateLabel,

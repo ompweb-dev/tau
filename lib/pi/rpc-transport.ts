@@ -1,6 +1,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { StringDecoder } from "string_decoder";
-import { wrapWindowsScript } from "./omp-cli";
+import { wrapWindowsScript } from "./pi-cli";
 
 /**
  * Byte pipe under `RpcProcess`. A transport owns the child (or any other

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, closeSync, mkdirSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { HostOpError } from "./hosts/link-protocol";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 
 const LEASE_MS = 30_000;
 const RENEW_MS = 10_000;

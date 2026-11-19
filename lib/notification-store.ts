@@ -2,7 +2,7 @@ import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, rmSync } from 
 import { join } from "path";
 import { Database } from "bun:sqlite";
 import type { PushSubscription } from "web-push";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import {
   isValidNotificationId,
   parseNotificationPrefs,

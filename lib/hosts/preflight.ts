@@ -2,9 +2,9 @@ import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { getAgentEnvOverrides } from "../omp/agent-env";
-import { getPiVersion, resolvePiBin } from "../omp/omp-cli";
-import { spawnPiTransport } from "../omp/rpc-process";
+import { getAgentEnvOverrides } from "../pi/agent-env";
+import { getPiVersion, resolvePiBin } from "../pi/pi-cli";
+import { spawnPiTransport } from "../pi/rpc-process";
 
 // `tau preflight`: start pi the way a host starts one for a new session (same resolver, same
 // spawn, plus --no-session in a scratch cwd) and wait for its get_state answer. Updaters run it on a candidate

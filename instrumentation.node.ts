@@ -1,6 +1,6 @@
 import { appendFileSync, mkdirSync, renameSync, statSync } from "fs";
 import { join } from "path";
-import { getDiagnosticsDir } from "@/lib/omp/paths";
+import { getDiagnosticsDir } from "@/lib/pi/paths";
 
 export async function register(): Promise<void> {
   // Modules add SIGINT/SIGTERM cleanup listeners (lib/rpc-manager.ts), and any
@@ -40,16 +40,16 @@ export async function register(): Promise<void> {
   // Fire-and-forget: register() must not block boot, and a missing omp binary
   // is reported per-request by the routes — log once here and move on.
   // The shared process registers its own SIGINT/SIGTERM/exit disposal hook on
-  // first use (lib/omp/rpc-utility.ts), as the session registry does.
+  // first use (lib/pi/rpc-utility.ts), as the session registry does.
   void (async () => {
     try {
-      const { runUtilityCommand } = await import("@/lib/omp/rpc-utility");
+      const { runUtilityCommand } = await import("@/lib/pi/rpc-utility");
       await runUtilityCommand({ type: "get_state" });
-      const { getPiVersion } = await import("@/lib/omp/omp-cli");
+      const { getPiVersion } = await import("@/lib/pi/pi-cli");
       const version = await getPiVersion();
       console.log(`[tau] pi utility ready (${version ?? "version unknown"})`);
     } catch (error) {
-      const { resolvePiBin } = await import("@/lib/omp/omp-cli");
+      const { resolvePiBin } = await import("@/lib/pi/pi-cli");
       const bin = resolvePiBin();
       const detail = error instanceof Error ? error.message : String(error);
       const hint = bin

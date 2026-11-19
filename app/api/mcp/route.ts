@@ -1,7 +1,7 @@
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { deleteMcpServer, readDiscoveredMcpServers, readMcpConfig, readUserMcpConfig, type McpLiveServer, validateMcpServer, writeMcpServer } from "@/lib/omp/mcp-config";
+import { deleteMcpServer, readDiscoveredMcpServers, readMcpConfig, readUserMcpConfig, type McpLiveServer, validateMcpServer, writeMcpServer } from "@/lib/pi/mcp-config";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
-import { redactMcpServer } from "@/lib/omp/mcp-config";
+import { redactMcpServer } from "@/lib/pi/mcp-config";
 
 const MAX_MCP_REQUEST_BYTES = 1024 * 1024;
 

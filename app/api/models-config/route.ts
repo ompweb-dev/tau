@@ -1,13 +1,13 @@
 import { apiErrorResponse } from "@/lib/api-utils";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { disposeUtilityRpc } from "@/lib/omp/rpc-utility";
+import { disposeUtilityRpc } from "@/lib/pi/rpc-utility";
 import {
   ModelsConfigParseError,
   readModelsConfigFile,
   validateModelsConfig,
   writeModelsConfig,
   type ModelsFileConfig,
-} from "@/lib/omp/models-config";
+} from "@/lib/pi/models-config";
 
 export async function GET() {
   const file = readModelsConfigFile();

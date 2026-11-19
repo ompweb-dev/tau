@@ -4,7 +4,7 @@
 // No `next/*` or `@/` imports.
 import { randomUUID } from "node:crypto";
 import { posix, win32 } from "node:path";
-import type { RpcTransport } from "../omp/rpc-transport";
+import type { RpcTransport } from "../pi/rpc-transport";
 import type { ProjectRegistryEntry } from "../project-registry";
 import { isValidSessionId } from "../session-file-references-core";
 import { appendTransportSamples, transportMetricsPath } from "../transport-metrics";

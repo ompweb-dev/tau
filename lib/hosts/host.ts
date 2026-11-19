@@ -1,4 +1,4 @@
-import type { RpcTransport } from "../omp/rpc-transport";
+import type { RpcTransport } from "../pi/rpc-transport";
 import type { SessionOps } from "./session-ops";
 import type { WorkspaceOps } from "../workspace-types";
 

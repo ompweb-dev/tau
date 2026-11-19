@@ -12,7 +12,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import { promisify } from "node:util";
 import { requestHostControl, type HostControlStatus } from "./hosts/host-control";
 import { assertOwnedPath, HOST_VERSION_PATTERN, hostLaunch, moveHostRelease, replaceFileSync, sharedHostInstallReason, validateApprovedReleasePin } from "./hosts/update-worker";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { isProcessAlive } from "./process-identity";
 import { atomicWrite, attemptPath, isActiveLease, leasePath, markerPath, patchStatus, readStateJson, removeSecureFile, renewLease, secureRegularFile, statusPath, type SelfUpdateStage, type StoredStatus } from "./self-update-state";
 import { inspectUpgradeProcess, launchDetachedUpgrade, restartUpgradeProcess, stopUpgradeProcess, type UpgradeLaunch, type UpgradeProcess } from "./upgrade-process";

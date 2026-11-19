@@ -1,6 +1,6 @@
 import { apiErrorResponse, opErrorResponse, resolveHostOrError } from "@/lib/api-utils";
 import { WebRpcError, startNewRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
-import { RpcCommandError } from "@/lib/omp/rpc-process";
+import { RpcCommandError } from "@/lib/pi/rpc-process";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { MAX_AGENT_COMMAND_REQUEST_BYTES } from "@/lib/image-attachments";
 import { validateAgentImages } from "@/lib/image-attachments";

@@ -3,7 +3,7 @@ import type { Stats } from "node:fs";
 import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import { loadWebServerSettings } from "../web-settings";
 import { isClusterMember } from "./cluster";
 import { buildManifest, ClusterConfigError, MIRRORED, type ConfigManifest, type ConfigRoot } from "./cluster-config";

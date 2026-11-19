@@ -6,7 +6,7 @@ import { HostOpError, PROVIDER_ID_RE } from "@/lib/hosts/link-protocol";
 import { forgetHostProviders } from "@/lib/hosts/pool-starts";
 import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { disposeUtilityRpc } from "@/lib/omp/rpc-utility";
+import { disposeUtilityRpc } from "@/lib/pi/rpc-utility";
 import { isRecord } from "@/lib/type-guards";
 
 export type { HostAuthProvider };

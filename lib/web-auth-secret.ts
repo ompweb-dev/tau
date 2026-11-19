@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHmac, randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 
 /**
  * Signing material for the web session cookie (issue #239).

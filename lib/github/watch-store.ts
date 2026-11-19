@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { Database } from "bun:sqlite";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import type { MessageOrigin } from "../message-origin";
 import { isRecord } from "../type-guards";
 import type { ItemKind } from "./api";

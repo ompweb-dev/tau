@@ -11,13 +11,13 @@
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from "fs";
 import { basename, dirname, join, sep } from "path";
 import { getSessionEntries, entryToUiMessage } from "./session-reader";
-import { parseJsonlLenient } from "./omp/session-files";
+import { parseJsonlLenient } from "./pi/session-files";
 import { asAgentSource, parseSubagentProgress, SUBAGENT_ID_RE } from "./subagent-types";
 import type { SubagentHistoryEntry, SubagentHistoryResult } from "./subagent-types";
 import type { AgentMessage, SessionEntry } from "./types";
 import { asNumber, asString, isRecord } from "./type-guards";
 import { taskResultStructuredOutput, taskResultUsageCost } from "./task-result-details";
-import { foregroundSubagentId } from "./omp/subagent-bridge";
+import { foregroundSubagentId } from "./pi/subagent-bridge";
 
 /** Sibling artifacts directory for a parent session file. */
 export function siblingDirForSession(sessionFilePath: string): string {

@@ -4,8 +4,8 @@
 // types travels in, as one command argument.
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { RpcProcess, type RpcFrame } from "../omp/rpc-process";
-import { disposeUtilityRpc, runUtilityExtension } from "../omp/rpc-utility";
+import { RpcProcess, type RpcFrame } from "../pi/rpc-process";
+import { disposeUtilityRpc, runUtilityExtension } from "../pi/rpc-utility";
 import { HostOpError, PROVIDER_ID_RE } from "./link-protocol";
 
 /** One provider as pi reports it (`/tau_auth providers`). */
