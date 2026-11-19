@@ -1885,10 +1885,6 @@ export function isHostConfigCurrent(hostId: string): boolean {
   return link !== undefined && configCurrent(link);
 }
 
-export function getHostPiVersion(hostId: string): string | null {
-  return hub().links.get(hostId)?.piVersion ?? null;
-}
-
 export function onHostsChange(listener: () => void): () => void {
   const listeners = hub().changeListeners;
   listeners.add(listener);
