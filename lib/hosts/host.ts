@@ -15,7 +15,7 @@ export interface SpawnRequest {
   creationId?: string;
   /** Daemon only: the server URL whose link supplies `configVersion`. Never trusted from the wire. */
   configServer?: string;
-  /** Hub → daemon (v10): the master's configuration version this process must run with; the daemon applies it first. Never recorded for resume. */
+  /** Hub → daemon: the master's configuration version this process must run with; the daemon applies it first. Never recorded for resume. */
   configVersion?: string;
   cwd: string;
   recordedCwd: string | null;

@@ -154,7 +154,7 @@ interface Link {
   socket: LinkSocket | null;
   /** Last downlink seq handed out. Lines stay in `outbox` until the daemon acks them. */
   downSeq: number;
-  /** Downlink messages not numbered yet, per channel or request, sent fair (spec D7); from v6 also upload bytes under
+  /** Downlink messages not numbered yet, per channel or request, sent fair (spec D7); also upload bytes under
    * `up:<id>`, which go as binary frames outside the line window (the browser's upload window bounds them). */
   sender: LinkSender<DownLine | { id: string; blob: Uint8Array }>;
   outbox: Outbox<Sent>;
@@ -178,7 +178,7 @@ interface Link {
   statsWarned: boolean;
   pending: Map<string, PendingOp>;
   channels: Map<string, RemoteRpcTransport>;
-  /** v7: the sessions of every child the host last listed, joined by this server or not. */
+  /** The sessions of every child the host last listed, joined by this server or not. */
   listedSessions: Set<string>;
   pingTimer: NodeJS.Timeout | undefined;
   offlineTimer: NodeJS.Timeout | undefined;
@@ -370,7 +370,7 @@ function flush(link: Link): void {
     const unit = link.sender.next(() => ++link.downSeq);
     if (!unit) return;
     if ("frame" in unit) {
-      // Upload bytes (v6): unsequenced and outside the line window; lost with the socket, resumed by the next uploadStart.
+      // Upload bytes: unsequenced and outside the line window; lost with the socket, resumed by the next uploadStart.
       if (ws.send(unit.frame) > 0) continue;
       link.awaitingDrain = true;
       return;
@@ -607,7 +607,7 @@ function versionMismatch(link: Link, raw: unknown): boolean {
 export const hostLinkSocket = {
   // A result frame is up to blobBytes plus its id header; Bun closes 1009 above it.
   maxPayloadLength: LINK_LIMITS.blobBytes + 256,
-  // A backstop: flush keeps at most about unackedBytes of sequenced lines unacked (v5) and stops when Bun reports
+  // A backstop: flush keeps at most about unackedBytes of sequenced lines unacked and stops when Bun reports
   // backpressure. Past the limit the socket closes instead of buffering on, and what the daemon missed is resent after
   // its redial.
   backpressureLimit: LINK_LIMITS.uplinkBytes,
@@ -788,7 +788,7 @@ function onFrame(link: Link, ws: LinkSocket, data: string | Uint8Array): void {
     if (message.type === "ack") ackDown(link, message.ack);
     else applyUp(link, message, wholes.get(message));
   }
-  // One answer per frame, also to one with nothing sequenced in it: a v5 daemon counts its frames in flight by them.
+  // One answer per frame, also to one with nothing sequenced in it: the daemon counts its frames in flight by them.
   enqueue(link, encodeLine({ type: "ack", ack: link.up.acked }));
   // The daemon's ack may have opened the unacked window.
   flush(link);
@@ -1741,7 +1741,7 @@ export function authOp(hostId: string, args: Record<string, unknown>, timeoutMs 
 
 const CLUSTER_CONFIG_OP_MS = 60_000;
 
-/** `clusterConfig` on a host's daemon (v10), waiting at most 60 s. The state it answers is kept only while the link has
+/** `clusterConfig` on a host's daemon, waiting at most 60 s. The state it answers is kept only while the link has
  * sent no `config_state` since it came up: the daemon reports each change at once, ahead of its sequenced answer, so a
  * report that arrived first may already be newer (the MCP command check finishing) and an answer must not take it back. */
 export async function clusterConfigOp(hostId: string, args: { action: "apply"; version: string } | { action: "restore" }): Promise<{ state: ConfigState; owned: boolean }> {

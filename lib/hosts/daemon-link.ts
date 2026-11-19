@@ -423,7 +423,7 @@ function linkRuntime(owner: DaemonLink, deps: LinkDeps) {
       if (socket !== ws) return;
       alive();
       try {
-        // A binary frame carries upload bytes (v6), written in order. One message per text frame; an applied one is
+        // A binary frame carries upload bytes, written in order. One message per text frame; an applied one is
         // acked soon, at once past a piece, so main's unacked window moves (spec D7).
         if (typeof data !== "string") {
           const { id, bytes } = decodeBlobFrame(new Uint8Array(data as ArrayBuffer));
