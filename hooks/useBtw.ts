@@ -4,21 +4,9 @@ import { sendAgentCommand } from "@/lib/agent-client";
 import { translate } from "@/lib/i18n";
 import { applyBtwEvent, isBtwRecord, latestBtwTurn, mergeBtwHistory, upsertBtwRecord, type BtwRecord } from "@/lib/btw";
 import { scheduleAtDisplayRate } from "@/lib/message-update-coalescer";
-const UNSUPPORTED_RETRY_MS = 60_000;
 
-/** A `btw` failure saying a Cancel (or session change) beat its first checkpoint; tau's extension reports a
- * cancelled record instead, so pi never sends it. */
-const CANCELLED_BEFORE_START = "cancelled before it started";
-
-// A refusal naming an "Unknown command" (no side-question support): background
-// history refreshes pause instead of failing on every SSE connect.
-let unsupportedUntil = 0;
-
-/** An "Unknown command" refusal (no side-question support) gets an upgrade hint, not its raw error. */
 export function toastBtwError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("Unknown command")) toast.error(translate("btw.unsupported"));
-  else toast.error(translate("btw.failed"), message);
+  toast.error(translate("btw.failed"), error instanceof Error ? error.message : String(error));
 }
 
 type BtwFrame = { type: string; [key: string]: unknown };
@@ -66,14 +54,11 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
   }, [flushFrames]);
 
   /** Merge the session's side-question history. Background refreshes (SSE open, reconcile, a no-op
-   * cancel) stay silent: the route never starts pi for them, and a session
-   * that refused them as unknown is not asked again for a while. */
+   * cancel) stay silent: the route never starts pi for them. */
   const refreshHistory = useCallback(async (sid: string, explicit = false) => {
-    if (!explicit && Date.now() < unsupportedUntil) return;
     const knownBefore = new Set(recordsRef.current.map((record) => record.id));
     try {
       const data = await sendAgentCommand<{ records?: unknown[] } | null>(sid, { type: "get_btw_history" });
-      unsupportedUntil = 0;
       if (sessionIdRef.current !== sid) return;
       const snapshot = (data?.records ?? []).filter(isBtwRecord);
       // Frames already received go first: the staleness rules then keep
@@ -85,7 +70,6 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
       const running = snapshot.find((record) => latestBtwTurn(record).status === "running" && !known.has(record.id));
       if (running) setActiveId((id) => id ?? running.id);
     } catch (error) {
-      if (error instanceof Error && error.message.includes("Unknown command")) unsupportedUntil = Date.now() + UNSUPPORTED_RETRY_MS;
       if (explicit) toastBtwError(error);
     }
   }, [commit, flushFrames, sessionIdRef]);
@@ -107,23 +91,14 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     await refreshHistory(sid, true);
   }, [refreshHistory]);
 
-  /** Resolves once pi accepted the question (true), or it was cancelled
-   * before it started (false: the user's own Cancel, which its `btw_record`
-   * already shows). The answer streams via frames. Throws on refusal. */
-  const ask = useCallback(async (sid: string, question: string, recordId?: string): Promise<boolean> => {
-    let data: { record?: unknown } | null;
-    try {
-      data = await sendAgentCommand<{ record?: unknown } | null>(sid, { type: "btw", question, ...(recordId ? { recordId } : {}) });
-    } catch (error) {
-      if (error instanceof Error && error.message.includes(CANCELLED_BEFORE_START)) return false;
-      throw error;
-    }
+  /** Resolves once tau's extension accepted the question; the answer streams via frames. Throws on refusal. */
+  const ask = useCallback(async (sid: string, question: string, recordId?: string): Promise<void> => {
+    const data = await sendAgentCommand<{ record?: unknown } | null>(sid, { type: "btw", question, ...(recordId ? { recordId } : {}) });
     const record = data?.record;
-    if (sessionIdRef.current !== sid || !isBtwRecord(record)) return true;
+    if (sessionIdRef.current !== sid || !isBtwRecord(record)) return;
     // The start state: never newer than frames, so upsert keeps streamed text.
     commit((prev) => upsertBtwRecord(prev, record));
     setActiveId(record.id);
-    return true;
   }, [commit, sessionIdRef]);
 
   const cancel = useCallback(async (recordId: string) => {

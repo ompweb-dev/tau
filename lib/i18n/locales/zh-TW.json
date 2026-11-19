@@ -1757,7 +1757,6 @@
   "btw.ask": "提問",
   "btw.historyTitle": "附帶提問",
   "btw.historyEmpty": "尚無附帶提問。使用 /btw <問題> 來提問。",
-  "btw.unsupported": "/btw 需要 tau 的 pi 擴充功能，但此對話未載入它。請重新啟動對話。",
   "btw.failed": "附帶提問失敗",
   "btw.attachmentsUnsupported": "附帶提問不能包含附件。請移除附件，或將訊息作為一般提示詞傳送。",
   "btw.copyFailed": "無法複製回答",

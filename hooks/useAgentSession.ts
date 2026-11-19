@@ -3597,11 +3597,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         await sendAgentCommand(sid, { type: "get_state" });
         await ensureEventsConnected(sid);
       }
-      const accepted = await sendBtw(sid, question, recordId);
+      await sendBtw(sid, question, recordId);
       const ownerCurrent = hookAliveRef.current && sessionIdRef.current === sid;
       // pi wrote the session to disk to ask: leave the unsaved new-chat view
       // (URL, sidebar) like a first prompt does. No-op for existing sessions.
-      if (accepted && ownerCurrent) promoteNewSession();
+      if (ownerCurrent) promoteNewSession();
       return ownerCurrent;
     } catch (error) {
       if (!(error instanceof Error && reportedCreationErrorsRef.current.has(error))) toastBtwError(error);

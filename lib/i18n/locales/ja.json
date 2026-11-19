@@ -1719,7 +1719,6 @@
   "btw.ask": "質問",
   "btw.historyTitle": "サイド質問",
   "btw.historyEmpty": "サイド質問はまだありません。/btw <質問> で質問できます。",
-  "btw.unsupported": "/btw には tau の pi 拡張が必要ですが、このセッションでは読み込まれていません。セッションを再起動してください。",
   "btw.failed": "サイド質問に失敗しました",
   "btw.attachmentsUnsupported": "サイド質問には添付ファイルを含められません。添付を外すか、通常のメッセージとして送信してください。",
   "btw.copyFailed": "回答をコピーできませんでした",

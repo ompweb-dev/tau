@@ -2905,23 +2905,6 @@ test("a btw follow-up asks in its topic; a refused ask keeps the composer text a
   });
   assert.deepEqual(result, { handled: true, retainInput: true });
   assert.deepEqual(toastCalls, [["error", "Side question failed", "A /btw question is still running; cancel it first"]]);
-
-  // An omp without the commands gets an upgrade hint, not its raw error.
-  toastCalls.length = 0;
-  holdBtwCommand("btw", async () => ({ status: 400, value: { error: "Unknown command: btw", code: "rpc_command_failed" } }));
-  await act(async () => {
-    await w.latest.handleBuiltinSlashCommand("/btw old omp?");
-  });
-  assert.match(toastCalls[0]?.[1] ?? "", /needs tau.s pi extension/);
-
-  // Cancelling a btw that is still starting is the user's own doing, not a failure.
-  toastCalls.length = 0;
-  holdBtwCommand("btw", async () => ({ status: 400, value: { error: "The /btw question was cancelled before it started", code: "rpc_command_failed" } }));
-  await act(async () => {
-    result = await w.latest.handleBuiltinSlashCommand("/btw cancelled early");
-  });
-  assert.deepEqual(result, { handled: true });
-  assert.deepEqual(toastCalls, []);
 });
 
 test("the notify host tool stays out of the Notifications tab, which lists only pushable notification types", async () => {

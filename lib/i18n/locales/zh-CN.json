@@ -1719,7 +1719,6 @@
   "btw.ask": "提问",
   "btw.historyTitle": "旁支问题",
   "btw.historyEmpty": "还没有旁支问题。使用 /btw <问题> 提问。",
-  "btw.unsupported": "/btw 需要 tau 的 pi 扩展，但此会话未加载它。请重启会话。",
   "btw.failed": "旁支问题失败",
   "btw.attachmentsUnsupported": "旁支问题不能包含附件。请移除附件，或作为普通消息发送。",
   "btw.copyFailed": "无法复制回答",

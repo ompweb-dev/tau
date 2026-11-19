@@ -452,7 +452,7 @@ The todo plan (`TodoList`) and subagent roster sit pinned above the input, each 
 - `/btw <question>` and `/btw` are client builtins (`handleBuiltinSlashCommand`), routed before attachments are folded in: never a prompt, never queued, refused with a toast while attachments are attached. Asking starts the wrapper (`get_state`) and attaches SSE first.
 - The response, history snapshots and frames race: merge only through `lib/btw.ts`. A record running before a history read and missing from it becomes `interrupted`.
 - `btw_*` frames skip the message-update coalescer, are batched in `useBtw` with `scheduleAtDisplayRate`, and are routed **before** `catchUp.observe(event)`, whose `"epoch"` branch would reset the transcript.
-- `get_btw_history` and `btw_cancel` never spawn pi (`NO_SPAWN_REPLIES`: empty history, `cancelled:false`). Without the extension the hook shows a toast (`toastBtwError`); background reads stay silent for `UNSUPPORTED_RETRY_MS`.
+- `get_btw_history` and `btw_cancel` never spawn pi (`NO_SPAWN_REPLIES`: empty history, `cancelled:false`). A refused explicit ask or history read shows a toast (`toastBtwError`); background reads stay silent.
 
 ### Subagents (`lib/pi/subagent-bridge.ts`, `lib/subagent-types.ts`, `lib/subagent-history.ts`)
 - pi-subagents reports foreground runs as progress on its `subagent` tool call (`details.progress[]`) and background runs on its `subagent-async` widget; `SubagentBridge` turns both into roster frames and answers `get_subagents`. `subagent-types.ts` parses progress defensively (current tool, tokens, cost, model, retry, detached flag).
