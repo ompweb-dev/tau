@@ -8,7 +8,6 @@ import { HostUpdates } from "./HostUpdates";
 const endpoint = "/api/hosts/box/updates";
 const info = {
   tau: { currentVersion: "0.7.0", availableVersion: "0.7.1", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 12 },
-  omp: { currentVersion: "18.20.0" },
   operation: null,
 };
 
@@ -39,7 +38,7 @@ async function renderHost(t, host, tau = {}, operation = null) {
 const button = (root, label) => [...root.querySelectorAll("button")].find((candidate) => candidate.textContent.trim() === label);
 
 test("an upgrade-only legacy host can check for and submit an tau update", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", upgradeOnly: true, ompVersion: "omp/18.20.0", tauVersion: "0.7.0" });
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", upgradeOnly: true, apiVersion: 1, piVersion: "omp/18.20.0", tauVersion: "0.7.0" });
   assert.equal(requests[0]?.url, endpoint, "the status is read on mount");
   assert.equal(button(container, "Check updates").disabled, false);
 
@@ -65,7 +64,7 @@ test("a connected maintenance API can update a compatible host while its applica
 });
 
 test("an ordinary incompatible host cannot be checked or updated", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", ompVersion: "omp/18.20.0", tauVersion: "0.6.0" });
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", piVersion: "omp/18.20.0", tauVersion: "0.6.0" });
   assert.deepEqual(requests, [], "an unavailable host must not be read");
   const check = button(container, "Check updates");
   assert.equal(check.disabled, true);
@@ -75,8 +74,16 @@ test("an ordinary incompatible host cannot be checked or updated", async (t) => 
   assert.deepEqual(requests, []);
 });
 
+test("an online host without its maintenance connection cannot be checked or updated, and says why", async (t) => {
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "online", piVersion: "18.20.0", tauVersion: "0.7.0" });
+  assert.deepEqual(requests, [], "updates never go over the application link");
+  assert.equal(button(container, "Check updates").disabled, true);
+  assert.ok(container.textContent.includes("Updates need this host's maintenance connection"), container.textContent);
+  assert.ok(container.textContent.includes("18.20.0"), "the pi version still shows");
+});
+
 test("an offline host stays unavailable", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "offline", ompVersion: "omp/18.20.0", tauVersion: "0.7.0" });
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "offline", piVersion: "omp/18.20.0", tauVersion: "0.7.0" });
   assert.deepEqual(requests, []);
   assert.equal(button(container, "Check updates").disabled, true);
   assert.ok(container.textContent.includes("Updates unavailable while this host is offline."), container.textContent);

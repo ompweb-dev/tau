@@ -26,7 +26,7 @@ afterEach(() => {
 const member = (hostId) => ({ hostId, projectsRoot: `/srv/${hostId}/tau-cluster`, provisioned: true, draining: false });
 const cluster = (...hostIds) => [{ id: "cluster", label: "Cluster", enabled: true, members: hostIds.map(member), projects: [] }];
 const hostRow = (overrides = {}) => ({
-  id: "local", label: "", status: "online", ompVersion: "1.5.2", platform: "linux",
+  id: "local", label: "", status: "online", piVersion: "1.5.2", platform: "linux",
   hostVersion: 10, serverVersion: 10, lastSeenAt: null, ...overrides,
 });
 const linked = (id, label, overrides = {}) => hostRow({ id, label, allowAgentStart: false, ...overrides });

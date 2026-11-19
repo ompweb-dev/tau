@@ -32,8 +32,8 @@ export function HostUpdates({ host }: { host: HostRow }) {
   const mounted = useRef(true);
   const postController = useRef<AbortController | null>(null);
   const endpoint = `/api/hosts/${encodeURIComponent(host.id)}/updates`;
-  const upgradeOnly = host.status === "needs-upgrade" && host.upgradeOnly === true;
-  const unavailable = (host.status === "offline" || host.status === "needs-upgrade") && !upgradeOnly && host.apiVersion !== 1;
+  // Updates go only through the host's maintenance connection (apiVersion is present while it is up).
+  const unavailable = host.apiVersion !== 1;
 
   useEffect(() => {
     mounted.current = true;
@@ -83,7 +83,7 @@ export function HostUpdates({ host }: { host: HostRow }) {
         }
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         // A successful status read, not POST acceptance, establishes the result.
-        if (!data.tau || !data.omp) throw new Error(t("hostUpdates.invalidResponse"));
+        if (!data.tau) throw new Error(t("hostUpdates.invalidResponse"));
         const next = data as HostUpdateInfo;
         setInfo(next);
         setError(null);
@@ -169,7 +169,7 @@ export function HostUpdates({ host }: { host: HostRow }) {
 
   const busy = loading || posting || monitoring;
   const disabled = busy || unavailable || unsupported;
-  const unavailableReason = (host.status === "needs-upgrade" && unavailable) || unsupported ? t("hostUpdates.unsupported") : host.status === "offline" && unavailable ? t("hostUpdates.offline") : null;
+  const unavailableReason = (host.status === "needs-upgrade" && unavailable) || unsupported ? t("hostUpdates.unsupported") : host.status === "offline" && unavailable ? t("hostUpdates.offline") : unavailable ? t("hostUpdates.maintenanceUnavailable") : null;
   const operation = info?.operation;
   return (
     <div style={{ flexBasis: "100%", minWidth: 0, borderTop: "1px solid var(--border)", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -179,10 +179,11 @@ export function HostUpdates({ host }: { host: HostRow }) {
           <RefreshCw size={13} aria-hidden="true" />{t(loading ? "hostUpdates.checking" : error || needsStatus ? "hostUpdates.retry" : "hostUpdates.check")}
         </button>
       </div>
-      {(["tau", "omp"] as const).map((target) => {
-        const software = info?.[target];
+      {/* pi is shown, not updated: host updates install tau only. */}
+      {(["tau", "pi"] as const).map((target) => {
+        const software = target === "tau" ? info?.tau : undefined;
         const label = t(`hostUpdates.${target}`);
-        const fallbackVersion = target === "tau" ? host.tauVersion : host.ompVersion?.replace(/^(?:omp|pi)\//, "");
+        const fallbackVersion = target === "tau" ? host.tauVersion : host.piVersion?.replace(/^(?:omp|pi)\//, "");
         const updateDisabled = disabled || needsStatus || operation?.recoveryRequired === true || !software?.canUpdate;
         const forceable = operation?.recoveryRequired !== true && software?.updateAvailable === true && !software.canUpdate && software.canForceUpdate === true;
         return (
@@ -197,8 +198,8 @@ export function HostUpdates({ host }: { host: HostRow }) {
               {forceable && <div>{t("hostUpdates.forceAvailable")}</div>}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {software?.updateAvailable && software.availableVersion && <button type="button" className="ui-focus-ring" aria-label={t("hostUpdates.updateAria", { software: label })} disabled={updateDisabled} style={{ ...buttonStyle, opacity: updateDisabled ? 0.6 : 1, cursor: updateDisabled ? "not-allowed" : "pointer" }} onClick={() => setConfirm({ target, force: false })}><Download size={13} aria-hidden="true" />{t("hostUpdates.update")}</button>}
-              {forceable && software.availableVersion && <button type="button" className="ui-focus-ring" aria-label={t("hostUpdates.forceUpdateAria", { software: label })} disabled={disabled || needsStatus} style={{ ...dangerButtonStyle, opacity: disabled || needsStatus ? 0.6 : 1, cursor: disabled || needsStatus ? "not-allowed" : "pointer" }} onClick={() => setConfirm({ target, force: true })}><AlertTriangle size={13} aria-hidden="true" />{t("hostUpdates.forceUpdate")}</button>}
+              {software?.updateAvailable && software.availableVersion && <button type="button" className="ui-focus-ring" aria-label={t("hostUpdates.updateAria", { software: label })} disabled={updateDisabled} style={{ ...buttonStyle, opacity: updateDisabled ? 0.6 : 1, cursor: updateDisabled ? "not-allowed" : "pointer" }} onClick={() => setConfirm({ target: "tau", force: false })}><Download size={13} aria-hidden="true" />{t("hostUpdates.update")}</button>}
+              {forceable && software.availableVersion && <button type="button" className="ui-focus-ring" aria-label={t("hostUpdates.forceUpdateAria", { software: label })} disabled={disabled || needsStatus} style={{ ...dangerButtonStyle, opacity: disabled || needsStatus ? 0.6 : 1, cursor: disabled || needsStatus ? "not-allowed" : "pointer" }} onClick={() => setConfirm({ target: "tau", force: true })}><AlertTriangle size={13} aria-hidden="true" />{t("hostUpdates.forceUpdate")}</button>}
             </div>
           </div>
         );

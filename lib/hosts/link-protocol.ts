@@ -101,7 +101,7 @@ export const SESSION_OP_PARAMS: { readonly [K in keyof SessionOps]: readonly str
 };
 
 /** Unknown additions are answered with 501. */
-export const HOST_OP_NAMES = [...(Object.keys(SESSION_OP_PARAMS) as (keyof SessionOps)[]), ...Object.keys(WORKSPACE_OP_PARAMS) as (keyof typeof WORKSPACE_OP_PARAMS)[], "open", "close", "editLease", "sessionFileExists", "invalidateSessionLists", "checkUpdates", "updateSoftware", "uploadStart", "uploadAbort", "uploadAttach", "setUploadRetention", "clusterConfig", "auth"] as const;
+export const HOST_OP_NAMES = [...(Object.keys(SESSION_OP_PARAMS) as (keyof SessionOps)[]), ...Object.keys(WORKSPACE_OP_PARAMS) as (keyof typeof WORKSPACE_OP_PARAMS)[], "open", "close", "editLease", "sessionFileExists", "invalidateSessionLists", "uploadStart", "uploadAbort", "uploadAttach", "setUploadRetention", "clusterConfig", "auth"] as const;
 
 export type HostOpName = (typeof HOST_OP_NAMES)[number];
 
@@ -153,7 +153,7 @@ export type UpMessage =
   | {
       type: "hello";
       v: number;
-      ompVersion: string | null;
+      piVersion: string | null;
       tauVersion: string;
       link?: { id: string; notifier: boolean };
       platform: string;
@@ -477,7 +477,7 @@ export function decodeUp(line: string): UpMessage | UnknownMessage {
       return {
         type: "hello",
         v: int(o, "v"),
-        ompVersion: nullable(o, "ompVersion", str),
+        piVersion: nullable(o, "piVersion", str),
         tauVersion: str(o, "tauVersion"),
         ...(o.link === undefined ? {} : { link: helloLink(o.link) }),
         platform: str(o, "platform"),

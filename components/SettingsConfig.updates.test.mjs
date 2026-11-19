@@ -86,12 +86,11 @@ test("a supported binary install gets the in-app Update action, not a download l
   assert.ok(!requests.some((url) => url.includes("app-update")), "the Settings click must not prepare or commit anything itself");
 });
 
-test("a host's omp row is its own update target: its version, its candidate and its own Update button", async (t) => {
+test("a host's pi row shows its version and offers no update: host updates install tau only", async (t) => {
   const { HostUpdates } = await import("./HostUpdates");
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({
     tau: { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 10 },
-    omp: { currentVersion: "18.20.0-int.202611130355.gd2c2eff", availableVersion: "18.21.0", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @earendil-works/pi-coding-agent" },
     operation: null,
   });
   const container = document.createElement("div");
@@ -103,11 +102,10 @@ test("a host's omp row is its own update target: its version, its candidate and 
     globalThis.fetch = originalFetch;
   });
   await act(async () => {
-    root.render(createElement(HostUpdates, { host: { id: "box", label: "Box", status: "online", ompVersion: "omp/18.20.0-int.202611130355.gd2c2eff", tauVersion: "0.6.0" } }));
+    root.render(createElement(HostUpdates, { host: { id: "box", label: "Box", status: "online", apiVersion: 1, piVersion: "omp/18.20.0-int.202611130355.gd2c2eff", tauVersion: "0.6.0" } }));
   });
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   assert.ok(container.textContent.includes("18.20.0-int.202611130355.gd2c2eff"), container.textContent);
-  assert.ok(container.textContent.includes("Available: 18.21.0"), container.textContent);
   assert.ok(!container.textContent.includes("Updated with tau"), container.textContent);
-  assert.deepEqual(buttonLabels(container).filter((label) => label === "Update"), ["Update", "Update"], "tau and omp each have an update button");
+  assert.deepEqual(buttonLabels(container).filter((label) => label === "Update"), ["Update"], "only tau has an update button");
 });

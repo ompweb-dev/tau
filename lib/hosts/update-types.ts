@@ -1,6 +1,6 @@
 import type { NpmUpdateStatus } from "../npm-update";
 
-export type HostUpdateTarget = "tau" | "omp";
+export type HostUpdateTarget = "tau";
 
 /** The running web server's supported daemon protocol range. Supplied by the hub, never by the browser. */
 export interface HostUpdateCompatibility {
@@ -53,8 +53,7 @@ export interface HostSoftwareUpdate {
 export interface HostUpdateOperation {
   /** The operation id the caller supplied (HostUpdateRequest.operationId), else a generated one; the same id names the attempt, its worker and every acknowledgement. */
   id: string;
-  /** "omp": an `omp update` a host recorded before omp updated with tau. */
-  target: HostUpdateTarget | "omp";
+  target: HostUpdateTarget;
   version: string;
   state: "running" | "succeeded" | "failed";
   /** All candidate artifacts passed preflight; the worker is waiting for an explicit coordinated commit. */
@@ -88,6 +87,5 @@ export interface HostUpdateRequest {
 
 export interface HostUpdateInfo {
   tau: HostSoftwareUpdate & Pick<NpmUpdateStatus, "installMethod"> & { protocolVersion: number | null; activeSessions?: number };
-  omp: HostSoftwareUpdate;
   operation: HostUpdateOperation | null;
 }

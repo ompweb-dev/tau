@@ -122,7 +122,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const uploadAttempts = new Map<string, DaemonLink>();
   const stops = new Set<Promise<void>>();
   const { promise: done, resolve: finish } = Promise.withResolvers<number>();
-  let stopped = false, linkId = 0, notifierId: string | null = null, ompVersion: string | null = null;
+  let stopped = false, linkId = 0, notifierId: string | null = null, piVersion: string | null = null;
   let stopping: Promise<void> | undefined;
   let updateStateWarningLogged = false;
   let reloadTimer: NodeJS.Timeout | undefined;
@@ -278,7 +278,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   function makeLink(login: HostLink, primary: boolean): DaemonLink {
     const link = new DaemonLink(login, "l" + ++linkId, { allowHttp: options.allowHttp, primary, log, keepOnVersionMismatch: true,
-      hello: (link, replay) => encodeLine({ type: "hello", v: link.version, ompVersion, tauVersion: packageJson.version,
+      hello: (link, replay) => encodeLine({ type: "hello", v: link.version, piVersion, tauVersion: packageJson.version,
         platform: process.platform,
         ack: link.ackedDown, channels: channels.listing(link, replay),
         link: { id: link.id, notifier: notifierId === link.id } }),
@@ -317,9 +317,9 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     links.set(login.url, link);
     const maintenance = new DaemonMaintenance(login, {
       hello: () => ({ type: "hello", apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        tauVersion: packageJson.version, piVersion: ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, piVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"] }),
-      handleRequest: (op, args) => runMaintenance(link, op, args),
+      handleRequest: (op, args) => runMaintenance(op, args),
       // A staged candidate that awaits its server's cutover acknowledges its operation here, not on the application link.
       onState: up => { if (up) void acknowledgeHostUpdateReceipt(LINK_PROTOCOL_VERSION); },
       reload: () => { reconcile(link, true); },
@@ -359,14 +359,15 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     reportConfig(); electNotifier(); return source ? links.get(source.login.url) !== source || source.login.token !== previousToken : true;
   }
 
-  async function runMaintenance(link: DaemonLink, op: MaintenanceOp, args: Record<string, unknown>): Promise<unknown> {
+  /** Host software updates run only here, never on the application link. */
+  async function runMaintenance(op: MaintenanceOp, args: Record<string, unknown>): Promise<unknown> {
     if (stopped) throw new HostOpError(503, "host_stopping", "This host is stopping");
     const update = op === "checkUpdates" || op === "updateSoftware";
     if (update) nativeUpdatesInFlight++;
     try {
       if (op === "status") return {
         apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        tauVersion: packageJson.version, piVersion: ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, piVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"],
         sessionProcesses: channels.size,
         activeTurns: channels.activeTurns, sessions: channels.maintenanceSessions(),
@@ -379,7 +380,14 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
           processRunning: states.has(session.id), active: states.get(session.id)?.active ?? false,
         }));
       }
-      return await runOp(link, op, args);
+      if (drained) throw new HostOpError(409, "host_drained", "This host is locally drained for maintenance; resume it before starting new work");
+      if (op === "checkUpdates") {
+        if (args.force !== undefined && typeof args.force !== "boolean") throw new HostOpError(400, "invalid_request", "force must be a boolean");
+        const releasePin = args.releasePin === undefined ? undefined : validateApprovedReleasePin(args.releasePin);
+        return await checkHostUpdates(updateCompatibility(args.compatibility), args.force === true, args.targetCompatibility === undefined ? undefined : updateCompatibility(args.targetCompatibility), releasePin);
+      }
+      if (args.target !== "tau" || typeof args.version !== "string") throw new HostOpError(400, "invalid_request", "Invalid host update");
+      return await startHostUpdate(args.target, args.version, updateCompatibility(args.compatibility), updateRequest(args));
     } finally {
       if (update) nativeUpdatesInFlight--;
     }
@@ -399,8 +407,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   async function answer(link: DaemonLink, id: string, op: string, args: unknown): Promise<void> {
     const session = isRecord(args) && typeof args.id === "string" && isValidSessionId(args.id) ? args.id : null;
     let opened: string | undefined;
-    const nativeUpdate = op === "checkUpdates" || op === "updateSoftware";
-    if (nativeUpdate) nativeUpdatesInFlight++; else operationsInFlight++;
+    operationsInFlight++;
     try {
       const result = await runOp(link, op, args);
       if (op === "open" && isRecord(result) && typeof result.ch === "string") opened = result.ch;
@@ -416,7 +423,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         : { status: 500, code: "host_op_failed", message: reason(error) };
       link.queue({ type: "res", id, ok: false, error: failure }, id, { session });
     } finally {
-      if (nativeUpdate) nativeUpdatesInFlight--; else operationsInFlight--;
+      operationsInFlight--;
     }
   }
   function requireUploadOwner(link: DaemonLink, id: unknown): void {
@@ -457,14 +464,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       }
       case "sessionFileExists": return localHost.sessionFileExists(sessionsPath(args.path));
       case "invalidateSessionLists": invalidateWorkspaceRoots(); localHost.invalidateSessionLists(args.path === undefined ? undefined : sessionsPath(args.path)); sessionsChanged(); return;
-      case "checkUpdates": {
-        if (args.force !== undefined && typeof args.force !== "boolean") throw new HostOpError(400, "invalid_request", "force must be a boolean");
-        const releasePin = args.releasePin === undefined ? undefined : validateApprovedReleasePin(args.releasePin);
-        return checkHostUpdates(updateCompatibility(args.compatibility), args.force === true, args.targetCompatibility === undefined ? undefined : updateCompatibility(args.targetCompatibility), releasePin);
-      }
-      case "updateSoftware":
-        if (args.target !== "tau" || typeof args.version !== "string") throw new HostOpError(400, "invalid_request", "Invalid host update");
-        return startHostUpdate(args.target, args.version, updateCompatibility(args.compatibility), updateRequest(args));
       case "preparePoolProject": {
         if (hostUpdateBlocksNewWork(getHostUpdateOperation())) throw new HostUpdateError("host_updating", "This host is updating; new project preparation must wait");
         preparationsInFlight++;
@@ -544,7 +543,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   const startupRecovery = recover();
   operationsInFlight++;
-  const versionRead = getPiVersion().then(version => { ompVersion = version; }).catch(error => log("could not read omp version: " + reason(error)))
+  const versionRead = getPiVersion().then(version => { piVersion = version; }).catch(error => log("could not read pi version: " + reason(error)))
     .finally(() => {
       operationsInFlight--;
       if (!stopped) for (const link of links.values()) link.start();

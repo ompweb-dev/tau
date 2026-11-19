@@ -21,7 +21,7 @@ afterEach(() => {
   globalThis.Worker = originalWorker;
 });
 
-const local = (fields) => ({ id: "local", label: "", status: "offline", ompVersion: null, platform: null, lastSeenAt: null, hostVersion: null, serverVersion: 3, serverPlatform: "linux", daemonManaged: true, ...fields });
+const local = (fields) => ({ id: "local", label: "", status: "offline", piVersion: null, platform: null, lastSeenAt: null, hostVersion: null, serverVersion: 3, serverPlatform: "linux", daemonManaged: true, ...fields });
 const send = (hosts) => {
   const { id } = workers[0].posted.findLast((message) => message.op === "open" && message.channel.kind === "hosts");
   act(() => workers[0].onmessage({ data: { id, type: "message", data: JSON.stringify({ hosts }) } }));

@@ -143,7 +143,7 @@ interface Link {
   configOps: number;
   /** A `config_state` arrived since the link came up: from then on reports, never op answers, set `configState`. */
   configReported: boolean;
-  ompVersion: string | null;
+  piVersion: string | null;
   tauVersion: string | null;
   platform: string | null;
   lastSeenAt: string | null;
@@ -275,7 +275,7 @@ function linkFor(id: string): Link {
       configOwned: false,
       configOps: 0,
       configReported: false,
-      ompVersion: null,
+      piVersion: null,
       tauVersion: null,
       platform: null,
       lastSeenAt: null,
@@ -720,7 +720,7 @@ function openLink(link: Link, ws: LinkSocket, hello: Hello): void {
   link.unacked = 0;
   link.awaitingDrain = false;
   flush(link);
-  link.ompVersion = hello.ompVersion;
+  link.piVersion = hello.piVersion;
   link.tauVersion = hello.tauVersion ?? null;
   endWorkspaceWatches(link.id);
   link.platform = hello.platform;
@@ -730,7 +730,7 @@ function openLink(link: Link, ws: LinkSocket, hello: Hello): void {
   clearInterval(link.pingTimer);
   link.pingTimer = setInterval(() => enqueue(link, encodeLine({ type: "ping" })), linkTimings.pingMs);
   link.pingTimer.unref?.();
-  setStatus(link, hello.ompVersion === null ? "omp-missing" : "online");
+  setStatus(link, hello.piVersion === null ? "omp-missing" : "online");
   reattach(link, hello.channels);
   notify(hub().helloListeners, link.id, hello.channels);
 }
@@ -1527,8 +1527,9 @@ export function getHost(id: string): Host | null {
 
 const updateCompatibility = () => ({ min: MIN_LINK_PROTOCOL_VERSION, max: LINK_PROTOCOL_VERSION });
 
+/** Host software updates go only through the maintenance API: without its connection there is no update path. */
 async function requestHostUpdate(id: string, op: "checkUpdates" | "updateSoftware", args: Record<string, unknown>): Promise<unknown> {
-  if (!getMaintenanceHost(id)) return request(id, op, args);
+  if (!getMaintenanceHost(id)) throw new HostOpError(503, "maintenance_unavailable", "This host's maintenance connection is not available; host updates need it");
   try {
     return await requestMaintenance(id, op, args);
   } catch (error) {
@@ -1554,7 +1555,7 @@ function softwareUpdate(value: unknown): value is HostSoftwareUpdate & Record<st
 
 function updateOperation(value: unknown): value is HostUpdateOperation {
   return isRecord(value) && typeof value.id === "string" && value.id.length > 0 && value.id.length <= 128
-    && (value.target === "tau" || value.target === "omp") && typeof value.version === "string"
+    && value.target === "tau" && typeof value.version === "string"
     && ["running", "succeeded", "failed"].includes(String(value.state))
     && (value.error === undefined || typeof value.error === "string")
     && (value.prepared === undefined || value.prepared === true);
@@ -1601,14 +1602,13 @@ export async function getHostSoftwareUpdates(id: string, force = false, compatib
   const current = updateCompatibility();
   const targetCompatibility = compatibility.min === current.min && compatibility.max === current.max ? {} : { targetCompatibility: compatibility };
   const result = await requestHostUpdate(id, "checkUpdates", { compatibility: current, force, ...targetCompatibility, ...(releasePin ? { releasePin } : {}) });
-  if (!isRecord(result) || !softwareUpdate(result.tau) || !isRecord(result.omp) || !nullableString(result.omp.currentVersion)
+  if (!isRecord(result) || !softwareUpdate(result.tau)
     || !["npm", "bun", "binary"].includes(String(result.tau.installMethod))
     || !(result.tau.protocolVersion === null || (Number.isSafeInteger(result.tau.protocolVersion) && Number(result.tau.protocolVersion) > 0))
     || !(result.operation === null || updateOperation(result.operation))) {
     throw new HostOpError(502, "host_bad_result", "The host returned an invalid update status");
   }
-  // A daemon from before omp updated with tau reports a full update status for omp: keep only its version.
-  const info = { ...result, omp: { currentVersion: result.omp.currentVersion } } as unknown as HostUpdateInfo;
+  const info = { tau: result.tau, operation: result.operation } as unknown as HostUpdateInfo;
   const protocol = info.tau.protocolVersion;
   if ((!releasePin || info.tau.supportsReleasePin === true) && info.tau.updateAvailable && (protocol === null || protocol < compatibility.min || protocol > compatibility.max)) {
     return { ...info, tau: { ...info.tau, canUpdate: false, canForceUpdate: false, blockedReason: protocol === null
@@ -1656,7 +1656,7 @@ export interface LinkedHostRow {
   id: string;
   label: string;
   status: HostStatus;
-  ompVersion: string | null;
+  piVersion: string | null;
   tauVersion?: string | null;
   /** A connected maintenance API can update an incompatible application peer. */
   upgradeOnly?: boolean;
@@ -1690,7 +1690,7 @@ export function listHosts(): LinkedHostRow[] {
       id: record.id,
       label: record.label,
       ...hostConnectionFields(link, maintenance),
-      ompVersion: maintenance?.piVersion ?? link?.ompVersion ?? null,
+      piVersion: maintenance?.piVersion ?? link?.piVersion ?? null,
       tauVersion: maintenance?.tauVersion ?? link?.tauVersion ?? null,
       platform: maintenance?.platform ?? link?.platform ?? null,
       lastSeenAt: link?.lastSeenAt ?? record.lastSeenAt,
@@ -1816,7 +1816,7 @@ export interface LocalHostRow {
   /** The user's name for this machine; "" while it goes by the localized default. */
   label: string;
   status: HostStatus;
-  ompVersion: string | null;
+  piVersion: string | null;
   tauVersion?: string | null;
   upgradeOnly?: boolean;
   apiVersion?: number;
@@ -1842,7 +1842,7 @@ export function hostsSnapshot(): { hosts: HostRow[]; pools?: HostPool[]; masterC
     id: "local",
     label: customLocalLabel(),
     ...hostConnectionFields(link, maintenance),
-    ompVersion: maintenance?.piVersion ?? link?.ompVersion ?? null,
+    piVersion: maintenance?.piVersion ?? link?.piVersion ?? null,
     tauVersion: maintenance?.tauVersion ?? link?.tauVersion ?? null,
     platform: maintenance?.platform ?? link?.platform ?? null,
     lastSeenAt: null,
@@ -1885,8 +1885,8 @@ export function isHostConfigCurrent(hostId: string): boolean {
   return link !== undefined && configCurrent(link);
 }
 
-export function getHostOmpVersion(hostId: string): string | null {
-  return hub().links.get(hostId)?.ompVersion ?? null;
+export function getHostPiVersion(hostId: string): string | null {
+  return hub().links.get(hostId)?.piVersion ?? null;
 }
 
 export function onHostsChange(listener: () => void): () => void {

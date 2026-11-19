@@ -516,8 +516,8 @@ function servePooledWorkspace() {
     { path: "/shared", hostId: "local", alias: "Mac project" },
   ];
   const hosts = [
-    { id: "local", label: "Mac", status: "online", ompVersion: "18.4.4", tauVersion: "0.6.0", platform: "darwin", lastSeenAt: null, hostVersion: 2, serverVersion: 2, serverPlatform: "darwin", daemonManaged: false },
-    ...["h1", "h2"].map((id, index) => ({ id, label: `Worker ${index + 1}`, status: "online", ompVersion: "18.4.4", tauVersion: "0.6.0", platform: "linux", lastSeenAt: "2026-11-10T00:00:00.000Z", allowAgentStart: true, hostVersion: 2, serverVersion: 2 })),
+    { id: "local", label: "Mac", status: "online", piVersion: "18.4.4", tauVersion: "0.6.0", platform: "darwin", lastSeenAt: null, hostVersion: 2, serverVersion: 2, serverPlatform: "darwin", daemonManaged: false },
+    ...["h1", "h2"].map((id, index) => ({ id, label: `Worker ${index + 1}`, status: "online", piVersion: "18.4.4", tauVersion: "0.6.0", platform: "linux", lastSeenAt: "2026-11-10T00:00:00.000Z", allowAgentStart: true, hostVersion: 2, serverVersion: 2 })),
   ];
   const pools = [{
     id: "workers", label: "Worker pool", enabled: true,

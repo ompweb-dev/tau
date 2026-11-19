@@ -475,7 +475,9 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
   floor `MIN_LINK_PROTOCOL_VERSION` never goes above. Upgrade order: web app first, then hosts. Host maintenance
   (status, inventory, `checkUpdates`/`updateSoftware`) is a separate protocol, maintenance API v1
   (`lib/hosts/maintenance-protocol.ts`, `maintenance-hub.ts`, `daemon-maintenance.ts`, `/api/hosts/maintenance`),
-  versioned apart and kept stable so a host whose application protocol differs can still be updated.
+  versioned apart and kept stable so a host whose application protocol differs can still be updated. Host updates
+  use only it: without a maintenance connection `/api/hosts/[id]/updates` answers 503 `maintenance_unavailable`
+  and the application link has no update ops.
 - **One socket per host per web server.** A new hello on the same server with
   the same token closes its previous socket 4409; on v7 only that link ends.
   One daemon may link multiple servers; two daemons must never run
@@ -1673,7 +1675,7 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
 
 ### Updates: web server versus host software
 - **Settings → System** prepares and reviews a durable server-and-host upgrade plan, including owned compiled releases. `POST /api/app-update {action:"prepare"}` returns the plan; commit requires `{action:"commit",attemptId,approval:{planId,force}}`. Approval is bound to release identity and the registered-host/session snapshot. An incompatible host without a verified recovery path blocks server cutover.
-- **Settings → Hosts** manages individual daemons, including **This machine**; omp updates with ompweb. Normal `POST {target:"ompweb",version}` does not interrupt activity. `force:true` requires distinct GUI confirmation and may end sessions/subagents. Machine-readable `canForceUpdate` and blockers govern the action, never English message parsing. Force does not waive integrity, ownership, process identity, disabled updates, local drains or service permissions.
+- **Settings → Hosts** manages individual daemons, including **This machine**. The only target is `tau`; the host's pi version is shown, never updated. Normal `POST {target:"tau",version}` does not interrupt activity. A candidate release without the `preflight` command fails the update and keeps the prior install. `force:true` requires distinct GUI confirmation and may end sessions/subagents. Machine-readable `canForceUpdate` and blockers govern the action, never English message parsing. Force does not waive integrity, ownership, process identity, disabled updates, local drains or service permissions.
 - **Recovery plane.** A candidate may acknowledge an approved future server protocol through an operation-bound preflight nonce and a maintenance receipt; every tau host updates through its own updater over maintenance API v1 (there is no legacy bootstrap or `recover-host` path). Windows uses native process/service/task handling. A running daemon copies only `update-worker.ts`; its startup must work without sibling modules and load shared lifecycle code from verified sources before replacing an install.
 - **Completion and rollback.** `upgrade-plan.ts`, `self-update.ts` and `server-update-worker.ts` persist progress; POST acceptance and shell output are not success. Verify the expected release, live process identity and operation/boot receipt after reconnect. Retain the prior install until healthy, and report partial recovery explicitly. See `docs/superpowers/specs/2026-11-14-coordinated-gui-upgrades-design.md` when changing upgrade or bootstrap contracts.
 - `/api/omp-update` keeps only `restart`, an explicit server-side maintenance API for existing callers. The settings UI and AppShell no longer use it as a global update control or send a server-wide session restart after a host update.
