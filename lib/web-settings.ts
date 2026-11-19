@@ -2,7 +2,6 @@ import { DatabaseSync } from "node:sqlite";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { getAgentDir } from "./omp/paths";
-import { BROWSER_TRANSPORTS, type BrowserTransport, type BrowserTransportState } from "./event-stream-protocol";
 import { DEFAULT_UPLOAD_RETENTION_DAYS, isUploadRetentionDays } from "./upload-limits";
 import { isRecord } from "./type-guards";
 
@@ -32,8 +31,6 @@ export interface WebServerSettings {
    * re-checks every name before handing it to a spawn.
    */
   agentEnv: Record<string, string>;
-  /** Live-event transport the browser uses; "ws" unless the file says "sse" (a missing or unknown value, the experiment's ws-* values included, reads as "ws"). */
-  browserTransport: BrowserTransport;
   /** Days a sent upload stays in its session's `local://uploads/` on every host; `null` keeps them for ever (docs/specs/2026-11-02-file-uploads-design.md, U6). */
   uploadRetentionDays: number | null;
 }
@@ -44,14 +41,8 @@ const DEFAULTS: WebServerSettings = {
   githubWritesUnasked: false,
   githubActionsPermissions: { dispatch: "ask", cancel: "ask", rerun: "ask" },
   agentEnv: {},
-  browserTransport: "ws",
   uploadRetentionDays: DEFAULT_UPLOAD_RETENTION_DAYS,
 };
-
-/** What every hello and `transport` frame tells the browser. */
-export function browserTransportState(settings = loadWebServerSettings()): BrowserTransportState {
-  return { transport: settings.browserTransport };
-}
 
 /** String-valued entries only — the allow-list lives in lib/omp/agent-env.ts. */
 function readAgentEnvRecord(value: unknown): Record<string, string> {
@@ -97,7 +88,6 @@ function normalizeSettings(raw: Record<string, unknown>): WebServerSettings {
     githubWritesUnasked: raw.githubWritesUnasked === true,
     githubActionsPermissions: readGithubActionsPermissions(raw.githubActionsPermissions),
     agentEnv: readAgentEnvRecord(raw.agentEnv),
-    browserTransport: BROWSER_TRANSPORTS.find((transport) => transport === raw.browserTransport) ?? "ws",
     uploadRetentionDays: isUploadRetentionDays(raw.uploadRetentionDays) ? raw.uploadRetentionDays : DEFAULT_UPLOAD_RETENTION_DAYS,
   };
 }

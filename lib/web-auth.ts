@@ -44,8 +44,7 @@ export function isTrustedProxyRequest(
   return timingSafeEqual(createHash("sha256").update(value, "utf8").digest(), Buffer.from(digest, "hex"));
 }
 
-/** The web session a request belongs to (browser link spec B5): browser-link resumes and composer uploads are honored
- * only for the same one. */
+/** The web session a request belongs to: composer uploads are honored only for the same one. */
 export function requestOwner(request: Request): string {
   const cookie = new Bun.CookieMap(request.headers.get("cookie") ?? "").get(TAU_SESSION_COOKIE);
   if (cookie) return `session:${createHash("sha256").update(cookie).digest("base64url")}`;

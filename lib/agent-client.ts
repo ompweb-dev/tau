@@ -1,5 +1,4 @@
-// Client-side helper for agent commands: POST /api/agent/[id], or the worker's
-// browser link in the `ws` browser transport (lib/event-stream.ts).
+// Client-side helper for agent commands: POST /api/agent/[id].
 //
 // Every /api/agent/[id] route returns one of:
 //   { success: true, data: <result> }
@@ -8,7 +7,7 @@
 // Call sites previously repeated the same 5-line fetch block 13× in
 // hooks/useAgentSession.ts. This helper collapses that down to one line.
 
-import { recordTransportSample, sendSessionCommand, type CommandReply } from "@/lib/event-stream";
+import { recordTransportSample } from "@/lib/event-stream";
 import { formatApiError } from "@/lib/i18n/api-error";
 
 const OUTBOX_SCOPE_KEY = "tau:outbox-scope";
@@ -56,26 +55,19 @@ export class HostOfflineError extends Error {
   }
 }
 
-/** 503 `transport_lost`: the browser link resynced with a server that cannot
- *  tell whether the command ran (a restart, or past the dedupe window), so it
- *  may have run; the caller must not offer it again. */
-export class TransportLostError extends Error {
-  readonly mayHaveRun = true;
-}
-
 export async function sendAgentCommand<T = unknown>(
   sessionId: string,
   command: Record<string, unknown>,
 ): Promise<T> {
-  // The link's dedupe key; no crypto.randomUUID (insecure LAN origins lack it).
+  // The sample's request id; no crypto.randomUUID (insecure LAN origins lack it).
   const req = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
   const json = JSON.stringify(command);
   // Every command's `action` sample (spec D6); the worker adds the tags and its clock.
   const type = typeof command.type === "string" ? command.type : "";
   const sample = { metric: "action", req, type, session: sessionId, bytes: json.length, sentAt: Date.now() };
-  let reply: CommandReply;
+  let reply: Awaited<ReturnType<typeof postAgentCommand>>;
   try {
-    reply = (await sendSessionCommand(sessionId, req, json, type)) ?? (await postAgentCommand(sessionId, json, req, type));
+    reply = await postAgentCommand(sessionId, json, req, type);
   } catch (error) {
     // The POST got no answer at all (offline, connection reset).
     recordTransportSample({ ...sample, via: "http", socket: "http", status: 0, outcome: "error", gotAt: Date.now() });
@@ -90,17 +82,13 @@ export async function sendAgentCommand<T = unknown>(
     delivery?: string;
   };
   const failed = reply.status < 200 || reply.status >= 300 || Boolean(body.error);
-  let outcome = failed ? "error" : "ok";
-  if (reply.status === 503 && body.code === "transport_lost") outcome = "lost";
-  else if (reply.status === 503 && body.code === "transport_unavailable") outcome = "unavailable";
+  const outcome = failed ? "error" : "ok";
   recordTransportSample({
     ...sample,
     via: reply.via,
     socket: reply.socket,
     status: reply.status,
     outcome,
-    attempts: reply.attempts,
-    deduped: reply.deduped,
     behindBytes: reply.behindBytes,
     behindSameBytes: reply.behindSameBytes,
     behindOtherBytes: reply.behindOtherBytes,
@@ -114,13 +102,12 @@ export async function sendAgentCommand<T = unknown>(
     // surfaced to the user as notices, so localize before throwing.
     const message = body.error || body.code ? formatApiError(body) : `HTTP ${reply.status}`;
     if (reply.status === 503 && body.hostOffline) throw new HostOfflineError(message, body.delivery === "unknown");
-    if (reply.status === 503 && body.code === "transport_lost") throw new TransportLostError(message);
     throw Object.assign(new Error(message), { code: body.code });
   }
   return body.data as T;
 }
 
-async function postAgentCommand(sessionId: string, body: string, req: string, type: string): Promise<CommandReply> {
+async function postAgentCommand(sessionId: string, body: string, req: string, type: string) {
   let behindSameBytes = 0;
   let behindOtherBytes = 0;
   for (const other of inFlightPosts) {
@@ -146,11 +133,9 @@ async function postAgentCommand(sessionId: string, body: string, req: string, ty
     return {
       status: res.status,
       body: await res.json().catch(() => ({})),
-      via: "http",
+      via: "http" as const,
       recvAt: time("x-omp-received-at"),
       repliedAt: time("x-omp-replied-at"),
-      attempts: 1,
-      deduped: false,
       socket: "http",
       behindBytes: behindSameBytes,
       behindSameBytes,

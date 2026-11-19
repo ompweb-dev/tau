@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { browserLink, type BrowserLinkData } from "@/lib/browser-link";
 import { hostLinkSocket, type LinkSocketData } from "@/lib/hosts/hub";
 import { maintenanceSocket, type MaintenanceSocketData } from "@/lib/hosts/maintenance-hub";
 import { proxy } from "@/proxy";
@@ -23,14 +22,11 @@ const text = (body: string, status: number) => new Response(body, { status, head
 const IDLE_TIMEOUT = 10;
 
 type ServerSocket = Bun.ServerWebSocket<ServerSocketData>;
-/** Browser links and host links share Bun's one `websocket` handler; `ws.data` tells them apart. */
-function isBrowserSocket(ws: ServerSocket): ws is Bun.ServerWebSocket<BrowserLinkData> {
-  return "kind" in ws.data && ws.data.kind === "browser";
-}
+/** Maintenance sockets and host links share Bun's one `websocket` handler; `ws.data` tells them apart. */
 function isMaintenanceSocket(ws: ServerSocket): ws is Bun.ServerWebSocket<MaintenanceSocketData> {
   return "kind" in ws.data && ws.data.kind === "maintenance";
 }
-// Not a browser link: a host link (the only other upgrade).
+// Not a maintenance socket: a host link (the only other upgrade).
 const asLink = (ws: ServerSocket) => ws as Bun.ServerWebSocket<LinkSocketData>;
 
 function decodable(pathname: string): boolean {
@@ -156,25 +152,20 @@ export function startServer(options: { port: number; hostname: string; dev: bool
     reusePort: false,
     idleTimeout: IDLE_TIMEOUT,
     routes,
-    // Bun's limits are per server: browser links inherit the host link's (lib/browser-link.ts caps its own frames).
     websocket: {
       ...hostLinkSocket,
       open: (ws: ServerSocket) => {
-        if (isBrowserSocket(ws)) browserLink.open(ws);
-        else if (isMaintenanceSocket(ws)) maintenanceSocket.open(ws);
+        if (isMaintenanceSocket(ws)) maintenanceSocket.open(ws);
       },
       message: (ws: ServerSocket, data: string | Uint8Array) => {
-        if (isBrowserSocket(ws)) browserLink.message(ws, data);
-        else if (isMaintenanceSocket(ws)) maintenanceSocket.message(ws, data);
+        if (isMaintenanceSocket(ws)) maintenanceSocket.message(ws, data);
         else hostLinkSocket.message(asLink(ws), data);
       },
       drain: (ws: ServerSocket) => {
-        if (isBrowserSocket(ws)) browserLink.drain(ws);
-        else if (!isMaintenanceSocket(ws)) hostLinkSocket.drain(asLink(ws));
+        if (!isMaintenanceSocket(ws)) hostLinkSocket.drain(asLink(ws));
       },
-      close: (ws: ServerSocket, code: number) => {
-        if (isBrowserSocket(ws)) browserLink.close(ws, code);
-        else if (isMaintenanceSocket(ws)) maintenanceSocket.close(ws);
+      close: (ws: ServerSocket) => {
+        if (isMaintenanceSocket(ws)) maintenanceSocket.close(ws);
         else hostLinkSocket.close(asLink(ws));
       },
     },

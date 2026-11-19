@@ -95,7 +95,6 @@ function useDocumentVisible(): boolean {
 function DiagnosticsBody({ diagnostics: d, now }: { diagnostics: ConnectionDiagnostics; now: number }) {
   const { t } = useI18n();
   const minutes = Math.round(d.windowMs / 60000);
-  const transportName = (transport: string) => t(transport === "ws" ? "connectionDiagnostics.transportWs" : "connectionDiagnostics.transportSse");
   const agoText = (at: number) => {
     const seconds = Math.max(0, Math.round((now - at) / 1000));
     return seconds < 60
@@ -109,23 +108,12 @@ function DiagnosticsBody({ diagnostics: d, now }: { diagnostics: ConnectionDiagn
         agoText(last.at),
         last.trigger,
         t("connectionDiagnostics.outageMs", { ms: Math.round(last.outageMs) }),
-        last.resumed === null ? null : t(last.resumed ? "connectionDiagnostics.resumed" : "connectionDiagnostics.resynced"),
-      ].filter((part): part is string => part !== null).join(" · ")
+      ].join(" · ")
     : "—";
-
-  // The current transport first, then the other one; only transports with samples (rows come in metric order).
-  const groups = [d.mode, d.mode === "ws" ? "sse" : "ws"]
-    .map((transport) => ({ transport, stats: d.stats.filter((stat) => stat.transport === transport) }))
-    .filter((group) => group.stats.length > 0);
 
   return (
     <>
       <dl style={{ margin: 0, display: "flex", flexDirection: "column" }}>
-        <Row label={t("connectionDiagnostics.rowTransport")}>
-          {transportName(d.mode)}
-          {d.fallback && ` ${t(d.fallback === "version" ? "connectionDiagnostics.fallbackVersion" : "connectionDiagnostics.fallbackRefused")}`}
-        </Row>
-        <Row label={t("connectionDiagnostics.rowSetting")}>{transportName(d.setting)}</Row>
         <Row label={t("connectionDiagnostics.rowStatus")}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: STATUS_COLOR[d.status] }} />
@@ -134,19 +122,13 @@ function DiagnosticsBody({ diagnostics: d, now }: { diagnostics: ConnectionDiagn
           </span>
         </Row>
         <Row label={t("connectionDiagnostics.rowLastReconnect")}>{lastText}</Row>
-        <Row label={t("connectionDiagnostics.rowReconnects", { minutes })}>
-          {d.reconnects}
-          {d.mode === "ws" && ` (${t("connectionDiagnostics.reconnectsDetail", { resumes: d.resumes, resyncs: d.resyncs })})`}
-        </Row>
+        <Row label={t("connectionDiagnostics.rowReconnects", { minutes })}>{d.reconnects}</Row>
         <Row label={t("connectionDiagnostics.rowClockRtt")}>{d.clockRttMs === null ? "—" : t("connectionDiagnostics.msValue", { ms: Math.round(d.clockRttMs) })}</Row>
         <Row label={t("connectionDiagnostics.rowNetwork")}>{d.effectiveType ?? "—"}</Row>
       </dl>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {groups.length === 0 && <div style={{ color: "var(--text-dim)" }}>{t("connectionDiagnostics.noSamples")}</div>}
-        {groups.map((group) => (
-          <div key={group.transport} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ fontWeight: 600, color: "var(--text)" }}>{transportName(group.transport)}</div>
+        {d.stats.length === 0 ? <div style={{ color: "var(--text-dim)" }}>{t("connectionDiagnostics.noSamples")}</div> : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
@@ -161,8 +143,8 @@ function DiagnosticsBody({ diagnostics: d, now }: { diagnostics: ConnectionDiagn
                   </tr>
                 </thead>
                 <tbody>
-                  {group.stats.map((stat) => (
-                    <tr key={stat.metric} style={{ borderTop: "1px solid var(--border)" }}>
+                  {d.stats.map((stat) => (
+                    <tr key={`${stat.transport}:${stat.metric}`} style={{ borderTop: "1px solid var(--border)" }}>
                       <th
                         scope="row"
                         title={t(METRIC_KEYS[stat.metric].title)}
@@ -181,8 +163,7 @@ function DiagnosticsBody({ diagnostics: d, now }: { diagnostics: ConnectionDiagn
                 </tbody>
               </table>
             </div>
-          </div>
-        ))}
+        )}
         <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 6 }}>
           <div>{t("connectionDiagnostics.statsNote", { minutes })}</div>
           <div>{t("connectionDiagnostics.timingNote")}</div>

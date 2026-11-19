@@ -1,7 +1,7 @@
 "use client";
 
 import { randomUUID } from "./random-uuid";
-import type { BrowserTransport, ConnectionDiagnostics, EventStreamChannel } from "./event-stream-protocol";
+import type { ConnectionDiagnostics, EventStreamChannel } from "./event-stream-protocol";
 import { registerNotificationWorker } from "./notification-client";
 import type { OutboxEntry, OutboxMode } from "./types";
 
@@ -9,8 +9,8 @@ export type { EventStreamChannel } from "./event-stream-protocol";
 
 // Tab side of the live-event multiplexer: EventSource-shaped streams whose
 // frames travel over the connection held by the shared worker
-// (lib/event-stream-worker.ts: the one `/api/events` EventSource, or the browser
-// link; see lib/event-stream-protocol.ts for why).
+// (lib/event-stream-worker.ts: the one `/api/events` EventSource; see
+// lib/event-stream-protocol.ts for why).
 // Semantics follow EventSource: `onerror` with readyState CONNECTING means
 // the stream is reconnecting on its own (a later `onopen` follows);
 // CLOSED is fatal and the caller decides whether to open a new stream.
@@ -33,34 +33,6 @@ type WorkerMessage =
   | { id: number; type: "open" }
   | { id: number; type: "message"; data: string }
   | { id: number; type: "error"; readyState: typeof EVENT_STREAM_CONNECTING | typeof EVENT_STREAM_CLOSED };
-
-/** The worker's transport, on attach once known and on every change. */
-type TransportMessage = { transport: BrowserTransport };
-
-/** An agent command's answer: the server's (over the browser link or HTTP) or a local 413/503 from the worker. */
-export interface CommandReply {
-  status: number;
-  body: unknown;
-  via: "ws" | "http";
-  recvAt: number | null;
-  repliedAt: number | null;
-  attempts: number;
-  deduped: boolean;
-  behindBytes: number;
-  /** What it went over: `"link"`, or `"http"` for a POST. */
-  socket: string;
-  /** Bytes queued ahead of it at send that were this or other sessions' commands (spec D6 "Uplink"); null when never sent. */
-  behindSameBytes: number | null;
-  behindOtherBytes: number | null;
-  /** Other sessions' large frames its reply arrived behind (spec D6 "Downlink"); null without a measure. */
-  replyBehindOtherBytes: number | null;
-}
-
-/** The worker's answer to a `cmd`; `http` when it is in SSE mode, so the tab POSTs the command itself. */
-type CommandMessage = { cmd: number; http: true } | ({ cmd: number } & Omit<CommandReply, "via">);
-
-/** The worker about an upload: progress (the bytes the host has), its failure, or `http` (SSE mode: the tab uploads it). */
-type UploadMessage = { up: string; received: number; done: boolean; proof?: string } | { up: string; error: { status: number; code: string; message: string } } | { up: string; http: true };
 
 type DiagnosticsMessage = { diag: number; data: ConnectionDiagnostics };
 
@@ -129,19 +101,13 @@ function transportClientId(): string {
 class Transport {
   private nextId = 1;
   private readonly streams = new Map<number, MultiplexedEventStream>();
-  private readonly commands = new Map<number, (reply: CommandReply | null) => void>();
   private readonly outboxWrites = new Map<number, { resolve: () => void; reject: (error: Error) => void }>();
-  private readonly uploads = new Map<string, (message: UploadMessage) => void>();
   private readonly diagnostics = new Map<number, (data: ConnectionDiagnostics | null) => void>();
-  mode: BrowserTransport = "sse";
 
   constructor(private readonly port: WorkerPort) {
     port.onmessage = (event) => {
-      const message = event.data as WorkerMessage | TransportMessage | CommandMessage | UploadMessage | DiagnosticsMessage | OutboxMessage;
-      if ("transport" in message) this.mode = message.transport;
-      else if ("cmd" in message) this.answer(message);
-      else if ("up" in message) this.uploads.get(message.up)?.(message);
-      else if ("diag" in message) this.diagnostics.get(message.diag)?.(message.data);
+      const message = event.data as WorkerMessage | DiagnosticsMessage | OutboxMessage;
+      if ("diag" in message) this.diagnostics.get(message.diag)?.(message.data);
       else if ("outboxAdded" in message || "outboxDropped" in message || "outboxReconciled" in message) {
         const n = "outboxAdded" in message ? message.outboxAdded : "outboxDropped" in message ? message.outboxDropped : message.outboxReconciled;
         const pending = this.outboxWrites.get(n);
@@ -158,11 +124,6 @@ class Transport {
     };
     this.holdLifetimeLock();
     window.addEventListener("pagehide", () => {
-      // The worker aborts these on bye, including when this page enters the bfcache. 410, not a 5xx: the host copy is
-      // gone, so the chip offers Retry instead of resuming by itself (spec U2).
-      for (const [id, listener] of [...this.uploads]) {
-        listener({ up: id, error: { status: 410, code: "upload_failed", message: "The upload failed. Retry it." } });
-      }
       postOutboxOnExit();
       this.port.postMessage({ op: "bye" });
     });
@@ -170,7 +131,7 @@ class Transport {
       // Back from the bfcache: pagehide already released our subscriptions.
       if (event.persisted) for (const stream of this.streams.values()) stream.resume();
     });
-    // The worker redials its link when the network or the page comes back.
+    // The worker retries its outbox and upload cancels when the network or the page comes back.
     this.wake("init");
     document.addEventListener("visibilitychange", () => this.wake(document.visibilityState === "visible" ? "visible" : "hidden"));
     window.addEventListener("online", () => this.wake("online"));
@@ -197,14 +158,6 @@ class Transport {
     this.streams.delete(id);
   }
 
-  command(sessionId: string, req: string, body: string, type: string): Promise<CommandReply | null> {
-    return new Promise((resolve) => {
-      const n = this.nextId++;
-      this.commands.set(n, resolve);
-      this.port.postMessage({ op: "cmd", n, req, sessionId, body, type });
-    });
-  }
-
   addToOutbox(entry: Omit<LocalOutboxEntry, "state" | "error">): Promise<void> {
     return new Promise((resolve, reject) => {
       const n = this.nextId++;
@@ -228,12 +181,6 @@ class Transport {
     });
   }
 
-  private answer({ cmd, ...reply }: CommandMessage): void {
-    const resolve = this.commands.get(cmd);
-    this.commands.delete(cmd);
-    resolve?.("http" in reply ? null : { ...reply, via: "ws" });
-  }
-
   requestDiagnostics(): Promise<ConnectionDiagnostics | null> {
     return new Promise((resolve) => {
       const n = this.nextId++;
@@ -248,26 +195,14 @@ class Transport {
     });
   }
 
-  /** Hands the worker the File itself: it reads the bytes, so the tab holds none. `listener` hears until done, a
-   * failure or `http`. */
-  upload(id: string, file: File, hostId: string, listener: (message: UploadMessage) => void): void {
-    this.uploads.set(id, (message) => {
-      if (!("received" in message) || message.done) this.uploads.delete(id);
-      listener(message);
-    });
-    this.port.postMessage({ op: "upload", id, host: hostId, name: file.name, type: file.type, blob: file });
+  /** A new upload under `id`: the worker drops a cancel it still holds for it. */
+  keepUpload(id: string): void {
+    this.port.postMessage({ op: "upload", id });
   }
 
-  /** The worker keeps it until the server has it (a link or request that fails is retried), whatever its mode. */
+  /** The worker keeps it until the server has it (a request that fails is retried). */
   abortUpload(id: string, host: string): void {
-    this.uploads.delete(id);
     this.port.postMessage({ op: "up_abort", id, host });
-  }
-
-  /** Stop the sender but retain the host's staged bytes for a later Retry. */
-  pauseUpload(id: string): void {
-    this.uploads.delete(id);
-    this.port.postMessage({ op: "up_pause", id });
   }
 
   /** The worker script failed to load/run: fail every stream (fatal), so the
@@ -277,28 +212,6 @@ class Transport {
     const streams = [...this.streams.values()];
     this.streams.clear();
     for (const stream of streams) stream.receive({ id: stream.id, type: "error", readyState: EVENT_STREAM_CLOSED });
-    // The dead worker's uploads go on over HTTP from the host's offset.
-    const uploads = [...this.uploads.entries()];
-    this.uploads.clear();
-    for (const [id, listener] of uploads) listener({ up: id, http: true });
-    // The dead worker may have sent them: answered like a socket that dropped before the reply.
-    for (const resolve of this.commands.values()) {
-      resolve({
-        status: 503,
-        body: { error: "The connection to tau dropped before the answer arrived; the command may have run.", code: "transport_lost" },
-        via: "ws",
-        recvAt: null,
-        repliedAt: null,
-        attempts: 1,
-        deduped: false,
-        behindBytes: 0,
-        socket: "worker",
-        behindSameBytes: null,
-        behindOtherBytes: null,
-        replyBehindOtherBytes: null,
-      });
-    }
-    this.commands.clear();
     // It may have died before committing the change: the caller keeps the draft or held bubble.
     for (const { reject } of this.outboxWrites.values()) reject(new Error("The message change was not saved. Try again."));
     this.outboxWrites.clear();
@@ -424,13 +337,6 @@ export function recordTransportSample(sample: Record<string, unknown>): void {
 /** The Connection tab's snapshot from the worker; null without a transport or when the worker does not answer. */
 export function requestConnectionDiagnostics(): Promise<ConnectionDiagnostics | null> {
   return transport ? transport.requestDiagnostics() : Promise.resolve(null);
-}
-
-/** Sends an agent command over the worker's browser link (transport `ws`): null (or a promise of null, when the worker
- * turns out to be on SSE) means the caller POSTs it instead. `type` is the command's, so the worker never parses a
- * body of up to 8 MB to learn it. */
-export function sendSessionCommand(sessionId: string, req: string, body: string, type: string): Promise<CommandReply | null> | null {
-  return transport?.mode === "ws" ? transport.command(sessionId, req, body, type) : null;
 }
 
 /** Same generator as the worker's ids (spec O2). */
@@ -559,7 +465,7 @@ export interface UploadHandle {
   abort(): void;
 }
 
-/** HTTP PUT bodies in SSE mode (spec U4). */
+/** HTTP PUT bodies (spec U4). */
 const HTTP_UPLOAD_BYTES = 1024 * 1024;
 
 /** Back-off before each automatic resume; the last value repeats. */
@@ -569,9 +475,8 @@ const RESUME_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 15_000];
 const RESUME_GIVE_UP_MS = 5 * 60_000;
 
 /**
- * Uploads `file` to `hostId`'s staging area (docs/specs/2026-11-02-file-uploads-design.md U4): over the worker's browser
- * link in the `ws` transport, else over HTTP. `onProgress` gets the bytes the host has. Passing the `id` of a failed
- * upload resumes it from the host's offset. A transient failure resumes by itself after a back-off: `onReconnecting`
+ * Uploads `file` to `hostId`'s staging area over HTTP (docs/specs/2026-11-02-file-uploads-design.md U4). `onProgress`
+ * gets the bytes the host has. Passing the `id` of a failed upload resumes it from the host's offset. A transient failure resumes by itself after a back-off: `onReconnecting`
  * gets its error while it waits, and null once the host answers again.
  */
 export function uploadFile(
@@ -582,8 +487,6 @@ export function uploadFile(
   onReconnecting: (error: unknown) => void = () => {},
 ): UploadHandle {
   const controller = new AbortController();
-  let viaLink = false;
-  let link: Transport | null = null;
   let highest = 0;
   let failures = 0;
   let outageAt: number | null = null;
@@ -602,7 +505,7 @@ export function uploadFile(
     }
     onProgress(received);
   };
-  // One start: the transport is chosen anew each time (it may have changed while the upload waited).
+  // One start: POST resumes it at the host's offset.
   const attempt = () => new Promise<{ proof?: string }>((resolve, reject) => {
     const request = new AbortController();
     let settled = false;
@@ -625,7 +528,6 @@ export function uploadFile(
       expired = true;
       finish(new UploadFailedError(504, "upload_stalled", "The upload stopped making progress"));
       request.abort();
-      if (viaLink) link?.pauseUpload(id);
     };
     const armDeadline = () => {
       clearTimeout(timer);
@@ -650,20 +552,8 @@ export function uploadFile(
     if (controller.signal.aborted) return cancel();
     if (deadline !== null && Date.now() >= deadline) return expire();
     armDeadline();
-    link = transport?.mode === "ws" ? transport : null;
-    const overHttp = () => {
-      if (settled) return;
-      viaLink = false;
-      uploadOverHttp(id, file, hostId, report, request.signal).then((result) => finish(undefined, result), finish);
-    };
-    viaLink = link !== null;
-    if (!link) return overHttp();
-    link.upload(id, file, hostId, (message) => {
-      if (settled) return;
-      if ("http" in message) overHttp();
-      else if ("error" in message) finish(new UploadFailedError(message.error.status, message.error.code, message.error.message));
-      else if (report(message.received) && message.done) finish(undefined, typeof message.proof === "string" ? { proof: message.proof } : {});
-    });
+    transport?.keepUpload(id);
+    uploadOverHttp(id, file, hostId, report, request.signal).then((result) => finish(undefined, result), finish);
   });
   const promise = (async () => {
     for (;;) {

@@ -1,7 +1,5 @@
 // Wire format between the main tau server and the `tau host` daemon.
-// Pure: no I/O and no Next or `@/` imports, so both sides share it. The browser link (lib/browser-link.ts and the
-// worker it talks to, lib/event-stream-worker.ts) reuses its transport pieces: LINK_LIMITS' piece, window and liveness
-// values, LinkSender, PartJoiner, SeqWindow, Outbox, queuedLine and withSeq.
+// Pure: no I/O and no Next or `@/` imports, so both sides share it.
 import { isValidSessionId } from "../session-file-references-core";
 import { UPLOAD_ID_RE } from "../upload-limits";
 import type { SessionOps } from "./session-ops";
@@ -45,8 +43,7 @@ export const LINK_LIMITS = {
   pieceBytes: 256 * 1024,
   /** v5: a side sends queued lines and result pieces only while less than this is sent and not acked (spec D7), so a
    * small message never waits behind more than this plus one piece in kernel, proxy or peer buffers (768 KiB: about
-   * 3.1 s at 2 Mbit). It also caps throughput at about this per round trip. Control lines go regardless. The browser
-   * link's server side uses it as a cap: its window follows the link below it (lib/browser-link.ts `measure`). */
+   * 3.1 s at 2 Mbit). It also caps throughput at about this per round trip. Control lines go regardless. */
   unackedBytes: 2 * 256 * 1024,
   uplinkBytes: 16 * 1024 * 1024,
   blobBytes: 64 * 1024 * 1024,

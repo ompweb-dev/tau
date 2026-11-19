@@ -32,7 +32,6 @@ import {
   updateNotificationPrefs,
   type NotificationSupport,
 } from "@/lib/notification-client";
-import { BROWSER_TRANSPORTS, type BrowserTransport } from "@/lib/event-stream-protocol";
 import { setConnectionDiagnosticsEnabled, useConnectionDiagnosticsEnabled } from "@/lib/connection-diagnostics-prefs";
 import type { GithubActionsOperation, GithubActionsPermission, GithubActionsPermissions } from "@/lib/web-settings";
 const SettingsTabLoading = () => {
@@ -147,7 +146,6 @@ const SETTING_INDEX: SettingIndexEntry[] = [
   { id: "ui-scale", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.uiScale", descKey: "settingsConfig.uiScaleDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Interface Scale", fallbackDesc: "Adjust overall UI zoom and display density across sidebars, dialogs, buttons, and toolbars.", scope: "UI" },
   { id: "touch-targets", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.touchTargets", descKey: "settingsConfig.touchTargetsDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Touch Targets", fallbackDesc: "Adjust interactive target sizes for buttons and toolbar controls.", scope: "UI" },
   { id: "message-during-active-run", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.messageDuringActiveRun", descKey: "settingsConfig.messageDuringActiveRunDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Message during active run", fallbackDesc: "What composer does on submit while agent runs. Steer interrupts; Queue follow-up delivers after finish.", scope: "UI" },
-  { id: "browser-transport", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.browserTransport", descKey: "settingsConfig.browserTransportDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Browser connection", fallbackDesc: "How browsers receive live updates and send chat commands: one WebSocket that picks up where it left off after a dropped connection (the default), or server-sent events + HTTP. A browser whose proxy blocks WebSockets falls back to server-sent events on its own. Every open browser switches within a few seconds.", scope: "UI" },
   { id: "connection-diagnostics", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.connectionDiagnostics", descKey: "settingsConfig.connectionDiagnosticsDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Show connection diagnostics", fallbackDesc: "Adds a Connection tab to the right panel showing the connection this browser uses (WebSocket or server-sent events), its status and delivery latency statistics. Applies to this browser only.", scope: "UI" },
   // AI Model Defaults
   { id: "reasoning", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.reasoning", descKey: "settingsConfig.reasoningDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Reasoning", fallbackDesc: "Default effort level for thinking-capable models.", scope: "Native OMP" },
@@ -469,62 +467,6 @@ function UploadRetentionSetting() {
         disabled={days === undefined || saving}
         onChange={(nextValue) => void change(nextValue === "null" ? null : Number(nextValue))}
         options={choices.map((choice) => (({ value: String(choice), label: choice === null ? t("settingsConfig.uploadRetentionNever") : tn("settingsConfig.uploadRetentionDays", choice, { count: choice }) })))}
-      />
-    </NativeSetting>
-  );
-}
-
-const BROWSER_TRANSPORT_LABELS: Record<BrowserTransport, string> = {
-  sse: "settingsConfig.browserTransportSse",
-  ws: "settingsConfig.browserTransportWs",
-};
-
-/** Server-side tau setting (lib/web-settings.ts): every open browser follows a save within a few seconds. */
-function BrowserTransportSetting() {
-  const { t } = useI18n();
-  const [transport, setTransport] = useState<BrowserTransport | null>(null);
-  // Blocks a second change until the save lands: two PUTs in flight could finish out of order and leave the older one saved.
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/web-settings")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { browserTransport?: BrowserTransport } | null) => {
-        if (alive) setTransport(data?.browserTransport ?? "ws");
-      })
-      .catch(() => { if (alive) setTransport("ws"); });
-    return () => { alive = false; };
-  }, []);
-  const change = async (next: BrowserTransport) => {
-    if (!transport) return;
-    const previous = transport;
-    setTransport(next);
-    setSaving(true);
-    try {
-      const res = await fetch("/api/web-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ browserTransport: next }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (error) {
-      setTransport(previous);
-      toast.error(t("settingsConfig.browserTransportSaveFailed"), error instanceof Error ? error.message : String(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <NativeSetting searchId="browser-transport" label={t("settingsConfig.browserTransport")} description={t("settingsConfig.browserTransportDesc")} scope="UI">
-      <ThemedSelect
-        style={nativeSelectStyle}
-        value={transport ?? "ws"}
-        disabled={transport === null || saving}
-        onChange={(nextValue) => {
-          const next = BROWSER_TRANSPORTS.find((mode) => mode === nextValue);
-          if (next) void change(next);
-        }}
-        options={BROWSER_TRANSPORTS.map((mode) => (({ value: mode, label: t(BROWSER_TRANSPORT_LABELS[mode]) })))}
       />
     </NativeSetting>
   );
@@ -1430,7 +1372,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                       ]}
                     />
                   </NativeSetting>
-                  <BrowserTransportSetting />
                   <NativeSetting searchId="connection-diagnostics" label={t("settingsConfig.connectionDiagnostics")} description={t("settingsConfig.connectionDiagnosticsDesc")} scope="UI">
                     <ToggleSwitch checked={connectionDiagnostics} onChange={setConnectionDiagnosticsEnabled} />
                   </NativeSetting>

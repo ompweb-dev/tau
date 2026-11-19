@@ -23,7 +23,7 @@ import type {
 import { normalizeToolCalls } from "@/lib/normalize";
 import { hasVisibleAssistantContent } from "@/lib/assistant-response";
 import type { ThinkingModelMeta } from "@/lib/thinking-levels";
-import { HostOfflineError, TransportLostError, getOutboxScope, rememberOutboxScope, sendAgentCommand } from "@/lib/agent-client";
+import { HostOfflineError, getOutboxScope, rememberOutboxScope, sendAgentCommand } from "@/lib/agent-client";
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
@@ -282,18 +282,12 @@ function isSavedCopyOf(saved: AgentMessage, echo: AgentMessage): boolean {
   return isSameNativeMessage({ ...saved, clientMessageId: echo.clientMessageId }, echo) && imageSignature(saved) === imageSignature(echo);
 }
 
-/** Toast a send its connection stopped: the host's link (HostOfflineError) or
- *  this browser's session socket (TransportLostError). True when it may have
+/** Toast a send its connection stopped: the host's link (HostOfflineError). True when it may have
  *  left and still run, so the composer must not offer it again; null for any
  *  other error, which the caller reports itself. `promptIssued` false: the error
  *  came from a command before the prompt (get_state, set_model), so nothing was
  *  sent that could still run and the text goes back. */
 function toastStoppedSend(error: unknown, promptIssued = true): boolean | null {
-  if (error instanceof TransportLostError) {
-    if (!promptIssued) return null;
-    toast.info(translate("agentSession.transportLostMaybeSent"));
-    return true;
-  }
   if (!(error instanceof HostOfflineError)) return null;
   if (error.mayHaveRun && promptIssued) toast.info(translate("agentSession.hostOfflineMaybeSent", { detail: error.message }));
   else toast.error(translate("agentSession.hostOfflineSend", { detail: error.message }));

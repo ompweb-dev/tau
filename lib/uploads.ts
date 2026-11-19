@@ -19,7 +19,7 @@ const UPLOAD_IDLE_MS = 10 * 60_000;
 /** Aborts kept per host while it cannot take them; past this the oldest go (the daemon's sweep deletes those files). */
 const MAX_PENDING_ABORTS_PER_HOST = 1000;
 
-/** Who hears back about one upload: a browser link, or an HTTP request waiting for its chunk's ack. */
+/** Who hears back about one upload: an HTTP request waiting for its chunk's ack. */
 export interface UploadSink {
   ack(received: number, done: boolean, proof?: string): void;
   error(status: number, code: string, message: string): void;
@@ -362,9 +362,10 @@ function forward(id: string, upload: Upload, bytes: Uint8Array): void {
   upload.touched = Date.now();
 }
 
-/** Forward one chunk (a binary frame's payload) to its upload's host. False when `id` is not an upload of `owner`,
- * `sink` is not its current sender (a WS link superseded by an HTTP resume or a newer start: its late frames would land
- * after the offset that start reported), or the chunk is over pieceBytes. */
+/** Forward one chunk to its upload's host. False when `id` is not an upload of `owner`, `sink` is not its current sender
+ * (superseded by a newer start: its late chunks would land after the offset that start reported), or the chunk is over
+ * pieceBytes. shortcut: no production caller since the browser link went (putUploadChunk forwards inline); kept as the
+ * primitive lib/uploads.test.mjs drives the host link with, fold it into those tests if they are reworked. */
 export function forwardUploadFrame(owner: string, id: string, bytes: Uint8Array, sink: UploadSink): boolean {
   const upload = uploads().get(id);
   if (!upload || upload.owner !== owner || upload.sink !== sink || bytes.byteLength > LINK_LIMITS.pieceBytes) return false;
@@ -432,12 +433,6 @@ export async function abortUpload(id: string, owner: string, hostId?: string): P
     return deliverAbort(upload.hostId, id);
   }
   if (hostId && UPLOAD_ID_RE.test(id) && getHost(hostId)) return deliverAbort(hostId, id);
-}
-
-/** Detach a sink (its browser link is gone) without aborting the upload; a later startUpload resumes it. */
-export function releaseUploadSink(id: string, sink: UploadSink): void {
-  const upload = uploads().get(id);
-  if (upload?.sink === sink) upload.sink = null;
 }
 
 const PROMPT_TYPES: Record<string, true> = { prompt: true, steer: true, follow_up: true };

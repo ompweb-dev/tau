@@ -110,7 +110,6 @@ app/api/
   agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
   agent/[id]/route.ts             GET state | POST any channel command
   events/route.ts                 GET multiplexed SSE | POST subscribe/unsubscribe channels
-  events/link/route.ts            GET WebSocket upgrade: the browser link (lib/browser-link.ts), bound to the request's web session; gated like every API route, 426 without an upgrade
   transport-metrics/route.ts      GET { now } (the SSE clock probe) | POST { samples } → <agent dir>/omp-web/transport-metrics.jsonl
   hosts/route.ts                  GET hosts (this machine first) | POST { label } → token once + login command | PATCH { id, label?, allowAgentStart?, shareCredentials? } (`local`: label only, empty resets to "This machine"; `shareCredentials` on `local` is 400) | DELETE ?id= revoke (registry first, then close the link); 503 if hosts.json is unreadable
   hosts/link/route.ts             GET WebSocket upgrade (the `ompweb host` daemon; bearer checked before the upgrade, skipped by the `proxy.ts` gate) | POST 426 for pre-WebSocket daemons
@@ -144,7 +143,7 @@ app/api/
   stt/route.ts                    POST audio (+scope) → 202 { jobId } | GET ?scope= live jobs (lib/stt-jobs.ts)
   stt/[jobId]/route.ts            GET job state | POST retry with kept audio | DELETE ?claim= claim/discard
   stt/[jobId]/audio/route.ts      GET the kept recording (audio/* only) for playback
-  uploads/route.ts                POST { id, host, name, size, type } start/resume a composer upload (SSE-mode path of the browser link's `up_start`) → { received, done }
+  uploads/route.ts                POST { id, host, name, size, type } start/resume a composer upload → { received, done }
   uploads/[id]/route.ts           PUT ?offset=N raw body ≤ 1 MiB, answered once the host acked it (409 `upload_offset` with { received }) | DELETE abort
   worktrees/route.ts              GET/POST/DELETE git worktrees
 
@@ -183,14 +182,13 @@ lib/
     watch-store.ts     `<agent dir>/omp-web/github-watches.sqlite` (WAL): watches, cursors, pending updates, posted comment ids, read grants; `removeSessionWatches`/`renameSession` do nothing when the file does not exist (a session delete never creates, or on Windows holds open, a store)
     watcher.ts         60 s poller: pending row, then a `prompt` outbox add, then the cursor on acceptance
     tools.ts           the five tools (`GITHUB_TOOL_NAMES`, `GITHUB_REPLAY_SAFE_TOOLS`), run after agent-tools' enabled and rate checks
-  agent-client.ts      agent commands from the tab: POST /api/agent/[id], or the worker's browser link in the `ws` transport; records each command's `action` sample
-  agent-command.ts     `runAgentCommand`: the one command path behind POST /api/agent/[id] and a browser link's `cmd`
-  browser-link.ts      `/api/events/link`: Bun `websocket` handler for the browser link (sequencing, pieces, resume, `(session, rid)` dedupe)
+  agent-client.ts      agent commands from the tab: POST /api/agent/[id]; records each command's `action` sample
+  agent-command.ts     `runAgentCommand`: the command path behind POST /api/agent/[id]
   btw.ts               /btw side-question records + pure frame/snapshot merge (order-safe)
   draft-store.ts       local draft persistence helpers
   event-stream.ts      tab-side EventSource-shaped streams over the shared worker
-  event-stream-worker.ts  the shared worker: the one EventSource or browser link per browser (bundled by server/client-env.ts)
-  event-stream-hub.ts  server connections + running/session/file channels for /api/events (SSE) and the browser link (`FrameSink`); `broadcastBrowserTransport`
+  event-stream-worker.ts  the shared worker: the one EventSource per browser (bundled by server/client-env.ts)
+  event-stream-hub.ts  server connections + running/session/file channels for /api/events (SSE)
   event-stream-protocol.ts  wire contract shared by hub, route, and facade
   file-access.ts       allowed file roots for /api/files and worktrees
   file-authorization.ts  single allow-list gate for /api/files and the file channel: allowed roots, the session's own `local://` directory (confined, symlinks included) or the session transcript's references
@@ -309,7 +307,7 @@ bunfig.toml           Bun dev-server bundling: tailwind plugin and the OMP_WEB_P
 The table is static imports, not a runtime glob, so `bun build --compile` (`scripts/build-binary.ts`) bundles every handler. `dispatch` answers HEAD from `GET`, OPTIONS and a missing method (405 with `allow`), passes `params` as a promise (plus `disableIdleTimeout`, below), and turns a throw into a 500 JSON body.
 
 ### Bun server (`server/`)
-- Bun's 10 s `idleTimeout` stays on: it reaps sockets that stall before or during a request, and it also cuts a handler still working after 10 s. So `handle` (`server/app.ts`) calls `server.timeout(request, 0)` for an `/api/` request that `proxy()` reports as `"authenticated"` (never `"public"`) and puts the 10 s back once the handler returns or throws: the setting outlives the response on a keep-alive socket. A handler whose response stays open without traffic (SSE `/api/events`, the login SSE, the clone/search/bash-output/file streams) calls `disableIdleTimeout` from the route context (`dispatch`, `server/routes.ts`) to keep it off until that stream ends or is cancelled; a new stream must do the same, or it is cut after 10 s idle. The host link is no longer an idle-lift stream: it is a WebSocket, and an upgraded socket is outside the HTTP idle timeout (so is the browser link, `/api/events/link`). `server/app.ts` passes `upgrade` in the route context (`server.upgrade(request, { data })`) and one `websocket` handler: a socket whose `ws.data.kind` is `"browser"` goes to `browserLink` (`lib/browser-link.ts`, with the close code: 1000/1001 end the link, anything else keeps it for a resume), any other to `hostLinkSocket`. Bun's WebSocket limits (`maxPayloadLength`, `backpressureLimit`, `idleTimeout`) are per server, so browser links share the host link's; `browserLink` caps its own frames at a piece (256 KiB). A handler that upgraded returns `undefined`, which `dispatch` and `handle` pass through without `finalizeResponse` or the idle-timeout restore. `maxRequestBodySize` is left at Bun's 128 MiB default, above the 101 MB upload cap; do not lower it.
+- Bun's 10 s `idleTimeout` stays on: it reaps sockets that stall before or during a request, and it also cuts a handler still working after 10 s. So `handle` (`server/app.ts`) calls `server.timeout(request, 0)` for an `/api/` request that `proxy()` reports as `"authenticated"` (never `"public"`) and puts the 10 s back once the handler returns or throws: the setting outlives the response on a keep-alive socket. A handler whose response stays open without traffic (SSE `/api/events`, the login SSE, the clone/search/bash-output/file streams) calls `disableIdleTimeout` from the route context (`dispatch`, `server/routes.ts`) to keep it off until that stream ends or is cancelled; a new stream must do the same, or it is cut after 10 s idle. The host link is no longer an idle-lift stream: it is a WebSocket, and an upgraded socket is outside the HTTP idle timeout. `server/app.ts` passes `upgrade` in the route context (`server.upgrade(request, { data })`) and one `websocket` handler: a socket whose `ws.data.kind` is `"maintenance"` goes to `maintenanceSocket`, any other to `hostLinkSocket`. A handler that upgraded returns `undefined`, which `dispatch` and `handle` pass through without `finalizeResponse` or the idle-timeout restore. `maxRequestBodySize` is left at Bun's 128 MiB default, above the 101 MB upload cap; do not lower it.
 - Bun's router matches the **raw** path, while `request.url` is normalized (`..` and `%2e%2e` resolved). The gate and handlers read `request.url`, so each route re-matches the normalized path against its own `URLPattern` after the gate and answers 404 if it no longer matches. Never serve a gated route under an ungated path.
 - Redirects carry a relative `Location` (`request.url` is always `http://` under Bun, so an absolute URL would leave https behind a TLS proxy).
 - `Response.redirect()` headers are immutable; `finalizeResponse` (`server/http.ts`) copies every answer into a fresh `Response` to set the security headers and gzip. Do not mutate a handler's response headers elsewhere.
@@ -1104,7 +1102,7 @@ pi's wire `message_update` is delta-only (pi `docs/json.md`): it carries
   base): the delta is not forwarded and the wrapper asks the host link for a
   resync (its snapshot rebuilds the message), once until that assistant
   message or the run ends.
-- Backpressure (`event-stream-hub.ts`, SSE and WebSocket sinks): a behind socket
+- Backpressure (`event-stream-hub.ts`, the SSE sink): a behind socket
   queues `message_update` frames; consecutive deltas of one block concatenate,
   a whole message replaces the queued updates of its message, and nothing is
   dropped or reordered. Merged frames keep the latest frame's sequence and emit
@@ -1195,8 +1193,7 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
 - **Browser leg.** `addToOutbox` (`lib/event-stream.ts`) hands the entry to the
   event-stream worker, which commits it to IndexedDB (`omp-web-outbox`/`entries`)
   and only then answers, so the composer clears only then. Missing IndexedDB
-  or a failed transaction rejects the add and preserves the draft. The worker sends `outbox_add` over its current transport
-  (a link `cmd`, or POST `/api/agent/[id]` in SSE mode), one entry per session at
+  or a failed transaction rejects the add and preserves the draft. The worker POSTs `outbox_add` to `/api/agent/[id]`, one entry per session at
   a time, oldest first; 401/408/429/5xx/network retry with backoff (1 s → 30 s,
   at once on a wake), other 4xx mark it failed. Delete its browser copy only
   after a matching successful outbox receipt, not an arbitrary HTTP 200, and
@@ -1216,9 +1213,7 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   preserve drafts and stored rows rather than claiming successful storage.
 - **Idempotent by id.** `outbox_add`/`outbox_remove` are agent
   commands in `runAgentCommand`, before any wrapper spawn; a repeat of a known
-  id answers the stored entry. These and `outbox_scope` are in
-  `isIdempotentCommand`, so the link's `(session, rid)` dedupe never remembers
-  them and a resync resends them.
+  id answers the stored entry.
 - **Scope follows the installation, not the cookie.** The state route's
   `outboxScope` (or `outbox_scope` command) is a nonsecret installation/auth
   fingerprint, cached for offline enqueue. Every browser entry persists it
@@ -1359,8 +1354,7 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   tools + chat + file watch per tab) froze everything after ~2 tabs, so
   **never add a new `EventSource`** for live data: add a channel instead.
 - `lib/event-stream-worker.ts` (SharedWorker; dedicated Worker where
-  SharedWorker is missing) holds the browser's one connection: by default the browser link below, one WebSocket;
-  the only `/api/events` EventSource is the fallback (a stored `sse` setting, or a proxy that refuses the upgrade). It multiplexes every tab's subscriptions:
+  SharedWorker is missing) holds the browser's one connection, the only `/api/events` EventSource. It multiplexes every tab's subscriptions:
   frames arrive as `event: <subId>`, control frames as `event: mux`
   (`hello`/`open`/`end`). Subscriptions are attached with `POST /api/events`.
   `buildEventStreamWorker` (`server/client-env.ts`) bundles it into one classic
@@ -1384,92 +1378,29 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   never piggyback a frame type on another consumer's channel. `notifications`
   and `host-tools` are subscribed from `AppShell`, so they outlive the sidebar
   (which unmounts while Settings is open).
-- **Browser link** (`browserTransport: "ws"`; `docs/specs/2026-11-01-browser-link-design.md`). The server's
-  setting (`omp-web-settings.json`, `lib/web-settings.ts`; `"ws"` default, any other stored value except `"sse"`, the
-  old `ws-*` experiment modes included, reads as `"ws"`) picks the worker's connection. With `sse` everything
-  above holds and the worker opens no WebSocket. Switch it in Settings → Interface & Behavior → "Browser
-  connection" or with `PUT /api/web-settings {"browserTransport":"ws"|"sse"}`; a change
-  broadcasts a `transport` control frame on every connection and every `hello` carries it. From a shell
-  (production on 127.0.0.1:30185, the trusted header from the pr-watcher env file; no `Origin`, so no
-  origin check):
-  ```bash
-  curl -sS -X PUT http://127.0.0.1:30185/api/web-settings \
-    -H "x-omp-web-auth: $(sed -n 's/^OMP_WEB_TRUSTED_HEADER_SECRET=//p' /opt/omp-deployment/pr-watcher.env)" \
-    -H 'content-type: application/json' -d '{"browserTransport":"ws"}'
-  ```
-  - **One WebSocket per browser** at `GET /api/events/link` (`lib/browser-link.ts`), gated like every API
-    route, carries every subscription and every agent command and reply. Reconcile polls, `POST
-    /api/agent/new`, files, settings and the metrics POST stay HTTP.
-  - **The host link's delivery, reused** from `lib/hosts/link-protocol.ts`: sequenced lines both ways
-    (`LinkSender`, `SeqWindow`, `Outbox`), acked and resent after a reconnect; lines over 256 KiB as `part`s
-    (`PartJoiner`); per-key queues served round-robin (a subscription's frames, a session's commands or
-    replies, `mux`); a session's commands stay in order, so Stop never overtakes the prompt it stops. The
-    server keeps at most about 1 s of the measured ack rate unacked below the socket (64 KiB to 512 KiB,
-    `measure` in `lib/browser-link.ts`; only a stretch where the window or the socket's backpressure held lines back resizes it), the
-    worker at most 512 KiB. `welcome`/`ack`/`ping`/`pong` skip the queues. So a command's reply waits behind
-    about a second of the link plus a piece per busy key, never behind a snapshot. The pacing loops
-    are the browser link's own copies: the server's mirrors the hub's (`send` → `-1` → `drain`), the
-    worker's the daemon's (`bufferedAmount` under 2 pieces); a fix to either original must be carried over
-    (`lib/browser-link.integration.test.mjs` runs the real worker against the real server end). A socket
-    that has not said hello within 10 s is closed 1008.
-  - **Liveness:** the server pings every 15 s; each side drops a socket after 30 s without any frame.
-    Command delivery additionally watches sequence-ack progress, including multipart uploads: initially
-    5–6 s without progress redials with trigger `command`, even while updates arrive. Each such redial
-    doubles the deadline up to 30 s; an advancing ack on the current socket covering all watched
-    command pieces resets it to 5 s (a resume welcome does not). Acknowledged commands waiting for
-    their results never cause this redial. Replay and resync retain the rules below.
-    Wakes: `online` and a network change redial at once and reset dial backoff to 1 s; `visible`
-    pings and redials a socket silent for 3 s.
-  - **Resume.** The link outlives its socket for 2 min (`LINK_RESUME_MS`): the worker's `hello` carries
-    its token and `ack`, the server (same web session only: SHA-256 of the session cookie, else
-    `trusted`/`open`) reattaches and both sides resend what the other missed. Subscriptions stay open on
-    the server, so the tabs see nothing: no `error`, no second `open`, no snapshot. While the socket is
-    gone or lines wait for the window, `message_update`s merge (`queueUpdate`) and go on the next ack. A socket that holds unacked bytes and gets no ack for 120 s (`ackMs`; pings do not count) is closed: its link detaches, resumable, and falls under the total budget. A link slower than about 17 kbit/s cannot finish a 256 KiB piece before that deadline.
-  - **Resync** when the gap is gone (2 min passed, the backlog passed 32 MiB and the socket closed 4410,
-    all links together passed 256 MiB and this one's socket was gone longest, or the server restarted):
-    `welcome {resumed: false}`, both sides start over, every stream gets CONNECTING and subscribes again
-    (fresh snapshots, as an SSE reconnect). Sent commands go again (same `rid`) when idempotent
-    (`isIdempotentCommand`: `get_*`, `set_host_tools`,
-    `set_host_uri_schemes`; never `abort`; the server does not remember those) or when the
-    server is the same and their first send was within `COMMAND_DEDUPE_MS` (10 min; the server's
-    `(session, rid)` dedupe answers a repeat with `deduped: true`), else 503 `transport_lost`
-    (`TransportLostError`). A command with no link for 15 s answers 503 `transport_unavailable`. A worker
-    done with its link closes it 1000 (the server drops it at once); 4000 is its own redial.
-    The server answers a command whose JSON is over the route's 8 MiB body cap (UTF-8 bytes; the worker
-    checks first, the server again for a joined line, whose cap leaves room for the envelope) 413
-    `request_too_large`, and a command that changes something 429 `too_many_commands` while `DEDUPE_MAX`
-    (500) remembered ones are all still inside `COMMAND_DEDUPE_MS`: neither runs, neither is remembered.
-  - **Fallback.** A socket that closes before it opens gets a plain `GET /api/events/link`: offline, 401,
-    502, 503 or 504 redial. Any other answer (426: a proxy that drops Upgrade, but also a healthy server's
-    answer to a dial that failed as the network came back) is a refusal: 3 in a row, with no open between
-    and none while `navigator.onLine` is false, put this worker on SSE for 5 min. Close 4426 (another link
-    version) falls back at once.
-  - **One command path.** `runAgentCommand` (`lib/agent-command.ts`) is what `POST /api/agent/[id]` runs
-    after parsing and what a link `cmd` runs, so both answer identically. Command logic goes there.
-  - **Metrics** (both transports). Tabs and the worker record `action`, `event`, `reconnect` (with
-    `resumed` on the link), `hang` (HTTP only) and `dropped` samples tagged `transport` (`sse`/`ws`),
-    `socket`/`conn` (`sse`, `link`, `http`, `worker`) and `sockets`; the worker POSTs them to
-    `/api/transport-metrics` every 30 s or 200 samples (a probe not answered within 10 s is abandoned, a POST within 10 s plus its body at 2 KB/s; a failed POST keeps its samples, so a timeout after the server processed it can duplicate them). The route appends JSONL to `<agent
-    dir>/omp-web/transport-metrics.jsonl` (`.jsonl.1` above 20 MiB). One worker-wide clock (the
-    lowest-RTT of the last 20 link pings and SSE probes, at most 5 min old unless it is the newest sample) times every sample.
-    `bun scripts/transport-metrics.ts --since 2h` prints the per-transport summary (also `--until`,
-    `--client`, `--file`).
-  - **Connection tab** (right panel, both layouts, shown while Settings → Interface & Behavior → "Show connection
-    diagnostics" is on, `omp-web:connection-diagnostics`, per browser). It polls the worker (`diag` op,
-    `requestConnectionDiagnostics`) once a second while visible: the mode in effect, fallback, status (`idle` when
-    no connection is needed, `down` after `SEND_DEADLINE_MS` without a connection), the last reconnect, and
-    per-transport stats (mean, p50, p95, p99.9 from 1000 values, max) of the worker's last 30 min of samples (at most
-    20 000, kept beside the POST buffer). Command rows include confirmed successful replies only; app ↔ omp and round-trip rows skip commands whose reply does not confirm omp got them (`NO_OMP_REPLY_COMMANDS`: the `NO_SPAWN_REPLIES` the web app answers itself, a test keeps them included, plus the results `dispatchCommand` forwards without awaiting omp). A new command of either kind belongs there. Shared durations
-    come from `lib/transport-stats.ts`; one-way estimates use clock correction and assume symmetric latency.
-    Without a SharedWorker (Chrome for Android) each tab has its own worker, so the numbers are that tab's.
-  - **Worker rules.** Browser code: no `AbortSignal.timeout`/`any` or `Promise.withResolvers` (a test checks
-    the bundle). Every global the worker uses must be injectable into the `vm` context of
-    `lib/event-stream-worker.test.mjs`. The link URL is absolute (`new URL(path, self.location.href)`,
-    `http`→`ws`). Ids are `Math.random().toString(36).slice(2, 12) + Date.now().toString(36)`: insecure LAN
-    origins have no `crypto.randomUUID`.
-  - **Limits:** a socket stays authorized after logout until it closes; Bun buffers a browser frame up to the host
-    link's 64 MiB `maxPayloadLength` (per server) before the handler refuses it; a notification routed to a tab whose
-    link then resyncs is not shown there.
+- **Commands and uploads are HTTP.** Tabs POST agent commands to `/api/agent/[id]` (`lib/agent-client.ts`) and
+  upload over `/api/uploads` (`uploadFile`, `lib/event-stream.ts`); the worker sends only the outbox's `outbox_add`
+  POSTs and the upload cancels' DELETEs (kept until the server answers). There is no browser WebSocket: the one in
+  `server/app.ts` is the host link's (and the maintenance API's). A `browserTransport` key an older build stored in
+  the settings file is ignored.
+- **Metrics.** Tabs and the worker record `action`, `event`, `reconnect`, `hang` and `dropped` samples tagged
+  `transport` (`sse`), `socket`/`conn` (`sse`, `http`, `worker`) and `sockets`; the worker POSTs them to
+  `/api/transport-metrics` every 30 s or 200 samples (a probe not answered within 10 s is abandoned, a POST within 10 s plus its body at 2 KB/s; a failed POST keeps its samples, so a timeout after the server processed it can duplicate them). The route appends JSONL to `<agent
+  dir>/omp-web/transport-metrics.jsonl` (`.jsonl.1` above 20 MiB). One worker-wide clock (the
+  lowest-RTT of the last 20 SSE probes, at most 5 min old unless it is the newest sample) times every sample.
+  `bun scripts/transport-metrics.ts --since 2h` prints the per-transport summary (also `--until`,
+  `--client`, `--file`).
+- **Connection tab** (right panel, both layouts, shown while Settings → Interface & Behavior → "Show connection
+  diagnostics" is on, `omp-web:connection-diagnostics`, per browser). It polls the worker (`diag` op,
+  `requestConnectionDiagnostics`) once a second while visible: status (`idle` when no connection is needed, `down`
+  after 15 s without one), the last reconnect, and stats (mean, p50, p95, p99.9 from 1000 values, max) of the
+  worker's last 30 min of samples (at most 20 000, kept beside the POST buffer). Command rows include confirmed successful replies only; app ↔ omp and round-trip rows skip commands whose reply does not confirm omp got them (`NO_OMP_REPLY_COMMANDS`: the `NO_SPAWN_REPLIES` the web app answers itself, a test keeps them included, plus the results `dispatchCommand` forwards without awaiting omp). A new command of either kind belongs there. Shared durations
+  come from `lib/transport-stats.ts`; one-way estimates use clock correction and assume symmetric latency.
+  Without a SharedWorker (Chrome for Android) each tab has its own worker, so the numbers are that tab's.
+- **Worker rules.** Browser code: no `AbortSignal.timeout`/`any` or `Promise.withResolvers` (a test checks
+  the bundle). Every global the worker uses must be injectable into the `vm` context of
+  `lib/event-stream-worker.test.mjs`. Ids are `Math.random().toString(36).slice(2, 12) + Date.now().toString(36)`:
+  insecure LAN origins have no `crypto.randomUUID`.
 
 ### Running state + reconciliation
 - The sidebar subscribes to the `running` channel, backed by `subscribeRunningSessions()` in `lib/rpc-manager.ts`, so running badges update without polling.
@@ -1813,29 +1744,12 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   waits too. The Attached files block can push a prompt past the host link's
   line cap: the transport then refuses it before queueing with 413
   `request_too_large`, and the uploads stay registered for a shorter resend.
-- Bytes are forwarded, never re-encoded: the browser sends binary frames
-  `[n][id][payload]` (≤ `pieceBytes`) as `LinkSender` blob units keyed
-  `up:<id>`; `lib/browser-link.ts` accepts them only for uploads that link
-  started and hands the same bytes to `forwardUploadFrame` (`lib/uploads.ts`) with
-  that link's sink; frames are forwarded only while it is the upload's current
-  sink, so a WS sender superseded by an HTTP resume or newer start is refused;
-  `forwardUploadFrame` queues them as blob units on the host link (link v6; `hostVersion < 6`
-  → 426 `host_upgrade_required` on a remote host, `host_restart_required` on
-  `local`: an in-place upgrade keeps a running v4/v5 daemon, which is inside
-  `[MIN, LINK]`, so "This machine" needs `ompweb-host` restarted). Blob units
-  are outside both links' line windows; the worker's per-upload
-  `UPLOAD_WINDOW_BYTES` credit, refilled by the daemon's `upload_ack`, is the
-  flow control, and main enforces it: a frame putting `sent - received` over
-  `UPLOAD_WINDOW_BYTES + pieceBytes` stops the upload with 429
-  `upload_window_exceeded` (frames dropped until the next start; the socket
-  stays open). Binary frames are not resent: after a browser-link drop or a
-  web-server restart the worker re-sends `up_start {id, n, …}` (same id, `n` =
-  a worker-wide increasing sequence) and continues from the host's `received` in
-  the answer `up_ack {…, start: n}`. Each start has a fresh sink whose progress,
-  completion and errors retain `start: n`, including messages already queued
-  before a Retry. The worker ignores any mismatched generation before applying
-  an ack or error. On main the latest concurrent start wins; earlier starts
-  still answer their callers.
+- Bytes are forwarded, never re-encoded: the tab POSTs `/api/uploads` (start or resume, answered with the host's
+  `received`) and PUTs `?offset=N` bodies of at most 1 MiB, which `putUploadChunk` (`lib/uploads.ts`) cuts into
+  `pieceBytes` blob units on the host link (link v6; `hostVersion < 6` → 426 `host_upgrade_required` on a remote host,
+  `host_restart_required` on `local`), answered once the host acked its end. A chunk putting `sent - received` over
+  `UPLOAD_WINDOW_BYTES + pieceBytes` stops the upload with 429 `upload_window_exceeded`. On main the latest
+  concurrent start wins; earlier starts still answer their callers.
   Each host `uploadStart` also carries a fresh UUIDv4 `attempt`; the daemon
   echoes it on progress, completion and error `upload_ack`s. Main discards
   superseded-attempt acks even if they arrive after the newer start's reply.
@@ -1849,25 +1763,17 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   (`lib/event-stream.ts`) resumes 502/503/504 and HTTP network failures by
   itself (same id, back-off restarting after new bytes, chip shows
   "Reconnecting…") until an outage reaches 5 min, timed from its first
-  failure; other failures, and a bfcache pagehide (410), show Retry.
+  failure; other failures show Retry.
   Back-off and in-flight retries share the remaining outage budget; their
   watchdog resets only when acknowledged bytes advance. Expiry aborts the
-  HTTP request or sends tab-scoped `up_pause` to stop the worker without
-  deleting staged bytes, then settles with `upload_stalled` so Retry is usable.
+  HTTP request without deleting staged bytes, then settles with `upload_stalled` so Retry is usable.
   Checks after waking and before applying an ack prevent expired work reviving.
   HTTP body-read network errors propagate to the retry classifier (only JSON
   syntax errors use the fallback body). Network `TypeError`s use the existing
   localized network-error explanation in upload chip tooltips.
 - Limits on main: at most 32 unfinished uploads per owner (429
   `too_many_uploads`); an unfinished entry idle 10 min (no start, frame or ack)
-  is dropped from the registry (a later `up_start` re-registers it). The worker
-  fails an upload no start answer or ack advances for `UPLOAD_STALL_MS` (120 s)
-  with 504 `upload_stalled` and forgets it without aborting it on the host, so
-  the tab's automatic resume continues it. Page navigation settles pending
-  WebSocket-upload promises before the worker's `bye`: a composer retained by
-  bfcache shows Retry after restoration, not a permanently uploading chip. That
-  failure (410) gives the chip a new upload id, so its Retry starts over and the
-  old id's pending cancel (worker, HTTP DELETE or host) can never delete it.
+  is dropped from the registry (a later start re-registers it).
   The daemon's `sweep` deletes staged files older than 24 h and aborts open uploads
   idle (no start/write) over 24 h (`STAGED_MAX_AGE_MS`): at start, on every
   `uploadStart`, and every hour (`UPLOAD_SWEEP_INTERVAL_MS`). It never rejects
@@ -1882,20 +1788,18 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   `opTimeoutMs`.
 - Cancels are durable (spec U4 "Durable cancel"): the tab always hands
   `{op: "up_abort", id, host}` to the worker, which keeps it until the server
-  has it (link line until acked and resent on a resync; in `sse` mode a
-  `DELETE …?host=` with a 40 s deadline, retried until a 2xx or a 4xx other
+  has it (a `DELETE …?host=` with a 40 s deadline, retried until a 2xx or a 4xx other
   than 408/429). Main keeps an `uploadAbort` its host could not take (503/504)
   per host and resends it on that host's next hello (`onHostHello`). A Retry of
   the same id supersedes it on every layer: a new `uploadStart` drops a kept
   abort, an in-flight one that fails after the id is registered again is not
-  kept, and the worker drops its own pending cancel on a new upload of the id.
+  kept, and the worker drops its own pending cancel when the tab starts an upload of the id (`{op: "upload", id}`).
   An id main does not register goes to the browser's `host`
   if known. All of it is in memory: the hourly sweep is the backstop.
 - Error codes: composer uploads use `upload_id_conflict` (another upload has
   this id); `upload_conflict` stays the file manager's.
-- SSE mode uses the same registry over HTTP (`/api/uploads`). `requestOwner(req)`
-  (`lib/web-auth.ts`) still binds upload start, chunks and cancel to the original
-  login, and still binds browser-link resume; it is not made stable across login.
+- `requestOwner(req)` (`lib/web-auth.ts`) binds upload start, chunks and cancel to the original
+  login; it is not made stable across login.
   Attachment is also allowed by a server-issued, upload-specific completion proof
   in the same installation/auth scope and within the existing 24-hour lifetime.
   Main stores it privately before reporting completion; completion replays reuse

@@ -36,7 +36,7 @@ import {
   uploadRecovery,
   type AttachedUpload,
 } from "./ChatInput-uploads";
-import { discardUpload, uploadFile, UploadFailedError, type UploadHandle } from "@/lib/event-stream";
+import { discardUpload, uploadFile, type UploadHandle } from "@/lib/event-stream";
 import { randomUUID } from "@/lib/random-uuid";
 import { MAX_UPLOAD_BYTES, MAX_UPLOADS_PER_MESSAGE } from "@/lib/upload-limits";
 import { hostProjectKey, LOCAL_HOST_ID } from "@/lib/project-ordering";
@@ -696,9 +696,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     };
     handle.promise.then(
       ({ proof }) => settle({ status: "done", received: size, error: null, proof }),
-      // 410: the worker already cancelled it on its host (the page went into the back/forward cache). A Retry under a
-      // new id starts over, so the cancel still pending for this one can never reach it.
-      (error: unknown) => settle({ status: "error", error: uploadErrorMessage(error), ...(error instanceof UploadFailedError && error.status === 410 ? { id: randomUUID(), proof: undefined } : {}) }),
+      (error: unknown) => settle({ status: "error", error: uploadErrorMessage(error) }),
     );
   }, [patchUpload, t]);
 

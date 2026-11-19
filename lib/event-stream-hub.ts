@@ -12,11 +12,9 @@ import { subscribeSessionFileChanges } from "./session-watcher";
 import {
   MUX_CONTROL_EVENT,
   UNKNOWN_CONNECTION_CODE,
-  type BrowserTransportState,
   type EventStreamChannel,
   type MuxControlFrame,
 } from "./event-stream-protocol";
-import { browserTransportState } from "./web-settings";
 import { isDeltaUpdate, mergeDeltaUpdates } from "./message-delta";
 import { isRecord } from "./type-guards";
 
@@ -67,12 +65,7 @@ export function serverId(): string {
   return (globalThis.__ompServerId ??= randomUUID());
 }
 
-/** Tell every open connection the browser transport setting changed. */
-export function broadcastBrowserTransport(state: BrowserTransportState): void {
-  for (const connection of connections().values()) connection.control({ type: "transport", ...state });
-}
-
-/** Where a connection's frames go: an SSE response body or a WebSocket. */
+/** Where a connection's frames go: an SSE response body (tests supply their own). */
 export interface FrameSink {
   /** Send one frame; false means the peer is gone and the connection closes. */
   write(name: string, at: number, data: string): boolean;
@@ -160,7 +153,7 @@ export class EventStreamConnection {
       this.stream = sse.stream;
     }
     connections().set(this.id, this);
-    this.control({ type: "hello", connectionId: this.id, serverId: serverId(), ...browserTransportState() });
+    this.control({ type: "hello", connectionId: this.id, serverId: serverId() });
     if (!this.closed) {
       this.heartbeat = setInterval(() => {
         if (this.flushAll() && !this.sink.heartbeat()) this.close();

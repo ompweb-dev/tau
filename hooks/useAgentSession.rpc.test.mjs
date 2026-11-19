@@ -84,8 +84,6 @@ class FakeSharedWorker {
           if (!stream) return;
           stream.closedByCaller = true;
           stream.readyState = FakeStream.CLOSED;
-        } else if (message.op === "cmd") {
-          void answerCommand(this.port, message);
         } else if (message.op === "outbox_add") {
           // The worker's IndexedDB commit, then the server's dispatcher (lib/message-outbox.ts) once omp is observed.
           world.lastOutboxAdd = message;
@@ -140,16 +138,6 @@ class FakeSharedWorker {
     };
     workerPort = this.port;
   }
-}
-
-/** A command over the session socket: `world.socketAnswer` may answer it as the worker would (e.g. transport_lost), else the agent route does. */
-async function answerCommand(port, { n, sessionId, body }) {
-  let answer = await world.socketAnswer?.(JSON.parse(body));
-  if (!answer) {
-    const res = await fetchStub(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", body });
-    answer = { status: res.status, body: await res.json() };
-  }
-  port.onmessage?.({ data: { cmd: n, recvAt: null, repliedAt: null, attempts: 1, deduped: false, behindBytes: 0, ...answer } });
 }
 
 /** The web server's dispatcher, as the hook sees it: each held entry goes, oldest first, as the omp command its mode
@@ -227,6 +215,10 @@ async function fetchStub(url, init = {}) {
   }
   const response = world.respond?.(method, u, body, init);
   if (response) return await response;
+  if (method === "POST" && /\/api\/agent\/[^/?#]+$/.test(u)) {
+    const answer = await world.agentAnswer?.(body);
+    if (answer) return jsonResponse(answer.status, answer.body);
+  }
 
   let m;
   if ((m = u.match(/\/api\/sessions\/([^/?#]+)\/state/))) {
@@ -483,6 +475,7 @@ function callsTo(method, urlPart) {
 }
 
 function resetWorld() {
+  world.agentAnswer = null;
   world.esInstances.length = 0;
   world.runningStreams.length = 0;
   world.calls.length = 0;
@@ -6707,213 +6700,137 @@ test("a slash command held during a run dispatches as a prompt with its streamin
   assert.deepEqual(command?.body, { type: "prompt", message: "/skill queued text", streamingBehavior: "followUp" });
 });
 
-// What the worker answers when the session socket dropped after sending a command (spec D5).
-const SOCKET_LOST = { error: "The connection to tau dropped before the answer arrived; the command may have run.", code: "transport_lost" };
-
-/** Runs a test with the worker in WebSocket mode, so agent commands go to it instead of fetch. */
-async function inWebSocketMode(run) {
-  const { openEventStream } = await import("@/lib/event-stream");
-  openEventStream({ kind: "running" }).close(); // the tab's transport exists before the hook mounts
-  workerPort.onmessage({ data: { transport: "ws" } });
-  try {
-    await run();
-  } finally {
-    workerPort.onmessage({ data: { transport: "sse" } });
-    world.socketAnswer = null;
-  }
-}
-
-test("a prompt is stored in the outbox even when the session socket cannot answer commands", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    toastCalls.length = 0;
-    world.outboxHold = true;
-    world.socketAnswer = () => ({ status: 503, body: SOCKET_LOST });
-    const w = await mountSession("socket-lost");
-    await act(async () => { assert.deepEqual(await w.latest.handleSend("maybe sent"), { status: "accepted" }); });
-    assert.equal(w.latest.heldMessages[0].message, "maybe sent");
-    assert.equal(w.latest.agentRunning, false);
-    assert.deepEqual(toastCalls, []);
-    assert.deepEqual(w.latest.notices, []);
-    assert.deepEqual(callsTo("POST", "/api/agent/socket-lost"), [], "the tab stores, not dispatches");
-  });
-});
-
-test("a `!` command whose session socket dropped before the answer toasts that it may have run and stays out of the composer", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    toastCalls.length = 0;
-    primeSession("socket-lost-bash", [userMsg("u0", "q")]);
-    const offered = [];
-    const w = await mountSession("socket-lost-bash", undefined, { chatInputRef: { current: { insertIfEmpty: (text) => offered.push(text) } } });
-    world.socketAnswer = (command) => command.type === "bash" ? { status: 503, body: SOCKET_LOST } : null;
-    await act(async () => { await w.latest.handleSend("!touch /tmp/once"); await sleep(30); });
-    assert.deepEqual(offered, [], "the composer must not bring the command back: it may run twice");
-    assert.deepEqual(toastCalls, [["info", translate("agentSession.transportLostMaybeSent")]]);
-    assert.equal(w.latest.notices.length, 0);
-  });
-});
+const HOST_LOST = { error: "The host update connection was replaced", code: "transport_lost" };
 
 test("a `!` command the route refused is offered back to the composer with an error notice", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    toastCalls.length = 0;
-    primeSession("socket-refused-bash", [userMsg("u0", "q")]);
-    const offered = [];
-    const w = await mountSession("socket-refused-bash", undefined, { chatInputRef: { current: { insertIfEmpty: (text) => offered.push(text) } } });
-    world.socketAnswer = (command) => command.type === "bash" ? { status: 400, body: { error: "Shell is busy" } } : null;
-    await act(async () => { await w.latest.handleSend("!touch /tmp/once"); await sleep(30); });
-    assert.deepEqual(offered, ["!touch /tmp/once"], "it never ran, so the composer gets it back");
-    assert.deepEqual(toastCalls, []);
-    assert.deepEqual(w.latest.notices.map((notice) => notice.type), ["error"]);
-  });
+  resetWorld();
+  toastCalls.length = 0;
+  primeSession("socket-refused-bash", [userMsg("u0", "q")]);
+  const offered = [];
+  const w = await mountSession("socket-refused-bash", undefined, { chatInputRef: { current: { insertIfEmpty: (text) => offered.push(text) } } });
+  world.agentAnswer = (command) => command.type === "bash" ? { status: 400, body: { error: "Shell is busy" } } : null;
+  await act(async () => { await w.latest.handleSend("!touch /tmp/once"); await sleep(30); });
+  assert.deepEqual(offered, ["!touch /tmp/once"], "it never ran, so the composer gets it back");
+  assert.deepEqual(toastCalls, []);
+  assert.deepEqual(w.latest.notices.map((notice) => notice.type), ["error"]);
 });
 
 test("a `!` command during a run runs at once and its held-back output shows until the transcript has it", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    const run = (timestamp) => ({ role: "bashExecution", command: "echo hi", output: "hi\n", exitCode: 0, timestamp });
-    primeSession("midrun-bash", [userMsg("u0", "q")]);
-    const { w, es } = await startRun("midrun-bash", "q1");
-    await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
-    const result = { output: "hi\n", exitCode: 0, cancelled: false, truncated: false, deferred: true };
-    world.socketAnswer = (command) => command.type === "bash" ? { status: 200, body: { success: true, data: result } } : null;
-    let receipt;
-    await act(async () => { receipt = await w.latest.handleSend("!echo hi"); await sleep(30); });
-    assert.deepEqual(receipt, { status: "accepted" });
-    assert.equal(w.latest.agentRunning, true, "the turn keeps running");
-    assert.deepEqual(
-      w.latest.deferredBash.map(({ command, output, exitCode }) => ({ command, output, exitCode })),
-      [{ command: "echo hi", output: "hi\n", exitCode: 0 }],
-    );
+  resetWorld();
+  const run = (timestamp) => ({ role: "bashExecution", command: "echo hi", output: "hi\n", exitCode: 0, timestamp });
+  primeSession("midrun-bash", [userMsg("u0", "q")]);
+  const { w, es } = await startRun("midrun-bash", "q1");
+  await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
+  const result = { output: "hi\n", exitCode: 0, cancelled: false, truncated: false, deferred: true };
+  world.agentAnswer = (command) => command.type === "bash" ? { status: 200, body: { success: true, data: result } } : null;
+  let receipt;
+  await act(async () => { receipt = await w.latest.handleSend("!echo hi"); await sleep(30); });
+  assert.deepEqual(receipt, { status: "accepted" });
+  assert.equal(w.latest.agentRunning, true, "the turn keeps running");
+  assert.deepEqual(
+    w.latest.deferredBash.map(({ command, output, exitCode }) => ({ command, output, exitCode })),
+    [{ command: "echo hi", output: "hi\n", exitCode: 0 }],
+  );
 
-    await act(async () => { es.emit({ type: "agent_end", isTerminal: true, messages: [] }); await sleep(30); });
-    await settle();
-    assert.equal(w.latest.deferredBash.length, 1, "omp still holds it after the turn");
+  await act(async () => { es.emit({ type: "agent_end", isTerminal: true, messages: [] }); await sleep(30); });
+  await settle();
+  assert.equal(w.latest.deferredBash.length, 1, "omp still holds it after the turn");
 
-    // An older run of the same command comes into view (e.g. pre-compaction history): it is not this one.
-    const before = world.sessions.get("midrun-bash").messages;
-    saveSession("midrun-bash", [...before, run(1)]);
-    await act(async () => { publishSessionsChanged(["midrun-bash"]); });
-    await settle();
-    assert.equal(w.latest.messages.filter((message) => message.role === "bashExecution").length, 1);
-    assert.equal(w.latest.deferredBash.length, 1, "an older run does not count as this one");
+  // An older run of the same command comes into view (e.g. pre-compaction history): it is not this one.
+  const before = world.sessions.get("midrun-bash").messages;
+  saveSession("midrun-bash", [...before, run(1)]);
+  await act(async () => { publishSessionsChanged(["midrun-bash"]); });
+  await settle();
+  assert.equal(w.latest.messages.filter((message) => message.role === "bashExecution").length, 1);
+  assert.equal(w.latest.deferredBash.length, 1, "an older run does not count as this one");
 
-    // omp writes it when a later prompt starts, stamped after everything before it.
-    saveSession("midrun-bash", [...before, run(1), run(5)]);
-    await act(async () => { publishSessionsChanged(["midrun-bash"]); });
-    await settle();
-    assert.deepEqual(w.latest.deferredBash, []);
+  // omp writes it when a later prompt starts, stamped after everything before it.
+  saveSession("midrun-bash", [...before, run(1), run(5)]);
+  await act(async () => { publishSessionsChanged(["midrun-bash"]); });
+  await settle();
+  assert.deepEqual(w.latest.deferredBash, []);
 
-    // Compaction drops it from the context: the shown output must not come back.
-    saveSession("midrun-bash", [userMsg("u0", "q")]);
-    await act(async () => { publishSessionsChanged(["midrun-bash"]); });
-    await settle();
-    assert.equal(w.latest.messages.some((message) => message.role === "bashExecution"), false);
-    assert.deepEqual(w.latest.deferredBash, []);
-  });
+  // Compaction drops it from the context: the shown output must not come back.
+  saveSession("midrun-bash", [userMsg("u0", "q")]);
+  await act(async () => { publishSessionsChanged(["midrun-bash"]); });
+  await settle();
+  assert.equal(w.latest.messages.some((message) => message.role === "bashExecution"), false);
+  assert.deepEqual(w.latest.deferredBash, []);
 });
 
 test("two held runs of the same `!` command each wait for their own recorded run", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    const run = (timestamp) => ({ role: "bashExecution", command: "git status", output: "clean\n", exitCode: 0, timestamp });
-    primeSession("midrun-twice", [userMsg("u0", "q")]);
-    const { w, es } = await startRun("midrun-twice", "q1");
-    await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
-    const result = { output: "clean\n", exitCode: 0, cancelled: false, truncated: false, deferred: true };
-    world.socketAnswer = (command) => command.type === "bash" ? { status: 200, body: { success: true, data: result } } : null;
-    for (let i = 0; i < 2; i++) await act(async () => { await w.latest.handleSend("!git status"); await sleep(30); });
-    assert.equal(w.latest.deferredBash.length, 2);
+  resetWorld();
+  const run = (timestamp) => ({ role: "bashExecution", command: "git status", output: "clean\n", exitCode: 0, timestamp });
+  primeSession("midrun-twice", [userMsg("u0", "q")]);
+  const { w, es } = await startRun("midrun-twice", "q1");
+  await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
+  const result = { output: "clean\n", exitCode: 0, cancelled: false, truncated: false, deferred: true };
+  world.agentAnswer = (command) => command.type === "bash" ? { status: 200, body: { success: true, data: result } } : null;
+  for (let i = 0; i < 2; i++) await act(async () => { await w.latest.handleSend("!git status"); await sleep(30); });
+  assert.equal(w.latest.deferredBash.length, 2);
 
-    const before = world.sessions.get("midrun-twice").messages;
-    saveSession("midrun-twice", [...before, run(5)]);
-    await act(async () => { publishSessionsChanged(["midrun-twice"]); });
-    await settle();
-    assert.equal(w.latest.deferredBash.length, 1, "one recorded run settles one held run");
+  const before = world.sessions.get("midrun-twice").messages;
+  saveSession("midrun-twice", [...before, run(5)]);
+  await act(async () => { publishSessionsChanged(["midrun-twice"]); });
+  await settle();
+  assert.equal(w.latest.deferredBash.length, 1, "one recorded run settles one held run");
 
-    saveSession("midrun-twice", [...before, run(5), run(6)]);
-    await act(async () => { publishSessionsChanged(["midrun-twice"]); });
-    await settle();
-    assert.deepEqual(w.latest.deferredBash, []);
-  });
+  saveSession("midrun-twice", [...before, run(5), run(6)]);
+  await act(async () => { publishSessionsChanged(["midrun-twice"]); });
+  await settle();
+  assert.deepEqual(w.latest.deferredBash, []);
 });
 
 test("Stop during a run with a `!` command beside it stops the turn, not the command", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    primeSession("midrun-stop", [userMsg("u0", "q")]);
-    const { w, es } = await startRun("midrun-stop", "q1");
-    await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
-    const sent = [];
-    let finishBash;
-    world.socketAnswer = (command) => {
-      sent.push(command.type);
-      if (command.type !== "bash") return null;
-      return new Promise((resolve) => { finishBash = () => resolve({ status: 200, body: { success: true, data: { output: "", exitCode: 0, cancelled: false, truncated: false, deferred: true } } }); });
-    };
-    let bash;
-    await act(async () => { bash = w.latest.handleSend("!sleep 5"); await sleep(30); });
-    assert.equal(w.latest.bashRunning, true);
-    await act(async () => { void w.latest.handleAbort(); await sleep(30); });
-    assert.equal(sent.includes("abort_bash"), false, "the shell command keeps running");
-    assert.ok(sent.some((type) => type === "abort_and_restore_queue" || type === "abort"), "the turn is stopped");
-    await act(async () => { finishBash(); await bash; });
-  });
+  resetWorld();
+  primeSession("midrun-stop", [userMsg("u0", "q")]);
+  const { w, es } = await startRun("midrun-stop", "q1");
+  await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
+  const sent = [];
+  let finishBash;
+  world.agentAnswer = (command) => {
+    sent.push(command.type);
+    if (command.type !== "bash") return null;
+    return new Promise((resolve) => { finishBash = () => resolve({ status: 200, body: { success: true, data: { output: "", exitCode: 0, cancelled: false, truncated: false, deferred: true } } }); });
+  };
+  let bash;
+  await act(async () => { bash = w.latest.handleSend("!sleep 5"); await sleep(30); });
+  assert.equal(w.latest.bashRunning, true);
+  await act(async () => { void w.latest.handleAbort(); await sleep(30); });
+  assert.equal(sent.includes("abort_bash"), false, "the shell command keeps running");
+  assert.ok(sent.some((type) => type === "abort_and_restore_queue" || type === "abort"), "the turn is stopped");
+  await act(async () => { finishBash(); await bash; });
 });
 
 test("a steer is stored without consulting the session socket", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    toastCalls.length = 0;
-    primeSession("socket-lost-steer", [userMsg("u0", "q")]);
-    const w = await mountSession("socket-lost-steer");
-    world.socketAnswer = (command) => command.type === "steer" ? { status: 503, body: SOCKET_LOST } : null;
-    let accepted;
-    await act(async () => { accepted = await w.latest.handleSteer("steer text"); await sleep(30); });
-    assert.equal(accepted, true, "the composer drops the text: it may run");
-    assert.deepEqual(toastCalls, []);
-    assert.equal(w.latest.heldMessages[0].mode, "steer");
-    assert.equal(w.latest.heldMessages[0].message, "steer text");
-    assert.equal(w.latest.notices.length, 0);
-  });
+  resetWorld();
+  toastCalls.length = 0;
+  primeSession("socket-lost-steer", [userMsg("u0", "q")]);
+  const w = await mountSession("socket-lost-steer");
+  world.agentAnswer = (command) => command.type === "steer" ? { status: 503, body: HOST_LOST } : null;
+  let accepted;
+  await act(async () => { accepted = await w.latest.handleSteer("steer text"); await sleep(30); });
+  assert.equal(accepted, true, "the composer drops the text: it may run");
+  assert.deepEqual(toastCalls, []);
+  assert.equal(w.latest.heldMessages[0].mode, "steer");
+  assert.equal(w.latest.heldMessages[0].message, "steer text");
+  assert.equal(w.latest.notices.length, 0);
 });
 
 test("an existing-session send never waits for a pre-prompt get_state reply", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    toastCalls.length = 0;
-    primeSession("socket-lost-state", [userMsg("u0", "q")]);
-    const w = await mountSession("socket-lost-state");
-    world.socketAnswer = (command) => command.type === "get_state" ? { status: 503, body: SOCKET_LOST } : null;
-    let receipt;
-    await act(async () => { receipt = await w.latest.handleSend("never sent"); await sleep(30); });
-    assert.deepEqual(receipt, { status: "accepted" });
-    assert.deepEqual(toastCalls, []);
-    assert.deepEqual(w.latest.notices, []);
-    assert.equal(w.latest.heldMessages[0].message, "never sent");
-    assert.equal(w.latest.agentRunning, false);
-    assert.equal(callsTo("POST", "/api/agent/socket-lost-state").some((call) => call.body?.type === "prompt"), false);
-  });
-});
-
-test("an interrupt-and-reply whose abort_and_prompt reply was lost is reported as taken and the text is not offered again", async () => {
-  await inWebSocketMode(async () => {
-    resetWorld();
-    toastCalls.length = 0;
-    primeSession("socket-lost-interrupt", [userMsg("u0", "q")]);
-    const offered = [];
-    const { w, es } = await startRun("socket-lost-interrupt", "q1", false, { chatInputRef: { current: { insertIfEmpty: (text) => offered.push(text) } } });
-    await act(async () => { es.emit({ type: "agent_start" }); await Promise.resolve(); });
-    world.socketAnswer = (command) => command.type === "abort_and_prompt" ? { status: 503, body: SOCKET_LOST } : null;
-    let interrupt;
-    await act(async () => { interrupt = w.latest.handleInterruptAndReply("replacement"); await sleep(30); });
-    let accepted;
-    await act(async () => { lastEs().open(); accepted = await interrupt; });
-    assert.equal(accepted, true, "the replacement may be running: the composer drops the text");
-    assert.deepEqual(offered, [], "a resend would interrupt the replacement turn");
-    assert.deepEqual(toastCalls, [["info", translate("agentSession.transportLostMaybeSent")]]);
-  });
+  resetWorld();
+  toastCalls.length = 0;
+  primeSession("socket-lost-state", [userMsg("u0", "q")]);
+  const w = await mountSession("socket-lost-state");
+  world.agentAnswer = (command) => command.type === "get_state" ? { status: 503, body: HOST_LOST } : null;
+  let receipt;
+  await act(async () => { receipt = await w.latest.handleSend("never sent"); await sleep(30); });
+  assert.deepEqual(receipt, { status: "accepted" });
+  assert.deepEqual(toastCalls, []);
+  assert.deepEqual(w.latest.notices, []);
+  assert.equal(w.latest.heldMessages[0].message, "never sent");
+  assert.equal(w.latest.agentRunning, false);
+  assert.equal(callsTo("POST", "/api/agent/socket-lost-state").some((call) => call.body?.type === "prompt"), false);
 });
 
 
