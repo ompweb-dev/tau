@@ -431,12 +431,12 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
 
   const {
     loading, error, messages, entryIds, showPreCompactionHistory, streamState,
-    agentRunning, bashRunning, pendingBash, deferredBash, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel, usageLimit,
+    agentRunning, bashRunning, pendingBash, deferredBash, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     externalRunActive,
     toolPreset,
     liveModelMeta,
     retryInfo, contextUsage, forkingEntryId, editingEntryId,
-    isCompacting, compactResult, tokensPerSecond, displayModel: displayModelValue, sessionStats,
+    isCompacting, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices, dismissNotice, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
@@ -477,33 +477,9 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   }, [displayModelValue, modelList]);
 
   const [generationSpeed, setGenerationSpeed] = useState<GenerationSpeedInfo | null>(null);
-  const speedSamplesRef = useRef<number[]>([]);
-  // Source of truth is get_state.tokensPerSecond (pi 1.5.2 does not report it; polled by the
-  // session hook), not a client-side char-count estimate. Distinct reported
-  // values feed the rolling AVG; repeated polls of the same value are ignored.
-  const lastPublishedSpeedRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (tokensPerSecond === null || !Number.isFinite(tokensPerSecond) || tokensPerSecond <= 0) {
-      // Clear the live value; the session average remains visible.
-      if (lastPublishedSpeedRef.current !== null) {
-        lastPublishedSpeedRef.current = null;
-        setGenerationSpeed((previous) => previous ? { ...previous, current: null } : previous);
-      }
-      return;
-    }
-    const quantized = Math.round(tokensPerSecond * 10) / 10;
-    if (quantized === lastPublishedSpeedRef.current) return;
-    lastPublishedSpeedRef.current = quantized;
-    const samples = [...speedSamplesRef.current, quantized].slice(-32);
-    speedSamplesRef.current = samples;
-    setGenerationSpeed({
-      current: quantized,
-      average: samples.reduce((sum, sample) => sum + sample, 0) / samples.length,
-    });
-  }, [tokensPerSecond]);
-  // Rehydrate the session average from on-disk history after a reload: the
+  // The session average from history (pi reports no live throughput): the
   // per-message generation speed is derivable from assistant usage.output and
-  // the timestamp gap to the previous message, so AVG survives refreshes.
+  // the timestamp gap to the previous message.
   const speedHydratedSessionRef = useRef<string | null>(null);
   useEffect(() => {
     if (sessionBusy || messages.length === 0) return;
@@ -536,11 +512,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     }
     if (samples.length === 0) return;
     const recent = samples.slice(-32);
-    speedSamplesRef.current = recent;
-    setGenerationSpeed((previous) => ({
-      current: previous?.current ?? null,
-      average: recent.reduce((sum, sample) => sum + sample, 0) / recent.length,
-    }));
+    setGenerationSpeed({ average: recent.reduce((sum, sample) => sum + sample, 0) / recent.length });
   }, [messages, sessionBusy, session?.id, newSessionCwd]);
 
 
@@ -736,9 +708,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     setVisibleCount((prev) => getNextVisibleCount(prev));
   }, [scrollContainerRef]);
 
-  const generationSpeedKey = generationSpeed
-    ? `${generationSpeed.current ?? "null"}|${generationSpeed.average ?? "null"}`
-    : null;
+  const generationSpeedKey = generationSpeed?.average ?? null;
   const generationSpeedRef = useRef(generationSpeed);
   generationSpeedRef.current = generationSpeed;
   useEffect(() => {
@@ -971,7 +941,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       toolPreset={toolPreset}
       onToolPresetChange={handleToolPresetChange}
-      usageLimit={usageLimit}
       onAbortRetry={session ? handleAbortRetry : undefined}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
@@ -1238,7 +1207,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
             <ChatLiveTail
               streamingMessage={streamState.streamingMessage}
               isStreaming={streamState.isStreaming}
-              liveTokensPerSecond={streamState.isStreaming ? tokensPerSecond : undefined}
               pendingToolHeaders={pendingToolHeaders}
               deferredBash={deferredBash}
               pendingBash={pendingBash}

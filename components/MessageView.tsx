@@ -186,8 +186,6 @@ interface Props {
   hideThinking?: boolean;
   /** Source `content` index of each block when `message` carries a subset of an entry's blocks, so deferred thinking loads the right block. */
   sourceBlockIndices?: number[];
-  /** Output throughput from get_state.tokensPerSecond, live while streaming (pi 1.5.2 does not report it). */
-  liveTokensPerSecond?: number | null;
 }
 
 function formatTime(ts: number | undefined, locale: Locale): string | null {
@@ -245,18 +243,17 @@ export function areMessageViewPropsEqual(prev: Props, next: Props): boolean {
     && Object.is(prev.toolCallsDefaultCollapsed, next.toolCallsDefaultCollapsed)
     && Object.is(prev.expandThinkingByDefault, next.expandThinkingByDefault)
     && Object.is(prev.hideThinking, next.hideThinking)
-    && prev.sourceBlockIndices?.join() === next.sourceBlockIndices?.join()
-    && (!prev.isStreaming || Object.is(prev.liveTokensPerSecond, next.liveTokensPerSecond));
+    && prev.sourceBlockIndices?.join() === next.sourceBlockIndices?.join();
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, forkEntryId, forkEditsPrompt, onFork, forking, forkDisabled, onEdit, editing, editDisabled, showTimestamp, prevTimestamp, sessionId, toolCallsDefaultCollapsed = true, expandThinkingByDefault = false, hideThinking = false, sourceBlockIndices, liveTokensPerSecond }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, forkEntryId, forkEditsPrompt, onFork, forking, forkDisabled, onEdit, editing, editDisabled, showTimestamp, prevTimestamp, sessionId, toolCallsDefaultCollapsed = true, expandThinkingByDefault = false, hideThinking = false, sourceBlockIndices }: Props) {
   if (message.role === "user") {
     const user = message as UserMessage;
     if (user.origin) return <OriginMessageView message={user} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} onFork={onFork} forking={forking} forkDisabled={forkDisabled} onEdit={onEdit} editing={editing} editDisabled={editDisabled} />;
     return <UserMessageView message={user} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} onFork={onFork} forking={forking} forkDisabled={forkDisabled} onEdit={onEdit} editing={editing} editDisabled={editDisabled} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} forkEntryId={forkEntryId} forkEditsPrompt={forkEditsPrompt} onFork={onFork} forking={forking} forkDisabled={forkDisabled} toolCallsDefaultCollapsed={toolCallsDefaultCollapsed} expandThinkingByDefault={expandThinkingByDefault} hideThinking={hideThinking} sourceBlockIndices={sourceBlockIndices} liveTokensPerSecond={liveTokensPerSecond} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} forkEntryId={forkEntryId} forkEditsPrompt={forkEditsPrompt} onFork={onFork} forking={forking} forkDisabled={forkDisabled} toolCallsDefaultCollapsed={toolCallsDefaultCollapsed} expandThinkingByDefault={expandThinkingByDefault} hideThinking={hideThinking} sourceBlockIndices={sourceBlockIndices} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -678,7 +675,6 @@ function AssistantMessageView({
   expandThinkingByDefault,
   hideThinking,
   sourceBlockIndices,
-  liveTokensPerSecond,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -700,7 +696,6 @@ function AssistantMessageView({
   expandThinkingByDefault: boolean;
   hideThinking: boolean;
   sourceBlockIndices?: number[];
-  liveTokensPerSecond?: number | null;
 }) {
   const { t, locale } = useI18n();
   const { isSupported: ttsSupported, isSpeaking: ttsSpeaking, speakingId: ttsSpeakingId, toggle: ttsToggle } = useSpeechContext();
@@ -843,18 +838,6 @@ function AssistantMessageView({
                     </svg>
                     {est}
                   </span>
-                  {liveTokensPerSecond != null && (() => {
-                    // Speed tiers use the semantic status tokens as TEXT color
-                    // (theme-adaptive, AA-verified) over a subtle tint — the
-                    // old hardcoded palette failed AA for white-on-fill.
-                    const tier = liveTokensPerSecond >= 50 ? "success" : liveTokensPerSecond >= 30 ? "renamed" : liveTokensPerSecond >= 15 ? "warning" : "error";
-                    const tone = `var(--status-${tier})`;
-                    return (
-                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: `color-mix(in srgb, ${tone} 14%, var(--bg-panel))`, color: tone, fontSize: 11, fontWeight: 400 }}>
-                        {t("messageView.tokensPerSecond", { tps: liveTokensPerSecond.toFixed(1) })}
-                      </span>
-                    );
-                  })()}
                 </span>
               )}
             </>

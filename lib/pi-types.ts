@@ -11,10 +11,6 @@ export interface ContextUsage {
   tokens: number | null;
 }
 
-export type UsageLimitState =
-  | { stage: "low_priority"; resetsAtSec: number; allowanceLeftPercent?: number }
-  | { stage: "wrap_up"; resetsAtSec?: number; extraUsage: boolean };
-
 export interface ModelLike {
   id: string;
   provider: string;
@@ -100,10 +96,6 @@ export interface RpcSessionState {
   todoPhases: TodoPhase[];
   systemPrompt?: string[];
   contextUsage?: { tokens: number; contextWindow: number; percent: number };
-  /** Structured provider usage-limit state; absent outside wrap-up and low priority. */
-  usageLimit?: UsageLimitState;
-  /** Reported output throughput; null/undefined when not generating (pi 1.5.2 reports none). */
-  tokensPerSecond?: number | null;
 }
 
 /**
@@ -131,9 +123,7 @@ export interface WebSessionState {
   contextUsage: ContextUsage | null;
   systemPrompt: string;
   thinkingLevel: string;
-  usageLimit?: UsageLimitState;
   autoRetryEnabled?: boolean;
-  tokensPerSecond?: number | null;
   todoPhases: TodoPhase[];
   extensionStatuses: Array<{ key: string; text: string }>;
   extensionWidgets: Array<{ key: string; lines: string[]; placement: "aboveEditor" | "belowEditor" }>;
@@ -175,7 +165,6 @@ export interface BashResultInfo {
 }
 
 export interface GenerationSpeedInfo {
-  current: number | null;
   average: number | null;
 }
 

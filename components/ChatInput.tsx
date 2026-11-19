@@ -10,7 +10,7 @@ import { toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/field";
 import { useDictation } from "@/hooks/useDictation";
 import { toastBtwError } from "@/hooks/useBtw";
-import type { GenerationSpeedInfo, SessionStatsInfo, UsageLimitState } from "@/lib/pi-types";
+import type { GenerationSpeedInfo, SessionStatsInfo } from "@/lib/pi-types";
 import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
@@ -97,59 +97,6 @@ function ThinkingGlyph({ level }: { level: string }) {
   );
 }
 
-const SLOW_MODE_SAME_DAY_MS = 20 * 3_600_000;
-
-function formatSlowModeResetClock(resetsAtSec: number, now: number): string {
-  const date = new Date(resetsAtSec * 1000);
-  return resetsAtSec * 1000 - now > SLOW_MODE_SAME_DAY_MS
-    ? date.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-/** A reset time we can actually put on screen, or null when we got none.
- *  The state may omit the field or send a non-number, and a reset already in the
- *  past would render a plausible but wrong clock — both are worse than saying
- *  no time at all, because the user would plan around them. */
-function usableSlowModeResetTime(
-  resetsAtSec: number | null | undefined,
-  now: number,
-): string | null {
-  if (typeof resetsAtSec !== "number" || !Number.isFinite(resetsAtSec)) return null;
-  if (resetsAtSec * 1000 <= now) return null;
-  return formatSlowModeResetClock(resetsAtSec, now);
-}
-
-function slowModeAllowancePercent(
-  allowanceLeftPercent: number | null | undefined,
-): number | null {
-  return typeof allowanceLeftPercent === "number" && Number.isFinite(allowanceLeftPercent)
-    ? allowanceLeftPercent
-    : null;
-}
-
-function formatUsageLimitLabel(
-  state: UsageLimitState,
-  t: (key: string, vars?: Record<string, string | number>) => string,
-  now = Date.now(),
-): string {
-  const time = usableSlowModeResetTime(state.resetsAtSec, now);
-  if (state.stage === "low_priority") {
-    // Read inside the narrowing: allowanceLeftPercent is not on the wrap_up arm.
-    const percent = slowModeAllowancePercent(state.allowanceLeftPercent);
-    if (time === null) {
-      return percent === null
-        ? t("chatInput.slowMode.lowPriorityNoReset")
-        : t("chatInput.slowMode.lowPriorityAllowanceOnly", { percent });
-    }
-    return percent === null
-      ? t("chatInput.slowMode.lowPriority", { time })
-      : t("chatInput.slowMode.lowPriorityAllowance", { time, percent });
-  }
-  if (state.extraUsage) return t("chatInput.slowMode.wrapUpExtraUsage");
-  if (time === null) return t("chatInput.slowMode.wrapUp");
-  return t("chatInput.slowMode.wrapUpReset", { time });
-}
-
 /** A file's bytes as base64, without the data URL's prefix. */
 function readBase64(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -194,7 +141,6 @@ interface Props {
   modelsLoading?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
   /** Structured provider usage-limit state, shown as a warning chip (pi 1.5.2 does not report it). */
-  usageLimit?: UsageLimitState;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactResult?: CompactResultInfo | null;
@@ -334,7 +280,7 @@ function menuDropStyle(placement: MenuPlacement, maxHeight: number | null): Reac
 }
 
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange, usageLimit,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange,
   onAbortCompaction, isCompacting, compactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, modelNameOverride,
   toolPreset, onToolPresetChange,
@@ -385,9 +331,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     items[next]?.focus();
   }, []);
   const { t, tn, locale } = useI18n();
-  const usageLimitLabel = usageLimit
-    ? formatUsageLimitLabel(usageLimit, t)
-    : undefined;
   const modelCollator = React.useMemo(
     () => new Intl.Collator(locale, { numeric: true, sensitivity: "base" }),
     [locale],
@@ -3452,16 +3395,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                     </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* Provider usage-limit stage (wrap-up allowance or /slow low
-                priority), warning-colored like the TUI status line so
-                past-the-limit service is never mistaken for normal.
-                Layout lives in globals.css (own row on mobile). */}
-            {usageLimitLabel && (
-              <div className="composer-usage-limit-badge" role="status" aria-live="polite" title={usageLimitLabel}>
-                {usageLimitLabel}
               </div>
             )}
 

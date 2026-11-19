@@ -11,7 +11,7 @@ import type {
 } from "@/lib/types";
 import type { EventStream } from "@/lib/event-stream";
 import type { ThinkingModelMeta } from "@/lib/thinking-levels";
-import type { QueuedMessages, RpcAvailableSlashCommand, TodoPhase, UsageLimitState } from "@/lib/pi-types";
+import type { QueuedMessages, RpcAvailableSlashCommand, TodoPhase } from "@/lib/pi-types";
 import type {
   SubagentHistoryEntry,
   SubagentInfo,
@@ -180,7 +180,6 @@ export type AgentStateResponse = {
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
   thinkingLevel?: string;
-  usageLimit?: UsageLimitState;
   autoRetryEnabled?: boolean;
   autoCompactionEnabled?: boolean;
   steeringMode?: "all" | "one-at-a-time";
@@ -190,7 +189,6 @@ export type AgentStateResponse = {
   isBashRunning?: boolean;
   isCompacting?: boolean;
   responseObserved?: boolean;
-  tokensPerSecond?: number | null;
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: QueuedMessages;

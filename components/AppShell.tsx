@@ -26,7 +26,7 @@ import { NotificationBell } from "./NotificationBell";
 import { BranchNavigator } from "./BranchNavigator";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { CommandPaletteMount } from "./CommandPaletteMount";
-import { Check, ChevronDown, Command, Ellipsis, Folder, GitBranch, History, Menu, PanelLeft, PanelRight, Server, Terminal, Wand2, Zap } from "lucide-react";
+import { Check, ChevronDown, Command, Ellipsis, Folder, GitBranch, History, Menu, PanelLeft, PanelRight, Server, Terminal, Wand2 } from "lucide-react";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { translate, useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -1878,8 +1878,7 @@ export function AppShell({ appName }: { appName: string }) {
   const settingsTarget = activeCwd ? { hostId: activeHostId } : selectedSession ?? (newSessionCwd !== null ? { hostId: newSessionHostId } : effectivePoolProject);
   const clusterSettings = isClusterTarget(settingsTarget, settingsHostId, pools);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null || effectivePoolProject !== null;
-  const currentRate = generationSpeed?.current;
-  const rate = currentRate ?? generationSpeed?.average;
+  const rate = generationSpeed?.average;
   const speed = showChat ? formatGenerationSpeed(rate) : null;
   const hasGenerationSpeed = speed !== null;
   useLayoutEffect(() => {
@@ -2535,8 +2534,7 @@ export function AppShell({ appName }: { appName: string }) {
             {/* Generation speed pill */}
             {showChat && (() => {
               if (!speed || rate == null) return null;
-              const isLive = currentRate != null;
-              const speedTitle = t(isLive ? "appShell.tooltipCurrentSpeed" : "appShell.tooltipAverageSpeed", {
+              const speedTitle = t("appShell.tooltipAverageSpeed", {
                 value: `${rate.toFixed(1)} t/s`,
               });
 
@@ -2555,7 +2553,7 @@ export function AppShell({ appName }: { appName: string }) {
                     borderRadius: "var(--radius-control)",
                     border: "1px solid var(--border)",
                     background: "var(--bg-subtle)",
-                    color: isLive ? "var(--accent)" : "var(--text-muted)",
+                    color: "var(--text-muted)",
                     fontSize: 11,
                     fontFamily: "var(--font-mono)",
                     fontVariantNumeric: "tabular-nums",
@@ -2565,12 +2563,8 @@ export function AppShell({ appName }: { appName: string }) {
                     flexShrink: 0,
                   }}
                 >
-                  {isLive ? (
-                    <Zap size={11} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />
-                  ) : (
-                    <span aria-hidden="true" style={{ width: 11, lineHeight: "11px", textAlign: "center", flexShrink: 0, color: "var(--text-dim)" }}>~</span>
-                  )}
-                  <span style={{ display: "inline-flex", gap: "1ch", fontWeight: isLive ? 600 : 400 }}>
+                  <span aria-hidden="true" style={{ width: 11, lineHeight: "11px", textAlign: "center", flexShrink: 0, color: "var(--text-dim)" }}>~</span>
+                  <span style={{ display: "inline-flex", gap: "1ch", fontWeight: 400 }}>
                     <span style={{ width: "5ch", textAlign: "right" }}>{speed.value}</span>
                     <span style={{ width: "4ch" }}>{speed.unit}</span>
                   </span>

@@ -10,7 +10,6 @@ export interface ChatLiveTailProps {
   streamingMessage: Partial<AgentMessage> | null;
   /** True while pi is still generating `streamingMessage`; false for a finished reply held until its saved row appears. */
   isStreaming: boolean;
-  liveTokensPerSecond?: number | null;
   /** Running tools no message renders yet, shown as status rows while tool calls are collapsed. */
   pendingToolHeaders: { id: string; name: string }[];
   /** `!command` results pi holds back until a later prompt records them. */
@@ -29,7 +28,7 @@ export interface ChatLiveTailProps {
 
 /** The running turn's live end after the committed transcript: streaming reply, pending tool rows, `!command` output. */
 export function ChatLiveTail({
-  streamingMessage, isStreaming, liveTokensPerSecond, pendingToolHeaders, deferredBash, pendingBash, toolResults, modelNames, cwd, onOpenFile, sessionId,
+  streamingMessage, isStreaming, pendingToolHeaders, deferredBash, pendingBash, toolResults, modelNames, cwd, onOpenFile, sessionId,
   toolCallsDefaultCollapsed, expandThinkingByDefault, hideThinking,
 }: ChatLiveTailProps) {
   const { t } = useI18n();
@@ -49,7 +48,6 @@ export function ChatLiveTail({
           toolCallsDefaultCollapsed={toolCallsDefaultCollapsed}
           expandThinkingByDefault={expandThinkingByDefault}
           hideThinking={hideThinking}
-          liveTokensPerSecond={liveTokensPerSecond}
         />
       )}
 

@@ -430,12 +430,8 @@ export function ContextDetailPanel({ sessionStats, contextUsage, modelCapacity, 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
                 <span>{t("composerContext.windowSize", { tokens: formatCompactNumber(ctx.contextWindow) })}</span>
                 {modelCapacity?.maxTokens ? <span>{t("composerContext.maxOutput", { tokens: formatCompactNumber(modelCapacity.maxTokens) })}</span> : null}
-                {generationSpeed?.current != null || generationSpeed?.average != null ? (
-                  <span>
-                    {generationSpeed?.current != null && generationSpeed?.average != null
-                      ? t("composerContext.speed", { current: generationSpeed.current.toFixed(1), average: generationSpeed.average.toFixed(1) })
-                      : t("composerContext.speedCurrent", { current: (generationSpeed?.current ?? generationSpeed?.average ?? 0).toFixed(1) })}
-                  </span>
+                {generationSpeed?.average != null ? (
+                  <span>{t("composerContext.speedCurrent", { current: generationSpeed.average.toFixed(1) })}</span>
                 ) : null}
               </div>
             </div>

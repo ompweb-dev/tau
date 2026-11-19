@@ -43,7 +43,7 @@ import { toast } from "@/components/ui/toast";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { validateOutgoingPrompt } from "@/lib/image-attachments";
 import { createActiveGoal, parseActiveGoal, type ActiveGoal, type ActivePlan } from "@/lib/web-mode-state";
-import type { HostToolDefinition, HostUriSchemeDefinition, RpcAvailableSlashCommand, SessionStatsInfo, TodoPhase, UsageLimitState } from "@/lib/pi-types";
+import type { HostToolDefinition, HostUriSchemeDefinition, RpcAvailableSlashCommand, SessionStatsInfo, TodoPhase } from "@/lib/pi-types";
 import { isRecord } from "@/lib/type-guards";
 import { subscribeSessionsChanged } from "@/lib/session-change-bus";
 import { EVENT_STREAM_CLOSED, EVENT_STREAM_OPEN, addToOutbox, dropFromOutbox, newOutboxId, openEventStream, reconcileOutbox, subscribeOutbox, type EventStream, type LocalOutboxEntry } from "@/lib/event-stream";
@@ -442,8 +442,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [toolPreset, setToolPreset] = useState<ToolPreset>("full");
   useEffect(() => { setToolPreset(getPreferredToolPreset()); }, []);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
-  // Provider usage-limit stage from get_state (wrap-up allowance / low priority); pi 1.5.2 reports none.
-  const [usageLimit, setUsageLimit] = useState<UsageLimitState | undefined>(undefined);
   // Runtime session modes returned by get_state and changed via RPC (set_auto_compaction).
   const [autoCompactionEnabled, setAutoCompactionEnabled] = useState(true);
   const [autoRetryEnabled, setAutoRetryEnabled] = useState(false);
@@ -458,9 +456,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
-  // Output throughput from get_state's tokensPerSecond. pi 1.5.2 reports none,
-  // so this stays null.
-  const [tokensPerSecond, setTokensPerSecond] = useState<number | null>(null);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
@@ -654,7 +649,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const subagentVersionFlushRef = useRef<Set<string> | null>(null);
   const subagentActivityFlushRef = useRef<Map<string, SubagentActivityEvent[]> | null>(null);
   const subagentVersionFlushFrameRef = useRef<number | null>(null);
-  const wasRunningForGaugeRef = useRef(false);
   // so a stale get_subagents cannot target a session that was switched away.
   const rosterRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const promptRunIdRef = useRef(0);
@@ -1019,7 +1013,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (agentState.state?.thinkingLevel !== undefined) {
         setThinkingLevel(normalizeThinkingLevel(agentState.state.thinkingLevel));
       }
-      setUsageLimit(agentState.state?.usageLimit);
       if (agentState.state?.autoRetryEnabled !== undefined) setAutoRetryEnabled(agentState.state.autoRetryEnabled);
       if (agentState.state?.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(agentState.state.autoCompactionEnabled);
       if (agentState.state?.steeringMode !== undefined) setSteeringMode(agentState.state.steeringMode);
@@ -1130,7 +1123,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt || null);
           if (modelApplied && liveState.thinkingLevel !== undefined) setThinkingLevel(normalizeThinkingLevel(liveState.thinkingLevel));
-          setUsageLimit(liveState.usageLimit);
           if (liveState.autoRetryEnabled !== undefined) setAutoRetryEnabled(liveState.autoRetryEnabled);
           if (liveState.autoCompactionEnabled !== undefined) setAutoCompactionEnabled(liveState.autoCompactionEnabled);
           if (liveState.steeringMode !== undefined) setSteeringMode(liveState.steeringMode);
@@ -2264,53 +2256,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearInterval(timer);
   }, [externalRunActive, catchUp]);
 
-  // Sample get_state's tokensPerSecond at a gauge-friendly cadence while a run
-  // is active; the 15s reconcile above is too slow for a gauge. On run end take
-  // one trailing sample, which may land after the last in-run poll. pi 1.5.2
-  // reports no tokensPerSecond, so the samples stay null.
-  useEffect(() => {
-    if (!agentRunning) {
-      if (!wasRunningForGaugeRef.current) return;
-      wasRunningForGaugeRef.current = false;
-      const sid = sessionIdRef.current;
-      if (!sid) return;
-      let cancelled = false;
-      void fetch(`/api/agent/${encodeURIComponent(sid)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: { state?: AgentStateResponse } | null) => {
-          if (cancelled) return;
-          const tps = data?.state?.tokensPerSecond;
-          setTokensPerSecond(typeof tps === "number" && Number.isFinite(tps) && tps > 0 ? tps : null);
-          if (data?.state) setUsageLimit(data.state.usageLimit);
-        })
-        .catch(() => {});
-      return () => { cancelled = true; };
-    }
-    wasRunningForGaugeRef.current = true;
-    let cancelled = false;
-    const id = setInterval(() => {
-      const sid = sessionIdRef.current;
-      if (!sid) return;
-      void fetch(`/api/agent/${encodeURIComponent(sid)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: { state?: AgentStateResponse } | null) => {
-          // A sample in flight when the run ends must not overwrite the end-of-run state.
-          if (cancelled) return;
-          const tps = data?.state?.tokensPerSecond;
-          // The usage-limit badge changes per provider response (lane entry, % left).
-          if (data?.state) setUsageLimit(data.state.usageLimit);
-          setTokensPerSecond(typeof tps === "number" && Number.isFinite(tps) && tps > 0 ? tps : null);
-        })
-        .catch(() => {});
-    }, 2000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [agentRunning]);
-
-  // A different session starts from a clean slate — no stale gauge carry-over.
-  useEffect(() => {
-    setTokensPerSecond(null);
-  }, [data?.sessionId]);
-
   // Counts runs that ended (any client's), so a delayed Stop can tell that
   // the run it targeted is over and whatever runs now is not its to abort.
   // Bumped on each accepted terminal agent_end (before any recovery reload)
@@ -2525,7 +2470,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               if (!applied) return; // stale snapshot — drop everything derived from it
               if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
               if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt || null);
-              setUsageLimit(d.state?.usageLimit);
               if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
               if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
               if (d.state?.todoPhases !== undefined) setTodoPhases(d.state.todoPhases ?? []);
@@ -4412,10 +4356,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, showPreCompactionHistory, streamState,
-    agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, usageLimit, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
+    agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
     liveModelMeta,
     retryInfo, contextUsage, systemPrompt, forkingEntryId, editingEntryId,
-    isCompacting, compactError, compactResult, tokensPerSecond, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,
+    isCompacting, compactError, compactResult, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,
     slashCommands, slashCommandsLoading, queuedMessages, hostStatus,
     notices: noticeState.visible, dismissNotice, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     subagents, subagentEvents, subagentTranscriptVersions, activeSubagentCount, currentTodoPhase, todoPhases,
