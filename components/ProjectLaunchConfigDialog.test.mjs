@@ -9,10 +9,10 @@ afterEach(cleanup);
 
 test("the launch editor exposes legacy values and saves an explicit correction or clear", async () => {
   const saved = [];
-  const props = { projectPath: "/workspace", initialConfig: { extraArgs: ["--cwd", "/elsewhere"] }, onClose() {}, onSave: async (config) => { saved.push(config); } };
+  const props = { projectPath: "/workspace", initialConfig: { extraArgs: ["--fork", "/elsewhere"] }, onClose() {}, onSave: async (config) => { saved.push(config); } };
   const view = render(React.createElement(ProjectLaunchConfigDialog, props));
   const args = view.getByRole("textbox", { name: translate("projectLaunchConfig.extraArgsLabel") });
-  assert.equal(args.value, "--cwd\n/elsewhere");
+  assert.equal(args.value, "--fork\n/elsewhere");
   const save = view.getByRole("button", { name: translate("projectLaunchConfig.save") });
   fireEvent.change(args, { target: { value: "--verbose" } });
   fireEvent.click(save);
