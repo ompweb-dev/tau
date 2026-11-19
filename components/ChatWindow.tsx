@@ -2,7 +2,7 @@
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { ArrowDown, ChevronDown, ChevronUp, Paperclip, Square } from "lucide-react";
-import type { AgentMessage, AssistantMessage, SessionInfo, SessionTreeNode, ToolResultMessage, UiCustomFrame } from "@/lib/types";
+import type { AgentMessage, AssistantMessage, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
 import { translate, useI18n } from "@/lib/i18n";
 import { collectToolResults, isGroupAnchor, planTranscriptRows, type TranscriptRow } from "@/lib/chat-transcript-plan";
 import { isReplyBlock } from "@/lib/message-display";
@@ -27,11 +27,9 @@ import { useSpeechSynthesis, SpeechSynthesisProvider } from "@/hooks/useSpeechSy
 import { GithubRepoContext } from "@/lib/github-refs";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import { useModalDialog } from "@/hooks/useModalDialog";
 import type { SessionStatsInfo, GenerationSpeedInfo } from "@/lib/pi-types";
-import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
+import { parseAnsiLine } from "@/lib/ansi";
 import { resolveAvailableThinkingLevels } from "@/lib/thinking-levels";
-import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { AgentLinkContext, agentLinkTarget } from "@/lib/agent-links";
 import {
   captureScrollDistance,
@@ -438,7 +436,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     retryInfo, contextUsage, forkingEntryId, editingEntryId,
     isCompacting, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
-    notices, dismissNotice, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
+    notices, dismissNotice, extensionDialog, extensionStatuses, extensionWidgets, respondToExtensionUi,
     isAutoModelSelection,
     agentPhase, activeGoal, activePlan,
     liveToolResults,
@@ -1060,13 +1058,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
         onOpenFile={onOpenFile}
       />
 
-      {extensionCustomUi && (
-        <ExtensionCustomPanel
-          request={extensionCustomUi}
-          onInput={sendExtensionCustomInput}
-        />
-      )}
-
       {isEmptyNew ? (
         <div className="relative flex flex-1 flex-col overflow-hidden">
           <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto py-8" style={{ minHeight: 0, paddingInline: CHAT_COLUMN_PADDING }}>
@@ -1521,150 +1512,6 @@ function renderAnsiLine(line: string, keyPrefix: string): ReactNode[] {
       ? <span key={`${keyPrefix}-${index}`} style={segment.style}>{segment.text}</span>
       : segment.text
   ));
-}
-
-function ExtensionCustomPanel({
-  request,
-  onInput,
-}: {
-  request: UiCustomFrame;
-  onInput: (request: UiCustomFrame, data: string) => void;
-}) {
-  const { t } = useI18n();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const composingRef = useRef(false);
-  const displayLines = normalizeCustomPanelLines(request.lines);
-  const panelRef = useModalDialog<HTMLDivElement>({
-    onClose: () => onInput(request, "\x03"),
-  });
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [request.id]);
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 95,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        background: "var(--overlay-backdrop)",
-      }}
-    >
-      <div
-        ref={panelRef}
-        aria-label={t("chatWindow.extensionPanel")}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        onClick={(event) => {
-          if (!(event.target as HTMLElement).closest("button")) inputRef.current?.focus();
-        }}
-        style={{
-          position: "relative",
-          width: "min(920px, 100%)",
-          maxHeight: "min(760px, calc(100vh - 40px))",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
-          background: "var(--bg)",
-          boxShadow: "var(--shadow-modal)",
-          overflow: "hidden",
-          outline: "none",
-        }}
-      >
-        <textarea
-          ref={inputRef}
-          aria-label={t("chatWindow.extensionTerminalInput")}
-          autoCapitalize="off"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onKeyDown={(event) => {
-            if (composingRef.current || event.nativeEvent.isComposing) return;
-            const data = toTerminalKeyData(event);
-            if (!data) return;
-            event.preventDefault();
-            event.stopPropagation();
-            onInput(request, data);
-          }}
-          onInput={(event) => {
-            if (composingRef.current || event.nativeEvent.isComposing) return;
-            const text = event.currentTarget.value;
-            event.currentTarget.value = "";
-            if (text) onInput(request, text);
-          }}
-          onCompositionStart={() => {
-            composingRef.current = true;
-          }}
-          onCompositionEnd={(event) => {
-            composingRef.current = false;
-            const input = event.currentTarget;
-            queueMicrotask(() => {
-              const text = input.value;
-              input.value = "";
-              if (text) onInput(request, text);
-            });
-          }}
-          onPaste={(event) => {
-            event.preventDefault();
-            const text = event.clipboardData.getData("text");
-            if (text) onInput(request, asBracketedPaste(text));
-          }}
-          style={{
-            position: "absolute",
-            width: 1,
-            height: 1,
-            padding: 0,
-            border: 0,
-            opacity: 0,
-            pointerEvents: "none",
-          }}
-        />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 650 }}>{t("chatWindow.extensionPanel")}</div>
-          <button
-            onClick={() => onInput(request, "\x03")}
-            style={{
-              padding: "5px 9px",
-              borderRadius: 6,
-              border: "1px solid var(--border)",
-              background: "var(--bg-panel)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
-            {t("chatWindow.close")}
-          </button>
-        </div>
-        <pre
-          style={{
-            margin: 0,
-            padding: 14,
-            maxHeight: "calc(min(760px, 100vh - 40px) - 48px)",
-            overflow: "auto",
-            background: "var(--bg-panel)",
-            color: "var(--text)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            lineHeight: 1.45,
-            whiteSpace: "pre",
-          }}
-        >
-          {(displayLines.length ? displayLines : [""]).map((line, index, allLines) => (
-            <Fragment key={index}>
-              {renderAnsiLine(line, `line-${index}`)}
-              {index < allLines.length - 1 ? "\n" : null}
-            </Fragment>
-          ))}
-        </pre>
-      </div>
-    </div>
-  );
 }
 
 /** Slim pill bar replacing the full composer when minimized. */

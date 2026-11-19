@@ -14,7 +14,6 @@ import type {
   SessionInfo,
   SessionTreeNode,
   ToolResultMessage,
-  UiCustomFrame,
   UiDialogRequest,
   UiDialogValue,
   UiPresentationFrame,
@@ -525,7 +524,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // a prompt increment runId before the stale pre-prompt state arrives and
   // clobbers the new run's derived state (model/fast-mode).
   const initialHydrationPendingRef = useRef(false);
-  const [extensionCustomUi, setExtensionCustomUi] = useState<UiCustomFrame | null>(null);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
   const [queuedMessages, setQueuedMessagesState] = useState<QueuedMessages>(EMPTY_QUEUE);
@@ -1749,20 +1747,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [onOpenFile, onOpenUrl, respondHostTool, session?.hostId, session?.cwd, newSessionHostId, newSessionCwd]);
 
 
-  const sendExtensionCustomInput = useCallback(async (request: UiCustomFrame, data: string) => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      await sendAgentCommand(sid, {
-        type: "ui_input",
-        id: request.id,
-        data,
-      });
-    } catch (e) {
-      console.error("Failed to send extension custom UI input:", e);
-    }
-  }, []);
-
 
   const addUnconfirmedRunErrorNotice = useCallback((
     error: string, source: ErrorAssistantSource | null, sid: string | null,
@@ -1861,9 +1845,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleExtensionUiFrame = useCallback((frame: UiPresentationFrame) => {
     switch (frame.method) {
-      case "notify":
-        addNotice({ message: frame.message, type: frame.notifyType ?? "info" });
-        break;
       case "setStatus":
         setExtensionStatuses((prev) => {
           const rest = prev.filter((item) => item.key !== frame.statusKey);
@@ -1888,14 +1869,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "set_editor_text":
         opts.chatInputRef?.current?.insertText(frame.text);
         break;
-      case "custom":
-        setExtensionCustomUi((current) => {
-          if (frame.closed) return current?.id === frame.id ? null : current;
-          return frame;
-        });
-        break;
     }
-  }, [addNotice, opts.chatInputRef]);
+  }, [opts.chatInputRef]);
 
   const finishPromptWithoutStream = useCallback(async (sid: string | null = sessionIdRef.current, runId = promptRunIdRef.current) => {
     clearTerminalReconcileTimer();
@@ -4286,7 +4261,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId, editingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,
     slashCommands, slashCommandsLoading, queuedMessages, hostStatus,
-    notices: noticeState.visible, dismissNotice, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
+    notices: noticeState.visible, dismissNotice, extensionDialog, extensionStatuses, extensionWidgets, respondToExtensionUi,
     subagents, subagentEvents, subagentTranscriptVersions, activeSubagentCount, currentTodoPhase, todoPhases,
     activeGoal, activePlan,
     isNew,

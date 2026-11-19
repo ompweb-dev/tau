@@ -4,7 +4,6 @@ import type { CSSProperties } from "react";
 // matches `]`. OSC content excludes ESC so an unterminated sequence cannot
 // make every later `ESC ]` rescan to the end of the string.
 const ANSI_ESCAPE_RE = /\x1B(?:\][^\x07\x1B]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g;
-const ANSI_ESCAPE_STICKY_RE = /\x1B(?:\][^\x07\x1B]*(?:\x07|\x1B\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/y;
 const ANSI_SGR_RE = /\x1B\[([0-9;]*)m/g;
 const TUI_CURSOR_MARKER_RE = /\x1B_pi:c\x07/g;
 
@@ -37,83 +36,6 @@ export interface AnsiSegment {
 
 export function stripAnsi(text: string): string {
   return text.replace(TUI_CURSOR_MARKER_RE, "").replace(ANSI_ESCAPE_RE, "");
-}
-
-function visibleCharPositions(text: string): Array<{ start: number; end: number; char: string }> {
-  const positions: Array<{ start: number; end: number; char: string }> = [];
-  let i = 0;
-  while (i < text.length) {
-    if (text.charCodeAt(i) === 0x1b) {
-      ANSI_ESCAPE_STICKY_RE.lastIndex = i;
-      if (ANSI_ESCAPE_STICKY_RE.test(text)) {
-        i = ANSI_ESCAPE_STICKY_RE.lastIndex;
-        continue;
-      }
-    }
-    const codePoint = text.codePointAt(i);
-    if (codePoint === undefined) break;
-    const char = String.fromCodePoint(codePoint);
-    positions.push({ start: i, end: i + char.length, char });
-    i += char.length;
-  }
-  return positions;
-}
-
-function stripDroppedVisibleChars(
-  text: string,
-  positions: Array<{ start: number; end: number; char: string }>,
-  firstIdx: number,
-  lastIdx: number,
-): string {
-  if (firstIdx === 0 && lastIdx === positions.length - 1) return text;
-  let out = "";
-  let cursor = 0;
-  for (let i = 0; i < firstIdx; i++) {
-    const pos = positions[i];
-    if (pos.start > cursor) out += text.slice(cursor, pos.start);
-    cursor = pos.end;
-  }
-  for (let i = Math.max(firstIdx, lastIdx + 1); i < positions.length; i++) {
-    const pos = positions[i];
-    if (pos.start > cursor) out += text.slice(cursor, pos.start);
-    cursor = pos.end;
-  }
-  if (cursor < text.length) out += text.slice(cursor);
-  return out;
-}
-
-export function normalizeCustomPanelLines(lines: string[]): string[] {
-  const horizontalFrameLine = /^[┌├└╭╰][─┬┴┼]+[┐┤┘╮╯]$/;
-  const normalized: string[] = [];
-
-  for (const rawLine of lines) {
-    const lineWithoutCursor = rawLine.replace(TUI_CURSOR_MARKER_RE, "");
-    const plain = stripAnsi(lineWithoutCursor).trimEnd();
-    if (horizontalFrameLine.test(plain)) continue;
-
-    const positions = visibleCharPositions(lineWithoutCursor);
-    let firstIdx = 0;
-    const first = positions[0]?.char;
-    if (first === "│" || first === "┃") {
-      firstIdx = positions[1]?.char === " " ? 2 : 1;
-    }
-
-    let lastIdx = positions.length - 1;
-    while (lastIdx >= firstIdx && positions[lastIdx].char.trim() === "") {
-      lastIdx--;
-    }
-    if (lastIdx >= firstIdx && (positions[lastIdx].char === "│" || positions[lastIdx].char === "┃")) {
-      lastIdx--;
-      while (lastIdx >= firstIdx && positions[lastIdx].char.trim() === "") {
-        lastIdx--;
-      }
-    }
-
-    normalized.push(stripDroppedVisibleChars(lineWithoutCursor, positions, firstIdx, lastIdx));
-  }
-  while (normalized.length > 0 && stripAnsi(normalized[0]).trim() === "") normalized.shift();
-  while (normalized.length > 0 && stripAnsi(normalized[normalized.length - 1]).trim() === "") normalized.pop();
-  return normalized.length ? normalized : lines;
 }
 
 export function ansi256Color(index: number): string | undefined {

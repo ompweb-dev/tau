@@ -89,6 +89,7 @@ const STDERR_TAIL_LIMIT = 8 * 1024;
 const MAX_INBOUND_LINE_BYTES = 32 * 1024 * 1024;
 const READY_PROBE_ID = "__tau_ready__";
 const DIALOG_UI_METHODS = new Set(["select", "confirm", "input", "editor"]);
+const PRESENTATION_UI_METHODS = new Set(["setStatus", "setWidget", "setTitle", "set_editor_text"]);
 const COMMAND_MAP: Record<string, string> = {
   get_available_commands: "get_commands",
 };
@@ -421,8 +422,13 @@ export class RpcProcess {
       } catch {
         // Ignore malformed widget payload.
       }
+      return null;
     }
-    return req as RpcFrame;
+    // pi's fire-and-forget presentation calls (rpc-mode's ExtensionUIContext); its other UI methods send nothing.
+    if (PRESENTATION_UI_METHODS.has(method)) {
+      return { ...req, type: "ui", method } as RpcFrame;
+    }
+    return null;
   }
 
   private dispatch(frame: RpcFrame, replayed = false): void {

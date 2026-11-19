@@ -1045,7 +1045,7 @@ test("dialog answers go out as ui_response with omp's value; a cancel carries no
   assert.equal("value" in JSON.parse(JSON.stringify(sent[1])), false, "a cancel sends no value");
 });
 
-test("ui_end closes another tab's dialog; presentation ui frames drive notices, status, widgets and custom UI", async () => {
+test("ui_end closes another tab's dialog; presentation ui frames drive status, widgets, title and editor text", async () => {
   resetWorld();
   primeSession("ui-frames", [userMsg("u0", "q")]);
   const { w, es } = await startRun("ui-frames", "ask");
@@ -1055,22 +1055,19 @@ test("ui_end closes another tab's dialog; presentation ui frames drive notices, 
   assert.equal(w.latest.extensionDialog, null);
 
   await act(() => {
-    es.emit({ type: "ui", method: "notify", message: "Heads up", notifyType: "warning" });
     es.emit({ type: "ui", method: "setStatus", statusKey: "lint", statusText: "3 issues" });
     es.emit({ type: "ui", method: "setWidget", widgetKey: "todo", widgetLines: ["one"] });
-    es.emit({ type: "ui", method: "custom", id: 4, lines: ["hello"] });
+    es.emit({ type: "ui", method: "setTitle", title: "pi title" });
   });
-  assert.equal(w.latest.notices.at(-1)?.message, "Heads up");
-  assert.equal(w.latest.notices.at(-1)?.type, "warning");
   assert.deepEqual(w.latest.extensionStatuses, [{ key: "lint", text: "3 issues" }]);
   assert.deepEqual(w.latest.extensionWidgets, [{ key: "todo", lines: ["one"], placement: "aboveEditor" }]);
-  assert.deepEqual(w.latest.extensionCustomUi?.lines, ["hello"]);
-
-  await act(async () => { await w.latest.sendExtensionCustomInput(w.latest.extensionCustomUi, "x"); });
-  const input = world.calls.find((c) => c.body?.type === "ui_input")?.body;
-  assert.deepEqual({ id: input?.id, data: input?.data }, { id: 4, data: "x" });
-  await act(() => es.emit({ type: "ui", method: "custom", id: 4, lines: [], closed: true }));
-  assert.equal(w.latest.extensionCustomUi, null);
+  assert.equal(document.title, "pi title");
+  await act(() => {
+    es.emit({ type: "ui", method: "setStatus", statusKey: "lint" });
+    es.emit({ type: "ui", method: "setWidget", widgetKey: "todo" });
+  });
+  assert.deepEqual(w.latest.extensionStatuses, []);
+  assert.deepEqual(w.latest.extensionWidgets, []);
 });
 
 // ISSUE #167: omp reports 47 runnable builtins over RPC; `/guided-goal`,

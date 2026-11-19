@@ -2358,10 +2358,6 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "ui_input":
-        this.proc.sendFrame({ type: "ui_input", id: command.id, data: command.data });
-        return null;
-
       case "bash": {
         const proc = this.proc;
         if (command.excludeFromContext !== undefined && typeof command.excludeFromContext !== "boolean") {

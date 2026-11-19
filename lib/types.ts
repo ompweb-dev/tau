@@ -251,19 +251,13 @@ export type UiDialogRequest = { type: "ui_request"; id: number | string; expires
   | { method: "askDialog"; args: [questions: RpcAskDialogQuestion[], dialogOptions?: UiDialogOptionsArg] }
 );
 
-/** A presentation call from the runner. */
+/** A presentation call from pi (`extension_ui_request`); `notify` arrives as a `notice` frame instead. */
 export type UiPresentationFrame = { type: "ui" } & (
-  | { method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
   | { method: "setStatus"; statusKey: string; statusText?: string }
   | { method: "setWidget"; widgetKey: string; widgetLines?: string[]; widgetPlacement?: "aboveEditor" | "belowEditor" }
   | { method: "setTitle"; title: string }
   | { method: "set_editor_text"; text: string }
-  | { method: "setWorkingMessage"; message?: string }
-  /** A custom component's rendered lines; keys go back as `ui_input`. */
-  | { method: "custom"; id: number; lines: string[]; closed?: boolean }
 );
-
-export type UiCustomFrame = Extract<UiPresentationFrame, { method: "custom" }>;
 
 export interface ExtensionStatusItem {
   key: string;
