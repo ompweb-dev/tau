@@ -147,10 +147,11 @@ export const presetButtonStyle = {
   color: "var(--text)",
   cursor: "pointer",
 } as const;
-export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
 export const LEVEL_COLORS: Record<ThinkingLevel, string> = {
+  off:     "var(--text-dim)",
   minimal: "var(--text-dim)",
   low:     "color-mix(in srgb, var(--accent) 45%, var(--text-muted))",
   medium:  "var(--accent)",
