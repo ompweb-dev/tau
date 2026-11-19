@@ -9,6 +9,7 @@ import { resolvePiBin, wrapWindowsScript } from "@/lib/omp/omp-cli";
 import { ensureAgentDir, getAgentDir } from "@/lib/omp/paths";
 import { parsePiListOutput } from "@/lib/omp/plugins-cli";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
+import { registeredProjectFor } from "@/lib/worktree";
 import type { SkillInfo } from "@/lib/api-types";
 import { annotateSkillsWithInstallInfo } from "@/lib/skill-lock";
 
@@ -176,15 +177,40 @@ async function installedPackages(cwd: string, piBin: string | null, diagnostics:
   }
 }
 
+/**
+ * Whether a session tau starts in cwd loads the project's .pi and .agents resources: tau passes `--approve` inside a
+ * registered workspace (lib/hosts/local-host.ts projectTrustArgs); elsewhere pi decides as it does in rpc mode, which
+ * has no prompt: the nearest trust.json entry, else `defaultProjectTrust` "always" (pi's core/project-trust.js).
+ * shortcut: trust.json keys are compared as exact strings (pi folds case on Windows), and a `project_trust`
+ * extension handler is not consulted.
+ */
+async function projectTrusted(cwd: string): Promise<boolean> {
+  if (await registeredProjectFor(cwd)) return true;
+  const read = (file: string): Record<string, unknown> => {
+    try { return JSON.parse(readFileSync(path.join(getAgentDir(), file), "utf8")) ?? {}; } catch { return {}; }
+  };
+  const trust = read("trust.json");
+  let dir = path.resolve(cwd);
+  try { dir = await fs.realpath(dir); } catch { /* pi falls back to the resolved path too */ }
+  for (;; dir = path.dirname(dir)) {
+    if (typeof trust[dir] === "boolean") return trust[dir] as boolean;
+    if (path.dirname(dir) === dir) break;
+  }
+  return read("settings.json").defaultProjectTrust === "always";
+}
+
 /** Skill sources for cwd in pi's precedence order: project settings, project auto-discovery, user settings, user
- * auto-discovery, packages. `scope` "user" leaves the project ones out. */
+ * auto-discovery, packages. `scope` "user", or a project pi would not trust, leaves the project ones out. */
 async function skillSources(cwd: string, piBin: string | null, diagnostics: SkillDiagnostic[], scope?: "user"): Promise<SkillSource[]> {
   const agentDir = getAgentDir();
   const projectBase = path.join(path.resolve(cwd), ".pi");
   const sources: SkillSource[] = [];
-  // shortcut: the project is taken as trusted. pi loads a project's .pi and .agents resources only once it is
-  // (trust.json, `--approve`, defaultProjectTrust); read pi's trust store here if listed skills must match that.
-  if (!scope) {
+  const trusted = !scope && await projectTrusted(cwd);
+  const projectPaths = [path.join(projectBase, "settings.json"), path.join(projectBase, "skills"), ...ancestorAgentsSkillDirs(cwd)];
+  if (!scope && !trusted && projectPaths.some((entry) => existsSync(entry))) {
+    diagnostics.push({ type: "info", message: "pi does not trust this folder, so its project skills are not loaded: add it as a workspace, or trust it in pi." });
+  }
+  if (trusted) {
     sources.push({ paths: settingsSkillPaths(path.join(projectBase, "settings.json"), projectBase), mode: "pi", source: "settings", scope: "project" });
     sources.push({ paths: [path.join(projectBase, "skills")], mode: "pi", source: ".pi", scope: "project" });
     sources.push({ paths: ancestorAgentsSkillDirs(cwd), mode: "agents", source: ".agents", scope: "project" });
@@ -193,7 +219,7 @@ async function skillSources(cwd: string, piBin: string | null, diagnostics: Skil
   sources.push({ paths: [path.join(agentDir, "skills")], mode: "pi", source: ".pi", scope: "user" });
   sources.push({ paths: [path.join(homedir(), ".agents", "skills")], mode: "agents", source: ".agents", scope: "user" });
   for (const pkg of await installedPackages(cwd, piBin, diagnostics)) {
-    if (scope && pkg.scope === "project") continue;
+    if (!trusted && pkg.scope === "project") continue;
     sources.push({ paths: packageSkillPaths(pkg.path), mode: "pi", source: pkg.source, scope: pkg.scope === "project" ? "project" : "user" });
   }
   return sources;

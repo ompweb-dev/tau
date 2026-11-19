@@ -8,7 +8,7 @@ import { isReservedLaunchArg, loadProjectRegistry } from "../project-registry";
 import { invalidateSessionEntriesCache, invalidateSessionListCache, invalidateSessionListMeta } from "../session-reader";
 import { PRESET_FULL } from "../tool-presets";
 import type { ProjectLaunchConfig } from "../types";
-import { resolveProject } from "../worktree";
+import { registeredProjectFor, resolveProject } from "../worktree";
 import { HostOpError } from "./link-protocol";
 import type { Host } from "./host";
 import { sessionOps } from "./session-ops";
@@ -112,6 +112,12 @@ export async function launchConfigForCwd(cwd: string): Promise<ProjectLaunchConf
   })?.launchConfig;
 }
 
+/** pi's `--approve` (trust the project's .pi and .agents files) for a cwd inside a workspace registered on this
+ * machine; elsewhere pi's own trust rules apply (trust.json, then defaultProjectTrust, with no prompt in rpc mode). */
+export async function projectTrustArgs(cwd: string): Promise<string[]> {
+  return await registeredProjectFor(cwd) ? ["--approve"] : [];
+}
+
 /** This machine: `child_process.spawn` and direct `fs`. */
 export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
   id: "local",
@@ -134,7 +140,7 @@ export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
       // Re-read per spawn so a respawn picks up environment values the user
       // added in Settings after the session was created (#104).
       env: getAgentEnvOverrides(),
-      extraArgs: [...buildSessionSpawnArgs(request.sessionFile, request.toolNames, launchConfig, request.spawnModel)],
+      extraArgs: [...await projectTrustArgs(cwd), ...buildSessionSpawnArgs(request.sessionFile, request.toolNames, launchConfig, request.spawnModel)],
     });
     return {
       transport,

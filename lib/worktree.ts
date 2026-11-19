@@ -4,7 +4,8 @@ import { basename, dirname, join, resolve } from "path";
 import { promisify } from "util";
 import { normalizeForComparison, samePath, toNativePath } from "./paths";
 import { createGitEnvironment } from "./project-command-env";
-import { loadProjectRegistry } from "./project-registry";
+import { comparableProjectPath } from "./comparable-path";
+import { loadProjectRegistry, type ProjectRegistryEntry } from "./project-registry";
 
 const execFileAsync = promisify(execFile);
 
@@ -206,6 +207,25 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
 
   cache.set(cwd, { info, expiresAt: Date.now() + PROJECT_CACHE_TTL_MS });
   return info;
+}
+
+/**
+ * The visible registered project that holds cwd: the project directory, a directory inside it, a linked worktree of
+ * its repository (resolveProject collapses a worktree to its main checkout) or a directory inside one, or tau's
+ * `<project>-worktrees/` sibling. Undefined when cwd lies in no workspace registered on this machine.
+ */
+export async function registeredProjectFor(cwd: string): Promise<ProjectRegistryEntry | undefined> {
+  const real = realPathOrSelf(cwd);
+  let top = real;
+  while (!existsSync(join(top, ".git")) && dirname(top) !== top) top = dirname(top);
+  const keys = [real];
+  if (existsSync(join(top, ".git"))) keys.push((await resolveProject(top)).projectRoot);
+  const within = (key: string, root: string) => key === root || key.startsWith(`${root}/`);
+  return loadProjectRegistry().projects.find((project) => {
+    if (project.hidden) return false;
+    const root = comparableProjectPath(project.path);
+    return keys.some((key) => within(comparableProjectPath(key), root) || within(comparableProjectPath(key), `${root}-worktrees`));
+  });
 }
 
 // ============================================================================

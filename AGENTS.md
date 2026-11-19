@@ -1670,6 +1670,12 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
 - `GET /api/mcp?sessionId=…&attach=1` returns the live status of a session this server already has running (a remote one included), and otherwise answers `liveError: "The session is not running"` instead of starting one (a cluster session on another member is read where it runs; `McpConfig liveOnly` shows it read-only).
 
 ### Plugins and skills
+- **Project trust.** A session's pi gets `--approve` (load the project's `.pi` and `.agents` files) only when its cwd
+  lies in a workspace registered on the host that spawns it (`projectTrustArgs`, `lib/hosts/local-host.ts`;
+  `registeredProjectFor`, `lib/worktree.ts`: the project, a directory in it, or a linked worktree of it; pool clones
+  are registered there by `pool-starts.ts`). Elsewhere pi's own rules decide, which in rpc mode means trust.json,
+  then `defaultProjectTrust: "always"`, else untrusted. `lib/skills-service.ts` lists project skills by the same
+  rule and leaves an untrusted project's out (with an info diagnostic).
 - `/api/plugins` shells out to the user's `omp plugin` CLI (`list/install/uninstall/enable/disable/upgrade`, `--json` where available) — never the Bun-only SDK.
 - `/api/skills` lists through `lib/skills-service.ts`, a pure-Node scan of what pi 1.5.2 loads (`dist/core/package-manager.js` `resolve`, `dist/core/skills.js`), in pi's precedence order: project `.pi/settings.json` `skills` paths, `<cwd>/.pi/skills`, `.agents/skills` from cwd up to the git root, user `settings.json` `skills` paths, `<agent dir>/skills`, `~/.agents/skills`, then package skills (`pi.skills` in package.json, else `skills/`) of the packages `pi list` prints (run with the project as the process cwd; never pass the directory as an argument, `cmd.exe` would interpret `&` in it). A directory with `SKILL.md` is one skill; other `.md` files count at a `.pi`-style root only, below the root in `.agents`; a description is required; the first name wins. Not replicated: settings and package filter patterns, ignore files and project trust (the listing assumes a trusted project).
 - Skill toggling edits only the `disable-model-invocation` frontmatter key on the target `SKILL.md`; keep that surgical so user formatting survives. pi reads only that key, and only a YAML `true`.
