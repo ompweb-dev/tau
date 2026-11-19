@@ -332,11 +332,11 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
 ### RPC session lifecycle (`lib/rpc-manager.ts`)
 - One wrapper per session id, keyed in a `globalThis` registry.
 - `globalThis` survives `bun --hot` re-evaluation; a plain module-level Map does not.
-- For v7 hosts, the daemon owns idle/disconnect cleanup and startup settings.
+- The daemon owns idle/disconnect cleanup and startup settings.
   Wrappers report tab/command interest and protected preparation through transport
   capabilities; disposal closes membership, while explicit delete/reload can kill.
   Reconciliation failure never kills a process another server uses.
-- Every link is host-owned since link v11, so the backstops below run only for a transport without
+- Every link is host-owned, so the backstops below run only for a transport without
   `hostOwnedLifecycle` (test fakes): concurrent `startRpcSession()` calls share one start promise.
   Two cleanup backstops remain on the server, both unref'd:
   `IDLE_DESTROY_MS` (10 min) and `DISCONNECT_DESTROY_MS`
@@ -465,30 +465,17 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
   `bun scripts/link-hol-probe.ts` makes the load; `scripts/transport-metrics.ts` prints `link small ackMs` (`clear`
   vs `behind-large`, 64 KiB ahead), `link bytesAhead` and `link dropped` per host and direction (`--session` for one
   session's link samples).
-- **Link protocol versions** (spec "Protocol versions and compatibility"). A
-  released `LINK_PROTOCOL_VERSION` changes only compatibly: an added optional
-  field or a message type receivers skip is fine; a changed type or meaning, or
-  a newly required field, needs a new version. Receivers skip unknown message
-  types (acking their `seq`) and answer unknown ops 501 `unknown_op`, from v3 on.
-  v4 (the WebSocket link) dropped v3 before any release. v5 (pieces) keeps v4;
-  v6 (uploads: hub → daemon binary frames, `upload_ack`, `uploadStart`/
-  `uploadAbort`/`uploadAttach`) keeps v4 and v5. v7 adds multi-server joins,
-  host-owned lifecycle, callback routing and channel/list discovery.
-  v8 (host pool) adds `capacity` reports, `creationId`
-  and `preparePoolProject`; v9 adds `open.launch.shareCredentials` (see "Shared
-  credentials" below); v10 adds `open.launch.configVersion`, the `config_state`
-  report and the `clusterConfig` op (see "Cluster configuration" below). v11 (the omp runner) makes channel
-  lines the runner's `{t}` frames instead of omp RPC frames and drops v4–v10: `MIN_LINK_PROTOCOL_VERSION` and
-  `LINK_PROTOCOL_VERSION` are both 11 (literal one-liners: the deploy script parses them with `sed`). Main keeps at least N-1, and
-  dropping one is an explicit decision (a hello
-  outside the range gets close 4426 with `{"serverVersion":N}`, a pre-WebSocket
-  daemon's POST gets 426). Once the WebSocket experiments end, the first version
-  released after them is a floor: the handshake, version report and an update op
-  keep working for every daemon on it or newer, and `MIN_LINK_PROTOCOL_VERSION`
-  never goes above it (spec, "Decided: backward compatibility"). Upgrade order: web app
-  first, then hosts; a daemon need not support a newer main (a v5 daemon gets
-  4426 from a v4 server and exits 1). A daemon dialing a pre-WebSocket server
-  keeps redialing with a hint.
+- **Link protocol versions** (spec "Protocol versions and compatibility"). tau's
+  application link starts at v1 (`MIN_LINK_PROTOCOL_VERSION` = `LINK_PROTOCOL_VERSION` = 1, literal one-liners:
+  deploy scripts parse them with `sed`); ompweb's v3–v12 history does not apply and no ompweb daemon links. From v1 a
+  released version changes only compatibly: an added optional field or a message type receivers skip is fine; a
+  changed type or meaning, or a newly required field, needs a new version. Receivers skip unknown message types
+  (acking their `seq`) and answer unknown ops 501 `unknown_op`. A hello outside the range gets close 4426 with
+  `{"serverVersion":N}`. Main keeps at least N-1 once a version is released, and the first released version is a
+  floor `MIN_LINK_PROTOCOL_VERSION` never goes above. Upgrade order: web app first, then hosts. Host maintenance
+  (status, inventory, `checkUpdates`/`updateSoftware`) is a separate protocol, maintenance API v1
+  (`lib/hosts/maintenance-protocol.ts`, `maintenance-hub.ts`, `daemon-maintenance.ts`, `/api/hosts/maintenance`),
+  versioned apart and kept stable so a host whose application protocol differs can still be updated.
 - **One socket per host per web server.** A new hello on the same server with
   the same token closes its previous socket 4409; on v7 only that link ends.
   One daemon may link multiple servers; two daemons must never run
@@ -643,7 +630,7 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
     error in the fingerprint walk makes the fingerprint unique, so the build reports it instead of a cached manifest standing.
     `startClusterConfigSync` (`instrumentation.node.ts`) runs `syncClusterConfig` at start, every 30 s, and
     whenever `masterConfigVersion` finds a new version after a known one (a member start reads it too):
-    `clusterConfig apply` to each online v10 member that is not `configCurrent`, `restore` to a host outside
+    `clusterConfig apply` to each online member that is not `configCurrent`, `restore` to a host outside
     the cluster whose link is up (`omp-missing` too) and that still reports a configuration of this server or has
     not reported since its link came up (a dropped `config_state`; the answer says); never while one of that
     link's ops is unanswered. Join sends `apply` after it saves `pools.json`, leave `restore`
@@ -690,9 +677,9 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
     `startPooledSession` says why: "still receiving the configuration" or "Update
     ompweb on the pool's workers". A start pinned to one member applies first and is refused with the reason; a
     plugin difference does not refuse it.
-  - **Upgrade.** Every linked daemon speaks protocol 11 or newer (`MIN_LINK_PROTOCOL_VERSION`; an older one is refused
-    at the link), so every member takes the configuration; joining also needs the `gitOrigins` op and an omp that
-    shares credentials (`clusterJoinBlock`).
+  - **Upgrade.** Every linked daemon speaks a protocol in `MIN_LINK_PROTOCOL_VERSION`..`LINK_PROTOCOL_VERSION` (any
+    other is refused at the link), so every member takes the configuration; a host joins once it is online
+    (`clusterJoinBlock`).
   - **Settings.** Rows carry `clusterConfig { …state, owned, current }` (`listHosts`); the member line shows
     current, updating (none while `masterConfigError` is set), failed (reason), held by another server, needs update (`clusterJoinBlock` says "upgrade"), and the MCP commands
     missing there. For a cluster session on another member (`isClusterTarget` with a member host) the MCP,
@@ -1687,7 +1674,7 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
 ### Updates: web server versus host software
 - **Settings → System** prepares and reviews a durable server-and-host upgrade plan, including owned compiled releases. `POST /api/app-update {action:"prepare"}` returns the plan; commit requires `{action:"commit",attemptId,approval:{planId,force}}`. Approval is bound to release identity and the registered-host/session snapshot. An incompatible host without a verified recovery path blocks server cutover.
 - **Settings → Hosts** manages individual daemons, including **This machine**; omp updates with ompweb. Normal `POST {target:"ompweb",version}` does not interrupt activity. `force:true` requires distinct GUI confirmation and may end sessions/subagents. Machine-readable `canForceUpdate` and blockers govern the action, never English message parsing. Force does not waive integrity, ownership, process identity, disabled updates, local drains or service permissions.
-- **Recovery plane.** Modern candidates may acknowledge an approved future server protocol through an operation-bound preflight nonce and maintenance receipt. Legacy recovery admits only a fixed bootstrap on one operation-bound runner channel, never general old application traffic. Windows uses native process/service/task handling. Old daemons copy only `update-worker.ts`; its startup must work without sibling modules and load shared lifecycle code from verified sources before replacing an install.
+- **Recovery plane.** A candidate may acknowledge an approved future server protocol through an operation-bound preflight nonce and a maintenance receipt; every tau host updates through its own updater over maintenance API v1 (there is no legacy bootstrap or `recover-host` path). Windows uses native process/service/task handling. A running daemon copies only `update-worker.ts`; its startup must work without sibling modules and load shared lifecycle code from verified sources before replacing an install.
 - **Completion and rollback.** `upgrade-plan.ts`, `self-update.ts` and `server-update-worker.ts` persist progress; POST acceptance and shell output are not success. Verify the expected release, live process identity and operation/boot receipt after reconnect. Retain the prior install until healthy, and report partial recovery explicitly. See `docs/superpowers/specs/2026-11-14-coordinated-gui-upgrades-design.md` when changing upgrade or bootstrap contracts.
 - `/api/omp-update` keeps only `restart`, an explicit server-side maintenance API for existing callers. The settings UI and AppShell no longer use it as a global update control or send a server-wide session restart after a host update.
 
@@ -1753,8 +1740,7 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   `request_too_large`, and the uploads stay registered for a shorter resend.
 - Bytes are forwarded, never re-encoded: the tab POSTs `/api/uploads` (start or resume, answered with the host's
   `received`) and PUTs `?offset=N` bodies of at most 1 MiB, which `putUploadChunk` (`lib/uploads.ts`) cuts into
-  `pieceBytes` blob units on the host link (link v6; `hostVersion < 6` → 426 `host_upgrade_required` on a remote host,
-  `host_restart_required` on `local`), answered once the host acked its end. A chunk putting `sent - received` over
+  `pieceBytes` blob units on the host link, answered once the host acked its end. A chunk putting `sent - received` over
   `UPLOAD_WINDOW_BYTES + pieceBytes` stops the upload with 429 `upload_window_exceeded`. On main the latest
   concurrent start wins; earlier starts still answer their callers.
   Each host `uploadStart` also carries a fresh UUIDv4 `attempt`; the daemon

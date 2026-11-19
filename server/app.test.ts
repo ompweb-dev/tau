@@ -311,7 +311,7 @@ test("Bun's idle timeout spares the event stream and the host link, and only the
     // A host daemon's link: a WebSocket whose hello gets a welcome, and which the hub pings 15 s after it opens.
     const created = await fetch(url("/api/hosts"), { method: "POST", headers: signedIn, body: JSON.stringify({ label: "box" }) });
     const bearer = { authorization: `Bearer ${(await created.json()).token}` };
-    const hostHello = { type: "hello", v: LINK_PROTOCOL_VERSION, ompVersion: "14.0.0", platform: "linux", home: "/home/u", ack: 0, channels: [] };
+    const hostHello = { type: "hello", v: LINK_PROTOCOL_VERSION, ompVersion: "14.0.0", tauVersion: "0.0.0", platform: "linux", ack: 0, channels: [] };
     // This repo's DOM typing has no init argument; Bun's WebSocket takes `{ headers }`.
     const link = new WebSocket(url("/api/hosts/link").href.replace(/^http/, "ws"), { headers: bearer } as unknown as string[]);
     t.after(() => link.close());
@@ -380,8 +380,4 @@ test("the host link refuses an unauthenticated upgrade with 401 and answers 426 
   assert.match(events[0], /^error .*\b401\b/);
 
   assert.equal((await fetch(url("/api/hosts/link"), { headers: bearer })).status, 426);
-  const hostHello = { type: "hello", v: 3, ompVersion: "14.0.0", platform: "linux", home: "/home/u", ack: 0, channels: [] };
-  const outdated = await fetch(url("/api/hosts/link"), { method: "POST", headers: bearer, body: JSON.stringify(hostHello) });
-  assert.equal(outdated.status, 426);
-  assert.equal((await outdated.json()).hostVersion, 3);
 });

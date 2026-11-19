@@ -27,7 +27,7 @@ const member = (hostId) => ({ hostId, projectsRoot: `/srv/${hostId}/tau-cluster`
 const cluster = (...hostIds) => [{ id: "cluster", label: "Cluster", enabled: true, members: hostIds.map(member), projects: [] }];
 const hostRow = (overrides = {}) => ({
   id: "local", label: "", status: "online", ompVersion: "1.5.2", platform: "linux",
-  hostVersion: 10, serverVersion: 10, lastSeenAt: null, workspaceOps: ["gitOrigins"], ...overrides,
+  hostVersion: 10, serverVersion: 10, lastSeenAt: null, ...overrides,
 });
 const linked = (id, label, overrides = {}) => hostRow({ id, label, allowAgentStart: false, ...overrides });
 
@@ -91,7 +91,6 @@ test("a first pool without this machine gives its row no master label", async (t
 const RESTART = "Restart the host service on this machine first";
 for (const [label, local, pools, reason] of [
   ["offline", { status: "offline" }, [], RESTART],
-  ["without gitOrigins", { workspaceOps: [] }, cluster("h1"), RESTART],
 ]) {
   test(`while this machine must join too and is ${label}, a non-member cannot join and says why; a member can still leave`, async (t) => {
     await showHosts(t, { hosts: [hostRow(local), linked("h1", "Laptop"), linked("h2", "Desk")], pools });
@@ -110,7 +109,6 @@ test("once this machine is a member, its own readiness no longer blocks a join",
 
 for (const [label, row, reason] of [
   ["offline", { status: "offline" }, "The host is offline"],
-  ["no gitOrigins operation", { workspaceOps: [] }, "Update tau on this host first"],
   ["flagged needs-upgrade by the hub", { status: "needs-upgrade", hostVersion: 9 }, "Update tau on this host first"],
   ["without omp (its own status text is the reason)", { status: "omp-missing" }, "omp not installed"],
 ]) {
@@ -133,7 +131,7 @@ test("when the pools cannot be loaded every switch is disabled with poolsUnavail
 
 test("a member can always leave: offline or outdated never disables its switch", async (t) => {
   await showHosts(t, {
-    hosts: [hostRow(), linked("h1", "Laptop", { status: "offline" }), linked("h2", "Desk", { workspaceOps: [] })],
+    hosts: [hostRow(), linked("h1", "Laptop", { status: "offline" }), linked("h2", "Desk", { status: "needs-upgrade" })],
     pools: cluster("local", "h1", "h2"),
   });
   for (const name of ["Laptop", "Desk"]) {
