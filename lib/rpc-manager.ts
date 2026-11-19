@@ -1,5 +1,5 @@
-// The "rpc" in this file's name (and in RpcProcess/RpcTransport, lib/pi/rpc-*.ts) is a leftover: sessions no
-// longer use omp's RPC mode. They run on tau's own omp runner channel (docs/specs/2026-11-12-omp-runner-design.md).
+// Session registry and wrapper for live sessions: each one is a `pi --mode rpc` child (with lib/pi/tau-extension.ts)
+// started by its host's daemon and driven through RpcProcess (lib/pi/rpc-process.ts) over an RpcTransport.
 import { createHash, randomUUID } from "crypto";
 import { validateAgentImages } from "./image-attachments";
 import { hasVisibleAssistantContent } from "./assistant-response";
@@ -55,7 +55,7 @@ import type { SessionLiveSnapshot, SessionLiveToolEvent, SessionStreamCursor } f
 // Types
 // ============================================================================
 
-/** The runner's `edit_message` result: the leaf moved to just before the edited user message. */
+/** The `/tau_edit` result: the leaf moved to just before the edited user message. */
 export interface SessionEditResult {
   sessionId: string;
   cancelled: boolean;
@@ -75,13 +75,11 @@ interface CompactionResultLike {
   summary?: string;
   tokensBefore?: number;
   estimatedTokensAfter?: number;
-  /** omp ≥17.4 reports the real post-compaction count when available. */
-  tokensAfter?: number;
 }
 
 const IDLE_DESTROY_MS = 10 * 60 * 1000;
 /**
- * How long a session may sit with **no web UI attached** before its omp child is
+ * How long a session may sit with **no web UI attached** before its pi child is
  * torn down. IDLE_DESTROY_MS (10min) is the backstop for a session that keeps
  * receiving traffic; this is the much faster path for "the user closed the tab
  * and walked away", so abandoned children don't hold a slot for 10 minutes.
@@ -100,12 +98,12 @@ const DISCONNECT_DESTROY_MS = process.env.TAU_DISCONNECT_DESTROY_MS !== undefine
   : 120_000;
 const READY_TIMEOUT_MS = 120_000;
 const GET_STATE_TIMEOUT_MS = 5_000;
-/** The handshake of a just-started or rejoined child: omp's post-`ready` startup work (model refresh, plugin and
+/** The handshake of a just-started or rejoined child: pi's post-`ready` startup work (model refresh, plugin and
  * marketplace updates, hooks) can hold its first answers well past GET_STATE_TIMEOUT_MS. */
 const STARTUP_COMMAND_TIMEOUT_MS = 30_000;
 const EDIT_TIMEOUT_MS = 15_000;
 /** Cap on the *acknowledgement* of a prompt frame — not on model execution.
- * omp acks a prompt as soon as it accepts it and the run then reports through
+ * pi acks a prompt as soon as it accepts it and the run then reports through
  * events (agent_start/agent_end), so an ack that never arrives means the child
  * is wedged: without this the API request (and the UI spinner behind it) would
  * stay pending forever. Generous enough to cover slow local startup work the
@@ -122,7 +120,7 @@ const GITHUB_UNKNOWN_OUTCOME = "tau restarted while this ran; the outcome is unk
 const unknownOutcome = (toolName: unknown) => (typeof toolName === "string" && GITHUB_TOOL_NAMES.has(toolName) ? GITHUB_UNKNOWN_OUTCOME : AGENT_TOOL_UNKNOWN_OUTCOME);
 
 /**
- * Failure raised by tau itself (not by omp) carrying a stable snake_case
+ * Failure raised by tau itself (not by pi) carrying a stable snake_case
  * code. API routes forward `{ error, code }` so the client dictionary can
  * localize it via `errors.<code>` while unknown codes fall back to the text.
  */
@@ -140,7 +138,7 @@ export class WebRpcError extends Error {
   }
 }
 
-// Commands forwarded to omp verbatim (request shape already matches rpc-types).
+// Commands forwarded to pi verbatim (request shape already matches rpc-types).
 const PASSTHROUGH_COMMANDS = new Set([
   "abort",
   "set_thinking_level",
@@ -159,10 +157,10 @@ const PASSTHROUGH_COMMANDS = new Set([
 
 // Commands that can carry user-attached images to the model. All of them must
 // pass the same server-side per-image/count/aggregate validation before the
-// payload reaches omp — a client is free to POST any of them directly.
+// payload reaches pi — a client is free to POST any of them directly.
 const IMAGE_BEARING_COMMANDS = new Set(["prompt", "steer", "follow_up"]);
 
-// pi-web commands with no omp RPC equivalent. The UI tolerates these failing.
+// pi-web commands with no pi RPC equivalent. The UI tolerates these failing.
 const UNSUPPORTED_COMMANDS: Record<string, string> = {
   navigate_tree: "Branch navigation is not supported over the pi RPC protocol",
   get_tools: "Per-session tool listing is not supported over the pi RPC protocol",
@@ -174,20 +172,14 @@ function toImageContents(value: unknown): Array<{ type: "image"; data: string; m
   return images?.length ? images : undefined;
 }
 
-/** omp's CompactionResult historically omitted any post-compaction token
- * count; approximate it from the summary so the compaction banner can show
- * savings instead of "→ 0 tokens". Newer omp reports a real `tokensAfter` —
- * prefer it when present. */
+/** pi's CompactionResult has no post-compaction token count; approximate it
+ * from the summary so the compaction banner can show savings instead of
+ * "→ 0 tokens". */
 function patchEstimatedTokensAfter(result: unknown): void {
   if (!result || typeof result !== "object") return;
   const compaction = result as CompactionResultLike;
   if (compaction.estimatedTokensAfter === undefined) {
-    // Prefer omp ≥17.4's real post-compaction count; fall back to the
-    // summary-length estimate for older builds.
-    const rawTokensAfter = typeof compaction.tokensAfter === "number"
-      ? Math.max(0, compaction.tokensAfter)
-      : (compaction.summary?.length ?? 0) / 4;
-    compaction.estimatedTokensAfter = Math.round(rawTokensAfter);
+    compaction.estimatedTokensAfter = Math.round((compaction.summary?.length ?? 0) / 4);
   }
 }
 
@@ -202,7 +194,7 @@ export const HANDOFF_FALLBACK_MS = 2 * 60_000;
 type HandOff = { error?: string; mayHaveBeenSent?: boolean };
 export interface MessageReplacementWatch {
   handOff(): Promise<HandOff>;
-  /** omp answered `command` under wire `id`: its `prompt_result` can settle the hand-off. */
+  /** pi answered `command` under wire `id`: its `prompt_result` can settle the hand-off. */
   replied(command: object, id: string): void;
   stop(): void;
 }
@@ -244,7 +236,7 @@ function watchReplacement(wrapper: AgentSessionWrapper, command: Record<string, 
   // exact ID names this command's message whoever else writes meanwhile, so only text inference needs the sole window.
   const peers = wrapper.peerMessageCommands;
   const ownsWindow = () => clientMessageId !== null || (!competingPending && wrapper.getMessageCommandGeneration() === generation + 1 && wrapper.peerMessageCommands === peers);
-  // The text rules need omp's user attribution. An exact ID identifies a native custom message by itself, but only a
+  // The text rules need pi's user attribution. An exact ID identifies a native custom message by itself, but only a
   // displayed one: the browser never shows a hidden message, so it cannot replace the pending row there.
   const isUserInput = (message: Record<string, unknown>) => message.role === "user"
     || (message.role === "custom" && (clientMessageId !== null ? message.display !== false : message.attribution === "user"));
@@ -346,14 +338,14 @@ function watchReplacement(wrapper: AgentSessionWrapper, command: Record<string, 
       }
     } else if (event.type === "process_exit") finish(CHILD_EXITED);
     else if (event.type === "prompt_result" && commandId !== undefined && event.id === commandId) {
-      // omp finished this prompt with no echo, so none will come. An expanded slash template's context check decides
+      // pi finished this prompt with no echo, so none will come. An expanded slash template's context check decides
       // first; once it has nothing left to try, the message may still be in the transcript.
       if (userMessageSeen && text.trimStart().startsWith("/")) {
         resultArrived = true;
         if (!checkingExpansion && !retryPending) finish(unshown);
         return;
       }
-      // It reached no transcript when omp showed no user message (an input hook may rewrite the text) and ran no turn
+      // It reached no transcript when pi showed no user message (an input hook may rewrite the text) and ran no turn
       // for it: Stop or a refusal during setup, an aborted or failed run. A slash command may have acted on its own, and
       // frames lost meanwhile (a link drop, a daemon `resync`) may have carried the echo.
       const dropped = !userMessageSeen && !text.trimStart().startsWith("/") && wrapper.getFrameGaps() === gapsAtStart
@@ -381,7 +373,7 @@ export class AgentSessionWrapper {
   private listeners: EventListener[] = [];
   private pendingUiRequests = new Map<string, UnsequencedAgentEvent>();
   private uiExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Dialogs tau itself raised (confirmFromServer): answered here, never forwarded to omp. */
+  /** Dialogs tau itself raised (confirmFromServer): answered here, never forwarded to pi. */
   private serverUiRequests = new Map<string, (confirmed: boolean) => void>();
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
@@ -414,7 +406,7 @@ export class AgentSessionWrapper {
   /** A delta found no message to apply to: a resync is asked for until the message ends. */
   private recoveringUpdates = false;
   private liveToolEvents = new Map<string, SessionLiveToolEvent>();
-  /** Calls that returned: omp keeps sending `tool_execution_update` for a backgrounded job with no later end. */
+  /** Calls that returned: pi keeps sending `tool_execution_update` for a backgrounded job with no later end. */
   private endedToolCalls = new Set<string>();
   /** Positive evidence for this run, retained after native completion but before disk append. */
   private responseObserved = false;
@@ -436,7 +428,7 @@ export class AgentSessionWrapper {
   private readonly detectNotification = createNotificationDetector();
   /** Agent activity since the last `session_settled`: background work may still run after the turn ended. */
   private unsettled = false;
-  /** Ids this conversation had before omp moved it to a new file. */
+  /** Ids this conversation was also reached by (a startup request under another id); tabs on them still view it. */
   private readonly movedFromIds: string[] = [];
   private initPromise: Promise<void> | null = null;
   /** Retained until native adoption has replayed pending requests and released live frames. */
@@ -450,7 +442,7 @@ export class AgentSessionWrapper {
   private registeredHostTools: Array<{ name?: unknown; [key: string]: unknown }> | null = null;
   /** Feeding an adopted child's open requests (see adopt): server agent tools there may already have run. */
   private replaying = false;
-  /** Adopted, and no tab has registered host tools since: omp may call tools the
+  /** Adopted, and no tab has registered host tools since: pi may call tools the
    * wrapper a restart lost registered, so every call routes as registered. */
   private hostToolsUnknown = false;
   private _adopted = false;
@@ -547,7 +539,7 @@ export class AgentSessionWrapper {
     return this.pendingUiRequests.size > 0;
   }
 
-  /** An open ask (askDialog/formDialog): omp's ask tool aborts on a user steer ("Ask interrupted by message"). */
+  /** An open ask (askDialog/formDialog): a user steer would interrupt the ask. */
   isAwaitingAsk(): boolean {
     for (const event of this.pendingUiRequests.values()) if (isAskRequest(event)) return true;
     return false;
@@ -688,13 +680,13 @@ export class AgentSessionWrapper {
     return new WebRpcError(`${this.host.label} is offline. The run continues there; it reconnects automatically.`, "host_offline", delivery);
   }
 
-  /** The command timed out because its host's link went quiet, not because omp
+  /** The command timed out because its host's link went quiet, not because pi
    * wedged: the child runs on there, so it is not recycled (the kill would wait
    * for the link anyway), and the reconcile on reconnect settles the run. */
   private linkLostDuring(timeout: RpcCommandTimeoutError): boolean {
     const lastUplink = lastUplinkAt(this.host.id);
     // A linked host that sent anything after the command went down has a live
-    // link: omp itself is wedged, and the caller recycles the child as before.
+    // link: pi itself is wedged, and the caller recycles the child as before.
     return lastUplink !== null && (this.hostDown() || lastUplink <= timeout.dispatchedAt);
   }
 
@@ -726,7 +718,7 @@ export class AgentSessionWrapper {
     void this.reconcileAfterGap();
   }
 
-  /** Frames may have been lost (link down, `resync`): re-read omp's state, as the client's get_state reconcile does. */
+  /** Frames may have been lost (link down, `resync`): re-read pi's state, as the client's get_state reconcile does. */
   private async reconcileAfterGap(): Promise<void> {
     this.frameGaps += 1;
     // A lost delta would corrupt its message silently: rebuild from the next full update instead.
@@ -779,7 +771,7 @@ export class AgentSessionWrapper {
       // Warn when the spawn cwd differs from the session's recorded directory.
       // This happens when the recorded cwd was deleted (removed worktree, moved
       // repo, different machine): resolveSpawnCwd silently substituted a live
-      // directory so omp can spawn, but without a notice the user would see the
+      // directory so pi can spawn, but without a notice the user would see the
       // sidebar/header still advertise the (gone) recorded path while file tool
       // calls operate on a different tree.
       if (this.fellBack) {
@@ -825,11 +817,11 @@ export class AgentSessionWrapper {
       if (!this.hostOwnedLifecycle) {
         await this.proc.waitReady();
       }
-      // omp's state has no shell-command flag: a `!!` command the lost server started
+      // pi's state has no shell-command flag: a `!!` command the lost server started
       // leaves bashRunning false, and its result arrives as an unsolicited response.
       this.applyIdentity(await this.getStateWithTimeout(STARTUP_COMMAND_TIMEOUT_MS));
       // The wrapper keeps neither (a tab reads both when it attaches): a child that cannot answer them fails here instead.
-      // get_state answered, so omp's startup work is over: these reads keep the status-poll budget.
+      // get_state answered, so pi's startup work is over: these reads keep the status-poll budget.
       await optional({ type: "get_subagents" }, GET_STATE_TIMEOUT_MS);
       await optional({ type: "get_btw_history" }, GET_STATE_TIMEOUT_MS);
       this.replaying = true;
@@ -838,7 +830,7 @@ export class AgentSessionWrapper {
       } finally {
         this.replaying = false;
       }
-      // Frames omp sent during the handshake are live: its agent tool calls there run normally.
+      // Frames pi sent during the handshake are live: its agent tool calls there run normally.
       this.proc.release();
       this.adoptionReplay = undefined;
       if (this.hostOwnedLifecycle && loadWebServerSettings().agentToolsEnabled) {
@@ -1199,7 +1191,7 @@ export class AgentSessionWrapper {
   }
 
   /**
-   * Ask this session's user to confirm, as an omp dialog would: same tabs,
+   * Ask this session's user to confirm, as a pi dialog would: same tabs,
    * replay and input-needed notification. Resolves false when declined, when
    * the run ends, or when the session stops.
    */
@@ -1559,7 +1551,7 @@ export class AgentSessionWrapper {
     this.reportInterest();
     this.noteActivity();
     const now = Date.now();
-    // A tab attaching mid-message needs the whole message before omp's next delta.
+    // A tab attaching mid-message needs the whole message before pi's next delta.
     if (!internal && this.streamingMessage?.role === "assistant" && this.streamingMessageId !== null) {
       listener({
         type: "message_update",
@@ -1604,7 +1596,7 @@ export class AgentSessionWrapper {
     this.onDestroyCallback = cb;
   }
 
-  /** Record an id this conversation was reached by before omp moved it; tabs still on it are still viewing it. */
+  /** Record another id this conversation was reached by; tabs still on it are still viewing it. */
   keepMovedFromId(id: string): void {
     if (!this.movedFromIds.includes(id)) this.movedFromIds.push(id);
   }
@@ -1989,8 +1981,7 @@ export class AgentSessionWrapper {
         const state = await proc.sendCommand<RpcSessionState>({ type: "get_state" }, STARTUP_COMMAND_TIMEOUT_MS);
         this.applyIdentity(state);
         // Same fresh-spawn guard as startRpcSession: a sessionless wrapper
-        // restarts bare, and omp's startup resume handling could land it on the
-        // cwd's most recent session. An on-disk session file is the resume
+        // restarts bare and must never land on an existing session. An on-disk session file is the resume
         // signal (fresh children report a not-yet-created path).
         if (!resumable && this._sessionFile && await this.host.sessionFileExists(this._sessionFile)) {
           await proc.sendCommand({ type: "new_session" });
@@ -2066,7 +2057,7 @@ export class AgentSessionWrapper {
 
   /** Lifts the taint of OLD uncertain admissions once none can echo any more; never confirms or replays them. Settlement
    * events and elapsed time alone never clear it: only a get_state read after every admission was answered, reporting
-   * no live, admitted or scheduled run, queued message or background work (omp's isSettled). One read at a time: a
+   * no live, admitted or scheduled run, queued message or background work (pi's isSettled). One read at a time: a
    * caller arriving while it runs gets the same answer. True only when the taint is gone. */
   clearMessageProofTaintIfSettled(): Promise<boolean> {
     if (this.taintRead) return this.taintRead;
@@ -2186,11 +2177,10 @@ export class AgentSessionWrapper {
 
     switch (type) {
       case "prompt": {
-        // A `!!` shell command owns the session until it exits (omp rejects a
-        // prompt then, and treating that as a hard error tore down the client's
-        // optimistic turn and lost the message). Degrade into omp's own
-        // follow-up queue instead: omp keeps owning the chips and delivers the
-        // message once the shell command releases the session.
+        // While a `!!` shell command runs with no turn, a prompt goes to pi's
+        // follow-up queue (a rule kept from omp, which refused prompts then; pi
+        // accepts them): pi keeps owning the chips and delivers the message
+        // once the shell command finishes.
         if (this.bashRunning && !this.streaming) return await this.queueWhileShellRunning(command, correlationKey);
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         if (!streamingBehavior) {
@@ -2206,7 +2196,7 @@ export class AgentSessionWrapper {
           notifyRunningChange();
         }
         try {
-          // omp acks immediately; agent output streams as events, completion is
+          // pi acks immediately; agent output streams as events, completion is
           // agent_end (agent runs) or prompt_result (local-only slash commands).
           const ack = await this.sendNativeMessageCommand<{ agentInvoked?: boolean } | undefined>({
             type: "prompt",
@@ -2441,7 +2431,7 @@ export class AgentSessionWrapper {
         const runnerId = serverRequest ? undefined : /^\d+$/.test(key) ? Number(key) : NaN;
         if (runnerId !== undefined && !Number.isSafeInteger(runnerId)) throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const method = this.pendingUiRequests.get(key)?.method;
-        // A malformed answer would drop the dialog from reconnect replay while omp rejects it.
+        // A malformed answer would drop the dialog from reconnect replay while pi rejects it.
         if (value !== undefined && (method === "askDialog" || method === "formDialog") && !isRecord(value)) {
           throw new WebRpcError("Invalid dialog answer", "invalid_ui_response");
         }
@@ -2456,7 +2446,7 @@ export class AgentSessionWrapper {
         } else {
           this.proc.sendFrame({ type: "ui_response", id: runnerId, value });
         }
-        // omp sends no ui_end for a dialog the host answered; other tabs on this
+        // pi sends no ui_end for a dialog the host answered; other tabs on this
         // session would keep showing it, so settle it for them here.
         if (wasPending) this.emit({ type: "ui_end", id });
         return null;
@@ -2471,7 +2461,7 @@ export class AgentSessionWrapper {
         if (command.excludeFromContext !== undefined && typeof command.excludeFromContext !== "boolean") {
           throw new Error("excludeFromContext must be a boolean");
         }
-        // A turn may be running: omp runs the command beside it and, as its
+        // A turn may be running: pi runs the command beside it and, as its
         // terminal does, records the result only when the next prompt starts.
         if (this.bashRunning) {
           throw new Error("A shell command is already running");
@@ -2479,8 +2469,8 @@ export class AgentSessionWrapper {
         this.bashRunning = true;
         notifyRunningChange();
         try {
-          // omp holds the result back while it streams; frames and the reply
-          // share stdout, so `streaming` when the reply is read is omp's own
+          // pi holds the result back while it streams; frames and the reply
+          // share stdout, so `streaming` when the reply is read is pi's own
           // `isStreaming`. Read it then: an agent_end in the same batch is
           // applied before this await resumes.
           let deferred = this.streaming;
@@ -2526,7 +2516,7 @@ export class AgentSessionWrapper {
           if (!success) return;
           this.hostToolNames = new Set(merged.map((t) => t.name as string));
           this.registeredHostTools = valid.filter((tool) => !AGENT_TOOL_NAMES.has(tool.name as string));
-          // omp now knows exactly these: an adopted child's lost registration is replaced.
+          // pi now knows exactly these: an adopted child's lost registration is replaced.
           this.hostToolsUnknown = false;
         });
         return null;
@@ -2611,13 +2601,12 @@ export class AgentSessionWrapper {
   }
 
   /**
-   * Degrade a prompt/steer frame into omp's follow-up queue while tau's own
+   * Degrade a prompt/steer frame into pi's follow-up queue while tau's own
    * `!!` shell command owns the child (`bashRunning`, set for the whole `bash`
-   * RPC). omp would refuse a prompt then — and aborting or erroring loses the
-   * user's message mid-task — so the message is forwarded as `follow_up`
-   * instead: the queue stays omp-owned (its `queue_update`/`get_state`
-   * snapshots feed every client's chips) and omp delivers the message after the
-   * shell command finishes, exactly as a queued follow-up sent during a run.
+   * RPC). The rule is kept from omp, which refused a prompt then; pi accepts
+   * one. The message is forwarded as `follow_up`: the queue stays pi-owned (its
+   * `queue_update`/`get_state` snapshots feed every client's chips) and pi
+   * delivers the message after the shell command finishes.
    * The reply carries the degradation so the client can tell the user their
    * message was queued, not steered.
    */
@@ -2637,9 +2626,9 @@ export class AgentSessionWrapper {
     void this.destroyAndWait(reason);
   }
 
-  /** Destroy and resolve only after the omp child has fully exited. Callers
-   * that delete the session file afterwards must await this — omp flushes
-   * session state on shutdown and would otherwise recreate the file. */
+  /** Destroy and resolve only after the pi child has fully exited. Callers
+   * that delete the session file afterwards must await this — a pi still
+   * running could append an entry and recreate the file. */
   async destroyAndWait(reason = "unspecified", stopShared = false): Promise<void> {
     // Re-entrant calls join the in-flight dispose; without this a new spawn
     // can overlap the old child's shutdown (see startRpcSession).
@@ -2738,7 +2727,7 @@ function nativeWrites(): WeakSet<object> {
   return (globalThis.__tauNativeWrites ??= new WeakSet());
 }
 
-/** True once some wrapper began writing this submitted command to omp's stdin; never before. */
+/** True once some wrapper began writing this submitted command to pi's stdin; never before. */
 export function nativeWriteStarted(command: object): boolean {
   return nativeWrites().has(command);
 }
@@ -2789,7 +2778,7 @@ export function getRpcSession(sessionId: string): AgentSessionWrapper | undefine
   return getRegistry().get(sessionId);
 }
 
-/** Every registry key of the wrapper under `sessionId` (its id and the aliases omp's moves left), else `[sessionId]`. */
+/** Every registry key of the wrapper under `sessionId` (its id and any requested alias), else `[sessionId]`. */
 export function getRpcSessionKeys(sessionId: string): string[] {
   const wrapper = getRegistry().get(sessionId);
   if (!wrapper) return [sessionId];
@@ -2816,7 +2805,7 @@ export function getRunningRpcSessionIds(): string[] {
   return getRunningRpcSessions().map((s) => s.id);
 }
 
-/** Ids of sessions with a live omp process (turn running or idle). */
+/** Ids of sessions with a live pi process (turn running or idle). */
 export function getLiveRpcSessionIds(): string[] {
   return [...getRegistry()].filter(([, session]) => session.isAlive?.()).map(([sessionId]) => sessionId);
 }
@@ -2949,8 +2938,8 @@ async function resumeSession({ id, hostId }: InterruptibleSession): Promise<void
 }
 
 /**
- * Get or create the omp RPC process for the given session.
- * For new sessions (sessionFile === ""), omp generates its own id.
+ * Get or create the pi RPC process for the given session.
+ * For new sessions (sessionFile === ""), pi generates its own id.
  * Pass toolNames to pre-configure the builtin toolset of a NEW session
  * (empty array = all tools disabled); ignored when resuming.
  */
@@ -2966,18 +2955,18 @@ function getAgentToolGuard(): AgentToolGuard {
   return globalThis.__tauAgentToolGuard;
 }
 
-/** omp's command for each agent-tool delivery; the `Record` makes a new delivery fail to compile until it is mapped. */
+/** pi's command for each agent-tool delivery; the `Record` makes a new delivery fail to compile until it is mapped. */
 const DELIVERY_COMMAND: Record<AgentToolDeliverInput["delivery"], string> = { prompt: "prompt", steer: "steer", followUp: "follow_up" };
 
 /**
  * Real session operations behind lib/agent-tools executeAgentTool.
  * Reuses the existing spawn/resume and message-send paths (startRpcSession,
  * wrapper.send) instead of a second session engine. Delivery rules, kept
- * explicit because omp's commands do not all make sense in every state:
+ * explicit because pi's commands do not all make sense in every state:
  * - prompt: only when the target is idle (starts a new turn);
  * - steer: only when the target is running (steers that turn);
  * - followUp: any state (queues behind a running turn, or starts one
- *   when idle — omp owns the queue, as with the UI's follow-ups).
+ *   when idle — pi owns the queue, as with the UI's follow-ups).
  * A waited delivery registers its turn-end waiter BEFORE sending, then
  * reads the turn's final text with get_last_assistant_text.
  */
@@ -3207,7 +3196,7 @@ export async function startRpcSession(
    * (#277). Ignored when a live child is reused; the caller's set_model RPC
    * then runs against that child as before. The spawn alone does not rewrite
    * the session file, so a later spawn without an override still hits the
-   * old saved model until omp records a new one (a successful set_model RPC
+   * old saved model until pi records a new one (a successful set_model RPC
    * or a completed turn); the picker path re-binds on each cold switch, so
    * the user is never stuck on the unrestorable model. */
   spawnModel?: string,
@@ -3228,14 +3217,13 @@ export async function startRpcSession(
 
   const existing = registry.get(sessionId);
   if (existing?.isAlive()) return { session: existing, realSessionId: existing.sessionId };
-  // A wrapper whose omp child is still flushing/exiting must fully dispose
+  // A wrapper whose pi child is still flushing/exiting must fully dispose
   // before a replacement spawns — two children touching the same .jsonl would
   // race on resume/delete/archive.
   if (existing?.destroyPromise) await untilHostDown(existing.host, existing.destroyPromise);
 
-  // omp >= 18.5 lets only one process own a session file; a second `--resume`
-  // child would fork into a new nested session on its first write. Reuse the
-  // live wrapper that already reports this file (e.g. after it moved files).
+  // Two pi processes appending to one session file would interleave their
+  // entry trees. Reuse the live wrapper that already reports this file.
   if (sessionFile && !existing) {
     for (const candidate of new Set(registry.values())) {
       if (candidate.isAlive() && candidate.sessionFile && samePath(candidate.sessionFile, sessionFile)) {
@@ -3277,10 +3265,9 @@ export async function startRpcSession(
       } else {
         await created.waitUntilReady();
       }
-      // A fresh spawn (no --resume) must never land in an existing conversation:
-      // omp's startup resume handling can be config- or version-driven into
-      // continuing the cwd's most recent session, which would silently send the
-      // first prompt into an old .jsonl. The child's reported session file
+      // A fresh spawn (no --session) must never land in an existing conversation,
+      // which would silently send the first prompt into an old .jsonl (a guard:
+      // pi starts a new session without --session). The child's reported session file
       // existing on disk is the resume signal — a genuinely fresh child reports
       // a path it has not created yet (session files are written lazily on the
       // first message), so this never fires for a real new session.
@@ -3290,9 +3277,8 @@ export async function startRpcSession(
       // Register server agent tools (#275) at startup when the gate is on,
       // so a session works for agent-to-agent calls even when no browser
       // tab ever registers host tools for it. send() merges these with any
-      // later UI registration, so this never drops the UI tools. Older omp
-      // builds without host tools simply reject the registration; ignore
-      // that the way the UI registration does.
+      // later UI registration, so this never drops the UI tools. A failed
+      // registration is ignored the way the UI registration ignores it.
       if (!created.hostOwnedLifecycle && loadWebServerSettings().agentToolsEnabled) {
         await created.send({ type: "set_host_tools", tools: AGENT_TOOL_DEFINITIONS }).catch(() => {});
       }
@@ -3325,7 +3311,7 @@ export async function startRpcSession(
     const realSessionId = created.sessionId;
     registerSession(created);
     if (creationId !== undefined) registry.set(`__new__${creationId}`, created);
-    // omp can move a resumed session during startup, before identity is known; keep the requested id routable.
+    // A resumed child can report another id than the one requested; keep the requested id routable.
     if (sessionFile && realSessionId !== sessionId) {
       registry.set(sessionId, created);
       created.keepMovedFromId(sessionId);
@@ -3341,7 +3327,7 @@ export async function startRpcSession(
   return starting;
 }
 
-/** Key a ready wrapper under its real id and keep its keys current as omp moves or switches it. */
+/** Key a ready wrapper under its real id and keep its keys current as it switches sessions. */
 function registerSession(created: AgentSessionWrapper): void {
   const registry = getRegistry();
   created.onDestroy(() => {
@@ -3360,7 +3346,7 @@ function registerSession(created: AgentSessionWrapper): void {
 }
 
 /**
- * Take over an omp child that outlived the server that spawned it (its host
+ * Take over a pi child that outlived the server that spawned it (its host
  * listed it in `hello`): no spawn and no ready wait. `replay` holds the host's
  * raw stdout lines of the child's still-open blocking requests. Legacy failed
  * adoptions kill their child; a durable creation is retained for owner-only
