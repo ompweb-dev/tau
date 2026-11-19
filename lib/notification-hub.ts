@@ -94,10 +94,9 @@ export function attachNotificationClient(clientId: string, send: Send): () => vo
 
 // ---------------------------------------------------------------- routing
 
-/** A visible tab is showing the event's conversation (under any of its ids). */
+/** A visible tab is showing the event's conversation. */
 function isOnScreen(event: NotificationEvent, presence: NotificationPresence[]): boolean {
-  const viewedAs = new Set([event.sessionId, ...(event.aliases ?? [])]);
-  return presence.some((tab) => tab.visible && tab.sessionId !== null && viewedAs.has(tab.sessionId));
+  return presence.some((tab) => tab.visible && tab.sessionId === event.sessionId);
 }
 
 /**

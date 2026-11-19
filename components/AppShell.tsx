@@ -1486,19 +1486,6 @@ export function AppShell({ appName }: { appName: string }) {
     router.replace(sessionNavigationUrl(session));
   }, [router, hydrateSelectedSession]);
 
-  const handleSessionMoved = useCallback((oldId: string, newId: string) => {
-    if (activeSessionIdRef.current !== oldId) return;
-    const hostId = activeSelectedSessionHostId;
-    activeSessionIdRef.current = newId;
-    activeSessionTargetRef.current = { id: newId, hostId };
-    setSelectedSession((current) => current && sameSessionTarget(current, { id: oldId, hostId }) ? { ...current, id: newId, path: "" } : current);
-    setRefreshKey((key) => key + 1);
-    hydrateSelectedSession(newId, hostId);
-    // This is the same conversation. Preserve ChatWindow's run/edit fences
-    // and its mounted composer, including unfinished attachments and audio.
-    router.replace(sessionNavigationUrl({ id: newId, hostId }));
-  }, [router, hydrateSelectedSession, activeSelectedSessionHostId]);
-
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
@@ -2744,7 +2731,6 @@ export function AppShell({ appName }: { appName: string }) {
               onAgentEnd={handleAgentEnd}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}
-              onSessionMoved={handleSessionMoved}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onOpenFile={selectedSession || !effectivePoolProject ? handleOpenFile : undefined}

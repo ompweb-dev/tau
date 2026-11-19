@@ -435,25 +435,3 @@ export function grantRead(sessionId: string, repoKey: string): void {
   db().prepare("INSERT OR IGNORE INTO read_grants (session_id, repo_key) VALUES (?, ?)").run(sessionId, repoKey);
 }
 
-/**
- * A session move: the moved session's watches replace any the new id already
- * holds for the same items, and keep their pending updates; read grants the
- * new id already has are kept. Pending rows whose watch is not moving stay behind.
- */
-export function renameSession(oldId: string, newId: string): void {
-  if (oldId === newId) return;
-  const d = existingDb();
-  if (!d) return;
-  transaction(d, () => {
-    d.prepare("UPDATE watch_intents SET session_id = ? WHERE session_id = ?").run(newId, oldId);
-    const movedItems = "SELECT item_key FROM watches WHERE session_id = ?";
-    d.prepare(`DELETE FROM pending WHERE session_id = ? AND item_key IN (${movedItems})`).run(newId, oldId);
-    d.prepare(`DELETE FROM watches WHERE session_id = ? AND item_key IN (${movedItems})`).run(newId, oldId);
-    // Runs while the moved watches still sit under oldId; OR REPLACE keeps one stray row from aborting the move.
-    d.prepare(`UPDATE OR REPLACE pending SET session_id = ? WHERE session_id = ? AND item_key IN (${movedItems})`).run(newId, oldId, oldId);
-    d.prepare("DELETE FROM pending WHERE session_id = ?").run(oldId);
-    d.prepare("UPDATE watches SET session_id = ? WHERE session_id = ?").run(newId, oldId);
-    d.prepare("UPDATE OR IGNORE read_grants SET session_id = ? WHERE session_id = ?").run(newId, oldId);
-    d.prepare("DELETE FROM read_grants WHERE session_id = ?").run(oldId);
-  });
-}

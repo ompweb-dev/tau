@@ -17,8 +17,6 @@ export interface NotificationEvent {
   detail?: string;
   from?: string;
   to?: string;
-  /** Earlier ids of this conversation (omp moved it to a new file); tabs may still show one. */
-  aliases?: string[];
 }
 
 /** One entry of the persisted notification history; `id` is the replace-tag `<sessionId>:<type>`. */

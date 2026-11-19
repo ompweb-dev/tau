@@ -27,7 +27,7 @@ import { HostOfflineError, getOutboxScope, rememberOutboxScope, sendAgentCommand
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
-import { clearDraft, getDraft, mergeRecoveredText, recoverDraft, setDraft, type ChatDraft } from "@/lib/draft-store";
+import { recoverDraft, setDraft } from "@/lib/draft-store";
 import { formatExitedSessionNotice, translate } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
@@ -237,8 +237,6 @@ export interface UseAgentSessionOptions {
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
-  /** The server confirmed this conversation moved files, not a fork or navigation. */
-  onSessionMoved?: (oldId: string, newId: string, sourceDraft?: ChatDraft) => void;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   modelsRefreshKey?: number;
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
@@ -314,7 +312,7 @@ function reconcileConfirmedLocalOutbox(sessionId: string, localEntries: LocalOut
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd, onSessionCreated, onSessionForked, onSessionMoved,
+    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
     onOpenFile, onOpenUrl,
   } = opts;
@@ -3498,17 +3496,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         throw new Error(translate("agentSession.commandFailed"));
       }
       if (result.cancelled) return false;
-      // The backend accepts a changed id only through its native ownership-move
-      // registry; a genuine session switch fails there. Never infer movement
-      // from a history echo or a change of the user's selected session.
-      const moved = result.sessionId !== sid;
-      edit.sessionId = result.sessionId;
-      sessionIdRef.current = result.sessionId;
+      // pi never moves a session to a new id; the backend refuses an edit that changed it.
+      if (result.sessionId !== sid) throw new Error(translate("agentSession.commandFailed"));
       if (typeof result.leafId === "string") {
         let handled = handledEditHistoryRef.current;
-        if (moved && handled?.sessionId === sid) handled.sessionId = edit.sessionId;
-        if (!handled || handled.sessionId !== edit.sessionId) {
-          handled = { sessionId: edit.sessionId, leafIds: new Set<string>() };
+        if (!handled || handled.sessionId !== sid) {
+          handled = { sessionId: sid, leafIds: new Set<string>() };
           handledEditHistoryRef.current = handled;
         }
         // Record before reloading: an echo during or after that reload must
@@ -3520,37 +3513,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         if (edit.pendingHistoryChange?.leafId === result.leafId) edit.pendingHistoryChange = null;
       }
-      if (moved) void connectEvents(edit.sessionId);
-      const loaded = await reloadActiveSessionHistory(edit.sessionId);
+      const loaded = await reloadActiveSessionHistory(sid);
       if (!isCurrent()) return false;
-      if (moved) {
-        // Snapshot after the reload: typing and attachments added while it
-        // awaited still belong to this edit's composer. Its identity changes
-        // without remounting; only a confirmed history load may seed edit text.
-        const draft = getDraft(sid) ?? { value: "", images: [], files: [] };
-        const destination = getDraft(edit.sessionId);
-        const value = destination ? mergeRecoveredText(destination.value, { text: draft.value }) : draft.value;
-        // Free the source slot before inserting an absent target: moving a
-        // draft at capacity must not evict an unrelated conversation's draft.
-        clearDraft(sid);
-        // Model text prefilled into an empty merged draft is model input even when it starts with `!` (its images are not restored).
-        const prefilled = loaded && !value.trim() && content.trim() !== "";
-        setDraft(edit.sessionId, {
-          value: loaded && !value.trim() ? content : value,
-          images: destination ? [...draft.images, ...destination.images] : draft.images,
-          files: destination ? [...draft.files, ...destination.files] : draft.files,
-          ...((prefilled || draft.promptOnly || destination?.promptOnly) ? { promptOnly: true } : {}),
-          // The same upload may sit in both drafts (an id is one file): keep its first occurrence.
-          uploads: destination
-            ? [...(draft.uploads ?? []), ...(destination.uploads ?? [])].filter((upload, at, all) => all.findIndex((other) => other.id === upload.id) === at)
-            : draft.uploads,
-        });
-        onSessionMoved?.(sid, edit.sessionId, draft);
-      }
       if (!loaded) throw new Error(translate("agentSession.commandFailed"));
-      // A moved composer adopts the merged target snapshot during its identity
-      // transition; writing through the old ref could overwrite target text.
-      if (!moved) opts.chatInputRef?.current?.insertIfEmpty(content, { promptOnly: true });
+      opts.chatInputRef?.current?.insertIfEmpty(content, { promptOnly: true });
       return true;
     } catch (error) {
       if (isCurrent()) {
@@ -3571,7 +3537,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       }
     }
-  }, [addNotice, catchUp, connectEvents, isNew, onSessionMoved, opts.chatInputRef, reloadActiveSessionHistory]);
+  }, [addNotice, catchUp, isNew, opts.chatInputRef, reloadActiveSessionHistory]);
 
   // editPrompt: omp's `branch` drops the chosen user prompt from the fork and
   // returns its text — put it in the fork's composer (edit-and-resend).

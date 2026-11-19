@@ -5,7 +5,7 @@ import { readAgentToolsEnabledFromDisk } from "../web-settings";
 import { fetchSnapshot } from "./api";
 import { diffSnapshot, formatUpdate, githubMessageOrigin, splitUpdateEvents, updateEntryId } from "./events";
 import { checkGh, defaultGhRunner, formatTarget, GhUnavailableError, parseGithubTarget, type GhRunner } from "./gh";
-import { advanceCursor, advancePendingBatch, claimPending, closeWatchStore, commitUpdate, getPending, isPosting, listWatches, pendingBatchEntryIds, postedIds, removeSessionWatches, renameSession, type PendingUpdate, type Watch } from "./watch-store";
+import { advanceCursor, advancePendingBatch, claimPending, closeWatchStore, commitUpdate, getPending, isPosting, listWatches, pendingBatchEntryIds, postedIds, removeSessionWatches, type PendingUpdate, type Watch } from "./watch-store";
 
 /**
  * Server-only poller: every watched item is fetched once per interval (items
@@ -60,7 +60,6 @@ interface WatcherState {
   /** Epoch ms of the GraphQL budget reset polling waits for. */
   budgetResetAt?: number;
   outage?: Outage;
-  detachMove?: () => void;
   stopped: boolean;
 }
 
@@ -363,19 +362,6 @@ export function startGithubWatcher(deps: WatcherDeps = {}): void {
   };
   globalThis.__tauGithubWatcher = state;
   process.once("exit", stopGithubWatcher);
-  // Lazy for the same reason as the default deliver: rpc-manager loads the agent tools that load this module.
-  void import("../rpc-manager")
-    .then(({ onSessionMove }) => {
-      if (state.stopped) return;
-      state.detachMove = onSessionMove((from, to) => {
-        try {
-          renameSession(from, to);
-        } catch (error) {
-          warn(`watches of ${from} did not follow the move`, error); // rpc-manager calls listeners unguarded
-        }
-      });
-    })
-    .catch((error) => warn("session moves are not followed", error));
   cycle(state);
 }
 
@@ -385,7 +371,6 @@ export function stopGithubWatcher(): void {
   state.stopped = true;
   for (const cancel of state.cancels) cancel();
   state.cancels.clear();
-  state.detachMove?.();
   process.off("exit", stopGithubWatcher);
   globalThis.__tauGithubWatcher = undefined;
   closeWatchStore();

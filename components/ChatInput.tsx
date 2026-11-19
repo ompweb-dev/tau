@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, moveDraftSubmissions, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -238,8 +238,6 @@ interface Props {
   uploadHostId?: string;
   /** Lazily bind a pool's real owner before staging any file bytes. Failure never falls back locally. */
   resolveUploadHost?: () => Promise<string>;
-  /** Backend-confirmed ownership relocation, distinct from navigating to a draft. */
-  draftIdentityMove?: { from: string; to: string; sourceDraft?: ChatDraft };
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
   activeGoal?: ActiveGoal | null;
@@ -259,8 +257,6 @@ export interface ChatInputHandle {
   prependText: (text: string) => void;
   addFiles: (files: File[]) => void;
   openContextPanel: () => void;
-  /** Retarget captured queue recoveries before a confirmed move can render. */
-  retargetPendingRecovery: (from: string, to: string) => void;
 }
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
@@ -360,7 +356,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   draftKey = "new:unassigned",
   uploadHostId = LOCAL_HOST_ID,
   resolveUploadHost,
-  draftIdentityMove,
   cwd,
   activeGoal,
   activePlan,
@@ -503,20 +498,15 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
    *  The edit is recorded at admission, before React batches state or flushes the persist effect, so an equal final
    *  value (clear then retype in one batch) still invalidates an older outbox commit. */
   const markInputEdited = useCallback(() => {
-    // A confirmed move can hand off the identity before React commits the draftKey prop. Edits in that window belong
-    // to the new owner, just like pending queue recovery; marking the old display key would miss its pending commit.
-    const key = draftRecoveryIdentityRef.current.key;
+    const key = draftKeyRef.current;
     if (key) markDraftEdited(key);
   }, []);
   const setValue: React.Dispatch<React.SetStateAction<string>> = useCallback((next) => {
     markInputEdited();
     setRawValue(next);
   }, [markInputEdited]);
-  const consumedIdentityMoveRef = useRef<typeof draftIdentityMove>(undefined);
-  // Pending queue edits retain this identity across confirmed moves only.
   // Navigation starts a new identity, even when a draft key is later reused.
   const draftRecoveryIdentityRef = useRef({ key: draftKey });
-  const persistedDraftRef = useRef<ChatDraft | null>(null);
   // Async dictation and slash-command completions must see the latest edit gate.
   const submissionBlockedRef = useRef(submissionBlocked);
   const valueRef = useRef(value);
@@ -532,7 +522,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   // Bumped whenever the user clears/sends the composer: in-flight FileReader
   // and file.text() reads must not re-append their results afterwards.
   const attachmentRevisionRef = useRef(0);
-  const attachmentIdentityRevisionRef = useRef(0);
   const pendingImageCountRef = useRef(0);
   const pendingTextFileCountRef = useRef(0);
   const pendingTextFileBytesRef = useRef(0);
@@ -638,15 +627,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     openContextPanel() {
       setContextOpen(true);
     },
-    retargetPendingRecovery(from, to) {
-      const identity = draftRecoveryIdentityRef.current;
-      if (identity.key === from) {
-        // The hook has transferred the stored draft, but React may not have committed the new key yet. Retarget active
-        // submissions here too: an ACK in that gap must find its draft, including one sent by an earlier mount.
-        moveDraftSubmissions(from, to);
-        identity.key = to;
-      }
-    },
   }));
 
   const patchUpload = useCallback((id: string, patch: Partial<AttachedUpload>) => {
@@ -747,7 +727,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     // Admission is a new composer edit now, not only when FileReader finishes: an older ACK must not invalidate it.
     markInputEdited();
     const revision = attachmentRevisionRef.current;
-    const identityRevision = attachmentIdentityRevisionRef.current;
     pendingImageCountRef.current += imageFiles.length;
     pendingImageBytesRef.current += inlineBytes;
     const created: AttachedImage[] = [];
@@ -766,11 +745,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         return;
       }
       setAttachedImages((prev) => {
-        // These reads already passed the picker budget before the move.
-        // A merged target must not take away their reserved slots.
-        const accepted = identityRevision !== attachmentIdentityRevisionRef.current
-          ? newImages
-          : newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
+        const accepted = newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
         newImages.slice(accepted.length).forEach(revokeImagePreview);
         return [...prev, ...accepted];
       });
@@ -798,7 +773,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     if (!textFiles.length) return;
     markInputEdited();
     const revision = attachmentRevisionRef.current;
-    const identityRevision = attachmentIdentityRevisionRef.current;
     pendingTextFileCountRef.current += textFiles.length;
     pendingTextFileBytesRef.current += textFiles.reduce((total, file) => total + file.size, 0);
     try {
@@ -821,9 +795,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       attachAsFiles(textFiles.filter((_, index) => binary[index]));
       setAttachedTextFiles((prev) => [
         ...prev,
-        ...(identityRevision !== attachmentIdentityRevisionRef.current
-          ? newFiles
-          : newFiles.slice(0, Math.max(0, MAX_ATTACHED_TEXT_FILES - prev.length))),
+        ...newFiles.slice(0, Math.max(0, MAX_ATTACHED_TEXT_FILES - prev.length)),
       ]);
     } catch {
       setAttachError(t("chatInput.attachmentTextReadFailed"));
@@ -1005,14 +977,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const uploads = attachedUploadsRef.current;
     const key = draftKeyRef.current;
     // Dictation can submit before the layout persistence effect sees its inserted text.
-    if (key && draftRecoveryIdentityRef.current.key === key) {
-      setDraft(key, captureDraft());
-    }
+    if (key) setDraft(key, captureDraft());
     const pending = beginDraftSubmission(draftKeyRef.current);
     const commit = () => {
       endDraftSubmission(pending);
-      // `pending.key` follows a confirmed identity move of an unchanged draft and is cleared if the move merged or the
-      // draft was edited first, so only the sent draft itself is ever consumed.
+      // Only the sent draft itself is ever consumed: an edit since it was sent keeps it.
       if (pending.edited) return;
       if (composerAliveRef.current && draftKeyRef.current === pending.key
         && (!pending.key || getDraftRevision(pending.key) === pending.revision)
@@ -1032,71 +1001,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   }), [clearInput, captureDraft]);
 
   useLayoutEffect(() => {
-    // The synchronous ref handoff can precede the prop commit. Keep live deltas in React for the existing move merge,
-    // rather than recreating the obsolete key (which could evict an unrelated draft at capacity).
-    if (!draftKey || draftKeyRef.current !== draftKey || draftRecoveryIdentityRef.current.key !== draftKey) return;
-    const draft = captureDraft();
-    persistedDraftRef.current = draft;
-    setDraft(draftKey, draft);
+    if (!draftKey || draftKeyRef.current !== draftKey) return;
+    setDraft(draftKey, captureDraft());
   }, [attachedImages, attachedTextFiles, attachedUploads, draftKey, value, promptOnly, captureDraft]);
 
   useLayoutEffect(() => {
     const previousDraftKey = draftKeyRef.current;
     if (previousDraftKey === draftKey) return;
-
-    if (draftIdentityMove !== consumedIdentityMoveRef.current
-      && draftIdentityMove?.from === previousDraftKey && draftIdentityMove.to === draftKey) {
-      consumedIdentityMoveRef.current = draftIdentityMove;
-      attachmentIdentityRevisionRef.current += 1;
-      draftRecoveryIdentityRef.current.key = draftKey;
-      // The hook's transfer may precede this batch's mounted state updates.
-      // Add only live deltas to its merged snapshot, not the source twice.
-      const source = draftIdentityMove.sourceDraft ?? persistedDraftRef.current;
-      const draft = getDraft(draftKey);
-      setPromptOnly(promptOnlyRef.current || Boolean(draft?.promptOnly));
-      draftKeyRef.current = draftKey;
-      // A pending outbox commit (possibly from an earlier mount) follows only its own unchanged draft to the new key.
-      moveDraftSubmissions(previousDraftKey, draftKey);
-      setRawValue((current) => {
-        const transferred = draft?.value ?? "";
-        if (!source || current === source.value) return transferred;
-        const destination = source.value && transferred.startsWith(source.value)
-          ? transferred.slice(source.value.length).replace(/^\n\n/, "")
-          : transferred;
-        return mergeRecoveredText(destination, { text: current });
-      });
-      setAttachedImages((current) => {
-        // Match occurrences, not a set: intentional identical attachments in
-        // the source or target must retain their original multiplicity.
-        const remaining = [...(source?.images ?? [])];
-        const added = current.filter((image) => {
-          const index = remaining.findIndex((item) => item.data === image.data && item.mimeType === image.mimeType);
-          if (index === -1 && source) return true;
-          if (index !== -1) remaining.splice(index, 1);
-          revokeImagePreview(image);
-          return false;
-        });
-        return [...draftImagesToAttachedImages(draft?.images), ...added];
-      });
-      setAttachedTextFiles((current) => {
-        const remaining = [...(source?.files ?? [])];
-        const added = current.filter((file) => {
-          const index = remaining.findIndex((item) => item.name === file.name && item.mimeType === file.mimeType
-            && item.content === file.content && item.size === file.size);
-          if (index === -1) return Boolean(source);
-          remaining.splice(index, 1);
-          return false;
-        });
-        return [...draftFilesToAttachedFiles(draft?.files), ...added];
-      });
-      // The same composer's uploads stay; the transferred draft's finished ones join them once.
-      setAttachedUploads((current) => [
-        ...draftUploadsToAttachedUploads(draft?.uploads).filter((upload) => !current.some((each) => each.id === upload.id)),
-        ...current,
-      ]);
-      setQueuedDeleteTarget(null);
-      return;
-    }
 
     // Invalidate any attachment reads still in flight for the old session so
     // they cannot append onto the new session's composer, and drop any stale
@@ -1131,7 +1042,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       for (const upload of prev) if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
       return draftUploadsToAttachedUploads(draft?.uploads);
     });
-  }, [draftKey, draftIdentityMove, setPromptOnly, captureDraft]);
+  }, [draftKey, setPromptOnly, captureDraft]);
 
   useLayoutEffect(() => subscribeDraftRecovery((key, recovery) => {
     if (draftKeyRef.current !== key) return;
@@ -1321,7 +1232,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     confirmTranscribe: confirmTranscribeDictation,
   } = useDictation({
     scope: draftKey,
-    identityMove: draftIdentityMove,
     // `after` comes back with the transcript from the server job, so a send or
     // queue chosen before a session switch (which remounts this composer) holds.
     // The run may have started or ended since: queue while the agent runs
@@ -1858,7 +1768,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const recoveryIdentity = draftRecoveryIdentityRef.current;
     try {
       const texts = await onClearQueuedMessages?.();
-      // Recover to this conversation's last confirmed owner, not a later navigation.
+      // Recover to the conversation the action started in, not a later navigation.
       if (action === "edit" && texts && texts.length > 0) recoverDraft(recoveryIdentity.key, { text: texts.join("\n\n"), promptOnly: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));

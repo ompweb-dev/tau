@@ -39,7 +39,7 @@ import {
   restoreScrollTop,
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
-import { getDraftSummary, type ChatDraft } from "@/lib/draft-store";
+import { getDraftSummary } from "@/lib/draft-store";
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
 import { newChatDraftKey } from "@/lib/project-ordering";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
@@ -75,7 +75,6 @@ interface Props {
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
-  onSessionMoved?: (oldId: string, newId: string) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   sessionInfoContainer?: HTMLDivElement | null;
@@ -393,7 +392,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
   );
 });
 
-export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, onSessionMoved, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled }: Props) {
   const { t, tn } = useI18n();
   const fileSource = useMemo<WorkspaceFileSource>(() => ({
     hostId: session?.hostId ?? newSessionHostId ?? "local",
@@ -406,16 +405,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   const isMobile = useIsMobile();
   const internalChatInputRef = useRef<ChatInputHandle | null>(null);
   const composerRef = chatInputRef ?? internalChatInputRef;
-  const [composerIdentityMove, setComposerIdentityMove] = useState<{ from: string; to: string; sourceDraft?: ChatDraft }>();
-  const handleSessionMoved = useCallback((oldId: string, newId: string, sourceDraft?: ChatDraft) => {
-    if (!onSessionMoved) return;
-    // A confirmed Edit changes this conversation's owner, not its composer.
-    // Keep pending reads, capture and transcription alive while rekeying drafts.
-    // Queue HTTP responses can settle before React commits the new draft key.
-    composerRef.current?.retargetPendingRecovery(oldId, newId);
-    setComposerIdentityMove({ from: oldId, to: newId, sourceDraft });
-    onSessionMoved(oldId, newId);
-  }, [composerRef, onSessionMoved]);
 
   // Wrap onAgentEnd to play the completion sound. This is more reliable than
   // wrapping handleAgentEventRef because useAgentSession overwrites that ref
@@ -466,7 +455,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     btw, askBtw,
     resolveUploadHost,
   } = useAgentSession({
-    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked, onSessionMoved: handleSessionMoved,
+    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef: composerRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
     onOpenFile: onOpenWorkspaceFile, onOpenUrl,
   });
@@ -960,7 +949,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   const hasStatusHostRow = todoPhases.length > 0 || subagents.length > 0;
   const chatInputElement = (
     <ChatInput
-      draftIdentityMove={composerIdentityMove}
       ref={composerRef}
       sessionInfoContainer={sessionInfoContainer}
       onSend={handleSend}

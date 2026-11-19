@@ -428,8 +428,6 @@ export class AgentSessionWrapper {
   private readonly detectNotification = createNotificationDetector();
   /** Agent activity since the last `session_settled`: background work may still run after the turn ended. */
   private unsettled = false;
-  /** Ids this conversation was also reached by (a startup request under another id); tabs on them still view it. */
-  private readonly movedFromIds: string[] = [];
   private initPromise: Promise<void> | null = null;
   /** Retained until native adoption has replayed pending requests and released live frames. */
   private adoptionReplay?: string[];
@@ -859,8 +857,6 @@ export class AgentSessionWrapper {
       this.awaitingAgentStart = false;
       this.awaitingAgentStartDeadline = 0;
       this.continuationGraceUntil = 0;
-      // A different conversation now: the old one's ids must not suppress its notifications.
-      this.movedFromIds.length = 0;
     }
     this._sessionId = state.sessionId;
     this._sessionFile = state.sessionFile ?? "";
@@ -916,7 +912,7 @@ export class AgentSessionWrapper {
     const notifications = this.detectNotification(frame, session);
     if (this.hostOwnedLifecycle && !isNotifier(this.host.id)) return;
     for (const notification of notifications) {
-      publishNotification(this.movedFromIds.length ? { ...notification, aliases: this.movedFromIds } : notification);
+      publishNotification(notification);
     }
   }
 
@@ -1596,11 +1592,6 @@ export class AgentSessionWrapper {
     this.onDestroyCallback = cb;
   }
 
-  /** Record another id this conversation was reached by; tabs still on it are still viewing it. */
-  keepMovedFromId(id: string): void {
-    if (!this.movedFromIds.includes(id)) this.movedFromIds.push(id);
-  }
-
   /**
    * Wait for the next `terminalEndsNeeded` terminal turn ends after this
    * call (terminal agent_end, prompt_result, or prompt_error). The caller
@@ -1848,12 +1839,10 @@ export class AgentSessionWrapper {
         throw new Error("pi returned an invalid history edit result");
       }
       const after = await this.getStateWithTimeout();
-      const unchanged = after.sessionId === sessionId && after.sessionFile === sessionFile;
-      // Only applyIdentity's native move path can retain the originating id.
-      // A reply naming a different conversation is never sufficient evidence.
-      const moved = this.movedFromIds.includes(sessionId) && after.sessionId !== sessionId;
-      if (!this.isAlive() || this.proc !== proc || result.sessionId !== after.sessionId
-        || (!unchanged && !moved) || this._sessionId !== after.sessionId || this._sessionFile !== after.sessionFile) {
+      // pi never moves a session to a new id: any other conversation means the session changed.
+      if (!this.isAlive() || this.proc !== proc || result.sessionId !== sessionId
+        || after.sessionId !== sessionId || after.sessionFile !== sessionFile
+        || this._sessionId !== sessionId || this._sessionFile !== sessionFile) {
         throw new WebRpcError("The session changed during the history edit", "session_changed");
       }
       if (result.cancelled) return result;
@@ -2718,7 +2707,6 @@ declare global {
   var __tauHostToolListeners: Set<(call: CrossSessionHostToolEvent) => void> | undefined;
   var __tauExitedSessions: Map<string, ExitedRpcSession> | undefined;
   var __tauFrameTaps: Set<(wrapper: AgentSessionWrapper, event: AgentEvent) => void> | undefined;
-  var __tauSessionMoveListeners: Set<(from: string, to: string) => void> | undefined;
   var __tauAskClosedListeners: Set<(sessionId: string) => void> | undefined;
   var __tauNativeWrites: WeakSet<object> | undefined;
 }
@@ -2844,13 +2832,6 @@ const isAskRequest = (event: UnsequencedAgentEvent | undefined): boolean => even
 /** A session's last open ask closed (answered, cancelled, expired or its child gone): the outbox's held steers may go. */
 export function onAskClosed(listener: (sessionId: string) => void): () => void {
   const listeners = (globalThis.__tauAskClosedListeners ??= new Set());
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
-}
-
-/** Confirmed ownership moves only, after registry aliases exist and before observers see the new identity. */
-export function onSessionMove(listener: (from: string, to: string) => void): () => void {
-  const listeners = (globalThis.__tauSessionMoveListeners ??= new Set());
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 }
@@ -3314,8 +3295,6 @@ export async function startRpcSession(
     // A resumed child can report another id than the one requested; keep the requested id routable.
     if (sessionFile && realSessionId !== sessionId) {
       registry.set(sessionId, created);
-      created.keepMovedFromId(sessionId);
-      for (const listener of globalThis.__tauSessionMoveListeners ?? []) listener(sessionId, realSessionId);
     }
     // A successful respawn supersedes the crash record.
     clearExitedRpcSession(sessionId);

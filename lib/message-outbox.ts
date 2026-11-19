@@ -16,7 +16,7 @@ import { listArchivedSessions } from "./pi/archive";
 import { OUTBOX_CHANGE_SCHEMA, OUTBOX_SCHEMA } from "./message-outbox-schema";
 import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { getAgentDir } from "./pi/paths";
-import { getRpcSession, getRpcSessionKeys, nativeWriteStarted, onAskClosed, onSessionMove, tapSessionFrames, type AgentEvent, type AgentSessionWrapper } from "./rpc-manager";
+import { getRpcSession, getRpcSessionKeys, nativeWriteStarted, onAskClosed, tapSessionFrames, type AgentEvent, type AgentSessionWrapper } from "./rpc-manager";
 import { isRecord } from "./type-guards";
 import type { OutboxEntry, OutboxMode } from "./types";
 import { MAX_UPLOADS_PER_MESSAGE, UPLOAD_ID_RE } from "./upload-limits";
@@ -823,9 +823,6 @@ export function startOutbox(): void {
   const detachFrames = tapSessionFrames((wrapper, event) => {
     if (globalThis.__tauOutbox === state && state.started) onChildExit(wrapper, event);
   });
-  const detachMoves = onSessionMove((from) => {
-    if (globalThis.__tauOutbox === state && state.started) publish(from);
-  });
   const detachAsks = onAskClosed((sessionId) => {
     if (globalThis.__tauOutbox !== state || !state.started) return;
     // A delivery that saw the ask open may still hold the claim: leave a wake for its release.
@@ -844,7 +841,6 @@ export function startOutbox(): void {
     process.removeListener("exit", closeOutboxStore);
     detachHello();
     detachFrames();
-    detachMoves();
     detachAsks();
   };
   // A live owner at boot can die later without another add or hello. Recover its claim, never resend it.

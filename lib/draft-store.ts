@@ -161,8 +161,7 @@ export function markDraftEdited(key: string): void {
 }
 
 /** A submission waiting for its durable commit, owned by this store (not by the composer mount that sent it, which may
- *  be gone by the time the commit lands). `key` follows a confirmed identity move of the unchanged draft and is
- *  cleared when the draft merged into another or was edited first; `edited` records any edit since it was sent. */
+ *  be gone by the time the commit lands). `edited` records any edit since it was sent. */
 export interface DraftSubmission { key: string | undefined; snapshot: ChatDraft | null; revision: number; edited: boolean }
 
 /** Starts tracking the draft at `key`. Every submission MUST be ended (`endDraftSubmission`) once its commit settles,
@@ -179,20 +178,6 @@ export function endDraftSubmission(submission: DraftSubmission): void {
 
 function markSubmissionsEdited(key: string): void {
   for (const submission of submissions) if (submission.key === key) submission.edited = true;
-}
-
-/** The hook moved `from`'s draft to `to` for a confirmed identity change (not navigation). Pending submissions follow
- *  it only while its content is still exactly what they sent and nothing edited it; otherwise they let go of it. */
-export function moveDraftSubmissions(from: string, to: string): void {
-  const moved = drafts.get(to);
-  for (const submission of submissions) {
-    if (submission.key !== from) continue;
-    if (submission.edited || !submission.snapshot || !moved || !isSameDraft(moved, submission.snapshot)) submission.key = undefined;
-    else {
-      submission.key = to;
-      submission.revision = getDraftRevision(to);
-    }
-  }
 }
 
 /** Edit generation of a key's draft: bumps on every content change (not on a same-content rewrite such as hydration or

@@ -3626,7 +3626,7 @@ async function attachEditableWrapper(t, native, { holdHistory = false } = {}) {
   };
 }
 
-async function mountMovableChat(initialId, { onOpenFile } = {}) {
+async function mountEditChat(initialId, { onOpenFile } = {}) {
   const chatInputRef = React.createRef();
   let selectedId = initialId;
   let navigate;
@@ -3644,12 +3644,6 @@ async function mountMovableChat(initialId, { onOpenFile } = {}) {
     };
     return React.createElement(ChatWindow, {
       key: navigationKey, session, newSessionCwd: null, chatInputRef, onBranchDataChange, onOpenFile,
-      onSessionMoved(oldId, newId) {
-        if (selectedId !== oldId) return;
-        selectedId = newId;
-        setSession(sessionInfo(newId));
-        window.history.replaceState(null, "", `?session=${encodeURIComponent(newId)}`);
-      },
     });
   }
   window.history.replaceState(null, "", `?session=${encodeURIComponent(initialId)}`);
@@ -3736,7 +3730,7 @@ test("same-ID Edit of a `!!` model prompt resends it as a held prompt, never a s
   t.after(() => clearDraft(sid));
   const native = primeEditableHistory(sid, bangHistory);
   world.outboxHold = true;
-  const w = await mountMovableChat(sid);
+  const w = await mountEditChat(sid);
   await confirmEdit(w.view, w.editButton());
   await until(() => native.edits.length === 1 && w.view.getByRole("textbox").value === "!!model text", "Edit must prefill the model prompt");
   await act(async () => { fireEvent.keyDown(w.view.getByRole("textbox"), { key: "Enter" }); });
@@ -3755,7 +3749,7 @@ test("same-ID Edit leaves a typed `!!` draft alone and still runs it as a shell 
   t.after(() => clearDraft(sid));
   const native = primeEditableHistory(sid, bangHistory);
   world.outboxHold = true;
-  const w = await mountMovableChat(sid);
+  const w = await mountEditChat(sid);
   await confirmEdit(w.view, w.editButton());
   await until(() => native.edits.length === 1, "Edit must reach native history");
   await settle();
@@ -3779,7 +3773,7 @@ test("observed edit-time persistence errors preserve the real composer and compl
   native.editOutcome = "persistence-error";
   const original = structuredClone(world.sessions.get(sid));
   await attachEditableWrapper(t, native);
-  const w = await mountMovableChat(sid);
+  const w = await mountEditChat(sid);
   const composer = w.view.getByRole("textbox");
   await confirmEdit(w.view, w.editButton());
   await until(() => w.view.queryAllByText(/Could not append session file: disk full/).length > 0, "native persistence failure must be displayed");
