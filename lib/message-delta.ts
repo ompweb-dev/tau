@@ -1,7 +1,8 @@
-// Rebuilds a streaming assistant message from omp's delta `message_update`
-// frames (`set_event_filter` with `messageUpdates: "delta"`, omp >= 18.13.2):
-// `message` is only `{ role }`, and `assistantMessageEvent` carries the
-// increment instead of the accumulated `partial`. Starts carry the opened
+// Rebuilds a streaming assistant message from delta `message_update` frames:
+// pi sends only those, and the host daemon gives them a `messageId`, a
+// `message` that is only `{ role }`, and block shells on the starts
+// (piStreamFrame in lib/hosts/daemon-channels.ts). `assistantMessageEvent`
+// carries the increment instead of an accumulated `partial`. Starts carry the opened
 // block, deltas append to the block at `contentIndex`, ends carry the final
 // block. Shared by the server (live snapshot, backpressure merge) and the
 // browser (display), so both rebuild the same message.

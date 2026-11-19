@@ -1078,17 +1078,14 @@ wait for that commit:
   bytes do not decode) and opens the full
   image in the lightbox. The route serves only PNG/JPEG/GIF/WebP by magic bytes.
 
-### Streaming message updates (omp deltas)
-A full `message_update` carries the whole message twice (`message` and
-`assistantMessageEvent.partial`), 7-11 KB per frame at several frames per
-second. omp >= 18.13.2 sends rebuildable deltas instead, and omp-web uses them
-end to end:
-- Every session start (spawn, restart, adoption) sends `set_event_filter`
-  `{ events: null, messageUpdates: "delta" }`. omp accepts the option since
-  18.4.5 and sends rebuildable deltas (with block shells) since 18.13.2; an omp
-  that rejects or ignores it keeps full updates, which every consumer below
-  still handles (a frame is a delta when its `message` has no `content`). The
-  reply is not read: the first delta that does not fit tells.
+### Streaming message updates (pi deltas)
+pi's wire `message_update` is delta-only (pi `docs/json.md`): it carries
+`usage` and `assistantMessageEvent`, never the message, an id or a `partial`.
+- The host daemon (`piStreamFrame`, `lib/hosts/daemon-channels.ts`) gives each
+  assistant message a `messageId` at its `message_start` (and on its
+  `message_end`), and each of its updates that id, `message: { role }` and, on
+  `text_start`/`thinking_start`/`toolcall_start`, the empty block they open.
+  Everything after it (its join snapshot, main, the browser) reads that shape.
 - `lib/message-delta.ts` is the one reducer, shared by server and browser: a
   `*_start` carries the opened block, `*_delta` appends at `contentIndex`,
   `*_end` carries the final block, `start` restarts from a whole message.
@@ -1103,13 +1100,10 @@ end to end:
   snapshot can be ahead of the next delta). `getStreamSnapshot()` (HTTP catch-up) carries it
   with `streamingMessageId`, and `onEvent` replays it as one whole
   `message_update` to a tab that attaches mid-message, before any later delta.
-- No base (adopted child after a server restart, frames lost on the host link —
-  `reconcileAfterGap` drops every base): the delta is not forwarded and the
-  wrapper switches omp to full updates until that assistant message ends (or the
-  run ends), then back to deltas. A delta that does not fit a message the
-  wrapper does have (an omp from 18.4.5 to 18.13.1 sends no block shells), or a
-  `set_event_filter` switch that fails, leaves the session on full updates for
-  good; after a failed switch the next lost delta asks for full updates again.
+- No base (frames lost on the host link — `reconcileAfterGap` drops every
+  base): the delta is not forwarded and the wrapper asks the host link for a
+  resync (its snapshot rebuilds the message), once until that assistant
+  message or the run ends.
 - Backpressure (`event-stream-hub.ts`, SSE and WebSocket sinks): a behind socket
   queues `message_update` frames; consecutive deltas of one block concatenate,
   a whole message replaces the queued updates of its message, and nothing is

@@ -24,7 +24,9 @@ type Channel = {
   commands: Map<string, { link: DaemonLink | null; id: unknown; op: string }>;
   /** `onReply`: runs as pi's successful reply is read, before the next stdout line. */
   internal: Map<string, { resolve(frame: WireFrame): void; reject(error: Error): void; timer: NodeJS.Timeout; onReply?(): void }>;
-  startup: Promise<void>; exited: boolean; opened: boolean; fullFallback: boolean; forceTimer?: NodeJS.Timeout;
+  startup: Promise<void>; exited: boolean; opened: boolean; forceTimer?: NodeJS.Timeout;
+  /** The id given to the assistant message pi is streaming (piStreamFrame). */
+  messageId?: string;
   sessionMovePending?: boolean;
   /** The link holding the history-edit lease: other links' history mutations are refused. */
   editor?: string;
@@ -53,6 +55,24 @@ function bridgedToolCall(frame: WireFrame): WireFrame | null {
   } catch {
     return null;
   }
+}
+/** pi's wire deltas carry neither the message nor an id (pi docs/json.md) and its block starts no block: give its
+ * assistant messages an id and its updates the shape lib/message-delta.ts rebuilds. Null for every other frame. */
+function piStreamFrame(channel: Channel, frame: WireFrame): WireFrame | null {
+  const role = isRecord(frame.message) ? frame.message.role : undefined;
+  if (frame.type === "message_start" && role === "assistant") return { ...frame, messageId: (channel.messageId = randomUUID()) };
+  if (frame.type === "message_end" && role === "assistant" && channel.messageId) {
+    const messageId = channel.messageId;
+    channel.messageId = undefined;
+    return { ...frame, messageId };
+  }
+  const update = frame.assistantMessageEvent;
+  if (frame.type !== "message_update" || "message" in frame || !channel.messageId || !isRecord(update)) return null;
+  const block = update.type === "text_start" ? { type: "text", text: "" }
+    : update.type === "thinking_start" ? { type: "thinking", thinking: "" }
+    : update.type === "toolcall_start" ? { type: "toolCall", id: update.id, name: update.toolName, arguments: {} }
+    : undefined;
+  return { ...frame, messageId: channel.messageId, message: { role: "assistant" }, ...(block ? { assistantMessageEvent: { ...update, block } } : {}) };
 }
 /** A companion-extension command (`/tau_*`, sent as a prompt): pi runs no turn for it, so it is no user message. */
 const isExtensionCommand = (frame: Record<string, unknown>) => frame.type === "prompt" && typeof frame.message === "string" && frame.message.startsWith("/tau_");
@@ -226,7 +246,7 @@ export class ChannelTable {
       const channel: Channel = { ...spawned, ch, launch, pending: new PendingRequests(LINK_LIMITS.pendingBytes, identity), snapshot: new StreamSnapshot(),
         members: new Map(), aliases: new Set(identity ? [identity] : []), files: new Set(launch.sessionFile ? [launch.sessionFile] : []),
         commands: new Map(), internal: new Map(),
-        startup: Promise.resolve(), exited: false, opened: false, fullFallback: false };
+        startup: Promise.resolve(), exited: false, opened: false };
       this.channels.set(ch, channel);
       channel.lifecycle = new ChannelLifecycle({ stop: reason => { this.deps.log(`channel ${ch}: stopping (${reason})`); this.stopChannel(channel, reason); }, onRunning: () => this.deps.runningChanged?.() });
       if (preparingLinkId) channel.lifecycle.setPreparing(preparingLinkId, true);
@@ -316,16 +336,14 @@ export class ChannelTable {
       for (const member of channel.members.values()) member.link.queue({ type: "resync", ch: channel.ch }, channel.ch);
       return;
     }
-    const call = bridgedToolCall(parsed);
-    const frame = call ?? parsed, line = call ? JSON.stringify(call) : rawLine;
+    const changed = bridgedToolCall(parsed) ?? piStreamFrame(channel, parsed);
+    const frame = changed ?? parsed, line = changed ? JSON.stringify(changed) : rawLine;
     if (frame.type === "session") this.noteIdentity(channel, frame);
     if (channel.shared?.isCompleted(frame)) return;
     channel.lifecycle?.noteStdout(frame);
     const agentEvent = wireEvent(frame);
     const event = agentEvent ?? frame;
-    if (agentEvent && !channel.snapshot.note(agentEvent) && !channel.fullFallback) {
-      channel.fullFallback = true;
-    }
+    if (agentEvent) channel.snapshot.note(agentEvent);
     if (event?.type === "notice" && event.source === "session-persistence" && event.level !== "error") {
       // Until a `session` frame names the moved session, recovery must not record the old id/file pair.
       channel.sessionMovePending = true; this.deps.runningChanged?.();
@@ -431,7 +449,7 @@ export class ChannelTable {
       return refuse("session_busy", "Another web app is editing this session's history; retry once it finishes");
     }
     if (op === "branch" || op === "new_session" || op === "switch_session") channel.sessionMovePending = false;
-    if (op !== null && ["set_event_filter", "set_subagent_subscription", "set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
+    if (op !== null && ["set_subagent_subscription", "set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
     if (extension && /^\/tau_host_tools\b/.test(frame.message as string)) throw invalid("This command is owned by the host daemon");
     let out = frame, id: string | null = null;
     if (isReply) {
