@@ -59,6 +59,7 @@ function bridgedToolCall(frame: WireFrame): WireFrame | null {
 /** pi's wire deltas carry neither the message nor an id (pi docs/json.md) and its block starts no block: give its
  * assistant messages an id and its updates the shape lib/message-delta.ts rebuilds. Null for every other frame. */
 function piStreamFrame(channel: Channel, frame: WireFrame): WireFrame | null {
+  if (frame.messageId !== undefined) return null;
   const role = isRecord(frame.message) ? frame.message.role : undefined;
   if (frame.type === "message_start" && role === "assistant") return { ...frame, messageId: (channel.messageId = randomUUID()) };
   if (frame.type === "message_end" && role === "assistant" && channel.messageId) {
