@@ -20,6 +20,10 @@ export interface ApiKeyProvider {
   displayName: string;
   configured: boolean;
   modelCount: number;
+  /** pi can store a key for it (`/api/auth/api-key/[provider]`). */
+  apiKeyLogin?: boolean;
+  /** The credential type stored in the host's auth.json, if any. */
+  stored?: "api_key" | "oauth" | null;
 }
 
 export type OAuthLoginState =

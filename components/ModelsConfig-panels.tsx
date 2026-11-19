@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/primitives";
 import { Plus, Trash2, ArrowDown, ArrowUp } from "lucide-react";
 import { toast } from "@/components/ui/toast";
+import { formatApiError } from "@/lib/i18n/api-error";
 import {
   NATIVE_MODEL_ROLES,
   providerInitials,
@@ -346,11 +347,32 @@ export function ModelRolesDetail({ models }: { models: RuntimeModelEntry[] }) {
   </div>;
 }
 // ── API Key detail ────────────────────────────────────────────────────────────
-// omp keeps API keys in its own encrypted credential store (agent.db), which
-// tau never reads or writes — this panel is status-only.
+// The key goes to the selected host's pi, which stores it in that host's auth.json; it is never read back.
 
-export function ApiKeyDetail({ provider }: { provider: ApiKeyProvider }) {
+export function ApiKeyDetail({ provider, hostId, onRefresh }: { provider: ApiKeyProvider; hostId: string; onRefresh: () => void }) {
   const { t, tn } = useI18n();
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const call = async (method: "POST" | "DELETE") => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/auth/api-key/${encodeURIComponent(provider.id)}?hostId=${encodeURIComponent(hostId)}`, {
+        method,
+        ...(method === "POST" ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) } : {}),
+      });
+      const d = await res.json().catch(() => ({})) as { error?: string; code?: string };
+      if (!res.ok) throw new Error(d.error || d.code ? formatApiError(d) : t("modelsConfig.serverError", { status: res.status }));
+      setKey("");
+      if (method === "POST") toast.success(t("modelsConfig.apiKeySaved", { name: provider.displayName }));
+      onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -369,9 +391,35 @@ export function ApiKeyDetail({ provider }: { provider: ApiKeyProvider }) {
           : t("modelsConfig.providerNotConfigured", { name: provider.displayName })}
       </p>
 
-      <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-        <CodeText text={t("modelsConfig.apiKeyManageHint")} />
-      </p>
+      {provider.apiKeyLogin ? (
+        <form
+          onSubmit={(event) => { event.preventDefault(); if (key.trim()) void call("POST"); }}
+          style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
+        >
+          <input
+            type="password"
+            autoComplete="off"
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+            aria-label={t("modelsConfig.apiKeyFor", { name: provider.displayName })}
+            placeholder={t("modelsConfig.apiKey")}
+            style={{ flex: "1 1 220px", minWidth: 0, padding: "6px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-panel)", color: "var(--text)", fontSize: 12, fontFamily: "var(--font-mono)" }}
+          />
+          <button type="submit" disabled={busy || !key.trim()} style={{ padding: "6px 12px", border: "none", borderRadius: "var(--radius-control)", background: "var(--accent-strong)", color: "var(--on-accent)", cursor: busy ? "wait" : "pointer", fontSize: 12, fontWeight: 600 }}>
+            {busy ? t("modelsConfig.saving") : t("modelsConfig.saveApiKey")}
+          </button>
+          {provider.stored === "api_key" && (
+            <button type="button" disabled={busy} onClick={() => void call("DELETE")} style={{ padding: "6px 12px", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", color: "var(--status-error)", cursor: busy ? "wait" : "pointer", fontSize: 12 }}>
+              {t("modelsConfig.removeApiKey")}
+            </button>
+          )}
+        </form>
+      ) : (
+        <p style={{ margin: 0, fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
+          <CodeText text={t("modelsConfig.apiKeyManageHint")} />
+        </p>
+      )}
+      {error && <div role="alert" style={{ color: "var(--status-error)", fontSize: 12 }}>{error}</div>}
     </div>
   );
 }

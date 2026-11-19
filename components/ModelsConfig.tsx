@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useHostRows } from "@/hooks/useHostRows";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { isLinkUp } from "@/lib/hosts/host";
 import { useI18n } from "@/lib/i18n";
 import { isSafeExternalUrl } from "@/lib/safe-url";
 import { omitUntouchedModelDrafts } from "@/lib/models-config-drafts";
@@ -24,6 +26,7 @@ import { Plus, Trash2, RefreshCw, AlertCircle, Cpu, Settings, Sparkles, Check as
 import { toast } from "@/components/ui/toast";
 import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
 import { ModelCatalogPicker } from "./ModelCatalogPicker";
+import { hostName } from "./host-status";
 import { ProviderAccounts } from "./ProviderAccounts";
 import {
   API_OPTIONS,
@@ -780,7 +783,7 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+function OAuthDetail({ provider, hostId, onRefresh }: { provider: OAuthProvider; hostId: string; onRefresh: () => void }) {
   const { t, tn } = useI18n();
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
@@ -812,7 +815,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setLoginState({ phase: "connecting" });
     setInputValue("");
 
-    const es = new EventSource(`/api/auth/login/${encodeURIComponent(provider.id)}`);
+    const es = new EventSource(`/api/auth/login/${encodeURIComponent(provider.id)}?hostId=${encodeURIComponent(hostId)}`);
     eventSourceRef.current = es;
 
     es.onmessage = (e) => {
@@ -863,7 +866,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       es.close();
       setLoginState((prev) => prev.phase === "success" ? prev : { phase: "error", message: t("modelsConfig.connectionLost") });
     };
-  }, [provider.id, onRefresh, t]);
+  }, [provider.id, hostId, onRefresh, t]);
 
   const submitCode = useCallback(async (token: string, code: string) => {
     if (!code.trim()) return;
@@ -1007,7 +1010,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
       </div>
 
-      <ProviderAccounts key={`${provider.id}:${accountsVersion}`} providerId={provider.id} enabled={provider.loggedIn} onChanged={onRefresh} />
+      <ProviderAccounts key={`${provider.id}:${accountsVersion}`} providerId={provider.id} hostId={hostId} enabled={provider.loggedIn} onChanged={onRefresh} />
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8 }}>
@@ -1063,24 +1066,31 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
   // instead of an empty form, and saving stays blocked so the hand-written file
   // is never overwritten with nothing.
   const [parseError, setParseError] = useState<{ message: string; path?: string } | null>(null);
+  // Logins are per host: each one keeps its own pi credentials. Only hosts whose link is up can be asked.
+  const { hosts } = useHostRows();
+  const authHosts = (hosts ?? []).filter((host) => isLinkUp(host.status));
+  const [chosenAuthHost, setAuthHost] = useState("local");
+  const authHost = authHosts.some((host) => host.id === chosenAuthHost) ? chosenAuthHost : "local";
 
   const loadOAuthProviders = useCallback(() => {
-    fetch("/api/auth/providers")
+    setOauthProviders([]);
+    fetch(`/api/auth/providers?hostId=${encodeURIComponent(authHost)}`)
       .then((r) => r.json())
       .then((d: { providers?: OAuthProvider[] }) => {
         if (Array.isArray(d.providers)) setOauthProviders(d.providers);
       })
       .catch(() => {});
-  }, []);
+  }, [authHost]);
 
   const loadApiKeyProviders = useCallback(() => {
-    fetch("/api/auth/all-providers")
+    setApiKeyProviders([]);
+    fetch(`/api/auth/all-providers?hostId=${encodeURIComponent(authHost)}`)
       .then((r) => r.json())
       .then((d: { providers?: ApiKeyProvider[] }) => {
         if (Array.isArray(d.providers)) setApiKeyProviders(d.providers);
       })
       .catch(() => {});
-  }, []);
+  }, [authHost]);
 
   const loadRuntimeModels = useCallback(async () => {
     setRuntimeModelsLoading(true);
@@ -1120,10 +1130,14 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
 
   useEffect(() => {
     loadConfig();
+    loadRuntimeModels();
+  }, [loadConfig, loadRuntimeModels]);
+
+  // Again whenever another host is chosen.
+  useEffect(() => {
     loadOAuthProviders();
     loadApiKeyProviders();
-    loadRuntimeModels();
-  }, [loadConfig, loadOAuthProviders, loadApiKeyProviders, loadRuntimeModels]);
+  }, [loadOAuthProviders, loadApiKeyProviders]);
 
   useEffect(() => {
     try {
@@ -1315,12 +1329,12 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={() => { loadOAuthProviders(); loadApiKeyProviders(); void loadRuntimeModels(); }} />;
+      return <OAuthDetail key={`${authHost}:${p.id}`} provider={p} hostId={authHost} onRefresh={() => { loadOAuthProviders(); loadApiKeyProviders(); void loadRuntimeModels(); }} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} />;
+      return <ApiKeyDetail key={`${authHost}:${p.id}`} provider={p} hostId={authHost} onRefresh={() => { loadApiKeyProviders(); void loadRuntimeModels(); }} />;
     }
     if (selection.type === "roles") return <ModelRolesDetail models={runtimeModels} />;
     if (selection.type === "registry") return <NativeRegistryDetail models={runtimeModels} connectedProviders={connectedProviders} onChanged={loadRuntimeModels} />;
@@ -1498,6 +1512,18 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                 </button>
               </div>
 
+              {subTab === "connected" && authHosts.length > 1 && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+                  {t("modelsConfig.authHost")}
+                  <select
+                    value={authHost}
+                    onChange={(event) => { setAuthHost(event.target.value); setSelection(null); }}
+                    style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-panel)", color: "var(--text)", fontSize: 12 }}
+                  >
+                    {authHosts.map((host) => <option key={host.id} value={host.id}>{hostName(t, host)}</option>)}
+                  </select>
+                </label>
+              )}
               {subTab === "connected" && !selection && (
                 <button
                   type="button"

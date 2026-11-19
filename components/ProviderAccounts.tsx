@@ -16,12 +16,10 @@ interface StoredAccount {
 }
 
 /**
- * Accounts omp stores for one provider. omp stays responsible for credentials,
- * account selection and rotation; this lists its stored credentials
- * (`get_logout_accounts`) and removes one through its `logout` RPC. omp
- * releases without that RPC fall back to the read-only list `omp usage` reports.
+ * The credential pi stores for one provider on one host (auth.json keeps one per provider), removed through that
+ * host's daemon. A failed listing falls back to the read-only list the usage report gives.
  */
-export function ProviderAccounts({ providerId, enabled, onChanged }: { providerId: string; enabled: boolean; onChanged: () => void }) {
+export function ProviderAccounts({ providerId, hostId, enabled, onChanged }: { providerId: string; hostId: string; enabled: boolean; onChanged: () => void }) {
   const { t } = useI18n();
   const { snapshot, loading: usageLoading } = useProviderUsage(enabled ? `provider=${encodeURIComponent(providerId)}` : null);
   const usageAccounts = useMemo(
@@ -37,7 +35,7 @@ export function ProviderAccounts({ providerId, enabled, onChanged }: { providerI
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
-    fetch(`/api/auth/accounts/${encodeURIComponent(providerId)}`, { signal: controller.signal })
+    fetch(`/api/auth/accounts/${encodeURIComponent(providerId)}?hostId=${encodeURIComponent(hostId)}`, { signal: controller.signal })
       .then((res) => res.json() as Promise<{ supported?: boolean; accounts?: StoredAccount[]; error?: string }>)
       // A failed listing degrades to the usage-based list rather than hiding accounts.
       .then((d) => {
@@ -50,13 +48,13 @@ export function ProviderAccounts({ providerId, enabled, onChanged }: { providerI
         setStored({ supported: false, accounts: [] });
       });
     return () => controller.abort();
-  }, [enabled, providerId, version]);
+  }, [enabled, providerId, hostId, version]);
 
   const disconnect = async (account: StoredAccount) => {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/auth/accounts/${encodeURIComponent(providerId)}?credentialId=${account.credentialId}`, { method: "DELETE" });
+      const res = await fetch(`/api/auth/accounts/${encodeURIComponent(providerId)}?credentialId=${account.credentialId}&hostId=${encodeURIComponent(hostId)}`, { method: "DELETE" });
       const d = await res.json().catch(() => ({})) as { error?: string; code?: string };
       if (!res.ok) throw new Error(d.error || d.code ? formatApiError(d) : `HTTP ${res.status}`);
       setConfirm(null);
