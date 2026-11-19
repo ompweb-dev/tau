@@ -2,12 +2,12 @@ import type { RpcTransport } from "../pi/rpc-transport";
 import type { SessionOps } from "./session-ops";
 import type { WorkspaceOps } from "../workspace-types";
 
-export type HostStatus = "online" | "offline" | "needs-upgrade" | "omp-missing";
+export type HostStatus = "online" | "offline" | "needs-upgrade" | "pi-missing";
 
-/** The link carries traffic: sends, ops and children work. An omp-missing host
+/** The link carries traffic: sends, ops and children work. An pi-missing host
  * is linked too; only spawning there fails, with its own error. */
 export function isLinkUp(status: HostStatus): boolean {
-  return status === "online" || status === "omp-missing";
+  return status === "online" || status === "pi-missing";
 }
 
 export interface SpawnRequest {

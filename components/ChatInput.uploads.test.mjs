@@ -184,7 +184,7 @@ async function uploadOwner(t) {
     }
     rmSync(scratch, { recursive: true, force: true });
   });
-  await waitFor(() => assert.ok(["online", "omp-missing"].includes(hub.getHost(host.id).status())), { timeout: 5000 });
+  await waitFor(() => assert.ok(["online", "pi-missing"].includes(hub.getHost(host.id).status())), { timeout: 5000 });
   realUploadRoutes = (url, init) => {
     const req = new Request(new URL(String(url), "http://composer.test"), init);
     const context = { params: Promise.resolve({ id: new URL(req.url).pathname.split("/").at(-1) }) };

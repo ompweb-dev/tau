@@ -639,7 +639,7 @@ export const sessionOps: SessionOps = {
       return ok({ html: readFileSync(outputPath, "utf8"), fileName });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes(PI_NOT_FOUND)) return fail(500, "omp_not_found", message);
+      if (message.includes(PI_NOT_FOUND)) return fail(500, "pi_not_found", message);
       throw error;
     } finally {
       rmSync(outputPath, { force: true });

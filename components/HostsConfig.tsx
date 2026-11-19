@@ -197,7 +197,7 @@ function HostCard({ host, cluster, onRename, onRevoke, onJoin, onLeave }: { host
   const unavailable = !cluster.poolsLoaded && cluster.poolsFailed ? t("hostsConfig.poolsUnavailable") : null;
   const block = cluster.poolsLoaded && !member && linked ? joinBlock(host) : null;
   const joinReason = unavailable ?? (block === "needs-upgrade" ? t("hostsConfig.joinUpgrade")
-    : block === "omp-missing" ? hostStatusText(t, host)
+    : block === "pi-missing" ? hostStatusText(t, host)
         : block !== null ? t("hostsConfig.joinOffline")
           : !member ? cluster.localReason : null);
   const reasonId = useId();

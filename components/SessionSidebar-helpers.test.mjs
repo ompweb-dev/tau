@@ -35,7 +35,7 @@ test("hostsCameOnline: a link-up transition, or a remote host already linked at 
   assert.equal(hostsCameOnline(null, [local, row("h1", "offline")]), false, "first snapshot, remote host offline");
   assert.equal(hostsCameOnline(null, [local, row("h1", "online")]), true, "first snapshot, remote host linked after the load");
   assert.equal(hostsCameOnline([local, row("h1", "offline")], [local, row("h1", "online")]), true, "offline -> online");
-  assert.equal(hostsCameOnline([local, row("h1", "needs-upgrade")], [local, row("h1", "omp-missing")]), true, "linked but unusable -> linked");
+  assert.equal(hostsCameOnline([local, row("h1", "needs-upgrade")], [local, row("h1", "pi-missing")]), true, "linked but unusable -> linked");
   assert.equal(hostsCameOnline([local], [local, row("h2", "online")]), true, "a new host appearing online");
   assert.equal(hostsCameOnline([local], [local, row("h2", "offline")]), false, "a new host appearing offline");
   assert.equal(hostsCameOnline([local, row("h1", "online")], [local, row("h1", "online")]), false, "no status change");

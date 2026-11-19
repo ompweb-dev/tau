@@ -136,7 +136,7 @@ function readScope(scope: unknown): PluginScope {
 function pluginErrorResponse(error: unknown): Response {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes(PI_NOT_FOUND)) {
-    return Response.json({ error: message, code: "omp_not_found" }, { status: 500 });
+    return Response.json({ error: message, code: "pi_not_found" }, { status: 500 });
   }
   return Response.json({ error: message }, { status: 500 });
 }

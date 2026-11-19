@@ -110,7 +110,7 @@ test("once this machine is a member, its own readiness no longer blocks a join",
 for (const [label, row, reason] of [
   ["offline", { status: "offline" }, "The host is offline"],
   ["flagged needs-upgrade by the hub", { status: "needs-upgrade", hostVersion: 9 }, "Update tau on this host first"],
-  ["without omp (its own status text is the reason)", { status: "omp-missing" }, "omp not installed"],
+  ["without omp (its own status text is the reason)", { status: "pi-missing" }, "pi not installed"],
 ]) {
   test(`a host that is ${label} cannot join and says why`, async (t) => {
     await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop", row)], pools: cluster("local") });
@@ -245,7 +245,7 @@ test("leaving is confirmed, then sends DELETE", async (t) => {
   const { calls, user } = await showHosts(t, { hosts: [hostRow(), linked("h1", "Laptop")], pools: cluster("local", "h1") });
   await user.click(clusterSwitch("Laptop"));
   const dialog = await screen.findByRole("dialog", { name: "Remove Laptop from the cluster?" });
-  assert.ok(within(dialog).getByText(/The cluster keeps the projects it gained from Laptop; hide any you do not want\. Laptop gets its own omp configuration back\./));
+  assert.ok(within(dialog).getByText(/The cluster keeps the projects it gained from Laptop; hide any you do not want\. Laptop gets its own pi configuration back\./));
   assert.equal(calls.some((call) => call.method === "DELETE"), false);
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await waitFor(() => assert.equal(screen.queryByRole("dialog"), null));
@@ -265,7 +265,7 @@ test("a leave whose own configuration could not be put back says so and why", as
   });
   await user.click(clusterSwitch("Laptop"));
   await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }));
-  await waitFor(() => assert.deepEqual(errors, ["Laptop left the cluster, but its own omp configuration could not be put back: tau/own-config/agent is not readable. It is retried automatically while the host is linked."]));
+  await waitFor(() => assert.deepEqual(errors, ["Laptop left the cluster, but its own pi configuration could not be put back: tau/own-config/agent is not readable. It is retried automatically while the host is linked."]));
 });
 
 const configState = (fields = {}) => ({ version: "a".repeat(64), files: "current", error: null, missingCommands: [], owned: true, current: true, ...fields });

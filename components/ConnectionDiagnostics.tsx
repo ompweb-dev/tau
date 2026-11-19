@@ -12,7 +12,7 @@ const POLL_MS = 1000;
 const METRIC_KEYS: Record<DiagnosticMetric, { label: string; title: string }> = {
   upMs: { label: "connectionDiagnostics.metricUp", title: "connectionDiagnostics.metricUpTitle" },
   transportMs: { label: "connectionDiagnostics.metricTransport", title: "connectionDiagnostics.metricTransportTitle" },
-  ompMs: { label: "connectionDiagnostics.metricOmp", title: "connectionDiagnostics.metricOmpTitle" },
+  ompMs: { label: "connectionDiagnostics.metricPi", title: "connectionDiagnostics.metricPiTitle" },
   serverMs: { label: "connectionDiagnostics.metricServer", title: "connectionDiagnostics.metricServerTitle" },
   totalMs: { label: "connectionDiagnostics.metricTotal", title: "connectionDiagnostics.metricTotalTitle" },
   eventMs: { label: "connectionDiagnostics.metricEvent", title: "connectionDiagnostics.metricEventTitle" },

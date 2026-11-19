@@ -39,7 +39,7 @@ export const SLASH_SOURCE_GROUP_LABEL_KEYS: Record<SlashCommandSource, string> =
   extension: "chatInput.groupExtensions",
   prompt: "chatInput.groupPrompts",
   skill: "chatInput.groupSkills",
-  ompBuiltin: "chatInput.groupOmpBuiltin",
+  ompBuiltin: "chatInput.groupPiBuiltin",
 };
 
 export const SLASH_SOURCE_ORDER: Record<SlashCommandSource, number> = {

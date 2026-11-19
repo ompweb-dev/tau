@@ -730,7 +730,7 @@ function openLink(link: Link, ws: LinkSocket, hello: Hello): void {
   clearInterval(link.pingTimer);
   link.pingTimer = setInterval(() => enqueue(link, encodeLine({ type: "ping" })), linkTimings.pingMs);
   link.pingTimer.unref?.();
-  setStatus(link, hello.piVersion === null ? "omp-missing" : "online");
+  setStatus(link, hello.piVersion === null ? "pi-missing" : "online");
   reattach(link, hello.channels);
   notify(hub().helloListeners, link.id, hello.channels);
 }
@@ -1453,7 +1453,7 @@ export class RemoteHost implements Host {
 
   async spawnRpc(spawnRequest: SpawnRequest, sessionId: string | null = null, options?: { preparing?: boolean; expectedChannel?: string }): Promise<SpawnResult> {
     const link = linkFor(this.id);
-    if (link.status === "omp-missing") throw new HostOpError(503, "host_omp_missing", `omp is not installed on ${this.label}`);
+    if (link.status === "pi-missing") throw new HostOpError(503, "host_pi_missing", `omp is not installed on ${this.label}`);
     const { creationId } = spawnRequest;
     if (creationId !== undefined) {
       if (typeof creationId !== "string" || !CREATION_ID_RE.test(creationId)) {

@@ -194,7 +194,7 @@ export function McpConfig({ cwd }: { cwd: string | null }) {
       {message && <Alert description={message} onDismiss={() => setMessage(null)} />}
       {groups.filter((group) => group.managed).map(groupView)}
       {loading && displayedServers.length === 0 && <div className="mcp-empty" role="status"><LoaderCircle size={16} className="mcp-spin" aria-hidden="true" />{t("appShell.loading")}</div>}
-      {!loading && managedCount === 0 && <div className="mcp-empty">{t("mcpConfig.noOmpServers")}</div>}
+      {!loading && managedCount === 0 && <div className="mcp-empty">{t("mcpConfig.noPiServers")}</div>}
       {otherGroups.length > 0 && <details className="settings-card mcp-other-configs">
         <summary className="ui-focus-ring"><ChevronRight size={15} className="mcp-details-chevron" aria-hidden="true" /><span>{t("mcpConfig.otherSources")}</span><span className="mcp-chip">{otherGroups.reduce((sum, group) => sum + group.servers.length, 0)}</span></summary>
         <div className="mcp-other-content"><p className="mcp-management-description">{t("mcpConfig.otherSourcesHint")}</p>{otherGroups.map(groupView)}</div>

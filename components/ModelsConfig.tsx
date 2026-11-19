@@ -1441,7 +1441,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
         {!embedded && (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <DialogTitle style={{ fontSize: 16, margin: 0 }}>{t("modelsConfig.title")}</DialogTitle>
-            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>~/.omp/agent/models.yml</code>
+            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>~/.pi/agent/models.json</code>
           </div>
           <button onClick={onClose} aria-label={t("modelsConfig.close")} title={t("modelsConfig.close")} className="ui-focus-ring" style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "4px 8px", minWidth: "var(--control-height-sm)", minHeight: "var(--control-height-sm)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--radius-control)" }}>×</button>
         </div>)}
@@ -1498,7 +1498,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                   onClick={() => { setSubTab("system"); setSelection({ type: systemTab }); }}
                 >
                   <Layers size={14} aria-hidden="true" />
-                  <span>{t("modelsConfig.ompSystemSection")}</span>
+                  <span>{t("modelsConfig.piSystemSection")}</span>
                 </button>
               </div>
 
@@ -1805,7 +1805,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                     <div style={{ flex: "1 1 220px", minWidth: 0, overflowWrap: "anywhere" }}>
                       <div style={{ fontSize: "var(--text-md)", fontWeight: 600, color: "var(--text)" }}>{t("modelsConfig.customProviders")}</div>
                       <div style={{ fontSize: "var(--text-body)", color: "var(--text-muted)", marginTop: 3 }}>
-                        Custom endpoints, local Ollama / vLLM models, or reverse proxies defined in <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>~/.omp/agent/models.yml</code>.
+                        Custom endpoints, local Ollama / vLLM models, or reverse proxies defined in <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>~/.pi/agent/models.json</code>.
                       </div>
                     </div>
                     <button
