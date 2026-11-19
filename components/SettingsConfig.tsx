@@ -44,7 +44,6 @@ const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => mod
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { loading: SettingsTabLoading });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { loading: SettingsTabLoading });
 const McpConfig = dynamic(() => import("./McpConfig").then((module) => module.McpConfig), { loading: SettingsTabLoading });
-const AgentsConfig = dynamic(() => import("./AgentsConfig").then((module) => module.AgentsConfig), { loading: SettingsTabLoading });
 const HostsConfig = dynamic(() => import("./HostsConfig").then((module) => module.HostsConfig), { loading: SettingsTabLoading });
 const UsageConfig = dynamic(() => import("./UsageConfig").then((module) => module.UsageConfig), { loading: SettingsTabLoading });
 
@@ -188,10 +187,6 @@ const SETTING_INDEX: SettingIndexEntry[] = [
   { id: "automatic-retry", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.retryToggle", descKey: "settingsConfig.retryToggleDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Automatic Retry", fallbackDesc: "Retry failed turns automatically.", scope: "Native OMP" },
   { id: "max-attempts", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.maxAttempts", descKey: "settingsConfig.maxAttemptsDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Max Attempts", fallbackDesc: "Retry limit before giving up.", scope: "Native OMP" },
   { id: "model-fallback", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.modelFallback", descKey: "settingsConfig.modelFallbackDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Model Fallback", fallbackDesc: "Fall back to alternative model when retries exhaust.", scope: "Native OMP" },
-  // Agents
-  { id: "agent-roster", tab: "agents", sectionKey: "settingsConfig.agentsTitle", labelKey: "settingsTabs.agents.label", descKey: "settingsTabs.agents.description", fallbackSection: "Agents", fallbackLabel: "Agent roster", fallbackDesc: "Browse enabled agents filtered by name and source.", scope: "Native OMP" },
-  { id: "agent-model", tab: "agents", sectionKey: "settingsConfig.agentsTitle", labelKey: "agentsConfig.modelRoles", descKey: "modelsConfig.modelRolesDesc", fallbackSection: "Agents", fallbackLabel: "Agent model", fallbackDesc: "Model mapping and reasoning effort per agent role.", scope: "Native OMP" },
-  { id: "agent-tools", tab: "agents", sectionKey: "settingsConfig.agentsTitle", labelKey: "agentsConfig.tools", descKey: "settingsTabs.agents.description", fallbackSection: "Agents", fallbackLabel: "Agent tools", fallbackDesc: "Allowed tools and delegated task prompt per agent.", scope: "Native OMP" },
   // Extensions & Tools
   { id: "load-project-mcp-servers", tab: "mcp", sectionKey: "settingsConfig.extensionsTools", labelKey: "settingsConfig.loadProjectMcp", descKey: "settingsConfig.loadProjectMcpDesc", fallbackSection: "Extensions & Tools", fallbackLabel: "Load Project MCP Servers", fallbackDesc: "Allow project-root MCP configuration to be discovered.", scope: "Native OMP" },
   { id: "render-mcp-markdown", tab: "mcp", sectionKey: "settingsConfig.extensionsTools", labelKey: "settingsConfig.renderMcpMarkdown", descKey: "settingsConfig.renderMcpMarkdownDesc", fallbackSection: "Extensions & Tools", fallbackLabel: "Render MCP Markdown", fallbackDesc: "Render non-JSON MCP results as Markdown in transcript.", scope: "Native OMP" },
@@ -963,8 +958,8 @@ function CompactionMethodOrder({ value, onChange, ...aria }: { value: readonly C
 }
 
 /** Tabs that edit the mirrored configuration (spec K1): `settings.json` (packages included), `models.json`, MCP servers,
- * skills (agents: an omp leftover, `agents/` is not mirrored). Interface, System, usage, hosts and notifications belong to this browser or this server only. */
-const CLUSTER_CONFIG_TABS: readonly SettingsTab[] = ["safety", "models", "providers", "intelligence", "agents", "mcp", "skills", "plugins"];
+ * skills. Interface, System, usage, hosts and notifications belong to this browser or this server only. */
+const CLUSTER_CONFIG_TABS: readonly SettingsTab[] = ["safety", "models", "providers", "intelligence", "mcp", "skills", "plugins"];
 
 export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCallsDefaultCollapsedChange, hideToolActivity, onHideToolActivityChange, neverFoldActivity, onNeverFoldActivityChange, showToolCallsUnfolded, onShowToolCallsUnfoldedChange, expandThinkingByDefault, onExpandThinkingByDefaultChange, onHideThinkingBlockChange, providerUsageVisible, onProviderUsageVisibleChange, scopeNativeSelectAll, onScopeNativeSelectAllChange, openUrlAutomatically, onOpenUrlAutomaticallyChange, cwd, remoteHost, cluster, sessionId, onModelsSaved, onPluginsReloaded, appUpdate, onRefreshAppUpdate, onRequestAppUpdate, onSelectTab, onClose }: {
   activeTab: SettingsTab;
@@ -1872,36 +1867,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
             {cwd && currentTab === "plugins" && (
               <div role="tabpanel" id="settings-panel-plugins" aria-labelledby="settings-tab-plugins" className="settings-panel-inner" style={{ display: currentTab === "plugins" ? "flex" : "none", width: "100%", maxWidth: 940, minHeight: isMobile ? undefined : 600, flexDirection: "column", padding: isMobile ? "16px 14px 32px" : "32px 24px 64px" }}>
                 {panelsUnavailable ? remoteUnavailable : <PluginsConfig embedded cwd={panelCwd} sessionId={panelSessionId} onClose={onClose} onReloaded={onPluginsReloaded} />}
-              </div>
-            )}
-
-            {/* AGENTS TAB */}
-            {currentTab === "agents" && (
-              <div
-                role="tabpanel"
-                id="settings-panel-agents"
-                aria-labelledby="settings-tab-agents"
-                className="settings-panel-inner"
-                style={{
-                  display: currentTab === "agents" ? "flex" : "none",
-                  width: "100%",
-                  maxWidth: 940,
-                  minHeight: 0,
-                  flexDirection: "column",
-                  padding: isMobile ? "16px 14px 32px" : "32px 24px 64px",
-                  gap: 16,
-                  ...(highlightId && ["agent-roster", "agent-model", "agent-tools"].includes(highlightId)
-                    ? { border: "1px solid var(--accent)", boxShadow: "0 0 0 2px var(--accent)" }
-                    : {}),
-                }}
-              >
-                <div style={{ marginBottom: 4 }}>
-                  <h2 className="display-serif" style={{ fontSize: 22, fontWeight: 600, margin: 0, color: "var(--text)", letterSpacing: "-0.01em" }}>{t("settingsConfig.agentsTitle")}</h2>
-                  <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45 }}>
-                    {t("settingsConfig.agentsDesc")}
-                  </p>
-                </div>
-                {panelsUnavailable ? remoteUnavailable : <AgentsConfig cwd={panelCwd} userOnly={remoteHost} />}
               </div>
             )}
 

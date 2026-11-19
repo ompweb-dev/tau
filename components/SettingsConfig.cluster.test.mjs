@@ -41,7 +41,6 @@ function recordRequests(t) {
       return Response.json(String(url).includes("live=1") ? { servers: [], inventory, liveServers: [{ ...inventory[0], status: "connected" }] } : { servers: [], inventory });
     }
     if (path === "/api/skills") return Response.json({ skills: [] });
-    if (path === "/api/agents") return Response.json({ agents: [] });
     if (path === "/api/plugins") return Response.json({ packages: [], totals: { extensions: 0, skills: 0, prompts: 0, themes: 0 }, diagnostics: [] });
     return Response.json({});
   });
@@ -52,7 +51,7 @@ const mentions = (request, text) => [request.url, request.body ?? ""].some((part
 // What each panel asks on another member: never the member's workspace; only MCP names its session, to read the
 // live status of the process running there, never to start one (`attach=1`).
 const memberMcp = (live) => `/api/mcp?${new URLSearchParams({ sessionId: MEMBER_SESSION, attach: "1", live })}`;
-const PANELS = { mcp: ["/api/mcp", [memberMcp("0"), memberMcp("1")]], skills: ["/api/skills", ["/api/skills"]], agents: ["/api/agents", ["/api/agents?"]] };
+const PANELS = { mcp: ["/api/mcp", [memberMcp("0"), memberMcp("1")]], skills: ["/api/skills", ["/api/skills"]] };
 
 for (const [tab, [path, urls]] of Object.entries(PANELS)) {
   test(`a cluster session on another member shows the ${tab} panel at this machine's user level, under the notice`, async (t) => {
@@ -79,18 +78,6 @@ test("on another member MCP shows the session's live status read-only, the user-
   assert.ok(screen.getByText("Load Project MCP Servers"));
   assert.equal(screen.queryByText("Project MCP Servers"), null);
   assert.deepEqual(requests.filter((request) => request.method !== "GET" && request.url.startsWith("/api/mcp")), []);
-});
-
-test("on another member a new agent can only be the user's", async (t) => {
-  recordRequests(t);
-  render(createElement(SettingsConfig, { ...settingsProps, activeTab: "agents", remoteHost: true, cluster: true }));
-  const [create] = await screen.findAllByRole("button", { name: "New agent" });
-  await waitFor(() => assert.equal(create.disabled, false));
-  const user = userEvent.setup();
-  await user.click(create);
-  await user.click(await screen.findByRole("combobox", { name: "scope" }));
-  assert.ok(await screen.findByRole("option", { name: "user" }));
-  assert.equal(screen.queryByRole("option", { name: "project" }), null);
 });
 
 test("on another member the Skills panel installs only for the user", async (t) => {

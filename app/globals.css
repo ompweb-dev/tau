@@ -4906,10 +4906,7 @@ html[data-touch-targets="accessible"] :is(
   .settings-close-btn,
   .settings-header input,
   .settings-nav-item,
-  .providers-segmented-btn,
-  .agent-config-action,
-  .agent-config-search,
-  .agent-config-row
+  .providers-segmented-btn
 ) {
     min-height: 44px;
 }
