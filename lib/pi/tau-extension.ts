@@ -7,6 +7,7 @@
  *   3. Message identity and origin (`/tau_meta`, `input`, `message_start`/`message_end`)
  *   4. `/btw` side questions (`/tau_btw`)
  *   5. History Edit (`/tau_edit`)
+ *   6. Provider logins (`/tau_auth`), read and written through pi's own model runtime
  * pi-subagents needs no bridge here: tau reads its tool progress and `subagent-async` widget (lib/omp/subagent-bridge.ts).
  */
 
@@ -30,6 +31,8 @@ interface PiContext {
   model?: unknown;
   modelRegistry?: {
     streamSimple(model: unknown, context: { systemPrompt?: string; messages: unknown[] }, options?: { signal?: AbortSignal }): ModelStream;
+    /** pi's ModelRuntime (TypeScript-private, public at runtime): the one owner of auth.json. */
+    runtime?: ModelRuntime;
   };
   sessionManager?: {
     getEntries?: () => SessionEntry[];
@@ -71,6 +74,21 @@ interface PiExtensionAPI {
     on(event: string, handler: (data: unknown) => void): () => void;
     emit(event: string, data: unknown): void;
   };
+}
+
+/** The subset of pi's ModelRuntime (core/model-runtime.ts) and pi-ai's auth types that `/tau_auth` uses. */
+type AuthPrompt = { type: "text" | "secret" | "manual_code"; message: string; placeholder?: string; signal?: AbortSignal }
+  | { type: "select"; message: string; options: readonly { id: string; label: string }[]; signal?: AbortSignal };
+interface AuthInteraction { signal?: AbortSignal; prompt(prompt: AuthPrompt): Promise<string>; notify(event: Record<string, unknown> & { type: string }): void }
+interface ModelRuntime {
+  getProviders(): readonly { id: string; name: string; auth: { oauth?: unknown; apiKey?: { login?: unknown } } }[];
+  getModels(providerId?: string): readonly unknown[];
+  hasConfiguredAuth(providerId: string): boolean;
+  listCredentials(): Promise<readonly { providerId: string; type: "api_key" | "oauth" }[]>;
+  login(providerId: string, type: "api_key" | "oauth", interaction: AuthInteraction): Promise<unknown>;
+  logout(providerId: string): Promise<void>;
+  /** Private: models.json, whose providers tau edits in its own panel. */
+  config?: { getProvider?(providerId: string): unknown };
 }
 
 /** tau's side-question record (lib/btw.ts): the first turn, then any follow-ups. */
@@ -443,6 +461,70 @@ export default function tauExtension(pi: PiExtensionAPI): void {
         reply({ data: { sessionId: ctx.sessionManager?.getSessionId?.(), cancelled, leafId: ctx.sessionManager?.getLeafId?.() ?? null } });
       } catch (error) {
         reply({ error: error instanceof Error ? error.message : String(error) });
+      }
+    },
+  });
+
+  // 6. Provider logins. tau calls `/tau_auth {action, replyId, ...}` and gets a `tau_reply`; a login streams its steps as
+  //    `tau_auth_event` frames and asks for pasted codes and choices through `ctx.ui.input("__tau_auth_prompt__", <json>)`.
+  //    Raw keys and tokens never leave pi: the providers list carries only the stored credential's type.
+  pi.registerCommand("tau_auth", {
+    description: "tau's provider logins",
+    async handler(args, ctx) {
+      let cmd: { replyId?: unknown; action?: unknown; provider?: unknown; key?: unknown };
+      try {
+        cmd = JSON.parse(args);
+      } catch {
+        return;
+      }
+      const send = (frame: Record<string, unknown>) => ctx.ui.setWidget("tau", [JSON.stringify({ replyId: cmd.replyId, ...frame })]);
+      const runtime = ctx.modelRegistry?.runtime;
+      const provider = typeof cmd.provider === "string" ? cmd.provider : "";
+      try {
+        if (!runtime) throw new Error("This pi version exposes no model runtime to extensions");
+        if (cmd.action === "providers") {
+          const stored = new Map((await runtime.listCredentials()).map((credential) => [credential.providerId, credential.type]));
+          send({ type: "tau_reply", data: { providers: runtime.getProviders().map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            oauth: Boolean(entry.auth.oauth),
+            apiKeyLogin: Boolean(entry.auth.apiKey?.login),
+            stored: stored.get(entry.id) ?? null,
+            configured: runtime.hasConfiguredAuth(entry.id),
+            custom: Boolean(runtime.config?.getProvider?.(entry.id)),
+            models: runtime.getModels(entry.id).length,
+          })) } });
+        } else if (cmd.action === "logout") {
+          await runtime.logout(provider);
+          send({ type: "tau_reply", data: {} });
+        } else if (cmd.action === "api_key") {
+          const key = typeof cmd.key === "string" ? cmd.key : "";
+          await runtime.login(provider, "api_key", {
+            async prompt(prompt) {
+              if (prompt.type === "secret" && key) return key;
+              throw new Error(`${provider} asks for more than an API key ("${prompt.message}"); run \`pi auth login ${provider} --api-key\` on that host`);
+            },
+            notify() {},
+          });
+          send({ type: "tau_reply", data: {} });
+        } else if (cmd.action === "login") {
+          await runtime.login(provider, "oauth", {
+            async prompt(prompt) {
+              const { signal, ...shown } = prompt;
+              const answer = await ctx.ui.input("__tau_auth_prompt__", JSON.stringify(shown), { signal });
+              if (answer === undefined) throw new Error("Login cancelled");
+              return answer;
+            },
+            notify(event) {
+              send({ type: "tau_auth_event", event });
+            },
+          });
+          send({ type: "tau_reply", data: {} });
+        } else {
+          throw new Error("Unknown auth action");
+        }
+      } catch (error) {
+        send({ type: "tau_reply", error: error instanceof Error ? error.message : String(error) });
       }
     },
   });

@@ -131,6 +131,15 @@ export function runUtilityCommand<T = unknown>(
   command: { type: string; [key: string]: unknown },
   timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
 ): Promise<T> {
+  return runOnUtility((proc) => proc.sendCommand<T>(command, timeoutMs));
+}
+
+/** Call a companion-extension command (`RpcProcess.callExtension`) on the shared utility process. */
+export function runUtilityExtension<T = unknown>(command: string, args: Record<string, unknown>, timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS): Promise<T> {
+  return runOnUtility((proc) => proc.callExtension<T>(command, args, timeoutMs));
+}
+
+function runOnUtility<T>(call: (proc: RpcProcess) => Promise<T>): Promise<T> {
   const state = getState();
   const run = state.queue.then(async () => {
     if (state.idleTimer) {
@@ -141,7 +150,7 @@ export function runUtilityCommand<T = unknown>(
       if (!state.proc || !state.proc.isAlive) {
         state.proc = await startProcess(state);
       }
-      return await state.proc.sendCommand<T>(command, timeoutMs);
+      return await call(state.proc);
     } finally {
       scheduleIdleKill(state);
     }
