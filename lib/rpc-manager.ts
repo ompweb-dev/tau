@@ -99,7 +99,6 @@ const DISCONNECT_DESTROY_MS = process.env.TAU_DISCONNECT_DESTROY_MS !== undefine
   ? Math.max(0, Number(process.env.TAU_DISCONNECT_DESTROY_MS) || 0)
   : 120_000;
 const READY_TIMEOUT_MS = 120_000;
-const MCP_LIST_TIMEOUT_MS = 15_000;
 const GET_STATE_TIMEOUT_MS = 5_000;
 /** The handshake of a just-started or rejoined child: omp's post-`ready` startup work (model refresh, plugin and
  * marketplace updates, hooks) can hold its first answers well past GET_STATE_TIMEOUT_MS. */
@@ -463,11 +462,6 @@ export class AgentSessionWrapper {
   private adoptionReplay?: string[];
   private restarting = false;
   private restartingProc: RpcProcess | null = null;
-  private mcpListWaiter: { resolve: (text: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> } | null = null;
-  /** Synchronous mutex for getMcpList: checked+set before any await, so two
-   *  concurrent callers can never both enter (the waiter/promptRunning
-   *  bookkeeping alone is not an atomic gate). */
-  private mcpListInFlight = false;
   private _alive = true;
   /** Host tools the web UI registered via set_host_tools (agent-callable). */
   private hostToolNames: Set<string> = new Set();
@@ -1017,19 +1011,6 @@ export class AgentSessionWrapper {
     let refreshSessionList = false;
 
     switch (event.type) {
-      case "command_output": {
-        // `/mcp list` is a local OMP command. Capture its authoritative text for
-        // Settings instead of adding an invisible command to the chat stream.
-        const waiter = this.mcpListWaiter;
-        if (waiter && typeof event.text === "string") {
-          clearTimeout(waiter.timer);
-          this.mcpListWaiter = null;
-          waiter.resolve(event.text);
-          notifyRunningChange();
-          return;
-        }
-        break;
-      }
       case "agent_start":
         this.unsettled = true;
         this.promptRunning = true;
@@ -1818,107 +1799,6 @@ export class AgentSessionWrapper {
     }
   }
 
-  /** Get OMP's own complete MCP inventory and live connection states. */
-  async getMcpList(): Promise<string> {
-    return this.runMcpCommand("list");
-  }
-
-  /** RPC /mcp reload refreshes command metadata only. Reboot the idle child
-   * against its saved session to actually rediscover MCP tools. */
-  async changeMcp(action: "enable" | "disable" | "reload", name?: string): Promise<void> {
-    if (!["enable", "disable", "reload"].includes(action)) throw new Error("Invalid MCP action");
-    if (action !== "reload" && (!name || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name))) throw new Error("Invalid MCP server name");
-    await this.runMcpCommand(action, name, true);
-  }
-
-  private async runMcpCommand(action: "list" | "enable" | "disable" | "reload", name?: string, apply = false): Promise<string> {
-    if (this.restarting) throw new WebRpcError(RESTARTING_MESSAGE, "session_restarting");
-    if (!this.isAlive()) throw new Error("Session is no longer running");
-    if (this.isRunning() || this.historyEditInFlight || this.pendingUiRequests.size > 0 || this.pendingHostTools.size > 0 || this.pendingHostUris.size > 0) throw new WebRpcError("Wait for the current operation to finish", "session_busy");
-    if (this.mcpListWaiter || this.mcpListInFlight) throw new WebRpcError("MCP list is already loading", "mcp_list_loading");
-
-    // Dedicated synchronous mutex: promptRunning alone is not atomic — two
-    // concurrent callers could both pass the isRunning() check, and the second
-    // would steal the waiter so the first hangs to timeout (or receives the
-    // other's output). This flag is checked+set before any await.
-    this.mcpListInFlight = true;
-    this.historyMutationPendingCount += 1;
-
-    this.promptRunning = true;
-    notifyRunningChange();
-    let resolveOutput!: (text: string) => void;
-    let rejectOutput!: (error: Error) => void;
-    const output = new Promise<string>((resolve, reject) => {
-      resolveOutput = resolve;
-      rejectOutput = reject;
-    });
-    // The timeout, destroy, and sendCommand-failure paths all reject this
-    // promise while the only `await output` (success path) may never run —
-    // swallow the orphan so it cannot surface as an unhandledRejection.
-    void output.catch(() => {});
-    const waiter = {
-      resolve: resolveOutput,
-      reject: rejectOutput,
-      timer: undefined as unknown as ReturnType<typeof setTimeout>,
-    };
-    waiter.timer = setTimeout(() => {
-        if (this.mcpListWaiter !== waiter) return;
-        this.mcpListWaiter = null;
-        rejectOutput(new WebRpcError("Timed out while loading MCP servers", "mcp_list_timeout"));
-      }, MCP_LIST_TIMEOUT_MS);
-    // Don't pin the event loop if the caller never awaits (route aborted): the
-    // pending-UI timers already unref, this one should too.
-    waiter.timer.unref?.();
-    this.mcpListWaiter = waiter;
-
-    try {
-      // Bounded like the prompt ack: a child that accepts the frame but never
-      // acks it would otherwise suspend this call forever — the `finally` below
-      // would never run and the wrapper would keep reporting itself as busy
-      // (later calls fail with session_busy) until unrelated traffic cleared
-      // the wedge. The 15s output wait above stays a separate concern.
-      await this.sendNativeMessageCommand({ type: "prompt", message: action === "list" ? "/mcp list" : `/mcp ${action}${name ? ` ${name}` : ""}` }, PROMPT_ACK_TIMEOUT_MS);
-      const result = await output;
-      if (action !== "list" && /^(?:Failed|Usage:|Server .* not found|Unknown)/m.test(result)) {
-        throw new WebRpcError("OMP could not update this MCP server. Check its source configuration.", "mcp_change_failed");
-      }
-      if (apply) {
-        try { await this.restart(); }
-        catch { throw new WebRpcError("MCP configuration was saved, but session reload failed. Reopen the session to apply it.", "mcp_reload_failed"); }
-      }
-      return result;
-    } catch (error) {
-      const expired = error instanceof RpcCommandTimeoutError;
-      if (this.mcpListWaiter === waiter) {
-        clearTimeout(waiter.timer);
-        this.mcpListWaiter = null;
-        waiter.reject(
-          expired
-            ? new WebRpcError("The OMP session stopped responding and was reset.", "session_unresponsive")
-            : error instanceof Error
-              ? error
-              : new Error(String(error)),
-        );
-      }
-      if (expired) {
-        if (error instanceof RpcCommandTimeoutError && this.linkLostDuring(error)) throw this.hostOfflineError("unknown");
-        // Nothing on this child will ever resolve the waiter; recycle it like
-        // the prompt-ack timeout path so the next request gets a fresh child.
-        await this.destroyAndWait("session-unresponsive", true);
-        throw new WebRpcError("The OMP session stopped responding and was reset.", "session_unresponsive");
-      }
-      throw error;
-    } finally {
-      if (this.mcpListWaiter === waiter) {
-        clearTimeout(waiter.timer);
-        this.mcpListWaiter = null;
-      }
-      this.mcpListInFlight = false;
-      this.historyMutationPendingCount -= 1;
-      this.promptRunning = false;
-      notifyRunningChange();
-    }
-  }
   private buildWebState(state: RpcSessionState): WebSessionState {
     const wasRunning = this.isRunning();
 
@@ -1931,7 +1811,6 @@ export class AgentSessionWrapper {
       this.promptDispatchPendingCount > 0 ||
       this.historyEditInFlight ||
       (this.awaitingAgentStart && !awaitingExpired) ||
-      this.mcpListWaiter !== null ||
       this.pendingUiRequests.size > 0 ||
       this.pendingHostTools.size > 0 ||
       this.pendingHostUris.size > 0;
@@ -2373,7 +2252,6 @@ export class AgentSessionWrapper {
 
   async send(command: Record<string, unknown>, options?: { preserveUnknownDelivery?: boolean; origin?: MessageOrigin }): Promise<unknown> {
     if (this.restarting) throw new WebRpcError(RESTARTING_MESSAGE, "session_restarting");
-    if (this.mcpListInFlight) throw new WebRpcError("MCP management is in progress. Try again when it finishes.", "session_busy");
     if (!this.isAlive()) throw new Error("Session is no longer running");
     if (this.hostDown() || this.oldChildExiting) throw this.hostOfflineError("refused");
     if (command.origin !== undefined) throw new WebRpcError("Message origin is server-owned.", "origin_not_allowed");
@@ -2915,11 +2793,6 @@ export class AgentSessionWrapper {
     this.awaitingAgentStart = false;
     this.awaitingAgentStartDeadline = 0;
     this.continuationGraceUntil = 0;
-    if (this.mcpListWaiter) {
-      clearTimeout(this.mcpListWaiter.timer);
-      this.mcpListWaiter.reject(new Error("Session was closed while loading MCP servers"));
-      this.mcpListWaiter = null;
-    }
     // The registry drops this wrapper only once the child has really exited.
     const disposed = this.proc.dispose(5_000, stopShared).catch(() => {}).then(() => this.onDestroyCallback?.());
     this.destroyPromise = disposed;

@@ -133,7 +133,7 @@ app/api/
   models-config/test/route.ts     POST test a configured model/provider
   omp-settings/route.ts           GET/PUT the allow-listed keys of pi's global settings.json (`lib/omp/settings-config.ts`: default thinking level, hide thinking blocks, enabled models, retry and compaction toggles)
   web-settings/route.ts           GET/PUT omp-web's own server settings (auto-resume, agent tools, agent env, browser transport; a transport change is pushed to every open browser)
-  mcp/route.ts                    GET/POST/PUT/DELETE project MCP servers; `GET ?sessionId=&attach=1` reads a running session's live MCP status and never starts one (a cluster session on another member)
+  mcp/route.ts                    GET/POST/PUT/DELETE project MCP servers (configuration only, no live status)
   plugins/route.ts                GET/POST plugin management (shells out to `omp plugin`); without `cwd`, the user level only (omp runs in the agent directory; a `project` scope POST without `cwd` is 400 `cwd_required`)
   projects/route.ts               GET registered+discovered projects | POST add | DELETE hide
   projects/clone/route.ts         POST clone a git URL into a new workspace (NDJSON progress) | DELETE cancel
@@ -696,8 +696,7 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
   - **Settings.** Rows carry `clusterConfig { …state, owned, current }` (`listHosts`); the member line shows
     current, updating (none while `masterConfigError` is set), failed (reason), held by another server, needs update (`clusterJoinBlock` says "upgrade"), and the MCP commands
     missing there. For a cluster session on another member (`isClusterTarget` with a member host) the MCP,
-    Skills and Plugins panels use no cwd and no session (the user-level routes above); MCP alone keeps
-    the session for `?attach=1`, read-only (`McpConfig liveOnly`).
+    Skills and Plugins panels use no cwd and no session (the user-level routes above).
 - **Remote paths never reach `allowFileRoot`** or any other main-side
   filesystem check: they mean nothing on main. `startNewRpcSession` calls
   `allowFileRoot` and the local session-list invalidation only for the local
@@ -1667,7 +1666,9 @@ never arrived cannot be recovered, so the hook warns (`queueRestoreUncertain`).
   the channel protocol, so failures surface as toasts (`toast.error`) from the
   editor actions, not inline text.
 - The endpoint is guarded by the same allowed-root rules as `/api/files`.
-- `GET /api/mcp?sessionId=…&attach=1` returns the live status of a session this server already has running (a remote one included), and otherwise answers `liveError: "The session is not running"` instead of starting one (a cluster session on another member is read where it runs; `McpConfig liveOnly` shows it read-only).
+- No live MCP status or actions: pi 1.5.2's MCP state exists only as its built-in `/mcp` command's notify text (and
+  `/mcp` without that extension would reach the model), so tau never sends `/mcp` as a prompt. Changes to the files
+  apply when a session starts or reloads.
 
 ### Plugins and skills
 - **Project trust.** A session's pi gets `--approve` (load the project's `.pi` and `.agents` files) only when its cwd

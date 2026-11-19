@@ -2,7 +2,6 @@ import { execFileSync } from "child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from "fs";
 import { homedir } from "os";
 import { basename, dirname, join, relative, resolve, sep } from "path";
-import { stripAnsi } from "../ansi";
 import { getAgentDir } from "./paths";
 import { isRecord } from "../type-guards";
 import { createGitEnvironment } from "../project-command-env";
@@ -21,8 +20,7 @@ export type McpUserConfig = {
   error?: string;
 };
 
-export type McpLiveStatus = "connected" | "connecting" | "not_connected" | "inactive" | "disabled" | "configured";
-export type McpLiveServer = { name: string; source: string; status: McpLiveStatus; type?: string; sourcePath?: string };
+export type McpLiveServer = { name: string; source: string; status: "disabled" | "configured"; type?: string; sourcePath?: string };
 
 /** Browser-facing project config must never expose environment variables or HTTP headers. */
 export function redactMcpServer(server: McpServer): McpServer {
@@ -130,44 +128,6 @@ export function readDiscoveredMcpServers(cwd?: string, disabled = [] as string[]
       const type = typeof server.config.type === "string" ? server.config.type : typeof server.config.url === "string" ? "http" : "stdio";
       servers.push({ name: server.name, source, sourcePath: path, status: server.config.enabled === false ? "disabled" : "configured", type });
     }
-  }
-  return servers;
-}
-
-/** Parse the text emitted by OMP's local `/mcp list` command. */
-export function parseMcpListOutput(output: string): McpLiveServer[] {
-  const servers: McpLiveServer[] = [];
-  let source: string | null = null;
-  for (const rawLine of stripAnsi(output).split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const heading = line.match(/^(.+?)\s+\([^)]*\):$/);
-    if (heading) {
-      source = heading[1];
-      continue;
-    }
-    const server = line.match(/^(.+?)\s+[●◌○]\s+(connected|connecting|not connected|inactive|disabled)(?:\s+\[([^\]]+)\])?$/);
-    if (!server || !source) continue;
-    const status: Record<string, McpLiveStatus> = {
-      connected: "connected",
-      connecting: "connecting",
-      "not connected": "not_connected",
-      inactive: "inactive",
-      disabled: "disabled",
-    };
-    servers.push({ name: server[1].trim(), source, status: status[server[2]], type: server[3] });
-  }
-  // rpc-ui uses a compact `/mcp list` representation instead of the TUI's
-  // colour/status table: `name | transport | enabled | target [source]`.
-  // It does not expose a connection state, so retain that distinction rather
-  // than falsely treating an enabled configuration as connected.
-  if (servers.length > 0) return servers;
-  for (const rawLine of stripAnsi(output).split(/\r?\n/)) {
-    const line = rawLine.trim();
-    const server = line.match(/^(.+?)\s+\|\s+([^|]+?)\s+\|\s+(enabled|disabled)\s+\|\s+.*?(?:\s+\[([^\]]+)\])?$/);
-    if (!server) continue;
-    const source = server[4] === "user" ? "User level" : server[4] === "project" ? "Project level" : "Configured";
-    servers.push({ name: server[1].trim(), source, status: server[3] === "enabled" ? "configured" : "disabled", type: server[2].trim() });
   }
   return servers;
 }

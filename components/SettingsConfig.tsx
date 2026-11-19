@@ -1489,7 +1489,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45 }}>{t("settingsConfig.extensionsToolsDesc")}</p>
                   {cwd && (!remoteHost || cluster) && <button type="button" className="settings-back ui-focus-ring" onClick={() => handleSelectTab("skills")}>{t("skillsConfig.title")}</button>}
                 </div>
-                {panelsUnavailable ? remoteUnavailable : <McpConfig cwd={panelCwd} sessionId={sessionId} liveOnly={remoteHost} />}
+                {panelsUnavailable ? remoteUnavailable : <McpConfig cwd={panelCwd} />}
                 {!cwd && <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12 }}>{t("settingsConfig.selectWorkspaceForMcp")}</p>}
               </div>
             )}

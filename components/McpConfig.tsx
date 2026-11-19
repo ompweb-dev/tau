@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Info, LoaderCircle, Plus, RefreshCw, RotateCw, Server, Trash2 } from "lucide-react";
-import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
+import { Check, ChevronRight, Info, LoaderCircle, Plus, Server, Trash2 } from "lucide-react";
 import { Alert } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
 import { useI18n } from "@/lib/i18n";
@@ -12,9 +11,8 @@ type McpServer = { name: string; config: Record<string, unknown> };
 // can hold credentials and are never serialized); summary fields are computed
 // server-side from the config.
 type McpUserConfig = { path: string; servers: Array<{ name: string; status: string; type: string; enabled: boolean; valid: boolean }>; disabledServers: string[]; error?: string };
-type McpLiveStatus = "connected" | "connecting" | "not_connected" | "inactive" | "disabled" | "configured";
-type McpLiveServer = { name: string; source: string; status: McpLiveStatus; type?: string; sourcePath?: string };
-type McpResponse = { servers?: McpServer[]; user?: McpUserConfig; inventory?: McpLiveServer[]; liveServers?: McpLiveServer[]; liveError?: string; path?: string; error?: string };
+type McpInventoryServer = { name: string; source: string; status: "disabled" | "configured"; type?: string; sourcePath?: string };
+type McpResponse = { servers?: McpServer[]; user?: McpUserConfig; inventory?: McpInventoryServer[]; path?: string; error?: string };
 
 const inputStyle = { width: "100%", padding: "7px 9px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)", font: "12px var(--font-mono)" } as const;
 
@@ -35,15 +33,13 @@ function serverSummary(config: Record<string, unknown>): { type: string; target:
   };
 }
 
-/** `liveOnly`: the session runs on another cluster member. Its live status is read from its running process (never one
- * started here); servers are changed in the master's configuration, so the switches stay off (spec K7). */
-export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | null; sessionId?: string | null; liveOnly?: boolean }) {
+/** The MCP servers pi's configuration files name, and the project's editor. No live connection state: pi's MCP status
+ * exists only as its `/mcp` command's text, which tau never sends as a prompt. */
+export function McpConfig({ cwd }: { cwd: string | null }) {
   const { t } = useI18n();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [userConfig, setUserConfig] = useState<McpUserConfig | null>(null);
-  const [liveServers, setLiveServers] = useState<McpLiveServer[] | null>(null);
-  const [inventory, setInventory] = useState<McpLiveServer[] | null>(null);
-  const [liveError, setLiveError] = useState<string | null>(null);
+  const [inventory, setInventory] = useState<McpInventoryServer[] | null>(null);
   const [path, setPath] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -52,77 +48,32 @@ export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const loadGeneration = useRef(0);
-  const [changing, setChanging] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current;
     setLoading(true);
     setMessage(null);
-    setLiveError(null);
     try {
       const params = new URLSearchParams();
       if (cwd) params.set("cwd", cwd);
-      if (sessionId) {
-        params.set("sessionId", sessionId);
-        if (liveOnly) params.set("attach", "1");
-      }
-
-      const read = async (includeLive: boolean): Promise<McpResponse> => {
-        const requestParams = new URLSearchParams(params);
-        requestParams.set("live", includeLive ? "1" : "0");
-        const response = await fetch(`/api/mcp?${requestParams}`);
-        const data = await response.json() as McpResponse;
-        if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
-        return data;
-      };
-
-      const data = await read(false);
+      const response = await fetch(`/api/mcp?${params}`);
+      const data = await response.json() as McpResponse;
+      if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
       if (generation !== loadGeneration.current) return;
       setServers(data.servers ?? []);
       setUserConfig(data.user ?? null);
-      setLiveServers(Array.isArray(data.liveServers) ? data.liveServers : null);
       setInventory(Array.isArray(data.inventory) ? data.inventory : null);
-      setLiveError(data.liveError ?? null);
       setPath(data.path ?? null);
       setSelected((current) => current && data.servers?.some((server) => server.name === current) ? current : null);
-
-      // Live status can start or reuse an OMP child and wait for /mcp list.
-      // Keep it off the initial paint path; the static inventory is already
-      // useful and the live result can replace it when the command responds.
-      if (sessionId) {
-        await read(true).then((liveData) => {
-          if (generation !== loadGeneration.current) return;
-          setLiveServers(Array.isArray(liveData.liveServers) ? liveData.liveServers : null);
-          setLiveError(liveData.liveError ?? null);
-        }).catch((error) => {
-          if (generation !== loadGeneration.current) return;
-          setLiveError(error instanceof Error ? error.message : String(error));
-        });
-      }
     } catch (error) {
       if (generation === loadGeneration.current) setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
-  }, [cwd, sessionId, liveOnly]);
+  }, [cwd]);
 
   const invalidateLoad = useCallback(() => { loadGeneration.current++; }, []);
   useEffect(() => { void load(); return invalidateLoad; }, [load, invalidateLoad]);
-
-  const change = async (action: "enable" | "disable" | "reload", name?: string) => {
-    if (!sessionId || liveOnly || changing) return;
-    setChanging(name ?? "reload");
-    setMessage(null);
-    try {
-      const response = await fetch("/api/mcp", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, action, name }) });
-      const data = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      toast.success(t("mcpConfig.applied"));
-      await load();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    } finally { setChanging(null); }
-  };
 
   const choose = (server: McpServer) => {
     setSelected(server.name);
@@ -202,7 +153,7 @@ export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | 
     }
   };
 
-  const displayedServers = liveServers ?? inventory ?? [];
+  const displayedServers = inventory ?? [];
   const groups = Array.from(new Set(displayedServers.map((server) => server.source))).map((source) => ({
     source,
     title: source === "User level" ? t("mcpConfig.sourceUser") : source === "Project level" ? t("mcpConfig.sourceProject") : source === "Disabled" ? t("mcpConfig.sourceDisabled") : source,
@@ -211,7 +162,7 @@ export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | 
   }));
   const managedCount = groups.filter((group) => group.managed).reduce((sum, group) => sum + group.servers.length, 0);
   const otherGroups = groups.filter((group) => !group.managed);
-  const groupView = (group: { source: string; title: string; servers: McpLiveServer[]; managed: boolean }) => {
+  const groupView = (group: { source: string; title: string; servers: McpInventoryServer[]; managed: boolean }) => {
     const paths = Array.from(new Set(group.servers.flatMap((server) => server.sourcePath ? [server.sourcePath] : [])));
     return <section className="settings-card mcp-source-card" key={group.source} aria-label={group.title}>
       <header className="mcp-source-header">
@@ -221,17 +172,12 @@ export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | 
       <ul className="mcp-server-list">
         {group.servers.map((server) => {
           const shadowed = group.source === "User level" && displayedServers.some((other) => other.source === "Project level" && other.name === server.name);
-          const manageable = group.managed && !shadowed;
-          const statusKey = server.status === "configured" ? "enabled" : server.status === "connected" ? "statusConnected" : server.status === "connecting" ? "statusConnecting" : server.status === "disabled" ? "statusDisabled" : server.status === "inactive" ? "statusInactive" : "statusNotConnected";
-          return <li className="mcp-server-row" key={server.name} aria-busy={changing === server.name}>
+          return <li className="mcp-server-row" key={server.name}>
             <div className="mcp-server-info">
               <div className="mcp-server-title"><span className="mcp-server-name">{server.name}</span>{server.type && <span className="mcp-chip mcp-transport">{server.type}</span>}</div>
-              <span className="mcp-server-status" data-status={server.status}><span aria-hidden="true" />{changing === server.name ? t("mcpConfig.applying") : t(`mcpConfig.${statusKey}`)}</span>
+              <span className="mcp-server-status" data-status={server.status}><span aria-hidden="true" />{t(server.status === "disabled" ? "mcpConfig.statusDisabled" : "mcpConfig.enabled")}</span>
             </div>
-            {manageable ? <div className="mcp-server-control">
-              {changing === server.name && <LoaderCircle size={14} className="mcp-spin" aria-hidden="true" />}
-              <ToggleSwitch checked={server.status !== "disabled"} disabled={!sessionId || liveOnly || loading || !!changing || saving} aria-label={t("mcpConfig.serverToggle", { name: server.name })} onChange={(enabled) => void change(enabled ? "enable" : "disable", server.name)} />
-            </div> : <span className="mcp-readonly">{t(shadowed ? "mcpConfig.shadowed" : "mcpConfig.readOnly")}</span>}
+            {shadowed && <span className="mcp-readonly">{t("mcpConfig.shadowed")}</span>}
           </li>;
         })}
       </ul>
@@ -242,16 +188,8 @@ export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | 
     <section className="mcp-management" aria-label={t("mcpConfig.configuredServers")}>
       <header className="mcp-management-header">
         <div className="mcp-management-title"><h3>{t("mcpConfig.configuredServers")}</h3><span className="mcp-chip">{managedCount}</span></div>
-        <div className="mcp-toolbar">
-          <button className="mcp-toolbar-button ui-focus-ring" type="button" onClick={() => void change("reload")} disabled={!sessionId || liveOnly || loading || !!changing || saving}>
-            {changing === "reload" ? <LoaderCircle size={15} className="mcp-spin" aria-hidden="true" /> : <RotateCw size={15} aria-hidden="true" />}{t(changing === "reload" ? "mcpConfig.applying" : "mcpConfig.reload")}
-          </button>
-          <button className="mcp-toolbar-button mcp-icon-button ui-focus-ring" type="button" title={t("mcpConfig.refreshLiveStatus")} aria-label={t("mcpConfig.refreshLiveStatus")} onClick={() => void load()} disabled={loading || !!changing || saving}><RefreshCw size={15} className={loading ? "mcp-spin" : undefined} aria-hidden="true" /></button>
-        </div>
       </header>
-      <p className="mcp-management-description">{t(liveOnly ? "mcpConfig.clusterLiveHint" : sessionId ? "mcpConfig.applyHint" : "mcpConfig.selectSessionHint")}</p>
       <div className="mcp-management-note"><Info size={14} aria-hidden="true" /><span>{t("mcpConfig.connectionHint")}</span></div>
-      {liveError && <Alert description={t("mcpConfig.liveStatusUnavailable", { error: liveError })} />}
       {userConfig?.error && <Alert variant="error" description={userConfig.error} />}
       {message && <Alert description={message} onDismiss={() => setMessage(null)} />}
       {groups.filter((group) => group.managed).map(groupView)}

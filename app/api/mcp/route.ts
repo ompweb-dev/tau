@@ -1,10 +1,5 @@
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { deleteMcpServer, parseMcpListOutput, readDiscoveredMcpServers, readMcpConfig, readUserMcpConfig, type McpLiveServer, validateMcpServer, writeMcpServer } from "@/lib/omp/mcp-config";
-import { WebRpcError, getRpcSession, startRpcSession } from "@/lib/rpc-manager";
-import { getHost } from "@/lib/hosts/hub";
-import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
-import { sessionSpawnTarget } from "@/lib/hosts/session-index";
-import { RpcCommandError } from "@/lib/omp/rpc-process";
+import { deleteMcpServer, readDiscoveredMcpServers, readMcpConfig, readUserMcpConfig, type McpLiveServer, validateMcpServer, writeMcpServer } from "@/lib/omp/mcp-config";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { redactMcpServer } from "@/lib/omp/mcp-config";
 
@@ -13,26 +8,6 @@ const MAX_MCP_REQUEST_BYTES = 1024 * 1024;
 function mcpErrorResponse(error: unknown) {
   const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
   return Response.json({ error: error instanceof RequestBodyTooLargeError ? "MCP request is too large" : error instanceof Error ? error.message : String(error) }, { status });
-}
-
-/** Stable client-safe message for the GET liveError field: raw child-process
- *  errors (spawn failures, stderr tails) must not reach the browser. */
-function sanitizeMcpLiveError(error: unknown): string {
-  if (error instanceof WebRpcError || error instanceof RpcCommandError) {
-    return error.message;
-  }
-  console.error("[api/mcp] live server list failed:", error);
-  return "Could not load live MCP server states";
-}
-
-function mergeMcpServers(primary: McpLiveServer[], secondary: McpLiveServer[]): McpLiveServer[] {
-  const result: McpLiveServer[] = primary.map((server) => ({ ...server, sourcePath: secondary.find((other) => other.name === server.name && other.source === server.source)?.sourcePath }));
-  const seen = new Set(primary.map((server) => `${server.source}:${server.name}`));
-  for (const server of secondary) {
-    const key = `${server.source}:${server.name}`;
-    if (!seen.has(key)) { result.push(server); seen.add(key); }
-  }
-  return result;
 }
 
 async function allowedCwd(cwd: unknown): Promise<string> {
@@ -79,30 +54,7 @@ export async function GET(request: Request) {
         };
       }),
     };
-    const sessionId = params.get("sessionId");
-    const includeLive = params.get("live") !== "0";
-    // `attach=1`: live status from a process already running, never one started here. A cluster session on another
-    // member is read where it runs (spec K7); its file is not this machine's to start.
-    const attachOnly = params.get("attach") === "1";
-    let liveServers: ReturnType<typeof parseMcpListOutput> | undefined;
-    let liveError: string | undefined;
-    if (includeLive && sessionId) {
-      try {
-        let session = getRpcSession(sessionId);
-        if (!session?.isAlive()) {
-          if (attachOnly) throw new WebRpcError("The session is not running", "session_not_running");
-          // MCP settings are this machine's only.
-          const host = getHost(LOCAL_HOST_ID);
-          const target = await sessionSpawnTarget(sessionId, host);
-          if (!target) throw new Error("Session not found");
-          ({ session } = await startRpcSession(sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host));
-        }
-        liveServers = mergeMcpServers(parseMcpListOutput(await session.getMcpList()), inventory);
-      } catch (error) {
-        liveError = sanitizeMcpLiveError(error);
-      }
-    }
-    return Response.json({ root: file?.root ?? null, path: file?.path ?? null, exists: file?.exists ?? false, servers: Object.entries(file?.config.mcpServers ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([name, config]) => ({ name, config: redactMcpServer(config) })), user: safeUser, inventory, liveServers, liveError });
+    return Response.json({ root: file?.root ?? null, path: file?.path ?? null, exists: file?.exists ?? false, servers: Object.entries(file?.config.mcpServers ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([name, config]) => ({ name, config: redactMcpServer(config) })), user: safeUser, inventory });
   } catch (error) {
     return mcpErrorResponse(error);
   }
@@ -138,29 +90,5 @@ export async function DELETE(request: Request) {
     return Response.json({ success: true, ...deleteMcpServer(cwd, body.name) });
   } catch (error) {
     return mcpErrorResponse(error);
-  }
-}
-
-/** Native local commands only: never a model prompt or shell command. */
-export async function PATCH(request: Request) {
-  try {
-    const body = await parseJsonWithinLimit<{ sessionId?: unknown; action?: unknown; name?: unknown }>(request, MAX_MCP_REQUEST_BYTES);
-    if (typeof body.sessionId !== "string" || !body.sessionId) throw new Error("Select a session first");
-    if (body.action !== "enable" && body.action !== "disable" && body.action !== "reload") throw new Error("Invalid MCP action");
-    if (body.action !== "reload" && (typeof body.name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(body.name))) throw new Error("Invalid MCP server name");
-    // Load the selected session through the same validated path as inventory.
-    // Do not create a different session or apply the caller's arbitrary cwd.
-    let session = getRpcSession(body.sessionId);
-    if (!session?.isAlive()) {
-      const host = getHost(LOCAL_HOST_ID);
-      const target = await sessionSpawnTarget(body.sessionId, host);
-      if (!target) throw new Error("Session not found");
-      ({ session } = await startRpcSession(body.sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host));
-    }
-    if (session.isRunning()) return Response.json({ error: "Wait for the current run to finish before changing MCP servers." }, { status: 409 });
-    await session.changeMcp(body.action, typeof body.name === "string" ? body.name : undefined);
-    return Response.json({ success: true });
-  } catch (error) {
-    return Response.json({ error: sanitizeMcpLiveError(error) }, { status: error instanceof WebRpcError && error.code === "session_busy" ? 409 : 400 });
   }
 }
