@@ -526,10 +526,11 @@ export class AgentSessionWrapper {
     return this._alive && this.proc.isAlive;
   }
 
-  isRunning(): boolean {
+  /** `ignoreShell`: leave out tau's `!!` shell command, which pi runs beside a prompt. */
+  isRunning(ignoreShell = false): boolean {
     // A human/host response can outlive the current streaming turn. Reaping it
-    // closes stdin and OMP records "Request was aborted", even without a Stop.
-    return this.isAlive() && (this.promptRunning || this.streaming || this.compacting || this.bashRunning
+    // ends the pi child and aborts that request, even without a Stop.
+    return this.isAlive() && (this.promptRunning || this.streaming || this.compacting || (!ignoreShell && this.bashRunning)
       || this.pendingUiRequests.size > 0 || this.pendingHostTools.size > 0 || this.pendingHostUris.size > 0);
   }
 
@@ -2166,11 +2167,6 @@ export class AgentSessionWrapper {
 
     switch (type) {
       case "prompt": {
-        // While a `!!` shell command runs with no turn, a prompt goes to pi's
-        // follow-up queue (a rule kept from omp, which refused prompts then; pi
-        // accepts them): pi keeps owning the chips and delivers the message
-        // once the shell command finishes.
-        if (this.bashRunning && !this.streaming) return await this.queueWhileShellRunning(command, correlationKey);
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         if (!streamingBehavior) {
           this.responseObserved = false;
@@ -2239,10 +2235,6 @@ export class AgentSessionWrapper {
 
       case "steer":
       case "follow_up": {
-        // `steer` has the same collision while a `!!` shell command runs — and
-        // there is no live turn to steer anyway, so it joins the follow-up
-        // queue like a prompt would.
-        if (type === "steer" && this.bashRunning && !this.streaming) return await this.queueWhileShellRunning(command, correlationKey);
         await this.sendNativeMessageCommand({
           type,
           message: command.message as string,
@@ -2587,28 +2579,6 @@ export class AgentSessionWrapper {
         throw new Error(`Unsupported command: ${type}`);
       }
     }
-  }
-
-  /**
-   * Degrade a prompt/steer frame into pi's follow-up queue while tau's own
-   * `!!` shell command owns the child (`bashRunning`, set for the whole `bash`
-   * RPC). The rule is kept from omp, which refused a prompt then; pi accepts
-   * one. The message is forwarded as `follow_up`: the queue stays pi-owned (its
-   * `queue_update`/`get_state` snapshots feed every client's chips) and pi
-   * delivers the message after the shell command finishes.
-   * The reply carries the degradation so the client can tell the user their
-   * message was queued, not steered.
-   */
-  private async queueWhileShellRunning(command: Record<string, unknown>, correlationKey: object = command): Promise<unknown> {
-    const images = toImageContents(command.images);
-    await this.sendNativeMessageCommand({
-      type: "follow_up",
-      message: command.message as string,
-      ...(images ? { images } : {}),
-      ...(isClientMessageId(command.clientMessageId) ? { clientMessageId: command.clientMessageId } : {}),
-      ...(isRecord(command.origin) ? { origin: command.origin } : {}),
-    }, undefined, correlationKey);
-    return { queued: true, queue: "followUp", reason: "shellRunning" };
   }
 
   destroy(reason = "unspecified"): void {

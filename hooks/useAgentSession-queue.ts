@@ -11,18 +11,6 @@ export type { QueuedMessages };
 export const EMPTY_QUEUE: QueuedMessages = { steering: [], followUp: [] };
 
 
-/**
- * `lib/rpc-manager.ts` answers a prompt/steer with this when a `!!` shell
- * command owned the session: it forwarded the message into omp's follow-up
- * queue instead of rejecting the frame. It reports what happened — it is not
- * queue state, so the chip still comes from omp's own snapshot.
- */
-export function isQueuedWhileShellRunning(reply: unknown): boolean {
-  if (!reply || typeof reply !== "object") return false;
-  const value = reply as { queued?: unknown; queue?: unknown; reason?: unknown };
-  return value.queued === true && value.queue === "followUp" && value.reason === "shellRunning";
-}
-
 /** A message tau holds until omp has it (docs/specs/2026-11-04-message-outbox-design.md O1): this browser's
  * (`local`, still on its first leg) or the web server's. The one exception to omp-owned queue state: omp does not
  * have these yet. */

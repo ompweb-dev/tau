@@ -756,39 +756,6 @@ test("editing and resending a queued bang-prefixed prompt never runs its inline 
   assert.deepEqual(world.calls.filter((call) => call.body?.type === "bash").map((call) => call.body.command), ["printf example"]);
 });
 
-test("a shell-queued outbox prompt and steer use queue_update without a phantom turn or reply notice", async () => {
-  resetWorld();
-  primeSession("bash-queue", [userMsg("u0", "q")]);
-  // The agent route answers a prompt/steer with this while a `!!` shell command
-  // owns the session (see lib/rpc-manager.ts).
-  const queuedReply = { success: true, data: { queued: true, queue: "followUp", reason: "shellRunning" } };
-  const holdReply = () => world.holds.push({
-    match: (method, _url, body) => method === "POST" && (body?.type === "prompt" || body?.type === "steer"),
-    produce: () => Promise.resolve({ value: queuedReply }),
-  });
-  holdReply();
-  holdReply();
-  const w = await mountSession("bash-queue");
-  let sending;
-  await act(async () => {
-    sending = w.latest.handleSend("after the shell finishes");
-    await sleep(30);
-  });
-  await act(async () => { lastEs()?.open(); await sending; });
-  assert.equal((await sending).status, "accepted");
-  assert.equal(w.latest.agentRunning, false, "no turn started behind the shell command");
-  assert.deepEqual(
-    w.latest.messages.filter((message) => message.role === "user").map((message) => message.content),
-    ["q"],
-    "the text lives in omp's queue, not in an optimistic bubble",
-  );
-  assert.deepEqual(w.latest.notices, [], "the dispatcher reply never creates a tab-owned queue notice");
-  await act(async () => { await w.latest.handleSteer("steer instead"); });
-  await act(() => lastEs().emit({ type: "queue_update", steering: [], followUp: ["after the shell finishes", "steer instead"] }));
-  assert.deepEqual(w.latest.queuedMessages, { steering: [], followUp: ["after the shell finishes", "steer instead"] });
-  assert.deepEqual(w.latest.notices, []);
-});
-
 test("clearing the queue resolves to pi's withdrawn texts, writes no draft, and leaves the chips to the snapshot", async (t) => {
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   for (const outcome of [

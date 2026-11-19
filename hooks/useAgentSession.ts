@@ -66,7 +66,7 @@ import {
 export type { SubagentInfo } from "@/lib/subagent-types";
 
 // Pure helpers extracted to sibling modules (extraction only — no logic changes).
-import { EMPTY_QUEUE, EMPTY_SERVER_OUTBOX, applyOutboxSnapshot, isQueuedWhileShellRunning, markOutboxUncertain, mergeHeldMessages, rememberLocalOutbox, rememberOutboxEntries, representOutboxIds } from "./useAgentSession-queue";
+import { EMPTY_QUEUE, EMPTY_SERVER_OUTBOX, applyOutboxSnapshot, markOutboxUncertain, mergeHeldMessages, rememberLocalOutbox, rememberOutboxEntries, representOutboxIds } from "./useAgentSession-queue";
 import { readQueueSnapshot } from "@/lib/client-message-ids";
 import type { QueuedMessages, ServerOutbox } from "./useAgentSession-queue";
 import {
@@ -3254,7 +3254,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // `!!` shell command owns the session (another tab or device started it,
       // so this composer never saw a run). No turn starts then, and the
       // optimistic one must not sit there spinning.
-      let queuedBehindShell = false;
       if (isNew) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
@@ -3291,37 +3290,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             if (promptRunIdRef.current === promptRunId) runPreviousEntryIdsRef.current = previousEntryIds;
           }
           promptIssued = true;
-          queuedBehindShell = isQueuedWhileShellRunning(await sendAgentCommand(sid, {
+          await sendAgentCommand(sid, {
             type: "prompt",
             message,
             ...(piImages?.length ? { images: piImages } : {}),
             ...(uploads?.length ? { uploads } : {}),
             ...(uploadProofs ? { uploadProofs } : {}),
-          }));
+          });
         }
       }
       if (promptRunIdRef.current === promptRunId) promptDispatchPendingRef.current = false;
-      if (queuedBehindShell) {
-        // omp accepted the text into its follow-up queue, so this turn never
-        // started: drop the optimistic bubble (the queue chip omp publishes is
-        // the message's home) without putting the text back into the composer,
-        // and say where it went instead of failing.
-        setOptimisticUserMessage(null);
-        catchUp.invalidate();
-        eventCoalescer.reset();
-        agentRunningRef.current = false;
-        setAgentRunning(false);
-        setAgentPhase(null);
-        clearLiveToolResults();
-        lastQuotaErrorRef.current = null;
-        lastRunErrorRef.current = null;
-        runErrorAssistantRef.current = null;
-        independentRunErrorRef.current = null;
-        slashCommandRunRef.current = false;
-        dispatch({ type: "end" });
-        addNotice({ type: "info", message: translate("agentSession.queuedWhileShellRunning") });
-        return { status: "accepted" };
-      }
       if (isSlashCommandPrompt && sentSessionId) {
         void waitForPromptSettlement(sentSessionId, promptRunId);
       }

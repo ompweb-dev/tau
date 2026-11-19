@@ -29,7 +29,6 @@
   "agentSession.uploadOwnerUnavailable": "无法确定会话的所属主机。未上传任何文件。",
   "agentSession.sessionRenamed": "会话已重命名为 {name}",
   "agentSession.shellSessionFailed": "无法为 shell 命令创建会话",
-  "agentSession.queuedWhileShellRunning": "仍有 Shell 命令正在运行，消息已加入队列，将在该命令结束后执行。",
   "agentSession.queueRestoreUncertain": "已停止运行，但队列中的消息可能没有回到输入框。重新发送前请检查队列和聊天记录。",
   "agentSession.startingAgent": "正在启动 pi……会话首次启动可能需要一些时间。",
   "agentSession.toolPresetNotice": "工具预设在会话启动时生效；当前会话将保留现有工具。",

@@ -957,7 +957,8 @@ async function deliver(entry: Row): Promise<Outcome> {
       return retry(current);
     }
   }
-  const idle = !wrapper.isRunning();
+  // pi takes a prompt beside tau's `!!` shell command; a follow-up queued with no turn would wait for the next one.
+  const idle = !wrapper.isRunning(true);
   const keys = sessionKeys(sessionId);
   // A cold start can discover native aliases. Re-select across them before claiming, so an older alias wins.
   const oldest = db().prepare(`SELECT id FROM entries WHERE session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(...keys) as { id: string } | null;

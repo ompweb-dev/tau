@@ -29,7 +29,6 @@
   "agentSession.uploadOwnerUnavailable": "無法判定此對話所屬的主機。未上傳任何檔案。",
   "agentSession.sessionRenamed": "對話已重新命名為 {name}",
   "agentSession.shellSessionFailed": "無法為 Shell 指令建立對話",
-  "agentSession.queuedWhileShellRunning": "Shell 指令仍在執行中，訊息已排入佇列，將在指令完成後執行。",
   "agentSession.queueRestoreUncertain": "執行已停止，但佇列中的訊息可能未退回至訊息輸入框。重新傳送前請先確認佇列與對話內容。",
   "agentSession.startingAgent": "正在啟動 pi… 對話首次啟動可能需要一些時間。",
   "agentSession.toolPresetNotice": "工具組合會在對話啟動時套用；此對話將保留其目前工具。",

@@ -29,7 +29,6 @@
   "agentSession.uploadOwnerUnavailable": "The session owner could not be determined. No file was uploaded.",
   "agentSession.sessionRenamed": "Session renamed to {name}",
   "agentSession.shellSessionFailed": "Unable to create a session for the shell command",
-  "agentSession.queuedWhileShellRunning": "A shell command is still running, so the message was queued and runs when it finishes.",
   "agentSession.queueRestoreUncertain": "The run was stopped, but the queued messages may not have come back to the composer. Check the queue and the chat before resending.",
   "agentSession.startingAgent": "Starting pi… the first launch of a session can take a while.",
   "agentSession.toolPresetNotice": "Tool presets apply when a session starts; this session keeps its current tools.",

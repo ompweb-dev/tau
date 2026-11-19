@@ -29,7 +29,6 @@
   "agentSession.uploadOwnerUnavailable": "セッションの所有ホストを特定できませんでした。ファイルはアップロードされていません。",
   "agentSession.sessionRenamed": "セッション名を {name} に変更しました",
   "agentSession.shellSessionFailed": "シェルコマンド用のセッションを作成できませんでした",
-  "agentSession.queuedWhileShellRunning": "シェルコマンドの実行中です。メッセージはキューに追加され、コマンドの終了後に実行されます。",
   "agentSession.queueRestoreUncertain": "実行は停止しましたが、キュー内のメッセージが入力欄に戻っていない可能性があります。再送信する前にキューとチャットを確認してください。",
   "agentSession.startingAgent": "pi を起動しています… セッションの初回起動には時間がかかる場合があります。",
   "agentSession.toolPresetNotice": "ツールプリセットはセッション開始時に適用されます。このセッションは現在のツールを維持します。",
