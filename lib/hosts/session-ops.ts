@@ -57,7 +57,7 @@ import {
   SessionFileTooLargeError,
 } from "../session-reader";
 import type { SessionHistoryCursor } from "../session-sync";
-import { extractSubagentHistory, readCompletionArtifact, readSubagentTranscriptPage, resolveSubagentArtifact, subagentTranscriptPath } from "../subagent-history";
+import { extractSubagentHistory, readCompletionArtifact, readSubagentTranscriptPage, readTranscriptCompletion, resolveSubagentArtifact, resolveSubagentSessionFile, subagentTranscriptPath } from "../subagent-history";
 import { SUBAGENT_ID_RE } from "../subagent-types";
 import { isRecord } from "../type-guards";
 import type { ArchivedSessionInfo, ManagedProject, ProjectLaunchConfig, SessionContext, SessionInfo, SessionTitleSource } from "../types";
@@ -106,7 +106,8 @@ export interface SessionOps {
   readThinking(id: string, entryId: string, block: number): Promise<OpResult<unknown>>;
   readSessionState(id: string): Promise<OpResult<unknown>>;
   readSubagentHistory(id: string): Promise<OpResult<unknown>>;
-  readSubagentTranscript(id: string, subagentId: string, mode: "page" | "completion", cursor: number): Promise<OpResult<unknown>>;
+  /** `file`: a pi-subagents child's own session file (its progress names it), read only inside the parent's artifacts dir. */
+  readSubagentTranscript(id: string, subagentId: string, mode: "page" | "completion", cursor: number, file?: string): Promise<OpResult<unknown>>;
   renameSessionFile(id: string, title: string, source?: SessionTitleSource): Promise<OpResult<null>>;
   /** `liveSessionIds`: sessions main has a live omp process for; their files are never rewritten. */
   deleteSession(id: string, liveSessionIds: string[]): Promise<OpResult<{ skippedChildren?: Array<{ id: string; reason: string }> }>>;
@@ -427,10 +428,16 @@ export const sessionOps: SessionOps = {
     return ok({ subagents: extractSubagentHistory(filePath) });
   },
 
-  async readSubagentTranscript(id, subagentId, mode, fromByte) {
+  async readSubagentTranscript(id, subagentId, mode, fromByte, file) {
     if (!isValidSubagentId(subagentId)) return fail(400, "invalid_subagent_id", "Invalid subagent id");
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
+    if (typeof file === "string" && file) {
+      const resolved = resolveSubagentSessionFile(filePath, file);
+      if (!resolved) return fail(404, "transcript_not_found", "Subagent transcript not found");
+      if (mode === "completion") return ok({ sessionFile: resolved, completion: readTranscriptCompletion(resolved), truncated: false });
+      return ok(readSubagentTranscriptPage(resolved, fromByte));
+    }
     if (mode === "completion") {
       const resolved = resolveSubagentArtifact(filePath, subagentId, ".md");
       if (!resolved) return fail(404, "transcript_not_found", "Subagent completion not found");

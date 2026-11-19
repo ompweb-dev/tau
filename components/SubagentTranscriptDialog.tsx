@@ -230,17 +230,20 @@ export function SubagentTranscriptDialog({ subagent, sessionId, transcriptVersio
   const fromDisk = subagent?.source === "history";
   const live = !fromDisk;
 
+  // A pi-subagents child is read from its own session file, which its progress names.
+  const fileQuery = subagent?.sessionFile ? `&file=${encodeURIComponent(subagent.sessionFile)}` : "";
+
   const fetchCompletion = useCallback(async (): Promise<{ completion: string | null; truncated: boolean }> => {
     if (!sessionId || !subagent?.id) throw new Error("No session");
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(subagent.id)}?mode=completion`);
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(subagent.id)}?mode=completion${fileQuery}`);
     if (res.status === 404) return { completion: null, truncated: false };
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json() as { completion: string | null; truncated: boolean };
-  }, [sessionId, subagent?.id]);
+  }, [sessionId, subagent?.id, fileQuery]);
 
   const fetchTranscriptPage = useCallback(async (startByte: number): Promise<SubagentMessagesPage> => {
     if (!sessionId || !subagent?.id) throw new Error("No session");
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(subagent.id)}?fromByte=${startByte}`);
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/subagents/${encodeURIComponent(subagent.id)}?fromByte=${startByte}${fileQuery}`);
     if (!res.ok) {
       const body = await res.json().catch(() => null) as { error?: unknown } | null;
       throw new Error(typeof body?.error === "string" && body.error ? body.error : `HTTP ${res.status}`);
@@ -248,7 +251,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, transcriptVersio
     const page = await res.json() as SubagentMessagesPage;
     if (typeof page.error === "string") throw new Error(page.error);
     return page;
-  }, [sessionId, subagent?.id]);
+  }, [sessionId, subagent?.id, fileQuery]);
 
   const loadTranscriptPage = useCallback(async (startByte: number) => {
     if (!sessionId || !subagent?.id) return;

@@ -30,6 +30,8 @@ const ASYNC_WIDGET = "subagent-async";
 const ASYNC_PREFIX = "PI_SUBAGENT_ASYNC_JSON:";
 /** tau addresses a subagent by an id it can put in a file name (SUBAGENT_ID_RE). */
 const idPart = (value: unknown) => String(value).replace(/[^A-Za-z0-9_-]/g, "_");
+/** The roster id of row `index` of the `subagent` call `toolCallId`; the session file's history uses it too. */
+export const foregroundSubagentId = (toolCallId: string, index: number) => `${idPart(toolCallId)}.${index}`;
 const text = (value: unknown) => (typeof value === "string" && value ? value : undefined);
 const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
 const terminal = (status: Status) => status !== "started";
@@ -95,7 +97,7 @@ export class SubagentBridge {
     rows.forEach((row: unknown, position: number) => {
       if (!isRecord(row)) return;
       const index = number(row.index) ?? position;
-      const id = `${idPart(toolCallId)}.${index}`;
+      const id = foregroundSubagentId(toolCallId, index);
       let [status, progressStatus] = ROW_STATUS[String(row.status)] ?? ["started", "running"];
       // The call ended: a child it still lists as running ended with it.
       if (frame.type === "tool_execution_end" && !terminal(status)) [status, progressStatus] = frame.isError === true ? ["failed", "failed"] : ["completed", "completed"];
