@@ -1,5 +1,5 @@
 // Types mirrored from pi's session entries (core/session-manager, v3 format).
-import type { HtmlFormData, RpcAskDialogQuestion, TodoPhase } from "./pi-types";
+import type { RpcAskDialogQuestion, TodoPhase } from "./pi-types";
 import type { MessageOrigin, SessionOriginRef } from "./message-origin";
 
 // tau never imports pi's SDK, so the on-disk
@@ -202,16 +202,6 @@ type UiDialogOptionsArg = UiDialogOptions | null;
 
 export type UiSelectItem = string | { label: string; description?: string };
 
-/** An approval prompt: a title line then details. */
-export interface UiApprovalPrompt {
-  full: string;
-  compact: string;
-  session?: string;
-  grants?: { scope: "folder" | "target"; label: string; alwaysLabel: string }[];
-}
-
-export type UiApprovalAnswer = "once" | "session" | "deny" | { grant: "folder" | "target"; always: boolean };
-
 /** An ask dialog's submit result. */
 export interface UiAskDialogResult {
   kind: "submit";
@@ -223,11 +213,6 @@ export interface UiAskDialogResult {
     selectedOptions: string[];
     customInput?: string;
   }[];
-}
-
-/** A form dialog's result. */
-export interface UiFormDialogResult {
-  data: HtmlFormData;
 }
 
 export type AgentConfirmPayload =
@@ -248,11 +233,11 @@ export type AgentConfirmPayload =
     };
 
 /** What a dialog method returns; a cancel sends no value. */
-export type UiDialogValue = string | boolean | UiAskDialogResult | UiFormDialogResult | UiApprovalAnswer;
+export type UiDialogValue = string | boolean | UiAskDialogResult;
 
 /**
- * A dialog pi opened: `method` is its `ExtensionUIContext` method (or tau's own `askDialog`/`formDialog`/`approve`
- * kinds, which pi does not send), `args` its positional
+ * A dialog pi opened: `method` is its `ExtensionUIContext` method (or tau's own `askDialog`
+ * for its ask tool), `args` its positional
  * arguments. tau's own confirms carry string ids. `expiresAt` (epoch ms) is set when it times out.
  */
 export type UiDialogRequest = { type: "ui_request"; id: number | string; expiresAt?: number } & (
@@ -264,9 +249,6 @@ export type UiDialogRequest = { type: "ui_request"; id: number | string; expires
       args: [title: string, prefill?: string | null, dialogOptions?: UiDialogOptionsArg, editorOptions?: { promptStyle?: boolean } | null];
     }
   | { method: "askDialog"; args: [questions: RpcAskDialogQuestion[], dialogOptions?: UiDialogOptionsArg] }
-  /** Whole-form ask: the agent's `<form>` HTML, rendered as controls, never as markup. */
-  | { method: "formDialog"; args: [html: string, dialogOptions?: UiDialogOptionsArg] }
-  | { method: "approve"; args: [prompt: UiApprovalPrompt, dialogOptions?: UiDialogOptionsArg] }
 );
 
 /** A presentation call from the runner. */

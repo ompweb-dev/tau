@@ -209,13 +209,6 @@ export interface RpcAskDialogAnswer {
 }
 
 /**
- * A submitted whole-form ask (`formDialog`), by control `name`: radios, single checkboxes and
- * single selects give their value (omitted when nothing is chosen), checkbox groups and multi-selects
- * an array, `number`/`range` inputs a number, other text fields their text. Mirrors pi-tui's html-form.
- */
-export type HtmlFormData = Record<string, string | number | string[]>;
-
-/**
  * tau's host-tool bridge: tau registers host tools (set_host_tools, which the
  * daemon hands to the extension's `/tau_host_tools`) that the agent can call;
  * the server emits host_tool_call frames the UI executes, and the UI answers

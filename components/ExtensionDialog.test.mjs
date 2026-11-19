@@ -112,34 +112,6 @@ test("server-owned send confirmation shows named endpoints and escaped message t
   }
 });
 
-test("approve offers omp's choices and answers with the chosen ExtensionApprovalAnswer", async () => {
-  const request = {
-    type: "ui_request",
-    id: 7,
-    method: "approve",
-    args: [{
-      full: "Run bash?\nrm -rf build",
-      compact: "Run bash? rm -rf build",
-      session: "Approve for this session",
-      grants: [{ scope: "folder", label: "Approve Directory: ~/src", alwaysLabel: "Always Approve Directory: ~/src" }],
-    }],
-  };
-  const responses = [];
-  const onRespond = (_request, value) => responses.push(value);
-  const view = render(React.createElement(ExtensionDialog, { request, onRespond, attached: true }));
-  try {
-    screen.getByText("Run bash?");
-    screen.getByText("rm -rf build");
-    for (const name of ["Allow", "Approve for this session", "Approve Directory: ~/src", "Always Approve Directory: ~/src", "Deny"]) {
-      fireEvent.click(screen.getByRole("button", { name }));
-    }
-    assert.deepEqual(responses, ["once", "session", { grant: "folder", always: false }, { grant: "folder", always: true }, "deny"]);
-    assert.equal(screen.queryByRole("button", { name: "Submit" }), null);
-  } finally {
-    view.unmount();
-  }
-});
-
 test("omp's checkbox select shows which options are already checked", async () => {
   const request = {
     type: "ui_request",

@@ -1207,7 +1207,7 @@ export class AgentSessionWrapper {
     // Pending until answered or ended (replayed to newly-attached SSE listeners so dialogs survive reconnects).
     this.forgetPendingUiRequest(id);
     // The dialog options are the last positional argument: (questions|html|prompt, options) or (title, x, options).
-    const options = args[event.method === "askDialog" || event.method === "formDialog" || event.method === "approve" ? 1 : 2];
+    const options = args[event.method === "askDialog" ? 1 : 2];
     const timeout = isRecord(options) && typeof options.timeout === "number" ? options.timeout : undefined;
     if (timeout && timeout > 0) {
       event.expiresAt = Date.now() + timeout;
@@ -2397,11 +2397,8 @@ export class AgentSessionWrapper {
         if (runnerId !== undefined && !Number.isSafeInteger(runnerId)) throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const method = this.pendingUiRequests.get(key)?.method;
         // A malformed answer would drop the dialog from reconnect replay while pi rejects it.
-        if (value !== undefined && (method === "askDialog" || method === "formDialog") && !isRecord(value)) {
+        if (value !== undefined && method === "askDialog" && !isRecord(value)) {
           throw new WebRpcError("Invalid dialog answer", "invalid_ui_response");
-        }
-        if (value !== undefined && method === "formDialog" && isRecord(value) && !isRecord(value.data)) {
-          throw new WebRpcError("Invalid form dialog answer", "invalid_ui_response");
         }
         const wasPending = this.pendingUiRequests.has(key);
         this.forgetPendingUiRequest(key);

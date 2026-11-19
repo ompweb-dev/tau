@@ -158,14 +158,12 @@ export function createNotificationDetector(): Detect {
       }
       case "ui_request": {
         // Only reached for dialogs that wait on the user (tau answers
-        // auto-approved ones before they are emitted). args[0] is the title,
-        // an ask's questions, an approval prompt, or a form's html (no detail).
-        if (frame.method === "formDialog") return [{ ...base, type: "input" }];
+        // auto-approved ones before they are emitted). args[0] is the title
+        // or an ask's questions.
         const args = Array.isArray(frame.args) ? frame.args : [];
         const first: unknown = args[0];
         const detail = str(first)
           ?? (Array.isArray(first) && isRecord(first[0]) ? str(first[0].question) : undefined)
-          ?? (isRecord(first) ? str(first.compact) : undefined)
           ?? str(args[1]);
         return [{ ...base, type: "input", detail }];
       }
