@@ -538,16 +538,6 @@ export class AgentSessionWrapper {
     return this.pendingUiRequests.size > 0;
   }
 
-  /** An open ask (askDialog/formDialog): a user steer would interrupt the ask. */
-  isAwaitingAsk(): boolean {
-    for (const event of this.pendingUiRequests.values()) if (isAskRequest(event)) return true;
-    return false;
-  }
-
-  private notifyAskClosed(): void {
-    for (const listener of globalThis.__tauAskClosedListeners ?? []) listener(this._sessionId);
-  }
-
   /** Local history navigation is busy control work, not an interruptible model turn. */
   isEditingHistory(): boolean {
     return this.historyEditInFlight;
@@ -1157,10 +1147,8 @@ export class AgentSessionWrapper {
 
   /** Forget a pending dialog and its expiry timer. */
   private forgetPendingUiRequest(id: string): void {
-    const wasAsk = isAskRequest(this.pendingUiRequests.get(id));
     // An answered or expired dialog no longer waits on the user: the sidebar follows.
     if (this.pendingUiRequests.delete(id)) notifyRunningChange();
-    if (wasAsk && !this.isAwaitingAsk()) this.notifyAskClosed();
     const timer = this.uiExpiryTimers.get(id);
     if (timer) {
       clearTimeout(timer);
@@ -1169,12 +1157,10 @@ export class AgentSessionWrapper {
   }
 
   private clearPendingUiRequests(): void {
-    const hadAsk = this.isAwaitingAsk();
     this.dropServerUiRequests();
     for (const timer of this.uiExpiryTimers.values()) clearTimeout(timer);
     this.uiExpiryTimers.clear();
     this.pendingUiRequests.clear();
-    if (hadAsk) this.notifyAskClosed();
   }
 
   /** Settle every server dialog as declined and close it in attached tabs. */
@@ -2675,7 +2661,6 @@ declare global {
   var __tauHostToolListeners: Set<(call: CrossSessionHostToolEvent) => void> | undefined;
   var __tauExitedSessions: Map<string, ExitedRpcSession> | undefined;
   var __tauFrameTaps: Set<(wrapper: AgentSessionWrapper, event: AgentEvent) => void> | undefined;
-  var __tauAskClosedListeners: Set<(sessionId: string) => void> | undefined;
   var __tauNativeWrites: WeakSet<object> | undefined;
 }
 
@@ -2793,15 +2778,6 @@ export function tapSessionFrames(tap: (wrapper: AgentSessionWrapper, event: Agen
   const taps = (globalThis.__tauFrameTaps ??= new Set());
   taps.add(tap);
   return () => { taps.delete(tap); };
-}
-
-const isAskRequest = (event: UnsequencedAgentEvent | undefined): boolean => event?.method === "askDialog" || event?.method === "formDialog";
-
-/** A session's last open ask closed (answered, cancelled, expired or its child gone): the outbox's held steers may go. */
-export function onAskClosed(listener: (sessionId: string) => void): () => void {
-  const listeners = (globalThis.__tauAskClosedListeners ??= new Set());
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
 }
 
 // ----------------------------------------------------------------------------
@@ -3030,8 +3006,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
         cold = true;
       }
       const target = wrapper;
-      // A steer would interrupt the target's open ask: it goes as a follow-up, which the result reports.
-      let delivery = input.delivery;
+      const delivery = input.delivery;
       const send = async () => {
         const wasRunning = target.isRunning();
         if (input.delivery === "prompt" && wasRunning) {
@@ -3040,7 +3015,6 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
         if (input.delivery === "steer" && !wasRunning) {
           throw new Error("Target session is not running; use delivery \"prompt\" to start a turn.");
         }
-        if (delivery === "steer" && target.isAwaitingAsk()) delivery = "followUp";
         const terminalEndsNeeded = delivery === "followUp" && wasRunning ? 2 : 1;
         const waiter = input.wait ? target.waitForTurnEnd(input.waitTimeoutMs, terminalEndsNeeded) : null;
         await target.send({

@@ -16,7 +16,7 @@ import { listArchivedSessions } from "./pi/archive";
 import { OUTBOX_CHANGE_SCHEMA, OUTBOX_SCHEMA } from "./message-outbox-schema";
 import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { getAgentDir } from "./pi/paths";
-import { getRpcSession, getRpcSessionKeys, nativeWriteStarted, onAskClosed, tapSessionFrames, type AgentEvent, type AgentSessionWrapper } from "./rpc-manager";
+import { getRpcSession, getRpcSessionKeys, nativeWriteStarted, tapSessionFrames, type AgentEvent, type AgentSessionWrapper } from "./rpc-manager";
 import { isRecord } from "./type-guards";
 import type { OutboxEntry, OutboxMode } from "./types";
 import { MAX_UPLOADS_PER_MESSAGE, UPLOAD_ID_RE } from "./upload-limits";
@@ -823,12 +823,6 @@ export function startOutbox(): void {
   const detachFrames = tapSessionFrames((wrapper, event) => {
     if (globalThis.__tauOutbox === state && state.started) onChildExit(wrapper, event);
   });
-  const detachAsks = onAskClosed((sessionId) => {
-    if (globalThis.__tauOutbox !== state || !state.started) return;
-    // A delivery that saw the ask open may still hold the claim: leave a wake for its release.
-    if (sessionKeys(sessionId).some((key) => state.busy.has(key))) wakes.add(sessionId);
-    else pumpOutbox(sessionId);
-  });
   state.detach = () => {
     attached = false;
     for (const timer of hostRetries.values()) {
@@ -841,7 +835,6 @@ export function startOutbox(): void {
     process.removeListener("exit", closeOutboxStore);
     detachHello();
     detachFrames();
-    detachAsks();
   };
   // A live owner at boot can die later without another add or hello. Recover its claim, never resend it.
   const maintenance = setInterval(() => {
@@ -963,12 +956,6 @@ async function deliver(entry: Row): Promise<Outcome> {
   // A cold start can discover native aliases. Re-select across them before claiming, so an older alias wins.
   const oldest = db().prepare(`SELECT id FROM entries WHERE session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(...keys) as { id: string } | null;
   if (oldest?.id !== current.id) return "next";
-  // A steer would interrupt an open ask: held until the ask closes, which pumps it (onAskClosed).
-  if (!idle && current.mode === "steer" && wrapper.isAwaitingAsk()) {
-    if (!setState(current.id, "held")) return "next";
-    publish(sessionId);
-    return "wait";
-  }
   // Give legacy accepted authority its immutable generation before transcript/attachment preparation can yield.
   for (const receipt of current.upload_receipts ? JSON.parse(current.upload_receipts) as OutboxUploadReceipt[] : []) {
     if (receipt.completionKey !== undefined) continue;

@@ -899,9 +899,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     return null;
   }, [bashRunning, pendingBash, isCompacting, agentRunning, streamState.streamingMessage, pendingToolHeaders.length, agentPhase, activeSubagentCount, currentTodoPhase, t, tn]);
 
-  // tau's ask tool opens askDialog (pi sends no formDialog). Nothing is sent while either is open:
-  // the user answers the ask first.
-  const askOpen = extensionDialog?.method === "askDialog" || extensionDialog?.method === "formDialog";
+  // tau's ask tool opens askDialog; the user answers it in its panel.
+  const askOpen = extensionDialog?.method === "askDialog";
   const hiddenComposerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // A hidden composer that keeps focus keeps the phone keyboard up: the
