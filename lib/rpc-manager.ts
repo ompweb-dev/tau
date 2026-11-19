@@ -40,7 +40,7 @@ import type {
   WebSessionState,
 } from "./pi-types";
 import type { AgentConfirmPayload, AgentMessage, CrossSessionHostToolCall, CrossSessionHostToolEvent, ExitedRpcSession, ExtensionWidgetItem } from "./types";
-import { isLinkUp, type Host, type HostStatus, type SpawnRequest, type SpawnResult } from "./hosts/host";
+import { isLinkUp, type Host, type HostStatus, type SpawnRequest } from "./hosts/host";
 import { freezeHostLinks, getHost, hostOwnsLifecycle, isNotifier, lastUplinkAt, listHosts, orphanExit } from "./hosts/hub";
 import { CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, PEER_MESSAGE_FRAME, PEER_PROMPT_OUTCOME_FRAME } from "./hosts/link-protocol";
 import { LOCAL_HOST_ID } from "./hosts/registry";
@@ -524,13 +524,6 @@ export class AgentSessionWrapper {
   /** A reload gave up waiting for the old child behind a dropped link; it may still run, so commands answer host_offline until it exits. */
   private oldChildExiting = false;
   readonly cwd: string;
-  /** Whether the child was spawned with --advisor. The flag is spawn-time
-   * only (no runtime RPC toggles it), so applying a changed advisor setting
-   * means replacing an idle child on the next startRpcSession call. */
-  readonly advisorSpawned: boolean;
-  /** The host's project launch config forced --advisor at spawn. Read by
-   * startRpcSession's replace gate, which cannot ask the host before spawning. */
-  readonly launchAdvisor: boolean;
   /** Machine the child runs on; every machine-local action goes through it. */
   readonly host: Host;
   /** The cwd recorded in the session file header; null for brand-new sessions
@@ -547,24 +540,20 @@ export class AgentSessionWrapper {
     proc: RpcProcess,
     cwd: string,
     recordedCwd?: string | null,
-    advisorSpawned = false,
     expectedSessionId = "",
     /** Test seam: the real value is DISCONNECT_DESTROY_MS (120s), far too long
      *  for a unit test. 0 disables reaping for that wrapper. */
     disconnectDestroyMs: number = DISCONNECT_DESTROY_MS,
     host: Host = getHost(LOCAL_HOST_ID),
-    launchAdvisor = false,
     fellBack = false,
   ) {
     this.proc = proc;
     this.cwd = cwd;
     this.recordedCwd = recordedCwd ?? null;
-    this.advisorSpawned = advisorSpawned;
     this._sessionId = expectedSessionId;
     this.startedEmpty = expectedSessionId === "";
     this.disconnectDestroyMs = disconnectDestroyMs;
     this.host = host;
-    this.launchAdvisor = launchAdvisor;
     this.fellBack = fellBack;
   }
 
@@ -612,33 +601,6 @@ export class AgentSessionWrapper {
   /** Local history navigation is busy control work, not an interruptible model turn. */
   isEditingHistory(): boolean {
     return this.historyEditInFlight;
-  }
-
-  /** A native terminal event can leave background work unsettled; advisor changes wait for it too. */
-  canReplaceAdvisor(): boolean {
-    return this.isAlive() && !this.restarting && !this.handshaking && !this.unsettled && !this.messageBoundaryBusy();
-  }
-
-  async replaceAdvisorIfIdle(launch: SpawnRequest, preparing: boolean): Promise<SpawnResult | null> {
-    if (!this.hostOwnedLifecycle || !this.canReplaceAdvisor()) return null;
-    const old = this.proc;
-    this.restarting = true;
-    this.restartingProc = old;
-    this.expectedExitProc = old;
-    try {
-      const spawned = await this.host.spawnRpc(launch, this._sessionId, { replaceAdvisor: true, preparing });
-      if (spawned.transport === old.transport) return null; // A peer became busy before the daemon's atomic check.
-      await this.destroyAndWait("advisor");
-      return spawned;
-    } catch (error) {
-      // The daemon stopped the old child before the replacement failed; its exit was ignored as expected.
-      if (!old.isAlive) await this.destroyAndWait("advisor-failed");
-      throw error;
-    } finally {
-      if (this.expectedExitProc === old) this.expectedExitProc = null;
-      if (this.restartingProc === old) this.restartingProc = null;
-      this.restarting = false;
-    }
   }
 
   /** Any event observer is attached, including internal work that protects the session lifetime. */
@@ -975,7 +937,7 @@ export class AgentSessionWrapper {
     }
   }
 
-  /** Joined an existing protocol endpoint; only legacy adoption loses spawn-time advisor metadata. */
+  /** Joined an existing protocol endpoint. */
   get adopted(): boolean {
     return this._adopted;
   }
@@ -1159,7 +1121,7 @@ export class AgentSessionWrapper {
     // Spec Rules → Reattach: a run whose child vanished while its host link was
     // down starts again on that host, like a local run after a restart.
     const resume: InterruptibleSession | null = !this.hostOwnedLifecycle && sourceProc.transport?.lost === true && this._sessionId && (this.streaming || this.promptRunning)
-      ? { id: this._sessionId, advisor: this.advisorSpawned, hostId: this.host.id }
+      ? { id: this._sessionId, hostId: this.host.id }
       : null;
     // Recorded before destroy(): its running-change broadcast must carry the
     // record so sidebars that missed the notice below still see the exit.
@@ -2385,7 +2347,6 @@ export class AgentSessionWrapper {
         recordedCwd: this.recordedCwd,
         sessionFile: resumable ? sessionFile : "",
         toolNames: undefined,
-        advisor: this.advisorSpawned,
       }, resumable ? this._sessionId : null);
       const proc = new RpcProcess({
         cwd: spawned.cwd,
@@ -3384,7 +3345,7 @@ export function syncInterruptibleSessions(): void {
   const registry = getRegistry();
   const running = new Map<string, InterruptibleSession>();
   for (const session of registry.values()) {
-    if (!session.hostOwnedLifecycle && session.sessionId && session.isRunning()) running.set(session.sessionId, { id: session.sessionId, advisor: session.advisorSpawned, hostId: session.host.id });
+    if (!session.hostOwnedLifecycle && session.sessionId && session.isRunning()) running.set(session.sessionId, { id: session.sessionId, hostId: session.host.id });
   }
   recordRunningSessions([...running.values()], (id) => registry.get(id)?.isAlive() === true);
 }
@@ -3400,13 +3361,13 @@ export async function resumeInterruptedSessions(): Promise<void> {
 }
 
 /** Start an interrupted session again on its host and ask it to continue. Never rejects. */
-async function resumeSession({ id, advisor, hostId }: InterruptibleSession): Promise<void> {
+async function resumeSession({ id, hostId }: InterruptibleSession): Promise<void> {
   try {
     const host = getHost(hostId);
     if (hostOwnsLifecycle(hostId)) return;
     const target = host && await sessionSpawnTarget(id, host);
     if (!host || !target) return;
-    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, advisor, target.recordedCwd, undefined, host);
+    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host);
     await session.send({ type: "prompt", message: RESUME_PROMPT });
     console.log(`[tau] resumed interrupted session ${id}`);
   } catch (error) {
@@ -3497,7 +3458,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
             projectId: binding.project.id,
             intent: { ...input, clientMessageId: undefined, origin: undefined },
           }, async (host, prepared, id, onStarted) => {
-            const started = await startNewRpcSession(host, prepared.cwd, undefined, false, true, id);
+            const started = await startNewRpcSession(host, prepared.cwd, undefined, true, id);
             if (!started.ok) throw new HostOpError(started.status, started.code, started.error);
             const { session, realSessionId } = started.value;
             await onStarted(realSessionId);
@@ -3525,7 +3486,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
       if (!(await authorizeHost(host))) throw new Error(`The user declined to start a session on ${host.label}.`);
       await requireProviderLogin(host, input.provider);
       const preparing = !!(input.prompt || input.name || (input.provider && input.modelId));
-      const started = await startNewRpcSession(host, input.cwd, undefined, undefined, preparing);
+      const started = await startNewRpcSession(host, input.cwd, undefined, preparing);
       if (!started.ok) throw new Error(started.error);
       const { session, realSessionId } = started.value;
       try {
@@ -3552,8 +3513,8 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
         const host = await hostForSessionId(input.sessionId);
         const target = host && await sessionSpawnTarget(input.sessionId, host);
         if (!host || !target) throw new Error(`Session not found: ${input.sessionId}`);
-        // The open's preparation lease keeps an idle shared child (and its advisor mode) until the message is sent.
-        const started = await startRpcSession(input.sessionId, target.sessionFile, target.cwd, undefined, undefined, target.recordedCwd, undefined, host, true);
+        // The open's preparation lease keeps an idle shared child until the message is sent.
+        const started = await startRpcSession(input.sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host, true);
         wrapper = started.session;
         cold = true;
       }
@@ -3628,7 +3589,6 @@ export async function startNewRpcSession(
   host: Host,
   cwd: string,
   toolNames?: string[],
-  advisor?: boolean,
   preparingCommand = false,
   creationId?: string,
 ): Promise<OpResult<{ session: AgentSessionWrapper; realSessionId: string }>> {
@@ -3652,7 +3612,7 @@ export async function startNewRpcSession(
     return { ok: false, status: 409, code: "prepared_cwd_changed", error: "The prepared worktree is no longer available" };
   }
   const tempKey = `__new__${creationId ?? randomUUID()}`;
-  const started = await startRpcSession(tempKey, "", spawnCwd, toolNames, advisor, undefined, undefined, host, preparingCommand, creationId);
+  const started = await startRpcSession(tempKey, "", spawnCwd, toolNames, undefined, undefined, host, preparingCommand, creationId);
   // Without this a file request under a brand-new cwd would 403 for up to the allowed-roots cache TTL.
   // Never for another host: its paths do not exist on this machine.
   if (host.id === LOCAL_HOST_ID) allowFileRoot(spawnCwd);
@@ -3665,9 +3625,6 @@ export async function startRpcSession(
   sessionFile: string,
   cwd: string,
   toolNames?: string[],
-  /** Spawn-time --advisor flag. Pass an explicit boolean to replace an idle
-   * child whose flag differs; pass undefined to reuse whatever is alive. */
-  advisor?: boolean,
   /** The cwd recorded in the session file header, used to detect a spawn
    * fallback (recorded dir gone) and warn the user. Omit for new sessions. */
   recordedCwd?: string | null,
@@ -3688,8 +3645,7 @@ export async function startRpcSession(
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
-  const launch: SpawnRequest = { cwd, recordedCwd: recordedCwd ?? null, sessionFile, toolNames, advisor: advisor === true, spawnModel, ...(creationId === undefined ? {} : { creationId }) };
-  let replacement: SpawnResult | undefined;
+  const launch: SpawnRequest = { cwd, recordedCwd: recordedCwd ?? null, sessionFile, toolNames, spawnModel, ...(creationId === undefined ? {} : { creationId }) };
 
   // A child of this session the host still ran from before a restart of this
   // server is being adopted or killed. Waiting here, before the registry and
@@ -3698,33 +3654,7 @@ export async function startRpcSession(
   if (sessionFile && !registry.get(sessionId)?.isAlive()) await orphanExit(host.id, sessionId);
 
   const existing = registry.get(sessionId);
-  // Union semantics, matching the spawn below and the wrapper identity:
-  // workspace advisor=true forces the flag on. The gate must compare this
-  // same effective value — comparing the raw toggle would destroy+respawn a
-  // workspace-forced child on every toggle-off prompt. The workspace half is
-  // what the host reported at the live child's spawn: asking it again would
-  // cost a remote host a round trip on every prompt.
-  const effectiveAdvisor = advisor === true || existing?.launchAdvisor === true;
-
-  if (existing?.isAlive()) {
-    // --advisor is a spawn-time flag with no runtime RPC. When the caller
-    // carries an explicit advisor setting that differs from the live child's,
-    // replace the child so the toggle takes effect on the next prompt. Busy
-    // children are kept (a mid-run swap would drop in-flight work) and pick
-    // the new flag up at the next natural respawn; callers that pass no
-    // advisor opinion (undefined) simply reuse whatever is running. Only a legacy
-    // adopted child's flag is unknown; shared channels report their actual launch mode.
-    if (advisor === undefined || (existing.adopted && !existing.hostOwnedLifecycle) || existing.advisorSpawned === effectiveAdvisor
-      || existing.isRunning() || existing.isEditingHistory() || (existing.hostOwnedLifecycle && !existing.canReplaceAdvisor())) {
-      return { session: existing, realSessionId: existing.sessionId };
-    }
-    if (existing.hostOwnedLifecycle) {
-      replacement = await existing.replaceAdvisorIfIdle(launch, preparingCommand) ?? undefined;
-      if (!replacement) return { session: existing, realSessionId: sessionId };
-    } else {
-      await existing.destroyAndWait("advisor", true);
-    }
-  }
+  if (existing?.isAlive()) return { session: existing, realSessionId: existing.sessionId };
   // A wrapper whose omp child is still flushing/exiting must fully dispose
   // before a replacement spawns — two children touching the same .jsonl would
   // race on resume/delete/archive.
@@ -3750,7 +3680,7 @@ export async function startRpcSession(
     // The wrapper needs the process and the process's onExit needs the wrapper;
     // the holder breaks that cycle (onExit only fires once the child dies).
     const holder: { wrapper?: AgentSessionWrapper } = {};
-    const spawned = replacement ?? await host.spawnRpc(launch, sessionFile ? sessionId : null, { replaceAdvisor: advisor !== undefined, preparing: preparingCommand });
+    const spawned = await host.spawnRpc(launch, sessionFile ? sessionId : null, { preparing: preparingCommand });
     const proc = new RpcProcess({
       cwd: spawned.cwd,
       transport: spawned.transport,
@@ -3761,11 +3691,9 @@ export async function startRpcSession(
       proc,
       spawned.cwd,
       recordedCwd,
-      spawned.transport.hostOwnedLifecycle ? spawned.advisorSpawned! : advisor === true || spawned.launchAdvisor,
       sessionFile ? sessionId : "",
       DISCONNECT_DESTROY_MS,
       host,
-      spawned.launchAdvisor,
       spawned.fellBack,
     );
     holder.wrapper = created;
@@ -3866,20 +3794,14 @@ function registerSession(created: AgentSessionWrapper): void {
  * adoptions kill their child; a durable creation is retained for owner-only
  * reconciliation, including a sessionless child with an interrupted handshake.
  */
-export async function adoptRpcSession({ host, transport, sessionId, cwd, replay, creationId, advisorSpawned, launchAdvisor }: {
+export async function adoptRpcSession({ host, transport, sessionId, cwd, replay, creationId }: {
   host: Host;
   transport: RpcTransport;
   sessionId: string;
   cwd: string;
   replay: string[];
   creationId?: string;
-  advisorSpawned?: boolean;
-  launchAdvisor?: boolean;
 }): Promise<AgentSessionWrapper> {
-  if (transport.hostOwnedLifecycle && typeof advisorSpawned !== "boolean") {
-    transport.close!();
-    throw new Error("The shared host did not report the child's actual advisor mode");
-  }
   const registry = getRegistry();
   const locks = getLocks();
   const creationKey = creationId === undefined ? undefined : `__new__${creationId}`;
@@ -3891,8 +3813,7 @@ export async function adoptRpcSession({ host, transport, sessionId, cwd, replay,
   }
   const holder: { wrapper?: AgentSessionWrapper } = {};
   const proc = new RpcProcess({ cwd, transport, adopted: true, onExit: (info) => holder.wrapper?.handleProcessExit(info, proc) });
-  // Legacy adoption cannot recover spawn-time flags; a shared daemon returns the actual launch metadata.
-  const created = new AgentSessionWrapper(proc, cwd, cwd, advisorSpawned ?? false, sessionId, DISCONNECT_DESTROY_MS, host, launchAdvisor ?? false);
+  const created = new AgentSessionWrapper(proc, cwd, cwd, sessionId, DISCONNECT_DESTROY_MS, host);
   holder.wrapper = created;
   created.start();
   const adopting = (async () => {

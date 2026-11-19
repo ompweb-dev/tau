@@ -50,11 +50,6 @@ const COMMIT_PROMPT = (args: string) =>
     ? `Stage the relevant files and commit the current changes with this message: ${JSON.stringify(args)}. Run the project's checks first so the commit is green.`
     : `Stage the relevant files and commit the current changes with a clear conventional commit message. Run the project's checks first so the commit is green.`;
 
-const ADVISOR_PROMPT = (args: string) =>
-  args
-    ? `Act as an independent advisor reviewing this work: ${args}. Assess the approach, point out risks, gaps, and better alternatives, and give concrete recommendations without changing any code.`
-    : `Act as an independent advisor reviewing the current work. Assess the recent changes and overall direction, point out risks, gaps, and better alternatives, and give concrete recommendations without changing any code.`;
-
 const LOOP_MAX_ATTEMPTS = 10;
 const LOOP_DEFAULT_ATTEMPTS = 3;
 
@@ -121,13 +116,6 @@ export const WEB_SLASH_COMMANDS: readonly WebSlashCommandDef[] = [
     argumentHintKey: "chatInput.cmdCommitArg",
     requiresArgs: false,
     buildPrompt: COMMIT_PROMPT,
-  },
-  {
-    name: "advisor",
-    descriptionKey: "chatInput.cmdAdvisor",
-    argumentHintKey: "chatInput.cmdAdvisorArg",
-    requiresArgs: false,
-    buildPrompt: ADVISOR_PROMPT,
   },
   {
     name: "loop",

@@ -74,7 +74,6 @@ export interface LocalOutboxEntry {
   /** Captured at submission: never rebound to a later installation or sign-in. */
   scope: string;
   mode: OutboxMode;
-  advisor?: boolean;
   message: string;
   images?: { type: "image"; data: string; mimeType: string }[];
   uploads?: string[];
@@ -198,11 +197,11 @@ class Transport {
     this.streams.delete(id);
   }
 
-  command(sessionId: string, req: string, body: string, advisor: boolean, type: string): Promise<CommandReply | null> {
+  command(sessionId: string, req: string, body: string, type: string): Promise<CommandReply | null> {
     return new Promise((resolve) => {
       const n = this.nextId++;
       this.commands.set(n, resolve);
-      this.port.postMessage({ op: "cmd", n, req, sessionId, advisor, body, type });
+      this.port.postMessage({ op: "cmd", n, req, sessionId, body, type });
     });
   }
 
@@ -383,7 +382,7 @@ function postOutboxOnExit(): void {
   if (outboxPartial) return;
   let left = KEEPALIVE_BYTES;
   const sessions = new Set<string>();
-  for (const { id, sessionId, scope, advisor, mode, message, images, uploads, uploadProofs, replaces, state, createdAt } of outboxEntries ?? []) {
+  for (const { id, sessionId, scope, mode, message, images, uploads, uploadProofs, replaces, state, createdAt } of outboxEntries ?? []) {
     if (state !== "sending" || typeof scope !== "string" || !scope || Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000 || sessions.has(sessionId)) continue;
     sessions.add(sessionId);
     if (!addedHere.has(id)) continue;
@@ -391,7 +390,7 @@ function postOutboxOnExit(): void {
     const bytes = new Blob([body]).size;
     if (bytes > left) continue;
     left -= bytes;
-    fetch(`/api/agent/${encodeURIComponent(sessionId)}${advisor === true ? "?advisor=1" : ""}`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+    fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
   }
 }
 
@@ -430,8 +429,8 @@ export function requestConnectionDiagnostics(): Promise<ConnectionDiagnostics | 
 /** Sends an agent command over the worker's browser link (transport `ws`): null (or a promise of null, when the worker
  * turns out to be on SSE) means the caller POSTs it instead. `type` is the command's, so the worker never parses a
  * body of up to 8 MB to learn it. */
-export function sendSessionCommand(sessionId: string, req: string, body: string, advisor: boolean, type: string): Promise<CommandReply | null> | null {
-  return transport?.mode === "ws" ? transport.command(sessionId, req, body, advisor, type) : null;
+export function sendSessionCommand(sessionId: string, req: string, body: string, type: string): Promise<CommandReply | null> | null {
+  return transport?.mode === "ws" ? transport.command(sessionId, req, body, type) : null;
 }
 
 /** Same generator as the worker's ids (spec O2). */

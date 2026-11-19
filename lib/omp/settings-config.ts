@@ -11,7 +11,6 @@ export type NativeSettings = {
   externalThinking?: boolean;
   textVerbosity?: "low" | "medium" | "high";
   personality?: "default" | "friendly" | "pragmatic" | "none";
-  advisor?: { enabled?: boolean; subagents?: boolean; syncBacklog?: "off" | "1" | "3" | "5"; immuneTurns?: number };
   tools?: { approvalMode?: "always-ask" | "write" | "yolo"; approval?: { bash?: "allow" | "prompt" | "deny"; extension?: "allow" | "prompt" } };
   enabledModels?: string[];
   disabledProviders?: string[];
@@ -34,7 +33,6 @@ export type NativeSettings = {
 const THINKING_LEVELS = new Set(["auto", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const TEXT_VERBOSITIES = new Set(["low", "medium", "high"]);
 const PERSONALITIES = new Set(["default", "friendly", "pragmatic", "none"]);
-const BACKLOGS = new Set(["off", "1", "3", "5"]);
 const APPROVAL_MODES = new Set(["always-ask", "write", "yolo"]);
 const APPROVAL_POLICIES = new Set(["allow", "prompt", "deny"]);
 const FALLBACK_REVERT_POLICIES = new Set(["cooldown-expiry", "never"]);
@@ -88,7 +86,6 @@ export function readAnthropicSlowMode(): boolean {
 /** Returns the persisted native pi/tau values only; omitted keys keep defaults. */
 export function readNativeSettings(): { path: string; settings: NativeSettings } {
   const { path, data } = readJsonObject();
-  const advisor = isRecord(data.advisor) ? data.advisor : {};
   const providers = isRecord(data.providers) ? data.providers : {};
   const autoThinkingSource = providers.autoThinkingSource;
   const tools = isRecord(data.tools) ? data.tools : {};
@@ -122,14 +119,6 @@ export function readNativeSettings(): { path: string; settings: NativeSettings }
       ...(typeof data.externalThinking === "boolean" ? { externalThinking: data.externalThinking } : {}),
       ...(TEXT_VERBOSITIES.has(data.textVerbosity as string) ? { textVerbosity: data.textVerbosity as NativeSettings["textVerbosity"] } : {}),
       ...(PERSONALITIES.has(data.personality as string) ? { personality: data.personality as NativeSettings["personality"] } : {}),
-      ...(Object.keys(advisor).length ? {
-        advisor: {
-          ...(typeof advisor.enabled === "boolean" ? { enabled: advisor.enabled } : {}),
-          ...(typeof advisor.subagents === "boolean" ? { subagents: advisor.subagents } : {}),
-          ...(BACKLOGS.has(advisor.syncBacklog as string) ? { syncBacklog: advisor.syncBacklog as "off" | "1" | "3" | "5" } : {}),
-          ...(typeof advisor.immuneTurns === "number" && Number.isInteger(advisor.immuneTurns) ? { immuneTurns: advisor.immuneTurns } : {}),
-        },
-      } : {}),
       ...(Object.keys(tools).length ? { tools: {
         ...(APPROVAL_MODES.has(tools.approvalMode as string) ? { approvalMode: tools.approvalMode as "always-ask" | "write" | "yolo" } : {}),
         ...(APPROVAL_POLICIES.has(approval.bash as string) || approval.extension === "allow" || approval.extension === "prompt" ? { approval: {
@@ -185,7 +174,6 @@ export function writeNativeSettings(settings: NativeSettings): void {
   if (autoThinkingSource !== undefined && autoThinkingSource !== "classifier" && autoThinkingSource !== "vendor") {
     throw new Error("Invalid Auto thinking source");
   }
-  assertOptionalRecord(settings.advisor, "advisor");
   assertOptionalRecord(settings.tools, "tools");
   assertOptionalRecord(settings.tools?.approval, "tools.approval");
   assertOptionalRecord(settings.retry, "retry");
@@ -197,8 +185,6 @@ export function writeNativeSettings(settings: NativeSettings): void {
   for (const [name, value] of Object.entries({
     hideThinkingBlock: settings.hideThinkingBlock,
     externalThinking: settings.externalThinking,
-    "advisor.enabled": settings.advisor?.enabled,
-    "advisor.subagents": settings.advisor?.subagents,
     "retry.enabled": settings.retry?.enabled,
     "retry.modelFallback": settings.retry?.modelFallback,
     "compaction.enabled": settings.compaction?.enabled,
@@ -216,8 +202,6 @@ export function writeNativeSettings(settings: NativeSettings): void {
   if (settings.defaultThinkingLevel !== undefined && !THINKING_LEVELS.has(settings.defaultThinkingLevel)) throw new Error("Invalid default thinking level");
   if (settings.textVerbosity !== undefined && !TEXT_VERBOSITIES.has(settings.textVerbosity)) throw new Error("Invalid text verbosity");
   if (settings.personality !== undefined && !PERSONALITIES.has(settings.personality)) throw new Error("Invalid personality");
-  if (settings.advisor?.syncBacklog !== undefined && !BACKLOGS.has(settings.advisor.syncBacklog)) throw new Error("Invalid advisor sync backlog");
-  if (settings.advisor?.immuneTurns !== undefined && (!Number.isInteger(settings.advisor.immuneTurns) || settings.advisor.immuneTurns < 0 || settings.advisor.immuneTurns > 20)) throw new Error("Advisor immune turns must be an integer between 0 and 20");
   if (settings.tools?.approvalMode !== undefined && !APPROVAL_MODES.has(settings.tools.approvalMode)) throw new Error("Invalid approval mode");
   if (settings.tools?.approval?.bash !== undefined && !APPROVAL_POLICIES.has(settings.tools.approval.bash)) throw new Error("Invalid Bash approval policy");
   if (settings.tools?.approval?.extension !== undefined && settings.tools.approval.extension !== "allow" && settings.tools.approval.extension !== "prompt") throw new Error("Invalid extension tool approval policy");
@@ -254,7 +238,6 @@ export function writeNativeSettings(settings: NativeSettings): void {
   if (settings.externalThinking !== undefined) data.externalThinking = settings.externalThinking;
   if (settings.textVerbosity !== undefined) data.textVerbosity = settings.textVerbosity;
   if (settings.personality !== undefined) data.personality = settings.personality;
-  mergeSection("advisor", settings.advisor);
   if (settings.tools) {
     const existingTools = isRecord(data.tools) ? { ...data.tools } : {};
     if (settings.tools.approvalMode !== undefined) existingTools.approvalMode = settings.tools.approvalMode;

@@ -17,7 +17,7 @@ type Output = Unsequenced<Extract<UpMessage, { type: "stdout" | "stderr" | "exit
  * dropped (overflow) since its last snapshot, so its next open needs one. */
 type Member = { link: DaemonLink; paused: boolean; opens: number; queued: { body: Output; reply: boolean }[]; bytes: number; resync: boolean; gap: boolean };
 type Channel = {
-  ch: string; transport: RpcTransport; launch: SpawnRequest; cwd: string; fellBack: boolean; launchAdvisor: boolean;
+  ch: string; transport: RpcTransport; launch: SpawnRequest; cwd: string; fellBack: boolean;
   pending: PendingRequests; snapshot: StreamSnapshot; lifecycle?: ChannelLifecycle; shared?: SharedRequests;
   members: Map<string, Member>; aliases: Set<string>; files: Set<string>;
   /** Daemon cmd id -> the link that sent it (null once it left) and that link's own id: links number their commands alike. */
@@ -26,7 +26,6 @@ type Channel = {
   internal: Map<string, { resolve(frame: WireFrame): void; reject(error: Error): void; timer: NodeJS.Timeout; onReply?(): void }>;
   startup: Promise<void>; exited: boolean; opened: boolean; fullFallback: boolean; forceTimer?: NodeJS.Timeout;
   sessionMovePending?: boolean;
-  replacing?: boolean;
   /** The link holding the history-edit lease: other links' history mutations are refused. */
   editor?: string;
   /** Why the daemon stopped it (lifecycle reason or "asked"); unset for a crash. */
@@ -117,13 +116,13 @@ export class ChannelTable {
   async open(link: DaemonLink, args: OpenChannelRequest): Promise<OpenChannelResult> {
     if (this.goneLinks.has(link.id)) throw new HostOpError(503, "host_link_closed", "The host link closed during open");
     if (!isRecord(args) || !(args.sessionId === null || typeof args.sessionId === "string" && isValidSessionId(args.sessionId)) || !isRecord(args.launch)
-      || (args.replaceAdvisor !== undefined && typeof args.replaceAdvisor !== "boolean") || (args.preparing !== undefined && typeof args.preparing !== "boolean")
-      || (args.expectedChannel !== undefined && (typeof args.expectedChannel !== "string" || !args.expectedChannel || args.replaceAdvisor === true))) throw invalid();
+      || (args.preparing !== undefined && typeof args.preparing !== "boolean")
+      || (args.expectedChannel !== undefined && (typeof args.expectedChannel !== "string" || !args.expectedChannel))) throw invalid();
     let channel: Channel;
     if (args.expectedChannel !== undefined) {
       const advertised = this.channels.get(args.expectedChannel);
       const ownsCreation = typeof args.launch.creationId === "string" && advertised?.launch.creationId === args.launch.creationId;
-      if (!advertised || advertised.exited || advertised.replacing
+      if (!advertised || advertised.exited
         || (!ownsCreation && (args.sessionId === null || !advertised.aliases.has(args.sessionId)))) {
         throw new HostOpError(404, "session_not_running", "The advertised session channel is no longer running");
       }
@@ -144,11 +143,6 @@ export class ChannelTable {
       if (args.expectedChannel !== undefined) throw new HostOpError(404, "session_not_running", "The advertised session channel is stopping");
       return this.open(link, args);
     }
-    if (args.replaceAdvisor && (channel.launch.advisor || channel.launchAdvisor) !== (args.launch.advisor || channel.launchAdvisor) && channel.lifecycle?.isIdle) {
-      const replacement = await this.replaceAdvisor(channel, link, args);
-      if (!replacement) return this.open(link, args);
-      channel = replacement;
-    }
     if (this.goneLinks.has(link.id)) {
       channel.lifecycle?.linkGone(link.id);
       throw new HostOpError(503, "host_link_closed", "The host link closed during open");
@@ -160,42 +154,6 @@ export class ChannelTable {
     return this.snapshot(channel, link, joined, continuous);
   }
 
-  /** Keep every alias/file fenced until the new child has its startup and source preparation lease. */
-  private async replaceAdvisor(channel: Channel, link: DaemonLink, args: OpenChannelRequest): Promise<Channel | null> {
-    const keys = new Set([...channel.aliases, ...channel.files]);
-    if (args.sessionId) keys.add(args.sessionId);
-    if (args.launch.sessionFile) keys.add(args.launch.sessionFile);
-    for (const key of keys) {
-      const pending = this.mutating.get(key);
-      if (pending) { await pending; return null; }
-    }
-    const { promise, resolve } = Promise.withResolvers<void>();
-    for (const key of keys) this.mutating.set(key, promise);
-    channel.replacing = true;
-    try {
-      const exit = Promise.withResolvers<void>();
-      channel.transport.onExit(() => exit.resolve());
-      this.stopChannel(channel);
-      await exit.promise;
-      // A new process: the opener decides its configuration, as for any start (spec K4).
-      const launch = this.deps.prepareLaunch(forStart({ ...channel.launch, advisor: args.launch.advisor,
-        ...(args.launch.spawnModel ? { spawnModel: args.launch.spawnModel } : {}) }, link, args.launch));
-      const spawning = this.create(launch, channel.pending.sessionId, args.preparing ? link.id : undefined);
-      this.pendingSpawns.add(spawning);
-      try {
-        const replacement = await spawning;
-        for (const alias of channel.aliases) replacement.aliases.add(alias);
-        for (const file of channel.files) replacement.files.add(file);
-        return replacement;
-      } finally {
-        this.pendingSpawns.delete(spawning);
-      }
-    } finally {
-      for (const key of keys) if (this.mutating.get(key) === promise) this.mutating.delete(key);
-      resolve();
-    }
-  }
-
   private pendingFor(channel: Channel, link: DaemonLink): string[] | null {
     const pending = channel.shared?.pending(link.id) ?? channel.pending.lines();
     return pending && pending.reduce((sum, line) => sum + Buffer.byteLength(line), 0) <= LINK_LIMITS.pendingBytes ? pending : null;
@@ -203,14 +161,14 @@ export class ChannelTable {
   /** `continuous`: the link already holds every output line in order (a server restart on the same link). */
   private snapshot(channel: Channel, link: DaemonLink, joined: boolean, continuous: boolean): OpenChannelResult {
     return { ch: channel.ch, joined, pending: this.pendingFor(channel, link), streaming: channel.snapshot.whole(), cwd: channel.cwd,
-      fellBack: channel.fellBack, launchAdvisor: channel.launchAdvisor, advisorSpawned: channel.launch.advisor || channel.launchAdvisor, autoApproveExtension: this.deps.autoApproveExtension?.() ?? false,
+      fellBack: channel.fellBack, autoApproveExtension: this.deps.autoApproveExtension?.() ?? false,
       ...(continuous ? { continuous: true } : {}) };
   }
 
   private async ensure(id: string | null, requested: SpawnRequest, preparingLinkId?: string): Promise<Channel> {
     const creationId = requested.creationId;
     if (creationId !== undefined && (typeof creationId !== "string" || !CREATION_ID_RE.test(creationId))) throw invalid("Invalid creation identity");
-    const fingerprint = creationId === undefined ? "" : JSON.stringify([requested.cwd, requested.recordedCwd ?? null, requested.sessionFile, requested.toolNames ?? null, requested.advisor, requested.spawnModel ?? null]);
+    const fingerprint = creationId === undefined ? "" : JSON.stringify([requested.cwd, requested.recordedCwd ?? null, requested.sessionFile, requested.toolNames ?? null, requested.spawnModel ?? null]);
     const creation = creationId === undefined ? undefined : this.creations.get(creationId);
     if (creation) {
       if (creation.fingerprint !== fingerprint) throw new HostOpError(409, "creation_conflict", "Creation identity belongs to another request");
@@ -469,7 +427,6 @@ export class ChannelTable {
     const refuse = (code: string, error: string) => {
       if (op !== null) this.deliver(channel, member, { type: "stdout", ch, line: JSON.stringify({ type: "response", id: frame.id, command: op, success: false, code, error }) }, true);
     };
-    if (channel.replacing) return refuse("session_restarting", "This session is restarting to apply advisor mode; retry once it is ready");
     if (op !== null && !extension && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
       return refuse("session_busy", "Another web app is editing this session's history; retry once it finishes");
     }

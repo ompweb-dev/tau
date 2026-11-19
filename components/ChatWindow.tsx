@@ -449,7 +449,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     liveModelMeta,
     retryInfo, contextUsage, forkingEntryId, editingEntryId,
     isCompacting, compactResult, tokensPerSecond, displayModel: displayModelValue, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, advisorActive, advisorEnabled, handleAdvisorChange,
+    slashCommands, slashCommandsLoading, queuedMessages,
     notices, dismissNotice, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase, activeGoal, activePlan,
@@ -897,23 +897,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
-  // Resolve the advisor role's display model + reasoning effort for the
-  // composer tooltips. The raw selector is "provider/id[:effort]" from
-  // ~/.omp/agent/config.yml.
-  const [advisorRoleSelector, setAdvisorRoleSelector] = useState<string | null>(null);
-  useEffect(() => {
-    if (!advisorEnabled) {
-      setAdvisorRoleSelector(null);
-      return;
-    }
-    const controller = new AbortController();
-    fetch("/api/model-roles", { signal: controller.signal })
-      .then((response) => response.ok ? response.json() as Promise<{ roles?: Record<string, string> }> : null)
-      .then((data) => setAdvisorRoleSelector(data?.roles?.advisor ?? null))
-      .catch(() => {});
-    return () => controller.abort();
-  }, [advisorEnabled]);
-
   // GitHub repo of the session checkout, so bare `#123` in messages links to it.
   const [githubRepo, setGithubRepo] = useState<string | null>(null);
   useEffect(() => {
@@ -926,18 +909,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       .catch(() => {});
     return () => controller.abort();
   }, [messageCwd, fileSource.hostId]);
-
-  const advisorModelMeta = useMemo(() => {
-    if (!advisorRoleSelector) return null;
-    const [qualified, effort] = advisorRoleSelector.split(":");
-    const separator = qualified.indexOf("/");
-    const provider = separator === -1 ? "" : qualified.slice(0, separator);
-    const id = separator === -1 ? qualified : qualified.slice(separator + 1);
-    return {
-      name: modelList.find((entry) => entry.provider === provider && entry.id === id)?.name ?? advisorRoleSelector,
-      reasoning: effort || null,
-    };
-  }, [advisorRoleSelector, modelList]);
 
   const handleMinimize = useCallback(() => {
     setComposerMinimized(true);
@@ -1030,12 +1001,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       retryInfo={retryInfo}
       activeGoal={activeGoal}
       activePlan={activePlan}
-      advisorEnabled={advisorEnabled}
-      onAdvisorChange={handleAdvisorChange}
-      advisorModel={advisorModelMeta}
       queuedMessages={queuedMessages}
       inputHistory={inputHistory}
-      advisorActive={advisorActive}
       onCompact={handleCompact}
       contextUsage={contextUsage}
       sessionStats={sessionStats}

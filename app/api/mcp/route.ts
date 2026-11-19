@@ -81,10 +81,6 @@ export async function GET(request: Request) {
     };
     const sessionId = params.get("sessionId");
     const includeLive = params.get("live") !== "0";
-    // Advisor opinion for a fresh spawn only (same ?advisor=1 convention as
-    // /api/agent/[id]): an alive child is reused as-is below, never replaced —
-    // listing servers must stay side-effect-free.
-    const advisor = params.get("advisor") === "1";
     // `attach=1`: live status from a process already running, never one started here. A cluster session on another
     // member is read where it runs (spec K7); its file is not this machine's to start.
     const attachOnly = params.get("attach") === "1";
@@ -99,10 +95,7 @@ export async function GET(request: Request) {
           const host = getHost(LOCAL_HOST_ID);
           const target = await sessionSpawnTarget(sessionId, host);
           if (!target) throw new Error("Session not found");
-          // Fresh spawn only (an alive child is reused above): apply the
-          // caller's advisor opinion so a racing prompt doesn't inherit a
-          // wrong-flag child for its whole turn.
-          ({ session } = await startRpcSession(sessionId, target.sessionFile, target.cwd, undefined, advisor, target.recordedCwd, undefined, host));
+          ({ session } = await startRpcSession(sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host));
         }
         liveServers = mergeMcpServers(parseMcpListOutput(await session.getMcpList()), inventory);
       } catch (error) {
@@ -162,7 +155,7 @@ export async function PATCH(request: Request) {
       const host = getHost(LOCAL_HOST_ID);
       const target = await sessionSpawnTarget(body.sessionId, host);
       if (!target) throw new Error("Session not found");
-      ({ session } = await startRpcSession(body.sessionId, target.sessionFile, target.cwd, undefined, undefined, target.recordedCwd, undefined, host));
+      ({ session } = await startRpcSession(body.sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host));
     }
     if (session.isRunning()) return Response.json({ error: "Wait for the current run to finish before changing MCP servers." }, { status: 409 });
     await session.changeMcp(body.action, typeof body.name === "string" ? body.name : undefined);

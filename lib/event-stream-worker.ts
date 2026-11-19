@@ -19,7 +19,7 @@
 //                 { op: "lock", name }  (tab holds this Web Lock while alive)
 //                 { op: "bye" }         (pagehide: drop this tab's streams)
 //                 { op: "wake", reason, visible, clientId }  (reason: init | visible | hidden | online | network)
-//                 { op: "cmd", n, req, sessionId, advisor, body, type }  (an agent command; body: its JSON text, type: its type)
+//                 { op: "cmd", n, req, sessionId, body, type }  (an agent command; body: its JSON text, type: its type)
 //                 { op: "metric", sample }  (a transport sample of the tab's: tagged, buffered and POSTed here)
 //                 { op: "upload", id, host, name, type, blob }  (a file to upload over the link; blob: the File)
 //                 { op: "up_pause", id }  (stop this tab's upload; keep the host's staged bytes for Retry)
@@ -176,7 +176,6 @@ interface Command {
   body: string;
   type: string;
   session: string;
-  advisor: boolean;
   /** In the link's sender (it goes out when the window has room). */
   queued: boolean;
   /** Its whole line went out (`seq` its last), at `sentAt`. */
@@ -1100,7 +1099,6 @@ function queueCommand(client: Client, message: Record<string, unknown>): void {
     // From the tab, which built the body: the worker never parses it.
     type: typeof message.type === "string" ? message.type : "",
     session: String(message.sessionId),
-    advisor: message.advisor === true,
     queued: false,
     sent: false,
     seq: 0,
@@ -1138,7 +1136,7 @@ function sendCommand(command: Command): void {
   command.queued = true;
   queueUp(
     `cmd:${command.session}`,
-    `{"type":"cmd","rid":${JSON.stringify(command.rid)},"session":${JSON.stringify(command.session)},"advisor":${command.advisor},"command":${command.body}}`,
+    `{"type":"cmd","rid":${JSON.stringify(command.rid)},"session":${JSON.stringify(command.session)},"command":${command.body}}`,
     command.rid,
   );
 }
@@ -2082,7 +2080,7 @@ async function sendOutbox(sessionId: string): Promise<void> {
   if (Date.now() - item.entry.createdAt > OUTBOX_MAX_AGE_MS) return failOutbox(item, "Not sent within 7 days.");
   if (typeof item.entry.scope !== "string" || !item.entry.scope) return failOutbox(item, "This message has no saved installation or sign-in scope and cannot be sent.");
   item.inFlight = true;
-  const { id, scope, advisor, mode, message, images, uploads, uploadProofs, replaces } = item.entry;
+  const { id, scope, mode, message, images, uploads, uploadProofs, replaces } = item.entry;
   const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
   // A tab of the worker's own (not in `clients`): the command takes the current transport as a tab's would.
   const port: Port = {
@@ -2092,7 +2090,7 @@ async function sendOutbox(sessionId: string): Promise<void> {
       if (!http) return outboxAnswer(item, status, reply);
       // A half-open POST must not block this session forever; include the body read and allow 2 KB/s for its uplink.
       withDeadline(40_000 + Math.ceil(body.length / 2), async (signal) => {
-        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}${advisor === true ? "?advisor=1" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
         const reply = await response.json().catch((error) => {
           if (signal.aborted) throw error;
           return null;
@@ -2106,7 +2104,7 @@ async function sendOutbox(sessionId: string): Promise<void> {
   };
   // A fresh request id per attempt; the server dedupes outbox_add by the entry's id.
   const req = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
-  queueCommand({ port, streams: new Map(), visible: false }, { n: 0, req, sessionId, advisor: advisor === true, body, type: "outbox_add" });
+  queueCommand({ port, streams: new Map(), visible: false }, { n: 0, req, sessionId, body, type: "outbox_add" });
 }
 
 /** A transport success is not a storage receipt (a sign-in page can also answer 200). */

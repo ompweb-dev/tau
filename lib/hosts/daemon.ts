@@ -173,7 +173,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     prepareLaunch: launch => {
       if (!isRecord(launch) || typeof launch.cwd !== "string"
         || !(launch.recordedCwd === null || launch.recordedCwd === undefined || typeof launch.recordedCwd === "string")
-        || typeof launch.sessionFile !== "string" || typeof launch.advisor !== "boolean"
+        || typeof launch.sessionFile !== "string"
         || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))
         || !(launch.spawnModel === undefined || typeof launch.spawnModel === "string")
         || !(launch.creationId === undefined || typeof launch.creationId === "string" && CREATION_ID_RE.test(launch.creationId))) throw new HostOpError(400, "invalid_request", "Invalid spawn request");

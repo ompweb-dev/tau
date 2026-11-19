@@ -17,7 +17,6 @@ interface Props {
 export function ProjectLaunchConfigDialog({ projectPath, initialConfig, onClose, onSave }: Props) {
   const { t } = useI18n();
   const [profile, setProfile] = useState(initialConfig?.profile ?? "");
-  const [advisor, setAdvisor] = useState(initialConfig?.advisor === true);
   const [extraArgs, setExtraArgs] = useState(initialConfig?.extraArgs?.join("\n") ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,10 +27,9 @@ export function ProjectLaunchConfigDialog({ projectPath, initialConfig, onClose,
     const args = extraArgs.split("\n").map((arg) => arg.trim()).filter(Boolean);
     const config: ProjectLaunchConfig = {
       profile: profile.trim() || undefined,
-      advisor: advisor || undefined,
       extraArgs: args.length > 0 ? args : undefined,
     };
-    return config.profile || config.advisor || config.extraArgs ? config : null;
+    return config.profile || config.extraArgs ? config : null;
   };
 
   /** Save the config, keeping the dialog contents on failure for easy correction. */
@@ -62,10 +60,6 @@ export function ProjectLaunchConfigDialog({ projectPath, initialConfig, onClose,
             {profileInvalid
               ? <span role="alert" style={{ color: "var(--status-error)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileInvalid")}</span>
               : <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileRule")}</span>}
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: 12 }}>
-            <input type="checkbox" checked={advisor} onChange={(event) => setAdvisor(event.target.checked)} disabled={saving} />
-            {t("projectLaunchConfig.advisorLabel")}
           </label>
           <label style={{ display: "grid", gap: 5, color: "var(--text-muted)", fontSize: 12 }}>
             <span>{t("projectLaunchConfig.extraArgsLabel")}</span>

@@ -234,7 +234,7 @@ async function flushOutbox() {
       const current = await readOutboxForSync(db);
       const head = current.filter((entry) => entry.sessionId === sessionId && entry.state === "sending").sort(compareOutbox)[0];
       if (!head || head.id !== id) continue;
-      const { scope, advisor, mode, message, images, uploads, uploadProofs, replaces, createdAt } = head;
+      const { scope, mode, message, images, uploads, uploadProofs, replaces, createdAt } = head;
       // Expired or unscoped rows are never rebound: they are not sent, so they stop blocking that session's later entries.
       const stale = Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000 ? "Not sent within 7 days."
         : typeof scope !== "string" || !scope ? "This message has no saved installation or sign-in scope and cannot be sent." : null;
@@ -251,7 +251,7 @@ async function flushOutbox() {
         const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
         const controller = new AbortController();
         timer = setTimeout(() => controller.abort(), 40_000 + Math.ceil(body.length / 2));
-        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}${advisor === true ? "?advisor=1" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
+        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
         const reply = await response.json().catch((error) => {
           if (controller.signal.aborted) throw error;
         });

@@ -72,7 +72,7 @@ async function defaultDeliver(sessionId: string, id: string, message: string, or
   try {
     // Lazy: message-outbox pulls in rpc-manager, which will load the agent tools that load this module.
     const { runOutboxCommand, outboxScope, GITHUB_WATCH_OUTBOX_OWNER } = await import("../message-outbox");
-    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, false, GITHUB_WATCH_OUTBOX_OWNER, origin));
+    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, GITHUB_WATCH_OUTBOX_OWNER, origin));
   } catch {
     return "retry";
   }

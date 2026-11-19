@@ -25,11 +25,7 @@ export async function POST(
   try {
     const body = await parseJsonWithinLimit<unknown>(req, MAX_AGENT_COMMAND_REQUEST_BYTES);
     receivedAt = Date.now();
-    // The per-chat advisor choice rides on the query string (never the RPC
-    // body, which is forwarded to omp verbatim) and only matters when this
-    // request spawns or replaces the session's omp process.
-    const advisor = new URL(req.url).searchParams.get("advisor") === "1";
-    return timed(receivedAt, await runAgentCommand(id, body, advisor, requestOwner(req)));
+    return timed(receivedAt, await runAgentCommand(id, body, requestOwner(req)));
   } catch (error) {
     return timed(receivedAt ?? Date.now(), commandErrorResponse(error));
   }

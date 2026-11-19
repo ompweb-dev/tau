@@ -58,7 +58,7 @@ function isWindowsDriveRoot(directory: string): boolean {
 
 interface Props {
   onCancel: () => void;
-  onSelect: (path: string, launchConfig?: { profile?: string; advisor?: boolean; extraArgs?: string[] }) => void;
+  onSelect: (path: string, launchConfig?: { profile?: string; extraArgs?: string[] }) => void;
   busy?: boolean;
   error?: string | null;
   host: { id: string; name: string };
@@ -75,7 +75,6 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   const [drives, setDrives] = useState<DirectoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [profile, setProfile] = useState("");
-  const [advisor, setAdvisor] = useState(false);
   const [extraArgs, setExtraArgs] = useState("");
   const [loading, setLoading] = useState(!pool);
   const [cloneUrl, setCloneUrl] = useState("");
@@ -145,7 +144,7 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   const submitSelection = async () => {
     if (locked || cloneAbortRef.current) return;
     const args = extraArgs.split("\n").map((arg) => arg.trim()).filter(Boolean);
-    const launchConfig = { profile: profile.trim() || undefined, advisor: advisor || undefined, extraArgs: args.length ? args : undefined };
+    const launchConfig = { profile: profile.trim() || undefined, extraArgs: args.length ? args : undefined };
     if (pool || !cloneUrl.trim()) {
       onSelect(pool ? pathInput.trim() : currentPath, launchConfig);
       return;
@@ -372,7 +371,6 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
           {profileInvalid
             ? <div role="alert" style={{ marginBottom: 7, color: "var(--status-error)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileInvalid")}</div>
             : profile.trim() ? <div style={{ marginBottom: 7, color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileRule")}</div> : null}
-          <label className="directory-picker-launch" style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7, color: "var(--text-muted)", fontSize: 11 }}><input type="checkbox" checked={advisor} onChange={(event) => setAdvisor(event.target.checked)} />{t("projectLaunchConfig.advisorLabel")}</label>
           <textarea className="directory-picker-extra-args" value={extraArgs} onChange={(event) => setExtraArgs(event.target.value)} placeholder={t("directoryPicker.extraArgsPlaceholder")} aria-label={t("directoryPicker.extraArgsLabel")} rows={2} style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "6px 8px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }} />
         </div>
         <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "1px solid var(--border)" }}>

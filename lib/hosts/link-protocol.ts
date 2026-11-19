@@ -118,9 +118,9 @@ export const HOST_OP_NAMES = [...(Object.keys(SESSION_OP_PARAMS) as (keyof Sessi
 
 export type HostOpName = (typeof HOST_OP_NAMES)[number];
 
-export type OpenChannelRequest = { sessionId: string | null; launch: SpawnRequest; replaceAdvisor?: boolean; preparing?: boolean; expectedChannel?: string };
+export type OpenChannelRequest = { sessionId: string | null; launch: SpawnRequest; preparing?: boolean; expectedChannel?: string };
 /** `continuous`: the opening link was already a member and got every output line in order, so `streaming` repeats lines it has. */
-export type OpenChannelResult = { ch: string; joined: boolean; pending: string[] | null; streaming: string | null; cwd: string; fellBack: boolean; launchAdvisor: boolean; advisorSpawned: boolean; autoApproveExtension: boolean; continuous?: boolean };
+export type OpenChannelResult = { ch: string; joined: boolean; pending: string[] | null; streaming: string | null; cwd: string; fellBack: boolean; autoApproveExtension: boolean; continuous?: boolean };
 
 /** A failed host op, as carried by `res {ok: false, error}`. */
 export class HostOpError extends Error {

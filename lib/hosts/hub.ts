@@ -890,11 +890,11 @@ function reattach(link: Link, listed: HelloChannel[], refreshExisting = true): v
     if (!sessionId && !owned) { child.close(); continue; }
     child.adoption = (async () => {
       try {
-        const spawned = await link.host.spawnRpc({ cwd, recordedCwd: cwd, sessionFile: "", advisor: false,
+        const spawned = await link.host.spawnRpc({ cwd, recordedCwd: cwd, sessionFile: "",
           ...(hello.creationId ? { creationId: hello.creationId } : {}) }, sessionId, { expectedChannel: ch });
         if (spawned.transport !== child) throw new Error("Host changed a listed channel while joining");
         return await adopt(link, child, sessionId ?? owned?.sessionId ?? "", spawned.cwd,
-          [...(spawned.pending ?? []), ...(spawned.streaming ? [spawned.streaming] : [])], spawned, owned?.creationId);
+          [...(spawned.pending ?? []), ...(spawned.streaming ? [spawned.streaming] : [])], owned?.creationId);
       } catch (error) {
         if (!owned) child.close();
         console.warn(`[tau] could not join session ${sessionId} on ${labelOf(link.id)}: ${error instanceof Error ? error.message : String(error)}`);
@@ -907,12 +907,11 @@ function reattach(link: Link, listed: HelloChannel[], refreshExisting = true): v
 /** Spec "Adopting live children": a session wrapper takes the child over, by
  * the identity the child itself reports (a new session is in no list before
  * its first reply is written). Failed shared adoption leaves this link; pooled creations are retained. */
-async function adopt(link: Link, child: RemoteRpcTransport, sessionId: string, cwd: string, replay: string[],
-  metadata?: Pick<SpawnResult, "advisorSpawned" | "launchAdvisor">, creationId?: string): Promise<boolean> {
+async function adopt(link: Link, child: RemoteRpcTransport, sessionId: string, cwd: string, replay: string[], creationId?: string): Promise<boolean> {
   try {
     // rpc-manager imports the hub: resolving adoption lazily avoids their initialization cycle.
     const { adoptRpcSession } = await import("../rpc-manager");
-    const session = await adoptRpcSession({ host: link.host, transport: child, sessionId, cwd, replay, ...metadata, creationId });
+    const session = await adoptRpcSession({ host: link.host, transport: child, sessionId, cwd, replay, creationId });
     if (creationId !== undefined) confirmPooledChild(creationId, link.id, cwd, session.sessionId);
     return true;
   } catch (error) {
@@ -1174,7 +1173,6 @@ function projectEntry(value: unknown): ProjectRegistryEntry | null {
     || !optionalString(alias) || !optionalNumber(sortOrder) || !optionalNumber(pinOrder)
     || !(launchConfig === undefined || (isRecord(launchConfig)
       && optionalString(launchConfig.profile)
-      && (launchConfig.advisor === undefined || typeof launchConfig.advisor === "boolean")
       && (launchConfig.extraArgs === undefined || (Array.isArray(launchConfig.extraArgs) && launchConfig.extraArgs.every((arg) => typeof arg === "string")))))
   ) return null;
   return { path, addedAt, hidden, alias, sortOrder, pinOrder, launchConfig } as ProjectRegistryEntry;
@@ -1385,7 +1383,6 @@ export class RemoteRpcTransport implements RpcTransport {
   }
 
   noteOpen(opening: OpenChannelRequest): void {
-    // Reconciliation is a read/join, never another explicit advisor change.
     this.opening = { sessionId: opening.sessionId, launch: opening.launch, expectedChannel: this.ch };
     if (opening.preparing && !this.preparationHandoff) {
       this.preparationHandoff = true;
@@ -1491,21 +1488,19 @@ export class RemoteRpcTransport implements RpcTransport {
   }
 }
 
-function isSpawnResult(value: unknown): value is { cwd: string; fellBack: boolean; launchAdvisor: boolean; autoApproveExtension: boolean } {
+function isSpawnResult(value: unknown): value is { cwd: string; fellBack: boolean; autoApproveExtension: boolean } {
   return isRecord(value)
     && typeof value.cwd === "string"
     && typeof value.fellBack === "boolean"
-    && typeof value.launchAdvisor === "boolean"
     && typeof value.autoApproveExtension === "boolean";
 }
 
 function isOpenResult(value: unknown): value is OpenChannelResult {
   if (!isRecord(value)) return false;
-  const { ch, joined, pending, streaming, advisorSpawned } = value;
+  const { ch, joined, pending, streaming } = value;
   return isSpawnResult(value)
     && typeof ch === "string" && ch.length > 0
     && typeof joined === "boolean"
-    && typeof advisorSpawned === "boolean"
     && (pending === null || (Array.isArray(pending) && pending.every((line) => typeof line === "string")))
     && (streaming === null || typeof streaming === "string");
 }
@@ -1552,7 +1547,7 @@ export class RemoteHost implements Host {
     };
   }
 
-  async spawnRpc(spawnRequest: SpawnRequest, sessionId: string | null = null, options?: { replaceAdvisor?: boolean; preparing?: boolean; expectedChannel?: string }): Promise<SpawnResult> {
+  async spawnRpc(spawnRequest: SpawnRequest, sessionId: string | null = null, options?: { preparing?: boolean; expectedChannel?: string }): Promise<SpawnResult> {
     const link = linkFor(this.id);
     if (link.status === "omp-missing") throw new HostOpError(503, "host_omp_missing", `omp is not installed on ${this.label}`);
     const { creationId } = spawnRequest;
@@ -1604,7 +1599,7 @@ export class RemoteHost implements Host {
       // An adopting wrapper already gets every line of a continuous member, held here: the snapshot would repeat them out of order.
       const streaming = value.continuous === true && !transport.listening ? null : value.streaming;
       transport.replayOpen(value.pending, value.streaming);
-      return { transport, cwd: value.cwd, fellBack: value.fellBack, launchAdvisor: value.launchAdvisor, advisorSpawned: value.advisorSpawned, joined: value.joined, pending: value.pending, streaming };
+      return { transport, cwd: value.cwd, fellBack: value.fellBack, joined: value.joined, pending: value.pending, streaming };
     }) as SpawnResult;
   }
 
@@ -1826,7 +1821,8 @@ export async function updateHostSoftware(id: string, target: HostUpdateTarget, v
           link.recovery = { id: operationId, lines: new Set(), phase: options.phase,
             requestId: options.phase === "commit" ? "2" : options.phase === "cancel" ? "3" : "1" };
           const result = await request(id, "open", { sessionId: null, ...(options.phase ? { preparing: true } : {}), launch: {
-            creationId: operationId, cwd: home, recordedCwd: null, sessionFile: "", toolNames: [], advisor: false,
+            creationId: operationId, cwd: home, recordedCwd: null, sessionFile: "", toolNames: [],
+            advisor: false, // a daemon from before the pi port requires it
           } }, LINK_LIMITS.channelReadyMs + linkTimings.opTimeoutMs, undefined, operationId);
           if (!isOpenResult(result)) throw new HostOpError(502, "host_bad_result", "The host returned an invalid recovery channel");
           link.recovery.channel = result.ch;
@@ -2139,9 +2135,9 @@ export async function reconcilePooledChild(hostId: string, creationId: string): 
   if (!owned) return false;
   child.adoption ??= (async () => {
     const sessionId = hello.sessionId ?? owned.sessionId ?? "";
-    const spawned = await link.host.spawnRpc({ cwd: hello.cwd, recordedCwd: hello.cwd, sessionFile: "", advisor: false, creationId },
+    const spawned = await link.host.spawnRpc({ cwd: hello.cwd, recordedCwd: hello.cwd, sessionFile: "", creationId },
       hello.sessionId, { expectedChannel: hello.ch });
-    return adopt(link, child, sessionId, spawned.cwd, [...(spawned.pending ?? []), ...(spawned.streaming ? [spawned.streaming] : [])], spawned, creationId);
+    return adopt(link, child, sessionId, spawned.cwd, [...(spawned.pending ?? []), ...(spawned.streaming ? [spawned.streaming] : [])], creationId);
   })();
   return child.adoption;
 }

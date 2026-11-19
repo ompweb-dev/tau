@@ -1802,9 +1802,7 @@ function CustomMessageView({ message, cwd, onOpenFile, sessionId }: { message: C
     ? wrapperTitle(wrapper)
     : isIrc
     ? (ircEnvelope?.sender ?? formatCustomType(message.customType))
-    : message.customType === "advisor"
-      ? t("messageView.advisorLabel")
-      : formatCustomType(message.customType);
+    : formatCustomType(message.customType);
   const time = formatTime(message.timestamp, locale);
 
 

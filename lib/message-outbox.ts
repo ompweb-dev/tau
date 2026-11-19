@@ -39,10 +39,11 @@ const ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MODES: Record<OutboxMode, true> = { prompt: true, followUp: true, steer: true };
 
 
+/** `advisor` is a retired column (NOT NULL in existing databases): always written as 0, never read. */
 const COLUMNS = "id, session_id, mode, message, images, uploads, owner, advisor, state, error, may_have_been_sent, created_at, upload_receipts, previous_entry_ids, source_session_id, settlement, replacement_id, replacement_digest, payload_bytes, origin";
 const RECEIPT_PIN_SCHEMA = "CREATE TABLE IF NOT EXISTS github_receipt_pins (session_id TEXT NOT NULL, entry_id TEXT NOT NULL, PRIMARY KEY (entry_id, session_id))";
 
-/** `owner`: the web session whose uploads the entry attaches; `advisor`: the chat's spawn flag at Send. */
+/** `owner`: the web session whose uploads the entry attaches. */
 interface Row {
   id: string;
   session_id: string;
@@ -53,7 +54,6 @@ interface Row {
   uploads: string | null;
   owner: string;
   upload_receipts: string | null;
-  advisor: number;
   state: OutboxEntry["state"];
   error: string | null;
   may_have_been_sent: number;
@@ -486,7 +486,7 @@ function confirmedReplacementId(entry: Row, sessionId: string, value: unknown): 
     ? value : undefined;
 }
 /** `outbox_add` / `outbox_remove` for `sessionId`, as runAgentCommand answers them. */
-export async function runOutboxCommand(sessionId: string, command: Record<string, unknown>, advisor: boolean, owner: string, originValue?: MessageOrigin): Promise<Response> {
+export async function runOutboxCommand(sessionId: string, command: Record<string, unknown>, owner: string, originValue?: MessageOrigin): Promise<Response> {
   if (command.origin !== undefined) return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
   const origin = originValue === undefined ? undefined : parseMessageOrigin(originValue);
   if (originValue !== undefined && !origin) return invalid("origin is invalid");
@@ -571,7 +571,7 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         database.prepare("UPDATE entries SET done_at = ? WHERE id = ? AND replacement_id = ?").run(settledAt, original.id, original.replacement_id);
         // Persist a matching-ID terminal receipt so this browser can replay after a lost acknowledgement.
         database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, NULL, 0, NULL, ?)`)
-          .run(id, original.session_id, original.mode, original.owner, original.advisor, settledAt, original.source_session_id, original.replacement_id, settledAt);
+          .run(id, original.session_id, original.mode, original.owner, 0, settledAt, original.source_session_id, original.replacement_id, settledAt);
         const entry = row(id);
         if (!entry) throw new Error("The replacement receipt could not be read after commit");
         return { kind: "duplicate", entry, originalSession: original.session_id, replaces: original.id };
@@ -622,7 +622,7 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         id, sessionId, mode, message,
         imagePayload,
         uploadPayload,
-        entryOwner, advisor ? 1 : 0, now,
+        entryOwner, 0, now,
         savedUploads,
         sessionId, retryDigest, payloadBytes, savedOriginPayload,
       );
@@ -636,7 +636,7 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
       } else if (!original && typeof replaces === "string") {
         // A browser-only root needs the same durable identity even when this copy's acknowledgement is lost.
         database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, ?, 0, NULL, ?)`)
-          .run(replaces, sessionId, mode, entryOwner, advisor ? 1 : 0, now, sessionId, id, retryDigest, now);
+          .run(replaces, sessionId, mode, entryOwner, 0, now, sessionId, id, retryDigest, now);
         retiredRoot = row(replaces);
         if (!retiredRoot) throw new Error("The browser retry mapping could not be read after commit");
       }
@@ -941,7 +941,7 @@ async function deliver(entry: Row): Promise<Outcome> {
   const priorWrapper = getRpcSession(sessionId);
   const generation = priorWrapper?.getMessageCommandGeneration() ?? 0;
   const competingPending = priorWrapper?.hasPendingMessageCommands() ?? false;
-  const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.advisor === 1, entry.owner);
+  const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.owner);
   const wrapper = getRpcSession(sessionId);
   const current = row(entry.id);
   if (!current || (current.state !== "held" && current.state !== "waiting_host")) return "next";
@@ -1045,7 +1045,7 @@ async function deliver(entry: Row): Promise<Outcome> {
   publish(sessionId);
   try {
     // attachUploads mutates this same command before writing it: the watcher matches the final attachment block too.
-    const response = await runAgentCommand(sessionId, command, current.advisor === 1, current.owner, uploadReceipts, origin);
+    const response = await runAgentCommand(sessionId, command, current.owner, uploadReceipts, origin);
     if (!response.ok) {
       // Nothing was written: a gone child is retried, and any other refusal is classified as not sent.
       const written = nativeWriteStarted(command);

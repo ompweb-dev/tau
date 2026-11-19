@@ -51,7 +51,7 @@ function sendFences(): Map<string, Promise<void>> {
  * the browser socket. `owner`: the caller's web session (lib/web-auth.ts
  * `requestOwner`), whose uploads a prompt may attach. Never throws: failures
  * become `commandErrorResponse`. */
-export async function runAgentCommand(id: string, body: unknown, advisor: boolean, owner: string, trustedUploads?: OutboxUploadReceipt[], trustedOrigin?: MessageOrigin): Promise<Response> {
+export async function runAgentCommand(id: string, body: unknown, owner: string, trustedUploads?: OutboxUploadReceipt[], trustedOrigin?: MessageOrigin): Promise<Response> {
   let release = () => {}; // frees this command's send fence; idempotent
   try {
     const command = body as { type?: unknown; [key: string]: unknown } | null;
@@ -63,7 +63,7 @@ export async function runAgentCommand(id: string, body: unknown, advisor: boolea
       return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
     }
     // Held messages: stored and answered here; the outbox's dispatcher sends them to omp (lib/message-outbox.ts).
-    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, advisor, owner);
+    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner);
     if (type === "get_client_message_status") {
       const ids = readClientMessageIds(command.clientMessageIds);
       if (!ids) return Response.json({ error: "clientMessageIds must contain 1 to 32 unique valid IDs", code: "invalid_client_message_ids" }, { status: 400 });
@@ -71,8 +71,8 @@ export async function runAgentCommand(id: string, body: unknown, advisor: boolea
     }
     // Attached files go to the session's host first; nothing reaches omp when one fails (spec U3).
     const uploads = takeUploads(command, owner, trustedUploads);
-    // Hold later wrapper selection as well as dispatch behind attachment preparation, so an
-    // advisor toggle cannot replace the child and a Stop cannot overtake the preparing prompt.
+    // Hold later wrapper selection as well as dispatch behind attachment preparation, so a Stop
+    // cannot overtake the preparing prompt.
     // A moved session answers to several ids: a command through any of them waits.
     const held = getRpcSessionKeys(id).flatMap((key) => sendFences().get(key) ?? []);
     const prior = held.length ? Promise.all(held).then(() => {}) : undefined;
@@ -102,35 +102,17 @@ export async function runAgentCommand(id: string, body: unknown, advisor: boolea
       });
     };
 
-    // Fast path: already-running session. --advisor is a spawn-time flag with
-    // no runtime RPC, so a toggle that now differs from the live child's spawn
-    // flag must replace an idle child to take effect; busy children keep
-    // running and pick the flag up at the next natural respawn.
+    // Fast path: already-running session.
     const existing = getRpcSession(id);
-    let resumeId = id;
-    let resumeHost: AgentSessionWrapper["host"] | undefined;
-    const noSpawn = Object.hasOwn(NO_SPAWN_REPLIES, type);
-    if (existing?.isAlive()) {
-      if (noSpawn || (existing.adopted && !existing.hostOwnedLifecycle)
-        || existing.advisorSpawned === (advisor === true || existing.launchAdvisor === true) || existing.isRunning() || existing.isEditingHistory()) {
-        const result = await send(existing);
-        return Response.json({ success: true, data: result });
-      }
-      // Disposing a child behind a down link would wait for the link to return.
-      const offline = hostOfflineResponse(existing.host);
-      if (offline) return offline;
-      resumeId = existing.sessionId;
-      resumeHost = existing.host;
-      if (!existing.hostOwnedLifecycle) await existing.destroyAndWait("advisor", true);
-    }
-    if (noSpawn) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
+    if (existing?.isAlive()) return Response.json({ success: true, data: await send(existing) });
+    if (Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
 
-    const resolved = resumeHost ? { host: resumeHost } : await resolveSessionHostOr404(resumeId);
+    const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) return resolved.response;
     const { host } = resolved;
     const offline = hostOfflineResponse(host);
     if (offline) return offline;
-    const target = await sessionSpawnTarget(resumeId, host);
+    const target = await sessionSpawnTarget(id, host);
     if (!target) return Response.json({ error: "Session not found", code: "session_not_found" }, { status: 404 });
 
     // A cold set_model must reach omp before the saved model is restored:
@@ -152,7 +134,7 @@ export async function runAgentCommand(id: string, body: unknown, advisor: boolea
         ? `${command.provider}/${command.modelId}`
         : undefined;
 
-    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, advisor, target.recordedCwd, spawnModel, host, true);
+    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, spawnModel, host, true);
     // This command inherits the open's preparation lease, so the shared child cannot idle out before it is sent.
     return await session.withPendingCommand(async () => {
       if (spawnModel) {

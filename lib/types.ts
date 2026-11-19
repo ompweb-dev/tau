@@ -493,8 +493,6 @@ export interface ArchivedSessionInfo {
 export interface ProjectLaunchConfig {
   /** The OMP profile to use. */
   profile?: string;
-  /** Whether to launch with advisor mode. */
-  advisor?: boolean;
   /** Extra OMP CLI args, stored as an array. */
   extraArgs?: string[];
 }

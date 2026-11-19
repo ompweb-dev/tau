@@ -101,12 +101,11 @@ function parseLaunchConfig(item: Record<string, unknown>): ProjectLaunchConfig |
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const value = raw as Record<string, unknown>;
   const profile = typeof value.profile === "string" ? value.profile : undefined;
-  const advisor = value.advisor === true ? true : undefined;
   const extraArgs = Array.isArray(value.extraArgs)
     ? value.extraArgs.filter((arg): arg is string => typeof arg === "string")
     : undefined;
-  if (profile === undefined && advisor === undefined && (!extraArgs || extraArgs.length === 0)) return undefined;
-  return { profile, advisor, extraArgs };
+  if (profile === undefined && (!extraArgs || extraArgs.length === 0)) return undefined;
+  return { profile, extraArgs };
 }
 
 /** Parse registry JSON; missing, corrupt, or foreign-shaped input yields an

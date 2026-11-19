@@ -23,7 +23,7 @@ import type {
 import { normalizeToolCalls } from "@/lib/normalize";
 import { hasVisibleAssistantContent } from "@/lib/assistant-response";
 import type { ThinkingModelMeta } from "@/lib/thinking-levels";
-import { HostOfflineError, TransportLostError, getOutboxScope, rememberOutboxScope, sendAgentCommand, setSessionAdvisorSpawn } from "@/lib/agent-client";
+import { HostOfflineError, TransportLostError, getOutboxScope, rememberOutboxScope, sendAgentCommand } from "@/lib/agent-client";
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
@@ -234,7 +234,6 @@ export interface UseAgentSessionOptions {
   /** Frozen ensure_session configuration retained by the existing navigation view. */
   newSessionInitialization?: string;
   onNewSessionInitialization?: (body: string) => void;
-  advisorEnabled?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -583,10 +582,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [todoPhases, setTodoPhases] = useState<TodoPhase[]>([]);
   const [activeGoal, setActiveGoal] = useState<ActiveGoal | null>(null);
   const [activePlan, setActivePlan] = useState<ActivePlan | null>(null);
-  const [advisorActiveAt, setAdvisorActiveAt] = useState(0);
-  // Advisor is a per-chat toggle (composer Sparkles + /advisor command), not a
-  // global setting: each session remembers its own choice in localStorage.
-  const [advisorEnabled, setAdvisorEnabled] = useState(false);
   const activeSubagentCount = subagents.filter((subagent) => subagent.source !== "history" && subagent.status === "started").length;
 
   const eventSourceRef = useRef<EventStream | null>(null);
@@ -597,7 +592,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const reportedCreationErrorsRef = useRef(new WeakSet<Error>());
   const eventStreamRetryMsRef = useRef<number>(EVENT_STREAM_RETRY_MIN_MS);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
-  const creationBodyRef = useRef<{ json: string; advisor: boolean } | null>(null);
+  const creationBodyRef = useRef<{ json: string } | null>(null);
   const createdOwnerRef = useRef<{ cwd: string; hostId?: string } | null>(null);
   const btw = useBtw(sessionIdRef);
   const { applyEvent: applyBtwFrame, refreshHistory: refreshBtwHistory, reconcile: reconcileBtw, openHistory: openBtwHistory, ask: sendBtw } = btw;
@@ -935,38 +930,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     return null;
   }, [todoPhases]);
-  // Load the per-session advisor choice on session switch; brand-new chats
-  // start disabled until the user toggles the composer icon.
-  useEffect(() => {
-    const sid = session?.id;
-    if (!sid) {
-      setAdvisorEnabled(false);
-      return;
-    }
-    let stored = false;
-    try {
-      stored = localStorage.getItem(`omp-advisor-enabled:${sid}`) === "true";
-    } catch {
-      stored = false;
-    }
-    setAdvisorEnabled(stored);
-    // The spawn registry must match before any command POST can lazily start
-    // the omp process; localStorage alone would leave resumed sessions dark.
-    setSessionAdvisorSpawn(sid, stored);
-  }, [session?.id]);
-
-  const handleAdvisorChange = useCallback((enabled: boolean) => {
-    setAdvisorEnabled(enabled);
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    setSessionAdvisorSpawn(sid, enabled);
-    try {
-      localStorage.setItem(`omp-advisor-enabled:${sid}`, String(enabled));
-    } catch {
-      // In-memory state still applies for this page load.
-    }
-  }, []);
-
   // Merge a batch of roster entries; ordering and live-over-history precedence
   // live in `mergeSubagentRoster` so both rules stay testable outside React.
   const mergeSubagents = useCallback((incoming: SubagentInfo[], options?: { skipNewerThan?: number }) => {
@@ -1359,7 +1322,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         toolNames,
         ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
         ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
-        ...(advisorEnabled ? { advisor: true } : {}),
       };
       // A journal ID describes one immutable initialization, even after a lost answer.
       if (pooled && creationBodyRef.current === null) {
@@ -1367,7 +1329,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (!isRecord(initialization) || initialization.type !== "ensure_session" || initialization.creationId !== newSessionCreationId || initialization.poolId !== newSessionPoolId || initialization.projectId !== newSessionProjectId || "cwd" in initialization || "hostId" in initialization || "message" in initialization) {
           throw new Error(translate("agentSession.invalidPoolTarget"));
         }
-        creationBodyRef.current = { json: newSessionInitialization ?? JSON.stringify(request), advisor: initialization.advisor === true };
+        creationBodyRef.current = { json: newSessionInitialization ?? JSON.stringify(request) };
         onNewSessionInitialization?.(creationBodyRef.current.json);
       }
       const res = await fetch("/api/agent/new", {
@@ -1388,16 +1350,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       sessionIdRef.current = realId;
       createdOwnerRef.current = { cwd: body.cwd ?? (pooled ? "" : newSessionCwd ?? ""), hostId: body.hostId ?? (pooled ? undefined : newSessionHostId) };
       if (pooled && (!createdOwnerRef.current.hostId || !createdOwnerRef.current.cwd)) throw new Error(translate("agentSession.uploadOwnerUnavailable"));
-      // The toggle handler could not persist while the chat had no id; carry
-      // the pre-prompt choice over so it survives a reload after this point.
-      if (pooled ? creationBodyRef.current!.advisor : advisorEnabled) {
-        setSessionAdvisorSpawn(realId, true);
-        try {
-          localStorage.setItem(`omp-advisor-enabled:${realId}`, "true");
-        } catch {
-          // Best-effort: the spawned process already has --advisor.
-        }
-      }
       // A prompt or side question that created this runtime attaches its own stream,
       // which would only replace an observer attached here.
       if (hookAliveRef.current && !promptDispatchPendingRef.current && !btwAskPendingRef.current) {
@@ -1423,7 +1375,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [advisorEnabled, isNew, pooled, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, newSessionModel, newSessionDefaultModel, toolPreset, thinkingLevel, promoteNewSession, addNotice]);
+  }, [isNew, pooled, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, newSessionModel, newSessionDefaultModel, toolPreset, thinkingLevel, promoteNewSession, addNotice]);
 
   const resolveUploadHost = useCallback(async () => {
     const sid = sessionIdRef.current ?? await ensureNewSession();
@@ -2174,7 +2126,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       clearLiveToolResults();
       setRetryInfo(null);
       setSubagents([]);
-      setAdvisorActiveAt(0);
       subagentRosterGenerationRef.current += 1;
       // Bound per-run activity state: without this, subagentEvents and the
       // transcript-version map retain one entry per subagent id forever.
@@ -2613,7 +2564,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         clearLiveToolResults();
         setRetryInfo(null);
         setSubagents([]);
-        setAdvisorActiveAt(0);
         subagentRosterGenerationRef.current += 1;
         resetSubagentActivityState();
         dispatch({ type: "end" });
@@ -2810,12 +2760,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (msg?.role === "user") {
           break;
         }
-        if (msg?.role === "custom" && (msg as CustomMessage).customType === "advisor") {
-          // The advisor review streams in mid-run: light the composer thunder
-          // while it works, not only once its message completes. Functional
-          // update keeps per-frame updates from re-rendering needlessly.
-          setAdvisorActiveAt((prev) => (prev === 0 ? Date.now() : prev));
-        }
         if (msg) {
           if (hasVisibleAssistantContent(msg)) runHadContentRef.current = true;
           const text = extractMessageText(msg);
@@ -2849,10 +2793,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         if (completed?.role === "custom" && (completed as CustomMessage).customType === "xdev-mount-notice") {
           toast.info("MCP tools updated", describeMcpMountNotice(completed as CustomMessage), { clamp: true });
-        } else if (completed) {
-          // The advisor model injects its review as a custom message mid-run;
-          // surface it as live advisor activity for the composer thunder icon.
-          if ((completed as CustomMessage).customType === "advisor") setAdvisorActiveAt(Date.now());
         }
         if (completed?.role === "assistant") {
           clearTerminalReconcileTimer();
@@ -3261,7 +3201,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         id: newOutboxId(),
         sessionId: sid,
         scope: await getOutboxScope(sid),
-        advisor: advisorEnabled,
         mode,
         message,
         ...(images?.length ? { images: images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })) } : {}),
@@ -3284,7 +3223,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!eventSourceRef.current) void connectEvents(sid, "connected");
     }
     return true;
-  }, [addNotice, connectEvents, advisorEnabled]);
+  }, [addNotice, connectEvents]);
 
   const snapshotRunEntries = useCallback(async (sid: string) => {
     // Read immediately before dispatch, not from React's last rendered state:
@@ -3378,7 +3317,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     clearLiveToolResults();
     setAgentRunning(true);
     setAgentPhase(isSlashCommandPrompt ? { kind: "running_command" } : { kind: "waiting_model" });
-    setAdvisorActiveAt(0);
     dispatch({ type: "start" });
     pendingScrollToUserRef.current = true;
     completionScrollAllowedRef.current = true;
@@ -3799,17 +3737,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const { cancelled, newSessionId, text } = result ?? {};
       if (!cancelled && newSessionId) {
         if (editPrompt && text) setDraft(newSessionId, { value: text, images: [], files: [], promptOnly: true });
-        // The forked child keeps its spawn flags: carry the advisor choice to
-        // the new id, or the toggle flips off on switch and the next prompt
-        // respawns the fork without --advisor.
-        if (advisorEnabled) {
-          setSessionAdvisorSpawn(newSessionId, true);
-          try {
-            localStorage.setItem(`omp-advisor-enabled:${newSessionId}`, "true");
-          } catch {
-            // In-memory registry still applies for this page load.
-          }
-        }
         onSessionForked?.(newSessionId);
       }
     } catch (e) {
@@ -3818,7 +3745,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       forkInFlightRef.current = false;
       setForkingEntryId(null);
     }
-  }, [advisorEnabled, onSessionForked]);
+  }, [onSessionForked]);
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     if (bashRunningRef.current || agentRunningRef.current || editInFlightRef.current) return;
@@ -4219,11 +4146,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // shows these instead (CLIENT_BUILTIN_COMMAND_NAMES drops omp's
           // copies). handleSend runs the full prompt pipeline — optimistic
           // bubble, running state, settlement — with the expanded text.
-          // /advisor is gated on the per-chat composer toggle: refuse with a
-          // pointer to that toggle while the advisor is disabled.
-          if (commandName === "advisor" && !advisorEnabled) {
-            return complete({ handled: true, error: translate("agentSession.advisorDisabled") });
-          }
           const expansion = expandWebSlashCommand(text);
           if (expansion.kind === "not-web") return { handled: false };
           if (expansion.kind === "usage-error") {
@@ -4259,7 +4181,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         endLocalCompaction();
       }
     }
-  }, [addNotice, advisorEnabled, askBtw, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen]);
+  }, [addNotice, askBtw, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen]);
 
   // A steer or follow-up is held in the outbox like a prompt: its held bubble becomes omp's queue chip (queue_update)
   // or, delivered at once, the user message omp echoes. A slash command keeps its text; the server sends it as a
@@ -4799,7 +4721,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isCompacting, compactError, compactResult, tokensPerSecond, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,
     slashCommands, slashCommandsLoading, queuedMessages, hostStatus,
     notices: noticeState.visible, dismissNotice, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
-    advisorActive: advisorActiveAt > 0, advisorEnabled, handleAdvisorChange,
     subagents, subagentEvents, subagentTranscriptVersions, activeSubagentCount, currentTodoPhase, todoPhases,
     activeGoal, activePlan,
     isNew,

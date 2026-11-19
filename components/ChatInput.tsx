@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, memo, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Mic, Paperclip, Plus, RotateCw, Shrink, Snail, Sparkles, Terminal, Wrench, X, Zap } from "lucide-react";
+import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Mic, Paperclip, Plus, RotateCw, Shrink, Snail, Terminal, Wrench, X } from "lucide-react";
 import { getSubmitDuringRunBehavior } from "@/lib/composer-prefs";
 import type { BuiltinSlashCommandResult, CompactResultInfo, PromptSendOptions, PromptSubmissionResult, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { ActiveGoal, ActivePlan } from "@/lib/web-mode-state";
@@ -221,10 +221,6 @@ interface Props {
   onAbortRetry?: () => void;
   queuedMessages?: QueuedMessages | null;
   inputHistory?: string[];
-  /** True while the advisor model is actively reviewing the running turn. */
-  advisorActive?: boolean;
-  /** Resolved advisor role (display model + reasoning) for the composer tooltips. */
-  advisorModel?: { name: string; reasoning: string | null } | null;
   /** Compact the session context from the session information panel. */
   onCompact?: () => void;
   /** Live context totals feeding the session information ring. */
@@ -258,9 +254,6 @@ interface Props {
   cwd?: string | null;
   activeGoal?: ActiveGoal | null;
   activePlan?: ActivePlan | null;
-  advisorEnabled?: boolean;
-  /** Toggle the per-chat advisor (composer icon + /advisor command). */
-  onAdvisorChange?: (enabled: boolean) => void;
   /** Collapse the entire composer into a minimized bar. */
   onMinimize?: () => void;
   /** Active status label attached to the composer's top edge (e.g. "Waiting for model..."). */
@@ -367,8 +360,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   onAudioUnlock,
   outbox = false,
   submissionBlocked = false,
-  advisorActive,
-  advisorModel,
   onCompact,
   contextUsage,
   sessionStats,
@@ -383,8 +374,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   cwd,
   activeGoal,
   activePlan,
-  advisorEnabled,
-  onAdvisorChange,
   onMinimize,
   statusText,
   onOpenProviders,
@@ -440,7 +429,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const [composerContextContainer, setComposerContextContainer] = useState<HTMLDivElement | null>(null);
   const contextContainer = isMobile ? sessionInfoContainer : composerContextContainer;
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [plusExpanded, setPlusExpanded] = useState<"tools" | "advisor" | null>(null);
+  const [plusExpanded, setPlusExpanded] = useState<"tools" | null>(null);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
@@ -1441,16 +1430,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
 
   const builtinSlashCommands: SlashCommandPaletteItem[] = React.useMemo(
     () => BUILTIN_SLASH_COMMAND_DEFS
-      // The /advisor command is linked to Settings → Enable Advisor: hidden
-      // from the palette while the advisor is disabled.
-      .filter((def) => def.name !== "advisor" || advisorEnabled)
       .map((def) => ({
         name: def.name,
         description: t(def.descriptionKey),
         ...(def.argumentHintKey ? { argumentHint: t(def.argumentHintKey) } : {}),
         source: "builtin" as const,
       })),
-    [t, advisorEnabled],
+    [t],
   );
 
   // Externally reported commands (extension/prompt/skill/ompBuiltin) group
@@ -1809,13 +1795,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const files = attachedTextFilesRef.current;
     onAudioUnlock?.();
     if (msg.startsWith("/")) {
-      const commandName = msg.slice(1).split(/\s+/)[0];
-      // Same gate as the direct path (useAgentSession refuses /advisor while
-      // disabled): queueing must not become a bypass around the toggle.
-      if (commandName === "advisor" && !advisorEnabled) {
-        toast.error(t("agentSession.advisorDisabled"));
-        return;
-      }
       // Web commands must be expanded even when queued: the raw slash text
       // would otherwise reach omp as a literal message (its /goal //plan are
       // TUI-only). Action commands (compact/...) keep the raw text so omp's
@@ -1838,7 +1817,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const composedMessage = composeMessageWithTextAttachments(msg, files);
     if (rejectsOversizedPrompt(composedMessage, attachedImagesRef.current)) return;
     hold(composedMessage);
-  }, [value, handleSend, onSteer, onFollowUp, clearOnceStored, onAudioUnlock, t, advisorEnabled, rejectsOversizedPrompt, rejectsPendingUploads, sendSideQuestion]);
+  }, [value, handleSend, onSteer, onFollowUp, clearOnceStored, onAudioUnlock, t, rejectsOversizedPrompt, rejectsPendingUploads, sendSideQuestion]);
   // A typed message or attachment during a run is a queued follow-up — and so
   // is a dictation in progress: the primary button must take the same state it
   // would have if the composer already held text. Keep Stop as the action
@@ -3261,7 +3240,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             flexWrap: "wrap",
             rowGap: 6,
           }}>
-            {/* Plus menu — attachment · tools submenu · advisor submenu */}
+            {/* Plus menu — attachment · tools submenu */}
             <div ref={plusMenuRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
                 onClick={() => setPlusMenuOpen((v) => !v)}
@@ -3375,42 +3354,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                           </button>
                         );
                       })}
-                    </>
-                  )}
-                  {onAdvisorChange && (
-                    <>
-                      <button
-                        role="menuitem"
-                        type="button"
-                        aria-expanded={plusExpanded === "advisor"}
-                        onClick={() => setPlusExpanded((v) => (v === "advisor" ? null : "advisor"))}
-                        title={advisorEnabled ? t("chatInput.advisorDisableTitle", { model: advisorModel?.name ?? t("messageView.advisorLabel"), reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault") }) : t("chatInput.advisorEnableTitle")}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8, width: "100%",
-                          padding: "7px 10px", border: 0, borderRadius: 5,
-                          background: plusExpanded === "advisor" ? "var(--bg-selected)" : "transparent",
-                          color: advisorEnabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer", fontSize: 12, textAlign: "left",
-                        }}
-                      >
-                        <Sparkles size={12} strokeWidth={1.8} style={{ flexShrink: 0 }} aria-hidden="true" />
-                        <span style={{ flex: 1 }}>{t("messageView.advisorLabel")}</span>
-                        <span style={{ color: "var(--text-dim)" }}>{advisorEnabled ? t("chatInput.plusOn") : t("chatInput.plusOff")}</span>
-                        <ChevronDown size={12} strokeWidth={1.8} style={{ flexShrink: 0, opacity: 0.7, transform: plusExpanded === "advisor" ? "rotate(180deg)" : "none", transition: "transform var(--dur-fast) var(--ease-out-warm)" }} aria-hidden="true" />
-                      </button>
-                      {plusExpanded === "advisor" && (
-                        <button
-                          className="picker-row"
-                          role="menuitem"
-                          type="button"
-                          onClick={() => { setPlusMenuOpen(false); onAdvisorChange(!advisorEnabled); }}
-                          title={advisorEnabled ? t("chatInput.advisorDisableTitle", { model: advisorModel?.name ?? t("messageView.advisorLabel"), reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault") }) : t("chatInput.advisorEnableTitle")}
-                          style={{ paddingLeft: 30 }}
-                        >
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {advisorEnabled ? t("chatInput.advisorDisableTitle", { model: advisorModel?.name ?? t("messageView.advisorLabel"), reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault") }) : t("chatInput.advisorEnableTitle")}
-                          </span>
-                        </button>
-                      )}
                     </>
                   )}
                 </div>
@@ -3693,23 +3636,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               <div className="composer-usage-limit-badge" role="status" aria-live="polite" title={usageLimitLabel}>
                 {usageLimitLabel}
               </div>
-            )}
-
-            {/* Advisor activity — thunder while the advisor model reviews this run */}
-            {advisorActive && (
-              <span
-                title={t("chatInput.advisorReviewingTitle", {
-                  model: advisorModel?.name ?? t("messageView.advisorLabel"),
-                  reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault"),
-                })}
-                aria-label={t("chatInput.advisorReviewingTitle", {
-                  model: advisorModel?.name ?? t("messageView.advisorLabel"),
-                  reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault"),
-                })}
-                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, flexShrink: 0, color: "var(--accent)" }}
-              >
-                <Zap size={14} strokeWidth={2} fill="currentColor" aria-hidden="true" />
-              </span>
             )}
 
             {/* Desktop keeps the control in the composer; mobile uses the header mount. */}

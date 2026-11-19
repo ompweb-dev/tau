@@ -602,7 +602,7 @@ function onCommand(link: BrowserLink, ws: BrowserSocket, message: Record<string,
   // happens to use never replays this one's reply. JSON keeps the pair unambiguous for any session id. A read-only
   // command is safe to run again and is not remembered, so it never takes the room of one that changes something.
   const run = async () => {
-    const response = await runAgentCommand(session, message.command, message.advisor === true, link.owner);
+    const response = await runAgentCommand(session, message.command, link.owner);
     return { status: response.status, body: await response.json() };
   };
   const started = isIdempotentCommand(type) ? { result: run(), deduped: false } : runOnce(JSON.stringify([session, rid]), run);

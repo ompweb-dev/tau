@@ -32,7 +32,7 @@ export async function POST(
       try {
         const target = await sessionSpawnTarget(id, resolved.host);
         if (target) {
-          rpc = (await startRpcSession(id, target.sessionFile, target.cwd, undefined, undefined, target.recordedCwd, undefined, resolved.host)).session;
+          rpc = (await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, resolved.host)).session;
         }
       } catch {
         rpc = undefined; // Fall through to the fallback title.

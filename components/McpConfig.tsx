@@ -64,18 +64,7 @@ export function McpConfig({ cwd, sessionId, liveOnly = false }: { cwd: string | 
       if (cwd) params.set("cwd", cwd);
       if (sessionId) {
         params.set("sessionId", sessionId);
-        if (liveOnly) {
-          params.set("attach", "1");
-        } else {
-          // Fresh-spawn opinion for the MCP route (same localStorage key the
-          // chat-switch effect reads): without it a spawn here plants a
-          // non-advisor child that a concurrent prompt then reuses.
-          try {
-            if (localStorage.getItem(`omp-advisor-enabled:${sessionId}`) === "true") params.set("advisor", "1");
-          } catch {
-            // Private mode: omit the opinion, spawn defaults apply.
-          }
-        }
+        if (liveOnly) params.set("attach", "1");
       }
 
       const read = async (includeLive: boolean): Promise<McpResponse> => {

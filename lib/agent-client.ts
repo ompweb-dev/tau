@@ -11,11 +11,6 @@
 import { recordTransportSample, sendSessionCommand, type CommandReply } from "@/lib/event-stream";
 import { formatApiError } from "@/lib/i18n/api-error";
 
-// Sessions whose per-chat advisor toggle is on: their lazily spawned omp
-// process must start with --advisor. Keyed by session id because the spawn
-// decision happens inside the route, which only sees id + query string.
-const advisorSpawnSessions = new Set<string>();
-
 const OUTBOX_SCOPE_KEY = "tau:outbox-scope";
 let outboxScope: string | null = null;
 
@@ -68,16 +63,10 @@ export class TransportLostError extends Error {
   readonly mayHaveRun = true;
 }
 
-export function setSessionAdvisorSpawn(sessionId: string, enabled: boolean) {
-  if (enabled) advisorSpawnSessions.add(sessionId);
-  else advisorSpawnSessions.delete(sessionId);
-}
-
 export async function sendAgentCommand<T = unknown>(
   sessionId: string,
   command: Record<string, unknown>,
 ): Promise<T> {
-  const advisor = advisorSpawnSessions.has(sessionId);
   // The link's dedupe key; no crypto.randomUUID (insecure LAN origins lack it).
   const req = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
   const json = JSON.stringify(command);
@@ -86,7 +75,7 @@ export async function sendAgentCommand<T = unknown>(
   const sample = { metric: "action", req, type, session: sessionId, bytes: json.length, sentAt: Date.now() };
   let reply: CommandReply;
   try {
-    reply = (await sendSessionCommand(sessionId, req, json, advisor, type)) ?? (await postAgentCommand(sessionId, json, advisor, req, type));
+    reply = (await sendSessionCommand(sessionId, req, json, type)) ?? (await postAgentCommand(sessionId, json, req, type));
   } catch (error) {
     // The POST got no answer at all (offline, connection reset).
     recordTransportSample({ ...sample, via: "http", socket: "http", status: 0, outcome: "error", gotAt: Date.now() });
@@ -131,7 +120,7 @@ export async function sendAgentCommand<T = unknown>(
   return body.data as T;
 }
 
-async function postAgentCommand(sessionId: string, body: string, advisor: boolean, req: string, type: string): Promise<CommandReply> {
+async function postAgentCommand(sessionId: string, body: string, req: string, type: string): Promise<CommandReply> {
   let behindSameBytes = 0;
   let behindOtherBytes = 0;
   for (const other of inFlightPosts) {
@@ -144,7 +133,7 @@ async function postAgentCommand(sessionId: string, body: string, advisor: boolea
   const waitedMs = HANG_AFTER_MS + Math.ceil((behindSameBytes + behindOtherBytes + body.length) / 32);
   const hang = setTimeout(() => recordTransportSample({ metric: "hang", socket: "http", req, type, via: "http", bytes: body.length, waitedMs }), waitedMs);
   try {
-    const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}${advisor ? "?advisor=1" : ""}`, {
+    const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,

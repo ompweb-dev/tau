@@ -16,8 +16,6 @@ export const EXIT_GRACE_MS = 2_000;
 
 export interface InterruptibleSession {
   id: string;
-  /** The child's spawn-time --advisor flag, restored on resume. */
-  advisor: boolean;
   /** Host the child ran on; lists written before hosts existed read back as "local". */
   hostId: string;
 }
@@ -97,7 +95,7 @@ function readLeftover(): InterruptibleSession[] {
       const list = isRecord(raw) && Array.isArray(raw.sessions) ? raw.sessions : [];
       for (const entry of list) {
         if (isRecord(entry) && typeof entry.id === "string" && isValidSessionId(entry.id)) {
-          sessions.set(entry.id, { id: entry.id, advisor: entry.advisor === true, hostId: typeof entry.hostId === "string" ? entry.hostId : "local" });
+          sessions.set(entry.id, { id: entry.id, hostId: typeof entry.hostId === "string" ? entry.hostId : "local" });
         }
       }
     } catch {
@@ -154,8 +152,7 @@ export function recordRunningSessions(running: InterruptibleSession[], isAlive: 
       clearTimeout(drop);
       state.drops.delete(session.id);
     }
-    const previous = state.sessions.get(session.id);
-    if (previous?.advisor !== session.advisor) {
+    if (!state.sessions.has(session.id)) {
       state.sessions.set(session.id, session);
       changed = true;
     }
