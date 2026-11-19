@@ -136,22 +136,11 @@ type Detect = (frame: Record<string, unknown>, session: { sessionId: string; ses
  * "completed" fires on `session_settled` (the run and any background work it
  * started are done), unless the last prompt in that stretch failed or was
  * aborted. Errors fire on the failing `prompt_result` itself.
- *
- * omp announces a retry fallback (`retry_fallback_applied`) before the
- * `auto_retry_start` carrying the error that caused it, so a fallback without
- * its own `reason` waits for that frame and takes its error as the reason.
  */
 export function createNotificationDetector(): Detect {
   let lastOutcome: string | null = null;
-  let heldFallback: NotificationEvent | null = null;
   /** tau already reported this run's failure (from a failed `response`); its `prompt_result` must not repeat it. */
   let failureReported = false;
-
-  const releaseFallback = (detail?: string): NotificationEvent[] => {
-    const held = heldFallback;
-    heldFallback = null;
-    return held ? [{ ...held, detail }] : [];
-  };
 
   return (frame, { sessionId, sessionName }) => {
     const base = { sessionId, sessionName };
@@ -163,24 +152,10 @@ export function createNotificationDetector(): Detect {
       // success: false) and the omp child exiting mid-run.
       case "prompt_error":
       case "process_exit": {
-        const events = releaseFallback();
         lastOutcome = "error";
-        if (failureReported) return events;
+        if (failureReported) return [];
         failureReported = true;
-        return [...events, { ...base, type: "error", detail: str(frame.errorMessage) ?? str(frame.detail) }];
-      }
-      case "auto_retry_start":
-        return releaseFallback(str(frame.errorMessage));
-      case "retry_fallback_applied": {
-        const from = str(frame.from);
-        const to = str(frame.to);
-        if (!from || !to) return [];
-        const event: NotificationEvent = { ...base, type: "modelSwitch", from, to };
-        const reason = str(frame.reason);
-        if (reason) return [...releaseFallback(), { ...event, detail: reason }];
-        const earlier = releaseFallback();
-        heldFallback = event;
-        return earlier;
+        return [{ ...base, type: "error", detail: str(frame.errorMessage) ?? str(frame.detail) }];
       }
       case "notice": {
         const source = str(frame.source);
@@ -189,22 +164,18 @@ export function createNotificationDetector(): Detect {
         return [{ ...base, type: "modelSwitch", detail: message }];
       }
       case "prompt_result": {
-        const events = releaseFallback();
-        if (frame.agentInvoked !== true) return events;
+        if (frame.agentInvoked !== true) return [];
         lastOutcome = str(frame.status) ?? null;
-        if (lastOutcome !== "error" || failureReported) return events;
+        if (lastOutcome !== "error" || failureReported) return [];
         failureReported = true;
-        return [...events, { ...base, type: "error", detail: isRecord(frame.error) ? str(frame.error.message) : undefined }];
+        return [{ ...base, type: "error", detail: isRecord(frame.error) ? str(frame.error.message) : undefined }];
       }
-      case "auto_retry_end":
-        return releaseFallback();
       case "session_settled": {
-        const events = releaseFallback();
         const outcome = lastOutcome;
         lastOutcome = null;
         failureReported = false;
-        if (outcome === "error" || outcome === "aborted") return events;
-        return [...events, { ...base, type: "completed" }];
+        if (outcome === "error" || outcome === "aborted") return [];
+        return [{ ...base, type: "completed" }];
       }
       case "ui_request": {
         // Only reached for dialogs that wait on the user (tau answers
