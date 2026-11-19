@@ -1,8 +1,7 @@
 # tau - Development Notes
 
 tau is a web UI for the pi coding agent (`@earendil-works/pi-coding-agent`, developed against 1.5.2). It is a fork of
-ompweb, but a separate product: it shares no state, protocol history or installation with ompweb. Names that still
-say `omp` in comments, CSS or browser storage are leftovers unless this file says otherwise.
+ompweb, but a separate product: it shares no state, protocol history or installation with ompweb.
 
 ## Quick Start
 
@@ -54,8 +53,7 @@ Browser                    Bun server (server/app.ts)                   tau host
   `--no-session --no-skills --no-mcp`, idle-killed after 5 min) for global reads such as `get_available_models`.
 - **Session browsing** is pure Node parsing of session `.jsonl` files (`lib/session-reader.ts`,
   `lib/pi/session-files.ts`), run in the owning host's daemon (`host.sessionOps`), never a pi process.
-- The `rpc` in `rpc-manager.ts`/`RpcProcess`/`RpcTransport` really is pi's RPC mode now (the header comment of
-  `rpc-manager.ts` still describes the removed omp runner).
+- The `rpc` in `rpc-manager.ts`/`RpcProcess`/`RpcTransport` is pi's RPC mode.
 
 ### pi's RPC and what tau adds
 
@@ -359,7 +357,7 @@ A member runs pi on the master's configuration; its daemon applies it, never pi.
 Client code (`components/`, `hooks/`, the worker) must not call `AbortSignal.timeout`, `AbortSignal.any` or `Promise.withResolvers`: older mobile browsers throw and the whole tree shows the error screen. Use `AbortController` + timers and executor-style promises. Server code may use them.
 
 ### Browser storage and events
-Persisted browser keys from ompweb were kept on purpose: `omp-sound-enabled`, `omp-ui-scale`, `omp-font-size`, `omp-touch-targets`, `omp-lang`, `omp-composer-models`, `omp-draft-*` / `omp-uploads-draft-*` / `omp-prompt-draft-*`, `omp-tts-*`, `omp-recent-runs-*`, `omp-notify-*`, the theme id `omp` (CSS `html.omp`). Do not rename them. Newer keys use `tau-` / `tau:` (`tau-theme`, the `tau-theme-color` cookie, `tau:expand-thinking`, `tau:submit-during-run`, `tau:expanded-projects`, `tau:project-sort`, ...); window events are `tau-*` / `tau:*` (`tau-open-session`, `tau:connection-diagnostics`, ...); IndexedDB is `tau-outbox`.
+Browser keys use `tau-` / `tau:` (`tau-theme`, the `tau-theme-color` cookie, `tau-draft-*`, `tau:expand-thinking`, `tau:submit-during-run`, ...); window events are `tau-*` / `tau:*` (`tau-open-session`, `tau:connection-diagnostics`, ...); IndexedDB is `tau-outbox`.
 
 ### Editing and branching — don't confuse them
 - **Fork** ("Fork a new session from this point", user and assistant messages; only while idle: `!sessionBusy && !isNew`): pi's `fork` RPC writes a new `.jsonl` with the history before a user entry and switches the live process to it; the sidebar shows it as a child via `parentSession`. `lib/chat-fork.ts` maps rows: a user prompt forks at itself and its returned `text` prefills the composer (text only); an assistant reply forks at the next user prompt so the reply is kept; the newest reply falls back to its own prompt with the prefill. Rows that would fork before the very first prompt offer no fork. The button only opens a `ConfirmDialog`.
@@ -555,7 +553,7 @@ The todo plan (`TodoList`) and subagent roster sit pinned above the input, each 
 - The store is per process (caps: 4 pending, 20 live, TTLs); a restart loses jobs and the hook re-uploads its local copy.
 
 ### Completion sound
-`hooks/useAudio.ts` stores the toggle (`omp-sound-enabled`) and reuses one `AudioContext`, unlocked from a user gesture in `ChatInput`; `ChatWindow` plays the tone from `onAgentEnd`.
+`hooks/useAudio.ts` stores the toggle (`tau-sound-enabled`) and reuses one `AudioContext`, unlocked from a user gesture in `ChatInput`; `ChatWindow` plays the tone from `onAgentEnd`.
 
 ### Notifications (`lib/notification-*.ts`, `public/sw.js`, Settings → Notifications)
 - Detection runs on the server in `AgentSessionWrapper.handleFrame` (and `handleProcessExit`), so unwatched sessions notify. `createNotificationDetector()` inspects top-level frames only (subagent frames never notify). "Completed" fires on `session_settled`; a failed or aborted last prompt suppresses it. Other servers on a shared channel get the prompt's outcome as `peer_prompt_outcome`. Failures arrive as `prompt_error` and `process_exit`; one failure per run. A crash notifies "Run failed" while a run or its background work is unsettled.

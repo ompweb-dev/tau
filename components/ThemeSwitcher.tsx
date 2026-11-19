@@ -27,7 +27,7 @@ const ALL_OPTIONS: ReadonlyArray<ThemeOption> = [
 ];
 
 /** Theme picker for the top bar. Shows the current mode icon and opens a
- * small menu to pick light / dark / omp midnight / system directly, with
+ * small menu to pick light / dark / midnight / system directly, with
  * full keyboard support:
  *   - Enter / Space / ↓ : open
  *   - Arrow Up / Down    : move selection
@@ -164,7 +164,7 @@ export function ThemeSwitcher() {
       >
         {preference === "system" ? (
           <Monitor size={16} strokeWidth={1.8} aria-hidden="true" />
-        ) : preference === "omp" ? (
+        ) : preference === "midnight" ? (
           <Sparkles size={16} strokeWidth={1.8} aria-hidden="true" />
         ) : isDark ? (
           <Moon size={16} strokeWidth={1.8} aria-hidden="true" />
@@ -390,7 +390,7 @@ export function ThemeSwitcher() {
                         width: 13,
                         height: 13,
                         backgroundColor: theme.bg,
-                        border: theme.id === "omp" ? "1.5px solid #7DD7E8" : "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
+                        border: theme.id === "midnight" ? "1.5px solid #7DD7E8" : "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
                         display: "inline-flex",
                         alignItems: "center",
                         justifyContent: "center",
@@ -401,7 +401,7 @@ export function ThemeSwitcher() {
                     </span>
                     <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "inline-flex", alignItems: "center", gap: 5 }}>
                       {theme.name}
-                      {theme.id === "omp" && <Sparkles size={11} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0 }} aria-hidden="true" />}
+                      {theme.id === "midnight" && <Sparkles size={11} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0 }} aria-hidden="true" />}
                     </span>
                     {selected && <Check size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />}
                   </button>

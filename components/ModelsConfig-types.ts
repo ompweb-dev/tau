@@ -106,7 +106,7 @@ export type NativeRegistrySettings = {
 export type RetrySettings = {
   retry?: { enabled?: boolean; maxRetries?: number };
 };
-export const COMPOSER_MODELS_STORAGE_KEY = "omp-composer-models";
+export const COMPOSER_MODELS_STORAGE_KEY = "tau-composer-models";
 // APIs a models.json provider or model can name.
 export const API_OPTIONS = [
   "openai-completions",

@@ -31,7 +31,7 @@ type Channel = {
   editor?: string;
   /** Why the daemon stopped it (lifecycle reason or "asked"); unset for a crash. */
   stopReason?: string;
-  /** omp accepted the resume prompt but has not started (or ended) that run yet: still recorded as running. */
+  /** pi accepted the resume prompt but has not started (or ended) that run yet: still recorded as running. */
   resuming?: boolean;
 };
 type ChannelDeps = {
@@ -258,7 +258,7 @@ export class ChannelTable {
           void this.command(channel, command, commandArgs, onReply).catch(error => this.deps.log(`channel ${ch}: ${String(error)}`));
         } });
       spawned.transport.onLine(line => this.stdout(channel, line));
-      // The last 500 bytes omp writes before startup settles, for the daemon's own log if it exits meanwhile; never sent on.
+      // The last 500 bytes pi writes to stderr before startup settles, for the daemon's own log if it exits meanwhile; never sent on.
       let startupStderr: Buffer | null = Buffer.alloc(0);
       spawned.transport.onStderr(chunk => {
         if (startupStderr) startupStderr = Buffer.concat([startupStderr, Buffer.from(chunk.slice(-500))]).subarray(-500);
@@ -521,7 +521,7 @@ export class ChannelTable {
       try {
         channel.opened = true;
         this.deps.channelsChanged?.(channel.ch);
-        // Recorded until the run starts or ends; omp's reply can come before agent_start.
+        // Recorded until the run starts or ends; pi's reply can come before agent_start.
         channel.resuming = true;
         try { await this.command(channel, "prompt", { message: RESUME_PROMPT }); }
         catch (error) { channel.resuming = false; throw error; }

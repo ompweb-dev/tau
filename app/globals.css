@@ -57,12 +57,11 @@
 @source "../components";
 @source "../hooks";
 
-/* Nerd Font icons (Private Use Area) sent by omp when its symbol preset is
-   "nerd": ask options, status text, tool output. unicode-range keeps this
+/* Nerd Font icons (Private Use Area) in ask options, status text and tool
+   output. unicode-range keeps this
    face out of every other character and defers the download until a page
    actually shows one of these glyphs. The full Symbols Only set is kept on
-   purpose: tool output and model text can carry any Nerd Font icon, not just
-   the ones omp's own UI uses. Font: Nerd Fonts v3.5.1 Symbols Only, SIL OFL
+   purpose: tool output and model text can carry any Nerd Font icon. Font: Nerd Fonts v3.5.1 Symbols Only, SIL OFL
    1.1; see fonts/SymbolsNerdFont-LICENSE.md and fonts/SymbolsNerdFont-README.md. */
 @font-face {
   font-family: "Symbols Nerd Font Mono";
@@ -215,12 +214,12 @@
   --overlay-backdrop: color-mix(in srgb, var(--text) 24%, transparent);
 }
 
-/* omp.sh midnight theme (dark). Pure-black terminal look with a magenta/cyan
+/* Midnight theme (dark). Pure-black terminal look with a magenta/cyan
    dual accent, ported from https://omp.sh. Text/background pairs verified
    WCAG AA (≥4.5:1 for small text) — measured values noted per token.
-   --text-dim is deliberately lighter than omp.sh's faint gray (which fails
+   --text-dim is deliberately lighter than the original's faint gray (which fails
    on panels) to hold AA. */
-html.omp {
+html.midnight {
   color-scheme: dark;
   --bg: #000000;
   --bg-panel: #0A0A0C;
@@ -256,34 +255,34 @@ html.omp {
   --shadow-modal: 0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07);
 }
 
-/* omp.sh dotted-grid canvas + magenta selection + cyan focus ring. */
-html.omp body {
+/* Midnight dotted-grid canvas + magenta selection + cyan focus ring. */
+html.midnight body {
   background: conic-gradient(rgba(255,255,255,0.03) 90deg, transparent 90deg 180deg, rgba(255,255,255,0.03) 180deg 270deg, transparent 270deg) 0 0 / 2px 2px, #000000;
 }
-html.omp ::selection {
+html.midnight ::selection {
   background: rgba(236,91,171,0.32);
   color: var(--text);
 }
-html.omp :focus-visible {
+html.midnight :focus-visible {
   outline-color: var(--accent-2);
 }
 
-/* omp.sh type voice: Geist for UI text, JetBrains Mono for code. Scoped to
-   the omp theme so the warm themes keep their system/serif identity. */
-html.omp,
-html.omp body {
+/* Midnight type voice: Geist for UI text, JetBrains Mono for code. Scoped to
+   the midnight theme so the warm themes keep their system/serif identity. */
+html.midnight,
+html.midnight body {
   font-family: "Symbols Nerd Font Mono", var(--font-geist), ui-sans-serif, system-ui, sans-serif;
 }
-html.omp {
+html.midnight {
   --font-mono: "Symbols Nerd Font Mono", var(--font-jb-mono), "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
-/* omp.sh link sweep: underline draws itself left-to-right on hover/focus. */
-html.omp .markdown-body a {
+/* Midnight link sweep: underline draws itself left-to-right on hover/focus. */
+html.midnight .markdown-body a {
   text-decoration: none;
   position: relative;
 }
-html.omp .markdown-body a::after {
+html.midnight .markdown-body a::after {
   content: "";
   position: absolute;
   left: 0;
@@ -295,14 +294,14 @@ html.omp .markdown-body a::after {
   transform-origin: 0;
   transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-html.omp .markdown-body a:hover::after,
-html.omp .markdown-body a:focus-visible::after {
+html.midnight .markdown-body a:hover::after,
+html.midnight .markdown-body a:focus-visible::after {
   transform: scaleX(1);
 }
 
-/* omp.sh sunray signature for the empty-state wordmark: a cyan→white sheen
+/* Midnight sunray signature for the empty-state wordmark: a cyan→white sheen
    that sweeps across every 9s. Static gradient text when reduced motion. */
-html.omp .tau-wordmark {
+html.midnight .tau-wordmark {
   background: linear-gradient(105deg, var(--accent-2) 38%, var(--text) 50%, var(--accent-2) 62%);
   background-position: 100% 0;
   background-size: 320% 100%;
@@ -311,18 +310,18 @@ html.omp .tau-wordmark {
   color: transparent;
 }
 @media (prefers-reduced-motion: no-preference) {
-  html.omp .tau-wordmark {
-    animation: omp-sunray-sweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  html.midnight .tau-wordmark {
+    animation: tau-sunray-sweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 }
-@keyframes omp-sunray-sweep {
+@keyframes tau-sunray-sweep {
   0% { text-shadow: none; background-position: 100% 0; }
   8% { text-shadow: 0 0 16px color-mix(in srgb, var(--accent-2) 65%, transparent); }
   18%, to { text-shadow: none; background-position: 0 0; }
 }
 
 /* Warm-ember palette (dark). Same AA verification as light. */
-html.dark:not([data-theme]):not(.omp),
+html.dark:not([data-theme]):not(.midnight),
 html[data-theme="dark"],
 html.theme-dark {
   color-scheme: dark;
@@ -4970,7 +4969,7 @@ html[data-touch-targets="accessible"] .extension-dialog-footer > button {
   }
 }
 
-/* omp's ask dialogs: one choice-row look for select, approve, ask and the
+/* Ask dialogs: one choice-row look for select, approve, ask and the
    agent's own forms. A chosen or pre-checked row is tinted; Recommended stays
    a text tag so it never reads as a selection. */
 .extension-dialog-header { padding: 12px 16px; border-bottom: 1px solid var(--border); }
@@ -5013,9 +5012,9 @@ html[data-touch-targets="accessible"] .extension-dialog-footer > button {
 }
 /* The Other row's text box has no frame of its own, so the row shows its focus. */
 .extension-choice:has(textarea:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-html.omp .extension-choice:has(textarea:focus-visible) { outline-color: var(--accent-2); }
+html.midnight .extension-choice:has(textarea:focus-visible) { outline-color: var(--accent-2); }
 .extension-choice:disabled { cursor: default; opacity: 0.6; }
-/* omp's trailing "Done selecting" row is an action, not one more answer. */
+/* The ask's trailing "Done selecting" row is an action, not one more answer. */
 .extension-choice-action { justify-content: center; border-style: dashed; background: transparent; color: var(--text-muted); font-weight: 600; }
 .extension-choice textarea::placeholder,
 .extension-field::placeholder { color: var(--text-dim); opacity: 1; }
@@ -5024,7 +5023,7 @@ html.omp .extension-choice:has(textarea:focus-visible) { outline-color: var(--ac
   min-width: 0;
   min-height: 36px;
   padding: 7px 12px;
-  /* At least 3:1 against the fill on the darkest themes (omp, warm dark). */
+  /* At least 3:1 against the fill on the darkest themes (midnight, warm dark). */
   border: 1px solid color-mix(in srgb, var(--text-muted) 55%, var(--border));
   border-radius: 8px;
   background: var(--bg-panel);

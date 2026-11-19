@@ -35,11 +35,9 @@ import { PASSIVE_TOOL_CONTEXT } from "./chat-transcript-plan";
 export { getAgentDir };
 
 /**
- * `header.parentSession` has two forms in omp: a session FILE PATH (branch /
- * createBranchedSession, the RPC path tau drives) and a bare SESSION ID
- * (SessionManager.fork, reached from the TUI /fork, `omp --fork` and /tan).
- * Resolve the path form first, then fall back to an id match, so TUI-forked
- * sessions are not rendered as unrelated roots.
+ * `header.parentSession` is the parent's session FILE PATH when pi writes it;
+ * a bare SESSION ID is accepted too. Resolve the path form first, then fall
+ * back to an id match, so forked sessions are not rendered as unrelated roots.
  */
 function matchParentSessionId(
   parentSession: string,
@@ -80,7 +78,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
       path: s.path,
       id: s.id,
       cwd: s.cwd,
-      // omp renamed the display field to `title`; the internal shape keeps `name`.
+      // The listing names the display field `title`; the internal shape keeps `name`.
       name: s.title,
       created: s.created instanceof Date && !Number.isNaN(s.created.getTime())
         ? s.created.toISOString()
@@ -242,9 +240,8 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
   const cached = getPathCache().get(sessionId);
   if (cached) {
     if (existsSync(cached)) return cached;
-    // A deleted session must never resolve: callers spawn omp with --resume
-    // against the path, and omp silently creates a NEW session when the file
-    // is gone. Drop the dead entry directly; the list cache stays valid, so
+    // A deleted session must never resolve: callers spawn pi with --session
+    // against the path, and a missing file must not become a NEW session. Drop the dead entry directly; the list cache stays valid, so
     // repeated 404 polls for the same id do not force a full rescan each time.
     // (listAllSessions would drop it anyway on the next real list mutation.)
     invalidateSessionPathCache(sessionId);
@@ -789,8 +786,8 @@ export function getTodoPhasesFromEntries(entries: SessionEntry[], leafId?: strin
 const SUPERSEDED_COMPACTION_SUMMARY = "[Superseded compaction summary elided after a newer compaction]";
 
 /**
- * Build the display context for a leaf. Port of oh-my-pi's buildSessionContext
- * (session/session-context.ts) path-walk semantics — leaf→root walk with a
+ * Build the display context for a leaf. Port of pi's buildSessionContext
+ * (core/session-manager) path-walk semantics — leaf→root walk with a
  * cycle guard, firstKeptEntryId compaction collapsing, role-based model
  * tracking with legacy assistant-message inference — combined with pi-web's
  * UI message conversion: messages/entryIds stay parallel so fork/navigation
@@ -1163,7 +1160,7 @@ export function entryToUiMessage(
       const nativeMessage = { ...entry.message };
       delete (nativeMessage as Record<string, unknown>).origin;
       const raw = isClientMessageId(entry.clientMessageId) ? { ...nativeMessage, clientMessageId: entry.clientMessageId } : nativeMessage;
-      // omp-only roles are folded into displayable custom messages so the
+      // Roles outside pi's message set are folded into displayable custom messages so the
       // existing role-keyed UI renders them without new components.
       if (raw.role === "developer") {
         // Passive tool context is display-only: it rides on its tool card

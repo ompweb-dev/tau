@@ -872,7 +872,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try {
-      const value = window.localStorage.getItem("omp-sound-enabled");
+      const value = window.localStorage.getItem("tau-sound-enabled");
       return value === null ? true : value === "true";
     } catch {
       return true;
@@ -1248,7 +1248,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                       checked={soundEnabled}
                       onChange={(next) => {
                         setSoundEnabled(next);
-                        try { localStorage.setItem("omp-sound-enabled", String(next)); } catch { /* storage fallback */ }
+                        try { localStorage.setItem("tau-sound-enabled", String(next)); } catch { /* storage fallback */ }
                         window.dispatchEvent(new CustomEvent("tau-sound-pref-change", { detail: next }));
                       }}
                     />

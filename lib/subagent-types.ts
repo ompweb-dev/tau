@@ -5,7 +5,7 @@
 
 import { asNumber, asString, isRecord } from "./type-guards";
 
-/** A subagent id as omp writes it into artifact filenames (`<id>.jsonl`); rejects path separators and `..`. */
+/** A subagent id as written into artifact filenames (`<id>.jsonl`); rejects path separators and `..`. */
 export const SUBAGENT_ID_RE = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/;
 
 export type SubagentAgentSource = "bundled" | "user" | "project";

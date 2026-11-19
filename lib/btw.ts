@@ -1,4 +1,4 @@
-// Side questions (omp's `/btw`) over RPC: record shapes and the pure state
+// Side questions (`/btw`, answered by tau's pi extension) over RPC: record shapes and the pure state
 // transitions applied to `btw_record`/`btw_delta` frames, `btw` responses and
 // `get_btw_history` snapshots. These can arrive in any order relative to each
 // other (SSE vs. HTTP), so a snapshot never rolls back what is already shown.
@@ -39,7 +39,7 @@ export function latestBtwAnswer(record: BtwRecord): string {
   return btwTurns(record).findLast((turn) => turn.answer.trim())?.answer ?? "";
 }
 
-/** Epoch ms a `Date` can hold (omp's schema range); outside it `toISOString` throws. */
+/** Epoch ms a `Date` can hold; outside it `toISOString` throws. */
 const MAX_DATE_MS = 8.64e15;
 
 function isEpochMs(value: unknown): boolean {
@@ -83,7 +83,7 @@ function withLatestTurn(record: BtwRecord, patch: Partial<BtwTurn>): BtwRecord {
     : { ...record, ...patch };
 }
 
-/** omp's history order: newest topic first. */
+/** History order: newest topic first. */
 function newestFirst(a: BtwRecord, b: BtwRecord): number {
   return b.createdAt - a.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
@@ -119,7 +119,7 @@ export function applyBtwEvent(records: BtwRecord[], event: { type: string; [key:
 /** Replace local state with a history snapshot, keeping records the snapshot
  * predates (started after it was taken, or with newer streamed text). A record
  * that was running before the request (`knownBefore`) but is missing from the
- * snapshot cannot still be running: omp lost it (failed checkpoint, replaced
+ * snapshot cannot still be running: it was lost (a replaced
  * child), so it becomes `interrupted` instead of spinning forever. */
 export function mergeBtwHistory(local: BtwRecord[], snapshot: BtwRecord[], knownBefore: ReadonlySet<string>): BtwRecord[] {
   const localById = new Map(local.map((record) => [record.id, record]));

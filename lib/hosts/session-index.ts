@@ -182,7 +182,7 @@ export function invalidateHostSessionList(hostId: string): void {
   lists.loaded = false;
 }
 
-/** This machine's session files changed outside any host op (a terminal omp, an import, an archive restore): its daemon and main drop their lists. */
+/** This machine's session files changed outside any host op (a terminal pi, an import, an archive restore): its daemon and main drop their lists. */
 export function invalidateLocalSessionLists(sessionFile?: string): void {
   getHost(LOCAL_HOST_ID).invalidateSessionLists(sessionFile);
   invalidateHostSessionList(LOCAL_HOST_ID);

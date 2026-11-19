@@ -45,7 +45,7 @@ function getSharedCtx(): AudioContext | null {
 export function useAudio() {
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
-    const stored = localStorage.getItem("omp-sound-enabled");
+    const stored = localStorage.getItem("tau-sound-enabled");
     return stored === null ? true : stored === "true";
   });
 
@@ -76,7 +76,7 @@ export function useAudio() {
     const next = !enabledRef.current;
     if (next) unlockAudio(true);
     try {
-      localStorage.setItem("omp-sound-enabled", String(next));
+      localStorage.setItem("tau-sound-enabled", String(next));
     } catch {
       // Storage may be unavailable (private mode, quota); the in-memory
       // preference still applies for this session.

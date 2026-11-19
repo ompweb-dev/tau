@@ -137,7 +137,7 @@ export function annotateSkillsWithInstallInfo(
 
   return skills.map((skill) => {
     if (!existsSync(skill.filePath)) return skill;
-    // omp lists colliding skills as `namespace/name`; lock files key the
+    // A colliding skill may be listed as `namespace/name`; lock files key the
     // installed name.
     const lockName = skill.name.slice(skill.name.lastIndexOf("/") + 1);
 

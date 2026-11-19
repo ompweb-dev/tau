@@ -3,8 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { sanitizeTextForSpeech } from "@/lib/speech-sanitizer";
 
-export const TTS_AUTOPLAY_PREF_KEY = "omp-tts-autoplay";
-export const TTS_VOICE_PREF_KEY = "omp-tts-voice";
+export const TTS_AUTOPLAY_PREF_KEY = "tau-tts-autoplay";
+export const TTS_VOICE_PREF_KEY = "tau-tts-voice";
 export const TTS_PREF_EVENT = "tau-tts-pref-change";
 export const TTS_STATE_EVENT = "tau-tts-state-change";
 

@@ -61,7 +61,7 @@ function collectArchives(directory: string, files: string[] = []): string[] {
     // An unreadable root/subtree can contain any session's archive. Never turn access or I/O failures into proven absence.
     throw error;
   }
-  // OMP archives <session>.jsonl.gz beside its artifacts directory <session>.jsonl. Never recurse into that paired tree:
+  // An archive holds <session>.jsonl.gz beside its artifacts directory <session>.jsonl. Never recurse into that paired tree:
   // arbitrary uploads there may themselves end in .jsonl.gz or look like captures, without being archive entries.
   // Pair from this same enumeration, including captures whose ordinary .gz name is temporarily absent. Do not blanket-skip
   // .jsonl or hidden directories: those are also valid project path components.

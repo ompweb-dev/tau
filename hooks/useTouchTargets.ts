@@ -4,7 +4,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export type TouchTargetsPreference = "auto" | "compact" | "accessible";
 
-export const STORAGE_KEY = "omp-touch-targets";
+export const STORAGE_KEY = "tau-touch-targets";
 export const DEFAULT_TOUCH_TARGETS: TouchTargetsPreference = "auto";
 export const TOUCH_TARGETS_CHANGE_EVENT = "tau-touch-targets-change";
 

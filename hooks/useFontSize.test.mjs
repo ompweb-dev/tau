@@ -11,7 +11,7 @@ const {
 
 test("has expected constants", () => {
   assert.equal(DEFAULT_FONT_SIZE, "md");
-  assert.equal(STORAGE_KEY, "omp-font-size");
+  assert.equal(STORAGE_KEY, "tau-font-size");
 });
 
 test("cycles font size preferences through sm -> md -> lg -> xl -> sm", () => {

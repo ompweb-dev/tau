@@ -11,8 +11,8 @@ import {
   type RenderedNotification,
 } from "./notification-events";
 
-const DEVICE_KEY = "omp-notify-device";
-const PREFS_KEY = "omp-notify-prefs";
+const DEVICE_KEY = "tau-notify-device";
+const PREFS_KEY = "tau-notify-prefs";
 
 /** crypto.randomUUID exists only in secure contexts; plain-HTTP LAN origins still need ids. */
 function randomId(): string {

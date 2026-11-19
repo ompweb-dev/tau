@@ -16,7 +16,7 @@ export const LOCALES: Array<{ value: Locale; label: string }> = [
   { value: "ja", label: "日本語" },
 ];
 
-const STORAGE_KEY = "omp-lang";
+const STORAGE_KEY = "tau-lang";
 
 const dictionaries: Record<Locale, Record<string, string>> = {
   en: en as Record<string, string>,

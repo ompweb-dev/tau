@@ -1,5 +1,5 @@
 /**
- * Policy + text format for the environment variables injected into the `omp` child
+ * Policy + text format for the environment variables injected into the `pi` child
  * process (issue #104). Deliberately free of Node built-ins (no `fs`) so the settings
  * UI can reuse exactly the same validation the server applies; the persistence side
  * lives in ./agent-env.ts.
@@ -10,8 +10,8 @@
  *      spawn (`sanitizeProjectCommandEnvironment`, called in `spawnPiTransport` in lib/pi/rpc-process.ts
  *      AFTER the merge). Letting a user set them would be a silent no-op, so they are
  *      denied here too — the policy is deliberately mirrored, not re-invented.
- *   2. Names that relocate omp's own state (agent dir, config root, home) would make
- *      the child read and write a different ~/.omp than the one tau enumerates
+ *   2. Names that relocate pi's own state (agent dir, config root, home) would make
+ *      the child read and write a different ~/.pi than the one tau enumerates
  *      sessions, settings and agents from: the child would start fine and its sessions
  *      would vanish from the UI. Those are denied as well.
  *
@@ -30,7 +30,7 @@ const NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * Compared uppercased (see the module comment).
  */
 const DENIED_NAMES: ReadonlySet<string> = new Set([
-  // Process plumbing — a rewritten PATH breaks omp's own binary/tool lookups,
+  // Process plumbing — a rewritten PATH breaks pi's own binary/tool lookups,
   // NODE_OPTIONS injects code into every child node process.
   "PATH",
   "PATHEXT",
@@ -38,7 +38,7 @@ const DENIED_NAMES: ReadonlySet<string> = new Set([
   "SYSTEMROOT",
   "WINDIR",
   "NODE_OPTIONS",
-  // Where omp keeps its state. Redirecting these splits the child from the ~/.omp
+  // Where pi keeps its state. Redirecting these splits the child from the ~/.pi
   // that tau enumerates sessions, settings and agents from.
   "HOME",
   "USERPROFILE",

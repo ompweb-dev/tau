@@ -42,7 +42,7 @@ export interface DraftRecovery {
   promptOnly?: boolean;
 }
 
-/** The `{ data, mimeType }` images in an omp RPC payload; anything else is dropped. */
+/** The `{ data, mimeType }` images in a pi RPC payload; anything else is dropped. */
 export function toDraftImages(value: unknown): ChatDraftImage[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((image: unknown) => (
@@ -71,9 +71,9 @@ declare global {
 }
 
 const MAX_DRAFTS = 50;
-const STORAGE_PREFIX = "omp-draft-";
-const UPLOADS_STORAGE_PREFIX = "omp-uploads-draft-";
-const PROMPT_STORAGE_PREFIX = "omp-prompt-draft-";
+const STORAGE_PREFIX = "tau-draft-";
+const UPLOADS_STORAGE_PREFIX = "tau-uploads-draft-";
+const PROMPT_STORAGE_PREFIX = "tau-prompt-draft-";
 
 function isDraftUpload(value: unknown): value is ChatDraftUpload {
   if (!value || typeof value !== "object") return false;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export type UiScalePreference = "compact" | "standard" | "comfortable" | "large";
 
-export const STORAGE_KEY = "omp-ui-scale";
+export const STORAGE_KEY = "tau-ui-scale";
 export const DEFAULT_UI_SCALE: UiScalePreference = "standard";
 export const UI_SCALE_CHANGE_EVENT = "tau-ui-scale-change";
 

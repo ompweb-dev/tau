@@ -109,7 +109,7 @@ export interface SessionOps {
   /** `file`: a pi-subagents child's own session file (its progress names it), read only inside the parent's artifacts dir. */
   readSubagentTranscript(id: string, subagentId: string, mode: "page" | "completion", cursor: number, file?: string): Promise<OpResult<unknown>>;
   renameSessionFile(id: string, title: string): Promise<OpResult<null>>;
-  /** `liveSessionIds`: sessions main has a live omp process for; their files are never rewritten. */
+  /** `liveSessionIds`: sessions main has a live pi process for; their files are never rewritten. */
   deleteSession(id: string, liveSessionIds: string[]): Promise<OpResult<{ skippedChildren?: Array<{ id: string; reason: string }> }>>;
   archiveSession(id: string): Promise<OpResult<{ archivedPath: string }>>;
   /** This host's archive, newest first (browser entries; no hostId). */
@@ -156,7 +156,7 @@ const runningRestores = new Set<string>();
 const SUBAGENT_ID_MAX_LENGTH = 100;
 
 // Subagent ids are AdjectiveNoun names, optionally dotted for nested spawns
-// (OMP allocates hierarchical ids like `Parent.Child`). The grammar bounds the
+// (hierarchical ids like `Parent.Child`). The grammar bounds the
 // value, rejects empty segments and traversal forms, and guarantees the joined
 // path cannot escape the sibling dir; symlink escapes are additionally blocked
 // by realpath confinement (resolveSubagentArtifact).
@@ -299,9 +299,8 @@ function normalizeCwd(cwd: string): string {
 }
 
 /**
- * Render a session to self-contained HTML by shelling out to the user's omp
- * binary: `omp --export <sessionPath> <outPath>` (the output path is the first
- * positional argument; verified against oh-my-pi main.ts/flag-tables.ts).
+ * Render a session to self-contained HTML by shelling out to the user's pi
+ * binary: `pi --export <sessionPath> <outPath>` (`pi --help`: `--export <file> [output]`).
  */
 async function runPiExport(filePath: string, outputPath: string): Promise<void> {
   const bin = resolvePiBin();
@@ -405,7 +404,7 @@ export const sessionOps: SessionOps = {
   async readThinking(id, entryId, blockIndex) {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
-    // Lenient JSONL parsing keeps omp's malformed-line tolerance.
+    // Lenient JSONL parsing keeps pi's malformed-line tolerance.
     const entry = getSessionEntries(filePath).find((candidate) => candidate.id === entryId);
     if (!entry || entry.type !== "message" || !isRecord(entry.message) || entry.message.role !== "assistant") {
       return fail(404, "assistant_message_not_found", "Assistant message not found");
@@ -537,9 +536,8 @@ export const sessionOps: SessionOps = {
         const linkedByPath = sessionPathKey(childHeader.parentSession) === targetPathKey;
         if (!linkedByPath && childHeader.parentSession !== deletedSessionId) continue;
 
-        // A live omp process owns its session file and flushes its whole
-        // in-memory state on write — our rewrite would be clobbered by (or
-        // interleaved with) its next flush.
+        // A live pi process owns its session file — our rewrite would be
+        // clobbered by (or interleaved with) its next write.
         const childId = childHeader.id;
         if (childId && live.has(childId)) {
           skippedChildren.push({ id: childId, reason: "session_child_live" });

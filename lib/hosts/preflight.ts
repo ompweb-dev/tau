@@ -52,7 +52,7 @@ export async function runPreflight(timeoutMs = 30_000): Promise<number> {
     const timer = setTimeout(() => outcome.resolve(`no hello within ${timeoutMs / 1000} s${tail()}`), timeoutMs);
     const failure = await outcome.promise;
     clearTimeout(timer);
-    // As RpcProcess.dispose: closed stdin lets omp shut down cleanly; then nothing of its tree may outlive the check.
+    // As RpcProcess.dispose: closed stdin lets pi shut down cleanly; then nothing of its tree may outlive the check.
     transport.endInput();
     await Promise.race([exited.promise, sleep(2_000, undefined, { ref: false })]);
     transport.killTree(true);

@@ -16,8 +16,8 @@ const {
 } = await import("./useRecentRunsLimit.ts");
 
 test("has expected constants", () => {
-  assert.equal(STORAGE_KEY, "omp-recent-runs-limit");
-  assert.equal(CUSTOM_STORAGE_KEY, "omp-recent-runs-custom-limit");
+  assert.equal(STORAGE_KEY, "tau-recent-runs-limit");
+  assert.equal(CUSTOM_STORAGE_KEY, "tau-recent-runs-custom-limit");
   assert.equal(DEFAULT_PRESET, "10");
   assert.equal(DEFAULT_LIMIT, 10);
   assert.equal(MIN_LIMIT, 1);

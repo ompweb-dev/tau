@@ -1,6 +1,6 @@
 // On-disk subagent history + transcript reading for tau.
 //
-// omp writes each subagent's session transcript to the PARENT session's
+// Each subagent's session transcript lives in the PARENT session's
 // sibling artifacts directory: `<session-dir>/<subagent-id>.jsonl` (plus
 // `<id>.md` outputs and `<id>.<tool>.log` artifact spills). The parent's task
 // toolResult `details` persist `progress: AgentProgress[]` and
@@ -367,7 +367,7 @@ const transcriptModelCache = new Map<string, { mtimeMs: number; size: number; mo
 
 /**
  * `provider/model:thinking` from the `model_change` / `thinking_level_change`
- * entries omp writes at the head of a subagent transcript, before its
+ * entries at the head of a subagent transcript, before its
  * (large) `session_init` line.
  * ponytail: head only, so a mid-run model switch is not reflected; scan the
  * whole file if subagents start switching models.
@@ -429,7 +429,7 @@ export interface SubagentTranscriptPage {
 }
 
 /**
- * Byte-window transcript paging mirroring omp's readRpcSubagentTranscript:
+ * Byte-window transcript paging:
  * parse complete lines from `fromByte`, return UI messages + nextByte.
  */
 export function readSubagentTranscriptPage(sessionFilePath: string, fromByte = 0): SubagentTranscriptPage {
@@ -503,7 +503,7 @@ export function readSubagentTranscriptPage(sessionFilePath: string, fromByte = 0
 export const MAX_SUBAGENT_COMPLETION_BYTES = 1024 * 1024;
 
 /**
- * Read a subagent's final output — the `<id>.md` sibling artifact omp writes
+ * Read a subagent's final output — the `<id>.md` sibling artifact written
  * when the task settles. Returns null when no output file exists yet (still
  * running, aborted before producing output, or the session predates it).
  * Output files can exceed the transcript cap, so the read is bounded.

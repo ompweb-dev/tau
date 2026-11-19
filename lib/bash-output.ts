@@ -1,6 +1,6 @@
 /**
- * Secure reader for omp's bash-output temp files. When a bash execution's
- * output is too large for the session, omp writes the full output to
+ * Secure reader for pi's bash-output temp files. When a bash execution's
+ * output is too large for the session, pi writes the full output to
  * `$TMPDIR/pi-bash-<id>.log` and records `fullOutputPath` on the
  * bashExecution entry; this module serves that file with the same
  * constraints as the upstream pi-web implementation:

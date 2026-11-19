@@ -4,7 +4,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 export type FontSizePreference = "sm" | "md" | "lg" | "xl";
 
-export const STORAGE_KEY = "omp-font-size";
+export const STORAGE_KEY = "tau-font-size";
 export const DEFAULT_FONT_SIZE: FontSizePreference = "md";
 export const FONT_SIZE_CHANGE_EVENT = "tau-font-size-change";
 

@@ -53,9 +53,9 @@ export function spawnLocalRpcTransport(options: {
     env: options.env,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
-    // On POSIX, omp launches grandchildren (LSP servers, extension subprocesses). Run the
+    // On POSIX, pi launches grandchildren (MCP servers, extension subprocesses). Run the
     // child in its own process group so killTree() can SIGTERM/SIGKILL the whole
-    // tree — otherwise a crashed omp would orphan its LSP children as zombies.
+    // tree — otherwise a crashed pi would orphan its children as zombies.
     // Windows uses taskkill /t instead, so detaching would only create a console.
     detached: process.platform !== "win32",
   });

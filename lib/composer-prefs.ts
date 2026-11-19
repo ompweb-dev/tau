@@ -1,6 +1,6 @@
 /**
  * Client-side composer preferences (localStorage). These live outside the
- * native OMP config because they are tau UI behaviors.
+ * pi's settings because they are tau UI behaviors.
  */
 
 export type SubmitDuringRunBehavior = "steer" | "queue";

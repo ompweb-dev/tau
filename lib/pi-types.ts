@@ -1,9 +1,9 @@
 import type { AgentMessage } from "./types";
 import type { MessageOrigin } from "./message-origin";
 
-// Local mirrors of the omp shapes used by tau. omp's SDK packages are
-// Bun-only, so these types are hand-maintained against
-// oh-my-pi/packages/coding-agent/src/modes/rpc/rpc-types.ts (protocol v1).
+// Local mirrors of the pi RPC shapes used by tau, hand-maintained against
+// pi's modes/rpc/rpc-types.d.ts (tau never imports pi's SDK). tau's own
+// additions come from lib/pi/tau-extension.ts and lib/pi/rpc-process.ts.
 
 export interface ContextUsage {
   percent: number | null;
@@ -25,7 +25,7 @@ export interface ToolInfo {
   description: string;
 }
 
-/** Subset of omp's Model (pi-ai) that the web UI reads; extra fields pass through. */
+/** Subset of pi's Model (pi-ai) that the web UI reads; extra fields pass through. */
 export interface PiModel {
   id: string;
   provider: string;
@@ -75,7 +75,7 @@ export interface ClientMessageStatus {
   unresolvedClientMessageIds: string[];
 }
 
-/** Mirror of omp's RpcSessionState (the raw `get_state` payload). */
+/** Mirror of pi's RpcSessionState (the raw `get_state` payload). */
 export interface RpcSessionState {
   model?: PiModel;
   thinkingLevel: string | undefined;
@@ -102,7 +102,7 @@ export interface RpcSessionState {
   contextUsage?: { tokens: number; contextWindow: number; percent: number };
   /** Structured provider usage-limit state; absent outside wrap-up and low priority. */
   usageLimit?: UsageLimitState;
-  /** omp's reported output throughput; null/undefined when not generating. */
+  /** Reported output throughput; null/undefined when not generating (pi 1.5.2 reports none). */
   tokensPerSecond?: number | null;
 }
 
@@ -147,7 +147,7 @@ export type AvailableSlashCommandSource =
   | "mcp_prompt"
   | "file";
 
-/** Mirror of omp's RpcAvailableSlashCommand (`get_available_commands`). */
+/** One slash command as `get_available_commands` returns it (pi's `get_commands`, lib/pi/rpc-process.ts). */
 export interface RpcAvailableSlashCommand {
   name: string;
   aliases?: string[];
@@ -157,7 +157,7 @@ export interface RpcAvailableSlashCommand {
   source: AvailableSlashCommandSource;
 }
 
-/** Mirror of omp's BashResult (`bash` command response). */
+/** Mirror of pi's BashResult (`bash` command response). */
 export interface BashResultInfo {
   output: string;
   exitCode: number | undefined;
@@ -170,7 +170,7 @@ export interface BashResultInfo {
   outputBytes?: number;
   artifactId?: string;
   workingDir?: string;
-  /** tau: omp held the result back for the next prompt (a turn was running). */
+  /** tau: pi held the result back for the next prompt (a turn was running). */
   deferred?: boolean;
 }
 
@@ -201,7 +201,7 @@ export interface SessionStatsInfo {
   contextUsage?: ContextUsage;
 }
 
-/** One question of omp's ask dialog (`method: "ask"`, omp's `askDialog`). */
+/** One question of an ask dialog (`method: "askDialog"`). */
 export interface RpcAskDialogQuestion {
   id: string;
   question: string;
@@ -220,17 +220,17 @@ export interface RpcAskDialogAnswer {
 }
 
 /**
- * A submitted whole-form ask (omp's `formDialog`), by control `name`: radios, single checkboxes and
+ * A submitted whole-form ask (`formDialog`), by control `name`: radios, single checkboxes and
  * single selects give their value (omitted when nothing is chosen), checkbox groups and multi-selects
  * an array, `number`/`range` inputs a number, other text fields their text. Mirrors pi-tui's html-form.
  */
 export type HtmlFormData = Record<string, string | number | string[]>;
 
 /**
- * omp's RPC host-tool bridge: tau registers host tools (set_host_tools)
- * that the agent can call; the server emits host_tool_call frames the UI
- * executes, and the UI answers with host_tool_result. Mirrors
- * oh-my-pi modes/rpc/rpc-types.ts.
+ * tau's host-tool bridge: tau registers host tools (set_host_tools, which the
+ * daemon hands to the extension's `/tau_host_tools`) that the agent can call;
+ * the server emits host_tool_call frames the UI executes, and the UI answers
+ * with host_tool_result.
  */
 export interface HostToolParameter {
   type?: string;
@@ -269,10 +269,10 @@ export interface HostToolResultFrame {
 }
 
 /**
- * omp's RPC host-URI bridge: the host registers URL schemes
- * (set_host_uri_schemes) that the agent's read/write tools resolve through
- * the UI; the server emits host_uri_request frames the UI satisfies with
- * host_uri_result. Mirrors oh-my-pi modes/rpc/rpc-types.ts.
+ * Host-URI bridge: the host registers URL schemes (set_host_uri_schemes)
+ * that the agent's read/write tools resolve through the UI; the server emits
+ * host_uri_request frames the UI satisfies with host_uri_result. pi has no
+ * counterpart: the daemon drops the registration (lib/hosts/daemon-channels.ts).
  */
 export interface HostUriSchemeDefinition {
   scheme: string;

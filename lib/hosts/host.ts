@@ -35,7 +35,7 @@ export interface SpawnResult {
   streaming?: string | null;
 }
 
-/** A machine omp sessions run on. Every machine-local action of a session goes through it. */
+/** A machine pi sessions run on. Every machine-local action of a session goes through it. */
 export interface Host {
   readonly id: string;
   readonly label: string;

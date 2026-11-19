@@ -2,14 +2,14 @@ import { isRecord } from "../type-guards";
 import { HostOpError, type HostUriScheme } from "./link-protocol";
 import { requestKey, type WireFrame } from "./pending-requests";
 
-/** `def`: the tool definition omp was advertised when it made the call. */
+/** `def`: the tool definition pi was advertised when it made the call. */
 type Callback = { frame: WireFrame; lines: string[]; executor: string | null; def?: string };
 type Registration = { tools: Record<string, unknown>[]; schemes: HostUriScheme[] };
 type SharedRequestDeps = {
   members(): string[];
   isUp(id: string): boolean;
   deliver(id: string, lines: string[]): void;
-  /** Sends a daemon-owned `cmd`. `onReply`: omp read it (its successful reply arrived); called before any later output is handled. */
+  /** Sends a daemon-owned `cmd`. `onReply`: pi read it (its successful reply arrived); called before any later output is handled. */
   write(op: string, args: Record<string, unknown>, onReply?: () => void): void;
 };
 
@@ -30,7 +30,7 @@ export class SharedRequests {
   private readonly completed = new Set<string>();
   private readonly registrations = new Map<string, Registration>();
   private lastPrompt: string | null = null;
-  /** Name -> the definition (JSON) last advertised to omp, kept after a removal: a call omp made just before it was
+  /** Name -> the definition (JSON) last advertised to pi, kept after a removal: a call pi made just before it was
    * withdrawn still names that definition. A call goes only to a server registering exactly the one it pinned. */
   private toolDefs = new Map<string, string>();
   private toolUnion = "[]";
@@ -106,7 +106,7 @@ export class SharedRequests {
       for (const tool of registration?.tools ?? []) if (!tools.has(tool.name as string)) tools.set(tool.name as string, tool);
       for (const { scheme, writable } of registration?.schemes ?? []) schemes.set(scheme, (schemes.get(scheme) ?? false) || writable);
     }
-    // omp's output is ordered: a call read before its reply to this union was made under the previous definitions.
+    // pi's output is ordered: a call read before its reply to this union was made under the previous definitions.
     const advertised = [...tools].map(([name, tool]) => [name, JSON.stringify(tool)] as const);
     const confirm = () => { for (const [name, def] of advertised) this.toolDefs.set(name, def); };
     const mergedTools = [...tools.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));

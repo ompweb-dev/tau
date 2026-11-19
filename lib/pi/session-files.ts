@@ -108,7 +108,7 @@ function migrateV1ToV2(header: SessionHeader, entries: MutableEntry[]): void {
     prevId = entry.id;
     if (entry.type === "compaction" && typeof entry.firstKeptEntryIndex === "number") {
       // firstKeptEntryIndex counts within the physical file entries, where the
-      // header occupies index 0 (omp migrates over the combined array).
+      // header occupies index 0 (pi migrates over the combined array).
       const target = entry.firstKeptEntryIndex >= 1 ? entries[entry.firstKeptEntryIndex - 1] : undefined;
       if (target) (entry as CompactionEntry).firstKeptEntryId = target.id;
       delete entry.firstKeptEntryIndex;
@@ -158,8 +158,8 @@ export interface LoadSessionOptions {
 const SESSION_READ_CHUNK_BYTES = 1024 * 1024;
 
 /**
- * Ceiling on the on-disk size tau will materialize into memory. omp streams
- * sessions, so this is not an omp limit — it is the point past which parsing a
+ * Ceiling on the on-disk size tau will materialize into memory. It is not a
+ * pi limit — it is the point past which parsing a
  * session into JS objects (and serializing it into one HTTP response) would OOM
  * the whole server. Refusing loudly beats taking the process down.
  */
@@ -367,7 +367,7 @@ export function buildSessionTree(entries: SessionEntry[]): SessionTreeNode[] {
   return roots;
 }
 
-/** The persisted leaf: the last appended entry (matches omp's loaded-session leaf). */
+/** The persisted leaf: the last appended entry (matches pi's loaded-session leaf). */
 export function getLeafEntryId(entries: SessionEntry[]): string | null {
   return entries.length > 0 ? entries[entries.length - 1].id : null;
 }
@@ -1012,7 +1012,7 @@ export function setSessionTitle(filePath: string, title: string): boolean {
  * Replace a session file's contents through a temp file in the same directory
  * plus renameSync. writeFileSync truncates before writing, so a crash or ENOSPC
  * mid-write would permanently destroy the session; rename is atomic, leaving
- * either the old or the new file. Mirrors omp's own atomic session rewrite.
+ * either the old or the new file.
  */
 export function writeSessionFileAtomicSync(filePath: string, body: string, tag = "rewrite"): void {
   const dir = path.dirname(filePath);
@@ -1033,13 +1033,12 @@ export function writeSessionFileAtomicSync(filePath: string, body: string, tag =
 export interface SessionArchiveRoots {
   /** Override the active sessions root for tests or an injected filesystem. */
   sessionsRoot?: string;
-  /** Override the OMP archive root for tests or an injected filesystem. */
+  /** Override the archive root for tests or an injected filesystem. */
   archiveRoot?: string;
 }
 
 /**
- * Archive one native OMP session using the same layout as `omp gc --archive`:
- * the JSONL is gzip-compressed below `<agent>/archive/sessions`, while its
+ * Archive one session: the JSONL is gzip-compressed below `<agent>/archive/sessions`, while its
  * sibling artifacts directory is moved alongside the compressed file. The
  * source file remains byte-for-byte unchanged until the compressed destination
  * is durably renamed; failures roll back both moves where possible.
@@ -1066,7 +1065,7 @@ export function archiveSessionFileWithArtifacts(filePath: string, roots: Session
   }
 
   const sourceArtifacts = source.slice(0, -".jsonl".length);
-  // OMP's archive convention keeps the `.jsonl` suffix on the artifacts
+  // The archive layout keeps the `.jsonl` suffix on the artifacts
   // directory after appending `.gz` to the session file.
   const destinationArtifacts = destination.slice(0, -".gz".length);
   mkdirSync(path.dirname(destination), { recursive: true });

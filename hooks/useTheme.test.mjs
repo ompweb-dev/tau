@@ -10,8 +10,8 @@ afterEach(cleanup);
 
 test("cycles explicit and system theme preferences", () => {
   assert.equal(nextThemePreference("light"), "dark");
-  assert.equal(nextThemePreference("dark"), "omp");
-  assert.equal(nextThemePreference("omp"), "system");
+  assert.equal(nextThemePreference("dark"), "midnight");
+  assert.equal(nextThemePreference("midnight"), "system");
   assert.equal(nextThemePreference("system"), "light");
 });
 
@@ -21,8 +21,8 @@ test("resolves system theme from the operating system preference", () => {
 });
 
 test("resolves the omp theme independently of the operating system preference", () => {
-  assert.equal(resolveTheme("omp", true), "omp");
-  assert.equal(resolveTheme("omp", false), "omp");
+  assert.equal(resolveTheme("midnight", true), "midnight");
+  assert.equal(resolveTheme("midnight", false), "midnight");
 });
 
 test("correctly classifies light and dark themes", () => {
@@ -54,7 +54,7 @@ test("each theme's browser chrome color is its CSS --bg-panel, the top bar's col
   // flickers the status bar after hydration and sends a stale manifest color.
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   for (const { id, panel } of ALL_THEMES) {
-    const selector = id === "light" ? ":root" : id === "omp" ? "html.omp" : `html.theme-${id}`;
+    const selector = id === "light" ? ":root" : id === "midnight" ? "html.midnight" : `html.theme-${id}`;
     // The first `:root` block holds the self-hosted font variables; take the one that sets --bg-panel.
     const match = css.match(new RegExp(`(^|, )${selector.replace(".", "\\.")} \\{[^}]*--bg-panel:\\s*(#[0-9A-Fa-f]{6})`, "m"));
     assert.equal(match?.[2].toUpperCase(), panel, id);
@@ -127,9 +127,9 @@ test("browser chrome follows the selected theme and only follows OS changes in s
   assertTheme("dark", "#231F1B", true, ["dark", "theme-dark"], "system");
   await changeOS(false);
   assertTheme("light", "#F2F0EA", false, ["theme-light"], "system");
-  await act(() => hook.result.current.setTheme("omp"));
+  await act(() => hook.result.current.setTheme("midnight"));
   await changeOS(true);
-  assertTheme("omp", "#0A0A0C", true, ["omp"]);
+  assertTheme("midnight", "#0A0A0C", true, ["midnight"]);
 
   await act(() => hook.result.current.setTheme("system"));
   assertTheme("dark", "#231F1B", true, ["dark", "theme-dark"], "system");

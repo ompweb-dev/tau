@@ -119,7 +119,7 @@ function inferRemovedWorktree(cwd: string): ProjectInfo | null {
     }
   }
 
-  // 2. Try registered projects from ~/.omp/agent/projects.json
+  // 2. Try registered projects from the agent dir's projects.json
   try {
     const registry = loadProjectRegistry();
     const candidateNormalized = normalizeForComparison(cwd);

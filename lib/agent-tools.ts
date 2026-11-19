@@ -8,8 +8,8 @@ import { GITHUB_TOOL_DEFINITIONS, GITHUB_TOOL_NAMES, executeGithubTool, type Git
 
 /**
  * Server-side agent tools for issue #275: tools an agent running inside
- * tau can call to reach *other* top-level tau sessions. omp's own
- * `task` tool and `write agent://<id>` only work inside one omp process,
+ * tau can call to reach *other* top-level tau sessions. An agent's own
+ * tools only work inside its one pi process,
  * so cross-session work has to be answered by the tau server itself —
  * never by an attached browser tab (the issue's key requirement: these
  * tools keep working with no tab open).
@@ -18,8 +18,8 @@ import { GITHUB_TOOL_DEFINITIONS, GITHUB_TOOL_NAMES, executeGithubTool, type Git
  * the session registry, or the session files. The caller (lib/rpc-manager)
  * supplies those through AgentToolSessionOps, which keeps the validation,
  * gating, attribution and loop-guard logic unit-testable without a live
- * omp child. The only tau surface this module touches is the
- * HostToolDefinition shape omp already understands for set_host_tools.
+ * pi child. The only tau surface this module touches is the
+ * HostToolDefinition shape `set_host_tools` already carries (lib/pi/tau-extension.ts registers it).
  */
 
 /** Tools the server answers itself. Browser-routed tools are unaffected. */
@@ -173,7 +173,7 @@ export interface AgentToolContext {
   guard: AgentToolGuard;
   /** Ask the calling session's user; resolves false when declined or the dialog is dropped. */
   confirm(title: string, payload?: AgentConfirmPayload): Promise<boolean>;
-  /** Aborted by omp's host_tool_cancel for this call; a GitHub write checks it last, before posting. */
+  /** Aborted by this call's host_tool_cancel; a GitHub write checks it last, before posting. */
   signal?: AbortSignal;
 }
 
