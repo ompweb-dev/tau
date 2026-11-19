@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); the behavior remains in tau's `lib/github/`; only product names changed.
+
 # GitHub Workflow Run Watches Implementation Plan
 
 > **For agentic workers:** Use the approved design and the task ownership below. Skip mid-flight build/lint/test/format commands; the integration owner runs verification once after implementation.

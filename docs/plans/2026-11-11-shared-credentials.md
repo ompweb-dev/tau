@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau removed credential sharing and the omp auth broker; every host uses its own pi `auth.json`.
+
 # Shared provider credentials for linked hosts — implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,3 +1,5 @@
+> Superseded: tau removed the browser link (`/api/events/link`); the browser uses SSE only (`/api/events`), with commands and uploads over HTTP (`POST /api/agent/[id]`, `/api/uploads`).
+
 # Browser link: one WebSocket per browser, built like the host link — design
 
 Date: 2026-11-01. Branch: `feat/browser-link` (on `feat/delta-stream`, #361).

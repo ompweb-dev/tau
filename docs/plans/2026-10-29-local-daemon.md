@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau keeps the local daemon as `tau host`; it spawns `pi --mode rpc` instead of omp, and the link restarted at protocol v1.
+
 # Local Daemon Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

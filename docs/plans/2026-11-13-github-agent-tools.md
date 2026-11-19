@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); the GitHub tools remain in tau (`lib/github/`), reached from pi through tau's companion extension instead of omp host tools.
+
 # GitHub Agent Tools Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

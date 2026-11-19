@@ -1,7 +1,7 @@
 # Cluster membership in Settings, and moving a host's projects into the cluster — design
 
 Date: 2026-11-11. Branch: `feat/cluster-membership` (on `feat/shared-credentials` 4e8fbaee, which contains `feat/transparent-host-pool`).
-Builds on: the host pool (`lib/hosts/pools.ts`, README "Transparent host pools"; it has no spec of its own) and `docs/specs/2026-11-10-shared-credentials-design.md`.
+Builds on: the host pool (`lib/hosts/pools.ts`, README "Transparent host pools"; it has no spec of its own) and `docs/specs/2026-11-10-shared-credentials-design.md` (superseded: tau has no credential sharing, so M5 below and its notes are gone; every member uses its own pi logins).
 
 "Cluster" is the name in the interface. The code keeps `pool`: `pools.json`, `HostPool`, `poolId`. Nothing is renamed.
 
@@ -13,7 +13,7 @@ A host that becomes a member keeps its existing projects under its own name in t
 
 Goal:
 
-- There is one cluster. The machine ompweb runs on is its master and always a member. Settings → Hosts says, per linked host, whether it is in the cluster or standalone, and changes it. A MacBook stays standalone while the Proxmox hosts are in the cluster.
+- There is one cluster. The machine tau runs on is its master and always a member. Settings → Hosts says, per linked host, whether it is in the cluster or standalone, and changes it. A MacBook stays standalone while the Proxmox hosts are in the cluster.
 - When a host joins the cluster, its projects become the cluster's. The same repository on several members is one project, and its sessions are listed together.
 
 Not goals:
@@ -30,17 +30,17 @@ Not goals:
 - The cluster is the first pool in `pools.json`. If there is none, the first host that joins creates it, named "Cluster", with this machine as its first member.
 - This machine is always a member. If an existing pool lacks it, it is added the next time a host joins. It cannot leave. Its row in Settings → Hosts shows "Cluster master" and has no control.
 - As a member, this machine takes new sessions like any other member, and its projects move into the cluster by the rules of M3 when the cluster is created or it is added. As today, a member is chosen for a new session only while its daemon reports capacity, which daemons do on Linux only.
-- This machine's folder for the checkouts the cluster creates (`projectsRoot`) is `<home>/ompweb-cluster`. It is not asked for.
+- This machine's folder for the checkouts the cluster creates (`projectsRoot`) is `<home>/tau-cluster`. It is not asked for.
 
 ### M2. The control
 
 - Each linked host's row gets a switch: **In the cluster**.
 - Turning it on opens a confirmation with one field and two notes:
-  - the folder on that host where the cluster keeps the checkouts it creates, prefilled with `<host home>/ompweb-cluster`;
+  - the folder on that host where the cluster keeps the checkouts it creates, prefilled with `<host home>/tau-cluster`;
   - what happens to the host's projects (M3);
-  - the credential note of M5.
+  - the credential note of M5 (not in tau).
 - Turning it off asks for confirmation and says what M6 does.
-- A host can join only while it is online, its daemon speaks link protocol 9 or newer, it answers the `gitOrigins` operation (M3) and its omp is 15.13.1 or newer, the first that takes shared credentials (M5). Otherwise the switch is disabled and says which is missing: an old or unknown omp asks to update omp on that host, once its daemon is current. The same hold for this machine's own daemon when the cluster is created; if one is missing, the join is refused and says to restart the host service on this machine, or to update its omp.
+- A host can join only while it is online (`clusterJoinBlock`, `lib/hosts/cluster.ts`); every tau daemon speaks link protocol v1, which has the `gitOrigins` operation (M3). Otherwise the switch is disabled and names the host's status.
 
 ### M3. Joining moves the host's projects
 
@@ -63,6 +63,8 @@ Two origins are the same repository when they are equal after: lower-casing the 
 The project keeps the origin it was first registered with. The preparation check on a member accepts the checkout's origin when it is exactly that text, and otherwise compares it by the same rule (some origins Git accepts have no key, such as an IPv6 SSH host). It still requires exactly one `origin` URL.
 
 ### M5. Members use the master's provider logins
+
+> Removed in tau: there is no credential sharing; a member runs pi with its own logins.
 
 - A member other than this machine always runs its sessions with this machine's provider logins, whatever its own "Use this server's provider logins" setting says. Any member can be chosen for a new session, so all of them need the same logins.
 - This is computed from membership, not stored: leaving the cluster brings the host's own setting back.
@@ -89,7 +91,7 @@ The project keeps the origin it was first registered with. The preparation check
 
 | Case | Result |
 |---|---|
-| Host offline, daemon older than protocol 9, no `gitOrigins`, or omp older than 15.13.1 or unknown (the host's, or this machine's when it is being added) | The switch is disabled; the request answers 409 with the reason |
+| Host not online | The switch is disabled; the request answers 409 with the reason |
 | `gitOrigins` fails or times out | Nothing saved; the error is shown |
 | Folder not an absolute path | 400 |
 | `pools.json` unreadable | 503, as the other cluster requests answer today |
@@ -100,7 +102,6 @@ The project keeps the origin it was first registered with. The preparation check
 - M1: the cluster created on the first join with this machine in it; this machine added to an existing pool that lacks it; this machine refused as a leaver.
 - M4: the forms that must match and the ones that must not (different host, different path, path differing only in case).
 - The join and leave requests: each row of "Errors", and one write per request.
-- M5: a member is treated as sharing with its own setting off; this machine is not; unreadable `pools.json` refuses.
 - Sidebar grouping: a member's pinned projects fall in the cluster's group with the node's name; a standalone host keeps its group; no cluster, no change.
 - The Settings switch: disabled states, the two confirmations, the master's row.
 - Live, with the user: the Proxmox hosts joined one by one, the MacBook left standalone.

@@ -1,36 +1,37 @@
-# ompweb 里的 Worktree
+# tau 里的 Worktree
 
-ompweb 会把同一个 Git 项目的 main checkout 和 linked worktree 放在同一个项目下。你可以用它在不同分支之间切换工作目录，同时保留统一的会话列表。
+tau 会把同一个 Git 项目的 main checkout 和 linked worktree 放在同一个项目下。你可以用它在不同分支之间切换工作目录，同时保留统一的会话列表。worktree 在本机和已链接的主机上用法相同：Git 运行在拥有该项目的机器上。
 
-## 什么时候会看到 Worktree 控件
+## Worktree 控件在哪里
 
-当左上角选择的是 Git 仓库根目录时，项目选择器下面会出现 worktree 切换控件。
+- 文件面板的 **工作树**（Worktrees）标签页列出当前仓库的所有 worktree，可以切换、新建和删除。
+- 当所选工作区有两个或以上 worktree 时，新建会话界面会显示一个 worktree 选择器，它只用于切换。
 
-以下情况不会显示：
+只有当所选工作区是 Git 仓库根目录时，这些控件才可用。否则工作树标签页只显示一行提示，例如：
 
 - 当前目录不是 Git 仓库。
 - 当前目录在某个 Git 仓库里面，但不是仓库根目录。
 - Git 无法读取这个仓库的 worktree 列表。
 
-如果你在仓库子目录里，先从项目选择器打开仓库根目录，再管理 worktree。
+如果你在仓库子目录里，先把仓库根目录作为工作区打开，再管理 worktree。
 
 ## 切换 Worktree 会影响什么
 
-worktree 切换器决定 ompweb 接下来使用哪个 checkout。
+切换决定 tau 接下来在这个项目里使用哪个 checkout。
 
 它会影响：
 
-- 从侧边栏新建的会话。
-- 左侧 Explorer 浏览的文件。
+- 为这个项目新建的会话。
+- Explorer 浏览的文件。
 - 从 Explorer 插入到输入框里的文件路径。
 
-已有会话仍然按同一个 project root 分组。点击一个已有会话时，侧边栏会回到这个会话原本所在的 checkout。
+它不会移动已打开的会话。已有会话仍然按同一个 project root 分组；打开一个已有会话时，有效工作目录会回到这个会话原本所在的 checkout。
 
 ## 新建 Worktree
 
-在 worktree 菜单里选择 `New worktree...`，输入 branch name。
+在工作树标签页里选择 `新建工作树…`，输入 branch name。
 
-ompweb 会把 checkout 放在：
+tau 会把 checkout 放在：
 
 ```text
 <repo>-worktrees/<branch>
@@ -48,7 +49,7 @@ ompweb 会把 checkout 放在：
 /Users/alex/Documents/Workspace/my-project-worktrees/codex-worktree-help
 ```
 
-如果这个 branch 已存在，ompweb 会为它添加 worktree。如果 branch 不存在，ompweb 会从当前 `HEAD` 创建这个 branch。
+如果这个 branch 已存在，tau 会为它添加 worktree。如果 branch 不存在，tau 会从当前 `HEAD` 创建这个 branch。
 
 ## 删除 Worktree
 
@@ -57,14 +58,14 @@ ompweb 会把 checkout 放在：
 删除 worktree 不会删除：
 
 - Git branch。
-- ompweb 的历史会话。
+- tau 的历史会话。
 - main checkout。
 
-如果 worktree 里有未提交或未跟踪文件，Git 会拒绝删除。ompweb 会再显示 force remove。force remove 会丢弃这个 checkout 里的未提交文件，只在确定不需要这些改动时使用。
+如果 worktree 里有未提交或未跟踪文件，Git 会拒绝删除。tau 会再显示 force remove。force remove 会丢弃这个 checkout 里的未提交文件，只在确定不需要这些改动时使用。
 
 ## 会话和 Worktree 的关系
 
-ompweb 按 project root 分组会话，所以 main checkout 和 linked worktree 里的会话会显示在一起。
+tau 按 project root 分组会话，所以 main checkout 和 linked worktree 里的会话会显示在一起。
 
 但每个会话仍然记得自己创建时的 working directory：
 
@@ -74,14 +75,14 @@ ompweb 按 project root 分组会话，所以 main checkout 和 linked worktree 
 
 ## 常见问题
 
-**为什么我看不到 worktree 切换器？**
-请确认当前选择的是 Git 仓库根目录。非 Git 目录和仓库子目录会显示一行轻提示，而不是切换器。
+**为什么我看不到任何 worktree？**
+请确认当前工作区是 Git 仓库根目录。非 Git 目录和仓库子目录会在工作树标签页显示一行提示，而不是列表。
 
 **为什么某个 branch 不能创建 worktree？**
 Git 不允许同一个 branch 同时被多个 worktree checkout。你可以切到已有的 worktree，或者先删除那个 checkout。
 
 **Git 里还有已经消失的 worktree 记录怎么办？**
-Git 有时会保留 prunable worktree 记录。ompweb 会过滤这些记录，不在切换器里显示。
+Git 有时会保留 prunable worktree 记录。tau 会过滤这些记录，不在列表里显示。
 
 **Explorer 和当前聊天看起来不在同一个分支？**
-Explorer 跟随当前选择的 worktree；聊天跟随打开的会话。重新点击会话，可以把侧边栏切回这个会话所在的 checkout。
+Explorer 跟随当前选择的 worktree；聊天跟随打开的会话。重新点击会话，可以把有效工作目录切回这个会话所在的 checkout。

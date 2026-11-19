@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau mirrors pi's configuration (`settings.json`, `models.json`, `mcp.json`, context files, skills) instead of omp's `config.yml` and plugins.
+
 # Cluster configuration — implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -3,7 +3,7 @@
 ## Goal
 
 Notification state survives page reloads and server restarts, and is shared by
-every device and every omp-web instance that uses the same agent directory:
+every device and every tau instance that uses the same agent directory:
 
 - the Notifications tab history and each entry's read state, which today live
   only in the memory of one browser tab;
@@ -11,10 +11,10 @@ every device and every omp-web instance that uses the same agent directory:
   instances can overwrite concurrently (the documented lost-update race in
   `lib/notification-hub.ts`).
 
-Users keep configuring one thing: omp-web's data directory
-(`<agent dir>/omp-web/`, moved with `PI_CODING_AGENT_DIR`). How notification
+Users keep configuring one thing: tau's data directory
+(`<agent dir>/tau/`, moved with `PI_CODING_AGENT_DIR`). How notification
 data is stored inside it is an implementation detail; user-facing docs say
-"omp-web's data directory" and never name the file.
+"tau's data directory" and never name the file.
 
 ## Prerequisite
 
@@ -30,7 +30,7 @@ scope.
 The only module that touches the database. It is imported from server code
 only, so `node:sqlite` never reaches a client bundle.
 
-- One SQLite database in omp-web's data directory, created with mode 0600 (it
+- One SQLite database in tau's data directory, created with mode 0600 (it
   holds the VAPID private key). Opened once per process and cached on
   `globalThis` keyed by its path (survives Next.js hot reload; a changed
   `PI_CODING_AGENT_DIR` opens the new location), with `journal_mode=WAL` and
@@ -68,7 +68,7 @@ directory, import its VAPID keys and valid devices with the existing JSON
 parsing rules. After the commit, delete the JSON file (a missing file is not an
 error, so two instances migrating at once are harmless). Keeping the VAPID keys
 is required: new keys would invalidate every existing push subscription. An
-unreadable JSON file is left in place and logged; omp-web then starts with
+unreadable JSON file is left in place and logged; tau then starts with
 fresh keys, as it does today for a corrupt file.
 
 ## Recording
@@ -138,7 +138,7 @@ out of the generic toast primitive into a notification-specific client store.
 - `AGENTS.md`: the notification storage paragraph and file map
   (`lib/notification-store.ts`, `app/api/notifications/history`); the
   NotificationCenter description says the history is persisted.
-- `README.md`: describe the device list and history as stored in omp-web's
+- `README.md`: describe the device list and history as stored in tau's
   data directory, without naming the file.
 - `docs/specs/2026-10-06-notifications-design.md`: point its storage section to
   this spec.
@@ -156,7 +156,7 @@ temp `PI_CODING_AGENT_DIR`).
   an existing database is not overwritten by a leftover JSON file; a corrupt
   JSON file is left in place.
 - Persistence: a second store instance opened on the same directory sees the
-  first one's writes (stands in for a restart and for a second omp-web).
+  first one's writes (stands in for a restart and for a second tau).
 - Route: `GET`/`PATCH`/`DELETE` behavior and 400 on invalid ids.
 - Existing tests that write `notifications.json` directly
   (`notification-hub.test.mjs`, `rpc-manager.test.mjs`) move to the store API.

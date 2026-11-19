@@ -1,17 +1,18 @@
-# Remote hosts: run omp sessions on other machines from one omp-web
+# Remote hosts: run pi sessions on other machines from one tau
+
+> Updated for tau: the daemon spawns `pi --mode rpc` (with `lib/pi/tau-extension.ts`) and the link restarted at protocol v1 ("Protocol versions and compatibility" below is current). Message tables and per-version notes elsewhere in this spec keep ompweb-era names where not yet rewritten: there is no `spawn` op (`open` replaced it), no `advisor`, the hello reports `piVersion`, host updates use the maintenance API with target `tau` only, and pi itself is updated by the user, not by tau.
 
 ## Goal
 
-One omp-web drives omp sessions on several machines. Examples: work that must
+One tau drives pi sessions on several machines. Examples: work that must
 run on a MacBook (its hardware, its files), or load spread over machines
 without agents using SSH between them. An agent in one session can also start a
 session on another machine.
 
-Each machine keeps its own omp install, agent directory (`~/.omp/agent`),
-sessions and credentials, except that a host with credential sharing turned on
-uses the web server's provider logins
-(`docs/specs/2026-11-10-shared-credentials-design.md`). Nothing else is shared
-between machines; omp-web only routes.
+Each machine keeps its own pi install, agent directory (`~/.pi/agent`),
+sessions and credentials. Cluster members additionally receive the master's pi
+configuration, never its credentials
+(`docs/specs/2026-11-11-cluster-configuration-design.md`); tau only routes.
 
 ## Delivery
 
@@ -21,8 +22,8 @@ with its own spec, plan and PR, merged to `main` when ready:
 1. **Sessions (this spec, the MVP).** Daemon, link, host registry, routing,
    session list and history, live chat, notifications, starting sessions.
 2. **Files, git and worktrees** on remote hosts.
-3. **Config surfaces:** skills, plugins, MCP, `models.yml`, auth/login, usage,
-   `omp update`, STT gateway.
+3. **Config surfaces:** skills, packages, MCP, `models.json`, auth/login, usage,
+   STT gateway.
 
 The `Host` interface and the host-op channel defined here serve all three:
 sub-projects 2 and 3 add ops, not new message shapes. Until a sub-project
@@ -39,44 +40,44 @@ are this machine's own, mirrored to each member by its daemon
 - Correlating the same repository across hosts (merged "group by project"
   sidebar mode); planned for a later version, see Sidebar.
 - Moving or syncing sessions between hosts.
-- A higher-level session API on the daemon. omp's RPC is the protocol; the
+- A higher-level session API on the daemon. pi's RPC is the protocol; the
   daemon passes it through unchanged.
-- Changes to omp. omp has no remote mode (`omp --help`: `rpc`/`rpc-ui`/`acp`
+- Changes to pi. pi has no remote mode (`pi --help`: `rpc`/`rpc-ui`/`acp`
   over stdio only), and none is needed.
 
 ## Architecture
 
 ```
-Browser ─▶ main omp-web ──┬─ LocalHost ── spawn omp --mode rpc-ui (stdio)
+Browser ─▶ main tau ──┬─ LocalHost ── spawn pi --mode rpc (stdio)
                           │
-                          └─ RemoteHost ◀── link (WebSocket) ── ompweb host (daemon)
-                                                               └─ spawn omp --mode rpc-ui
+                          └─ RemoteHost ◀── link (WebSocket) ── tau host (daemon)
+                                                               └─ spawn pi --mode rpc
 ```
 
-### Daemon: `ompweb host`
+### Daemon: `tau host`
 
-A subcommand of the existing `@kahme247/ompweb` package (`bin/omp-web.js`), so
-it runs omp-web's own `lib/` server code on the remote machine.
+A subcommand of the `@ompweb-dev/tau` package (`bin/tau.js`), so
+it runs tau's own `lib/` server code on the remote machine.
 
-- `ompweb host login --url <url>` reads the host token from stdin and saves
-  `<agent dir>/omp-web/host.json` (mode 0600). The token is never an argv
+- `tau host login --url <url>` reads the host token from stdin and saves
+  `<agent dir>/tau/host.json` (mode 0600). The token is never an argv
   value, which `ps` would expose.
-- `ompweb host` dials the saved URL and keeps the link up, reconnecting with
+- `tau host` dials the saved URL and keeps the link up, reconnecting with
   exponential backoff (1 s doubling to 60 s, with jitter).
 - `https://` is required. `http://` is accepted only for loopback addresses or
   with `--allow-http` (for example on a tailnet).
-- It spawns `omp --mode rpc-ui` children on request and forwards their NDJSON
+- It spawns `pi --mode rpc` children on request and forwards their NDJSON
   both ways unchanged, tagged with a channel id.
 - It answers host ops (below) by calling the existing `lib/` functions.
   There is no generic exec or file-read op. It loads that code with `jiti`,
   already a runtime dependency used by `bin/` to load `lib/*.ts`.
-- omp children outlive a dropped link; their output is buffered (see Link).
-- Auto-resume stays with the main omp-web, which already knows which sessions
+- pi children outlive a dropped link; their output is buffered (see Link).
+- Auto-resume stays with the main tau, which already knows which sessions
   are mid-run. Its interrupted-session list records each session's `hostId`;
   remote entries are resumed once their host links again (see Rules →
   Reattach).
 
-### Host hub (main omp-web)
+### Host hub (main tau)
 
 `lib/hosts/hub.ts` accepts daemon links on `/api/hosts/link` and keeps a
 `globalThis` registry `hostId → link`, the same pattern as `lib/rpc-manager.ts`
@@ -84,9 +85,9 @@ it runs omp-web's own `lib/` server code on the remote machine.
 
 ### `Host` interface
 
-`lib/hosts/host.ts` defines the one seam between omp-web and a machine:
+`lib/hosts/host.ts` defines the one seam between tau and a machine:
 
-- `spawnRpc(request) → { transport, cwd, fellBack, launchAdvisor }`: the host
+- `spawnRpc(request) → { transport, cwd, fellBack, joined?, pending?, streaming? }`: the host
   computes the spawn cwd fallback, project launch config, environment
   overrides and arguments on its own machine; `transport` is what `RpcProcess`
   writes to and reads from.
@@ -94,7 +95,7 @@ it runs omp-web's own `lib/` server code on the remote machine.
   `autoApproveExtension()`: the remaining machine-local reads
   `AgentSessionWrapper` does today.
 - `sessionOps`: the session-file operations (see Host ops).
-- `status`: `online | offline | needs-upgrade | omp-missing`.
+- `status`: `online | offline | needs-upgrade | pi-missing`.
 
 Two implementations:
 
@@ -102,46 +103,45 @@ Two implementations:
   `child_process.spawn` and direct `fs`.
 - `RemoteHost`: the same calls over the link.
 
-`RpcProcess` (`lib/omp/rpc-process.ts`) takes its transport from the host
+`RpcProcess` (`lib/pi/rpc-process.ts`) takes its transport from the host
 instead of spawning itself. `AgentSessionWrapper`, the event-stream hub,
 notifications, the queue and `/btw` are unchanged: they see frames, wherever
 the process runs.
 
 ### Host registry
 
-`<agent dir>/omp-web/hosts.json`, mode 0600, written atomically (temp file +
+`<agent dir>/tau/hosts.json`, mode 0600, written atomically (temp file +
 rename, like `lib/project-registry.ts`). Each record: `id`, `label`,
 `tokenHash` (`sha256` hex), `createdAt`, `lastSeenAt`,
 `allowAgentStart` (bool, default `false`). The built-in `local` host is not
 stored.
 
-Settings → Hosts lists hosts with status, omp version and last seen; adds a
-host (shows the token once, with the `ompweb host login` command to run);
+Settings → Hosts lists hosts with status, pi version and last seen; adds a
+host (shows the token once, with the `tau host login` command to run);
 renames; revokes; toggles `allowAgentStart`.
 
 #### Per-host software updates
 
-Every row, including **This machine**, shows the daemon's ompweb version and
-the OMP runtime version, checks for available updates and exposes update actions.
+Every row, including **This machine**, shows the daemon's tau version and
+the pi runtime version, checks for available updates and exposes update actions.
 **System & Updates** is renamed **System** and keeps the web server's controls.
 Host checks and installations use `checkUpdates` and `updateSoftware` host ops;
 `GET /api/hosts/[id]/updates?force=1` refreshes the check, and a POST with
-`{target: "ompweb" | "omp", version}` requests installation of that exact candidate.
+`{target: "tau", version}` requests installation of that exact candidate.
 No browser-supplied command, installation path, URL or protocol range is accepted.
 
 The hub supplies its supported link-protocol range. Both the hub and daemon
-block an ompweb candidate outside that range, or whose protocol cannot be
+block an tau candidate outside that range, or whose protocol cannot be
 verified, before installation. Availability and the blocking reason remain
-visible; the user updates the web server first. OMP does not change the link
+visible; the user updates the web server first. pi does not change the link
 protocol and is never blocked for this reason.
 
 Daemon updates require no session processes on that host, including subagents.
 New spawns are refused while an update is running. The host-only helper stages
 the installation and restarts only that daemon, retaining a backup for rollback.
 The UI follows durable operation state after reconnect rather than treating an
-accepted POST as success. Runtime updates use `omp update` on that host and do
-not force-restart existing sessions. Older daemons answer `unknown_op` and show
-an explicit update-support error instead of running anything on the web server.
+accepted POST as success. tau does not update pi; the row shows the host's pi
+version only.
 
 The helper keeps the newest rollback backup and its identifying metadata, pruning
 older backups, failed/staging releases and copied runtimes after completion or at
@@ -160,7 +160,7 @@ from an interactive shell.
 
 Only the detached helper restarts the daemon after stopping it. A helper killed
 between the stop and a healthy acknowledgement leaves the host offline and the
-installation either the old release or the candidate (with `.ompweb-backup-<id>`
+installation either the old release or the candidate (with `.tau-backup-<id>`
 beside it); recovery is manual, as the README describes. Automatic recovery
 would need a supervisor that outlives the helper on every platform; there is
 none on unmanaged macOS and Windows hosts, so none was added.
@@ -195,7 +195,7 @@ under `next start`, which cannot accept upgrades; those legs are gone.
 - **Auth before the upgrade.** `proxy.ts` reports the route as ungated; the
   route checks the bearer token before `server.upgrade`: 401 when no host
   record matches, 503 when the host registry cannot be read (a daemon that sees
-  401 stops its omp children; it retries any 5xx) and 503 while the server is
+  401 stops its pi children; it retries any 5xx) and 503 while the server is
   shutting down. An authenticated request that is not an upgrade gets 426. The
   token is checked once per socket; revoking a host closes its socket (1000),
   and the daemon's redial is refused 401.
@@ -216,7 +216,7 @@ it is the first line of every daemon → main frame (`ack` = highest downlink
 highest uplink `seq` it applied). The `hello` carries `ack` too. Each side keeps
 unacknowledged messages, resends them after a reconnect, and drops any `seq` it
 already applied, so no line is lost or applied twice when the socket breaks
-mid-write. stdin lines omp has not received would otherwise vanish.
+mid-write. stdin lines pi has not received would otherwise vanish.
 
 **Pieces and fair sending (v5;** websocket-link design D7**).** A sequenced line
 longer than `LINK_LIMITS.pieceBytes` (256 KiB) goes as `part {at, end, data}`
@@ -266,10 +266,10 @@ messages go again after the redial.
 
 | Message | Direction | Purpose |
 |---|---|---|
-| `hello {v, ompVersion, platform, home, autoApproveExtension, ack, channels[{ch, sessionId, cwd, pending}]}` | up | Handshake; `channels` lists live omp children from before a reconnect. `ompVersion` is `null` when `omp` is not found. |
+| `hello {v, piVersion, platform, home, autoApproveExtension, ack, channels[{ch, sessionId, cwd, pending}]}` | up | Handshake; `channels` lists live pi children from before a reconnect. `ompVersion` is `null` when `pi` is not found. |
 | `welcome {v, hostId}` | down | Accepted. |
-| `stdin {ch, line}` | down | One raw omp NDJSON line. |
-| `stdout {ch, line}` | up | One raw omp NDJSON line. |
+| `stdin {ch, line}` | down | One raw pi NDJSON line. |
+| `stdout {ch, line}` | up | One raw pi NDJSON line. |
 | `stderr {ch, chunk}` | up | Child stderr, for the existing logging. |
 | `kill {ch, force}` | down | Stop a child: `force: false` terminates its process tree, `true` kills it. |
 | `exit {ch, code, signal}` | up | Child exited. |
@@ -305,31 +305,21 @@ that upload's file.
 
 ### Rules
 
-- **Version.** `v` is an integer, bumped on any incompatible change (2: the
-  hello moved from the GET header into a POST body; 3: the hello carries
-  `autoApproveExtension` and each channel its `cwd` and `pending`; 4: the link
-  is one WebSocket, `ack` is a message and `replaced` and `welcome.nonce` are
-  gone; 5: lines over 256 KiB go as `part`s and large results as several binary
-  frames, sent fair across channels; 6: composer uploads, with binary down
-  frames, `upload_ack` and the `uploadStart`/`uploadAbort`/`uploadAttach`
-  ops; 9: `open.launch.shareCredentials`; 10: `open.launch.configVersion`,
-  `config_state`, the `clusterConfig` op; 11: channel lines are the omp
-  runner's `{t}` frames, not omp RPC frames). Main links daemons from
-  `MIN_LINK_PROTOCOL_VERSION` (12) up to its own `LINK_PROTOCOL_VERSION` (12).
-  A v10 or v11 daemon is welcomed with its own version by an upgrade-only shim,
-  outside that application range. The shim only sends `checkUpdates` and
-  `updateSoftware`; it acknowledges and discards application activity, never
-  adopts or kills sessions, and never starts cluster configuration synchronization.
-  All other incompatible versions get close 4426 with `{"serverVersion":12}`.
-  New daemons retain their separate maintenance API connection while an
-  application mismatch is retried. Old daemons may exit on rejection; an
-  already-exited daemon needs starting once.
+- **Version.** `v` is an integer, bumped on any incompatible change. tau's
+  link starts at 1 (`LINK_PROTOCOL_VERSION`), which already holds everything
+  ompweb's links grew to (one WebSocket, `ack` as a message, `part`s and
+  multi-frame results, composer uploads, `open`, `config_state` and the
+  `clusterConfig` op), with pi RPC frames as channel lines. Main links daemons
+  from `MIN_LINK_PROTOCOL_VERSION` (1) up to its own `LINK_PROTOCOL_VERSION`
+  (1); any other version gets close 4426 with `{"serverVersion":1}`. There is
+  no upgrade shim for older daemons. New daemons retain their separate
+  maintenance API connection while an application mismatch is retried.
 - **Identity.** The host is the record whose `tokenHash` matches. Nothing the
   daemon sends selects or changes its identity.
 - **One link per host.** A hello on a new socket with the same token closes the
   old socket with 4409 (the old daemon exits). A revoked host is refused at the
   upgrade (401) and, if its socket was already open, at the hello (close 1000).
-  Two daemons must never run competing `omp --resume` children against one
+  Two daemons must never run competing `pi --resume` children against one
   agent directory.
 - **Buffering.** While the uplink is down, the daemon buffers each child's
   output up to 32 MB per channel, so one image prompt's two echoes
@@ -371,14 +361,15 @@ that upload's file.
 
 ### Protocol versions and compatibility
 
-Protocol v7 extends this original design with several web servers sharing one
-daemon and host-owned lifecycle. Its authoritative contracts, including `open`,
-`close`, `interest`, `channels_changed` and recovery, are in
-`2026-11-06-multi-server-host-design.md`. v11 dropped v4–v10: their channel
-lines are omp RPC frames, which the runner-based daemon and server no longer
-speak, so every link is shared and host-owned (exclusive legacy channels and
-the `spawn` op are gone).
-
+tau restarted the application link at **v1** (`LINK_PROTOCOL_VERSION` and
+`MIN_LINK_PROTOCOL_VERSION` are both 1, `lib/hosts/link-protocol.ts`). v1
+contains everything ompweb's links grew up to its v10, with pi's RPC frames as
+channel lines: pieces and fair sending
+(`2026-10-31-websocket-link-design.md`), uploads, several web servers sharing one
+daemon with host-owned lifecycle (`open`, `close`, `interest`,
+`channels_changed`, recovery: `2026-11-06-multi-server-host-design.md`),
+capacity reports and cluster configuration (`config_state`, `clusterConfig`).
+No ompweb daemon links to tau; there are no legacy channels and no `spawn` op.
 
 - **A released version changes only compatibly.** Compatible means both: every
   message the newer side can send is valid for an older receiver, and every
@@ -401,75 +392,45 @@ the `spawn` op are gone).
     each time (at most 16 per link). An unknown host op in a `req` is answered `res {ok: false, error:
     {status: 501, code: "unknown_op"}}`, which main surfaces as a 501
     `HostOpError` so callers can fall back. A sender must not rely on a newer
-    message being understood unless the version (or, later, a capability) says
-    so. Tolerance starts with v3: a daemon older than that is strict (an
-    unknown type or op makes it refuse the line).
+    message being understood unless the version (or a capability) says so.
+- **Main keeps at least N-1** once a version after v1 exists; dropping one is an
+  explicit decision. A hello outside `[MIN, LINK]` gets close 4426 with
+  `{"serverVersion":N}`; a daemon newer than its server logs "this host's tau is
+  newer than the server's: update tau on the server" and exits 1. Update the
+  server first, then its hosts.
 - **Application compatibility is separate from maintenance compatibility.**
   Dropping an application version raises `MIN_LINK_PROTOCOL_VERSION` without
-  dropping maintenance API v1. The current application range is 12–12.
-  Legacy v10/v11 are admitted by the update shim, not the session runtime.
+  dropping maintenance API v1.
 - **Upgrade order is a coordinated plan, not a server-only cutover.** The GUI
   verifies the candidate server's minimum and maximum application protocols,
   inventories every registered host and identifies required migrations. An
-  incompatible host without a verified update/recovery path blocks the server
-  cutover. Compatible independent hosts keep their sessions. A shared local
-  installation is replaced by one worker that owns both process transitions.
+  incompatible host without a verified update path blocks the server cutover.
+  Compatible independent hosts keep their sessions. A shared local installation
+  is replaced by one worker that owns both process transitions.
 - **Force is explicit, scoped approval.** The confirmation names the plan and
-  separately authorizes session termination. Modern maintenance updates may waive
+  separately authorizes session termination. Maintenance updates may waive
   activity only; release integrity, install ownership, process identity, update
   disablement, local maintenance drains and supervisor permissions remain enforced.
-- **Legacy recovery is an execution adapter, not an application adapter.** A
-  confirmed recovery may open one operation-bound legacy channel and send only
-  fixed bootstrap commands through the historical RPC/runner `bash` envelopes.
-  Ordinary sessions, workspace operations and application forwarding remain
-  rejected. The helper is pinned to the new server's exact published build,
-  verifies release digests and preflight, escapes the old process tree/supervisor,
-  and persists an operation receipt. Windows uses native PowerShell/.NET; shell
-  output never proves completion. A broken legacy runner fails visibly.
-- **v4 (the WebSocket link) dropped v3** before any release; from the next
-  version on, main keeps N-1. A v3 daemon POSTs its hello to
-  `/api/hosts/link`; main answers that POST 426 with both versions (and never
-  links it), so the old daemon logs "update ompweb on this host" and exits 1.
-  A v4 daemon dialing an older server gets an upgrade refusal and keeps
-  redialing (backoff up to 60 s) with a hint, so it links once the server is
-  updated. Update the server first, then its hosts.
-- **v5 (pieces) keeps v4.** A v5 server links a v4 daemon as before (`welcome
-  {v: 4}`, whole lines, its one-frame results joined like pieces). A v5 daemon
-  dialing a v4 server gets close 4426 with `{"serverVersion":4}`, logs "this
-  host's ompweb is newer than the server's: update ompweb on the server" and
-  exits 1; update the server first.
-- **v6 (uploads) keeps v4 and v5.** A v6 server links v4 and v5 daemons as
-  before and sends them no upload frames: an upload to such a host gets 426
-  (`host_upgrade_required` on a remote host; `host_restart_required` on this
-  machine, whose daemon an in-place upgrade leaves running because v4/v5 is
-  inside `[MIN, LINK]`). A v6 daemon dialing a v5 server gets close 4426 with
-  `{"serverVersion":5}`, logs "this host's ompweb is newer than the server's:
-  update ompweb on the server" and exits 1; update the server first.
-- **v11 (omp runner) drops v4–v10.** The meaning of a channel line changed
-  (runner `{t}` frames instead of omp RPC frames), so no older peer can share
-  a channel; both sides refuse one with 426 / close 4426 instead of hanging.
-  Prerelease builds already shipped v10 with omp RPC frames, so the runner could
-  not reuse 10.
-- **Maintenance API v1 is a separate, stable contract.** New daemons discover
-  `/api/hosts/maintenance` with the same bearer token, then open a separate
-  WebSocket. Its `hello`/`welcome` negotiate `apiVersion: 1` independently of the
-  advisory `protocolVersion`. Its codec and transport do not import the
-  application protocol. A protocol mismatch cannot terminate this connection.
-  Requests have bounded IDs and explicit replies. A lost update response is
-  reconciled with its durable operation ID; ordinary requests are never silently
-  replayed. Explicit force may interrupt activity, but not bypass the daemon's
-  integrity and process-ownership checks. A candidate awaiting a server cutover
-  acknowledges through an operation-bound preflight nonce and expected process
-  identity, not a bare maintenance connection.
-  - `status`: software/API/protocol versions, capabilities, workspace-operation
-    availability, session-process inventory and activity, drained/busy state and
-    the durable update operation.
+- **Maintenance API v1 is a separate, stable contract** (`lib/hosts/maintenance-protocol.ts`).
+  Daemons open a second WebSocket to `/api/hosts/maintenance` with the same
+  bearer token. Its `hello`/`welcome` negotiate `apiVersion: 1` independently of
+  the advisory `protocolVersion`; an `apiVersion` mismatch closes 4426. Its codec
+  and transport do not import the application protocol, so a protocol mismatch
+  cannot terminate this connection. Requests have bounded IDs and explicit
+  replies. A lost update response is reconciled with its durable operation ID;
+  ordinary requests are never silently replayed. Explicit force may interrupt
+  activity, but not bypass the daemon's integrity and process-ownership checks. A
+  candidate awaiting a server cutover acknowledges through an operation-bound
+  preflight nonce and expected process identity, not a bare maintenance connection.
+  - `status`: software/API/protocol versions (`tauVersion`, `piVersion`),
+    capabilities, workspace-operation availability, session-process inventory
+    and activity, drained/busy state and the durable update operation.
   - `listSessions`: session metadata, including `processRunning` and `active`;
     no transcript or application frame decoding.
   - `checkUpdates` and `updateSoftware`: the native updater and its safeguards.
+    Host software updates go only through this API.
   - The web-authenticated `GET /api/hosts/[id]/maintenance` exposes status;
-    `?sessions=1` exposes inventory. Existing host update routes prefer API v1
-    when available, otherwise use the legacy shim.
+    `?sessions=1` exposes inventory.
   - Revoke and shutdown close both connections. API v1 remains supported across
     future application-protocol changes; incompatible maintenance changes need
     a separately negotiated API version.
@@ -485,7 +446,7 @@ parts of those routes stay on main.
 | Op | Moved from |
 |---|---|
 | `listSessions` | `listAllSessions()` (`lib/session-reader.ts`) |
-| `listSessionIdsForRestore` | Restore-only complete ID inventory (`lib/omp/session-files.ts`): uncached one-level walk and strict bounded header reads. Access/I/O failures, disappearance of an already-enumerated project, relevant symlinks and session replacement during open reject rather than omit sessions; only an initially absent root is empty. Malformed result entries reject the entire answer. Compatible addition: old daemons answer 501, and restore fails closed with 503 until those daemons update/restart; ordinary browsing still uses the unchanged best-effort `listSessions` |
+| `listSessionIdsForRestore` | Restore-only complete ID inventory (`lib/pi/session-files.ts`): uncached one-level walk and strict bounded header reads. Access/I/O failures, disappearance of an already-enumerated project, relevant symlinks and session replacement during open reject rather than omit sessions; only an initially absent root is empty. Malformed result entries reject the entire answer. Compatible addition: old daemons answer 501, and restore fails closed with 503 until those daemons update/restart; ordinary browsing still uses the unchanged best-effort `listSessions` |
 | `readSession {id, options}` | `GET /api/sessions/[id]` |
 | `readContext {id, leafId, options}` | `GET /api/sessions/[id]/context` |
 | `readThinking {id, entryId, block}` | `GET /api/sessions/[id]/entries/[entryId]/thinking` |
@@ -520,7 +481,7 @@ A timeout (or a link lost after the op was sent) does not stop the daemon: the o
   transport (`host.spawnRpc`); everything above `RpcProcess` is unchanged.
 - **Images.** On a local miss, `/api/media/<hash>` asks each online remote
   host for `readMedia {hash}`, accepts the first answer whose sha256 equals
-  the hash, and stores it in the main omp-web's media directory, so later
+  the hash, and stores it in the main tau's media directory, so later
   requests are local. No host id rides in image URLs.
 - **Host status.** A new `hosts` event-stream channel publishes host status
   changes (sidebar dots, Settings → Hosts). Each wrapper on a host also emits
@@ -533,7 +494,7 @@ A timeout (or a link lost after the op was sent) does not stop the daemon: the o
 
 - **This version:** grouped by host. "This machine" comes first, then each
   remote host in label order. Each group header shows the host label and a
-  status dot (online, offline, needs upgrade, omp missing) and collapses.
+  status dot (online, offline, needs upgrade, pi missing) and collapses.
   Inside a group the sidebar works as today: projects, sessions, sort, pins.
   Project pins and sort order are per host.
 - **Offline host:** its group shows the last known list dimmed. Opening its
@@ -547,7 +508,7 @@ A timeout (or a link lost after the op was sent) does not stop the daemon: the o
 
 ## Security
 
-**Trust model.** The main omp-web can start omp, with full tool access, on
+**Trust model.** The main tau can start pi, with full tool access, on
 every linked host. Control of the main server or of a host token is a shell on
 that machine. That is inherent to the feature and the same exposure the main
 machine already has. The rules below limit anything beyond it.
@@ -563,7 +524,7 @@ machine already has. The rules below limit anything beyond it.
   - Blob hashes must match `^[0-9a-f]{64}$`; image bytes pass the existing
     magic-byte check in `/api/media/[hash]`.
   - Size limits from Link → Limits apply.
-  - Remote omp output goes through the same sanitizing as local output.
+  - Remote pi output goes through the same sanitizing as local output.
   - A remote host's session export (`/api/sessions/[id]/export`) is always
     served as an attachment, never `inline`: its HTML would otherwise run on
     main's origin.
@@ -580,7 +541,7 @@ machine already has. The rules below limit anything beyond it.
 
 ## Agent-initiated sessions
 
-omp-web already answers three agent tools itself (`list_sessions`,
+tau already answers three agent tools itself (`list_sessions`,
 `new_session`, `send_to_session` in `lib/agent-tools.ts`, gated by the
 `agentToolsEnabled` web setting). They are extended, not duplicated:
 
@@ -589,8 +550,8 @@ omp-web already answers three agent tools itself (`list_sessions`,
 - `list_sessions` covers every host and names each session's host.
 - `send_to_session` reaches a session on any host.
 
-The calls arrive over a session omp-web already owns, so they need no new
-credential and cannot be reached from outside omp-web. Each call carries the
+The calls arrive over a session tau already owns, so they need no new
+credential and cannot be reached from outside tau. Each call carries the
 calling session's host (`sourceHostId`).
 
 **Guard:** creating a session on a remote host whose `allowAgentStart` is
@@ -618,8 +579,8 @@ asks ("Send a message from a session on <host> to session <id> on
 | Second daemon with the same token | Newest link wins; the old socket is closed 4409 and its daemon exits 0. |
 | Host op silent for 30 s (a result still arriving counts as activity) | 504 naming the host; the sidebar keeps that host's last list. |
 | Version mismatch | Close 4426 (hello frame) or 426 (a pre-WebSocket daemon's POST); host status `needs-upgrade`. |
-| `omp` missing on the host | Host status `omp-missing`; new sessions there are disabled. |
-| Host revoked while sessions run | Link closed; its wrappers are destroyed; its sessions leave the list. The omp children on that machine are killed by the daemon when it sees the 401 on reconnect. |
+| `pi` missing on the host | Host status `pi-missing`; new sessions there are disabled. |
+| Host revoked while sessions run | Link closed; its wrappers are destroyed; its sessions leave the list. The pi children on that machine are killed by the daemon when it sees the 401 on reconnect. |
 
 ## Testing
 
@@ -634,7 +595,7 @@ asks ("Send a message from a session on <host> to session <id> on
   - buffer overflow → `resync` → reconcile
   - remote path scoping and blob-hash validation
   - `new_session` remote confirm gate, with `allowAgentStart` on and off
-- **Integration:** a real `ompweb host` process with its own `HOME` (a second
+- **Integration:** a real `tau host` process with its own `HOME` (a second
   "machine") linked to the dev server on loopback. Start a session, stream a
   reply, cut the link, reconnect, check reattach and that no frame is lost or
   duplicated.
@@ -647,6 +608,6 @@ asks ("Send a message from a session on <host> to session <id> on
 - `AGENTS.md`: a "Remote hosts" section (Host interface, link protocol rules,
   one-link-per-host, transport-down vs exited), and new files in the file map.
 - `DESIGN.md`: the `Host` seam in the porting contract.
-- `README.md`: how to link a machine (`ompweb host login`, `ompweb host`,
+- `README.md`: how to link a machine (`tau host login`, `tau host`,
   running it as a service).
 - `CHANGELOG.md` entry.

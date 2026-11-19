@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau records origin through its pi extension (`/tau_meta`, `client-message-entry` custom entries) instead of the omp runner's journal.
+
 # Message Origin Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

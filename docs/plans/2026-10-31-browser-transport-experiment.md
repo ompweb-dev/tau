@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau has no browser WebSocket at all; the browser uses one SSE stream per browser.
+
 # Browser Transport Experiment Implementation Plan
 
 > **Superseded (2026-11-01):** the WebSocket modes this plan built were removed; see `docs/specs/2026-11-01-browser-link-design.md`.

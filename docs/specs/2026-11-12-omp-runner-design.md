@@ -1,3 +1,5 @@
+> Superseded: tau drives pi through its own RPC mode (`pi --mode rpc --extension lib/pi/tau-extension.ts`, `lib/pi/rpc-process.ts`); the `ompweb-omp` runner, its channel and runner protocol are gone.
+
 # ompweb's own omp build and channel — design
 
 Date: 2026-11-12. Branch: `feat/omp-runner` (PR #473).

@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); the local daemon remains as `tau host`, but it spawns `pi --mode rpc` (no `negotiate_protocol` or chunked omp frames), the link restarted at protocol v1, the daemon owns session lifecycle for several servers (`2026-11-06-multi-server-host-design.md`), and the deployment section was ompweb's.
+
 # Local daemon: omp runs survive web-server restarts
 
 ## Goal
