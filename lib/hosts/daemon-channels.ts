@@ -5,7 +5,7 @@ import { readSessionHeaderSync } from "../pi/session-files";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import type { DaemonLink } from "./daemon-link";
-import { CONFIG_VERSION_RE, CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, LINK_LIMITS, MESSAGE_COMMANDS, PEER_MESSAGE_FRAME, PEER_PROMPT_OUTCOME_FRAME, type HelloChannel, type HostUriScheme, type OpenChannelRequest, type OpenChannelResult, type Unsequenced, type UpMessage } from "./link-protocol";
+import { CONFIG_VERSION_RE, CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, LINK_LIMITS, MESSAGE_COMMANDS, PEER_MESSAGE_FRAME, PEER_PROMPT_OUTCOME_FRAME, type HelloChannel, type OpenChannelRequest, type OpenChannelResult, type Unsequenced, type UpMessage } from "./link-protocol";
 import { idOf, parseWire, PendingRequests, wireEvent, type WireFrame } from "./pending-requests";
 import { StreamSnapshot } from "./stream-snapshot";
 import { ChannelLifecycle } from "./channel-lifecycle";
@@ -252,8 +252,7 @@ export class ChannelTable {
       channel.shared = new SharedRequests({ members: () => [...channel.members.keys()], isUp: id => channel.members.get(id)?.link.isUp() ?? false,
         deliver: (id, lines) => { const member = channel.members.get(id); if (member) for (const line of lines) this.deliver(channel, member, { type: "stdout", ch, line }); },
         write: (op, args, onReply) => {
-          // pi has neither command: the companion extension registers the tools it is sent; host URI schemes have no pi counterpart.
-          if (op === "set_host_uri_schemes") return;
+          // pi has no such command: the companion extension registers the tools it is sent.
           const [command, commandArgs] = op === "set_host_tools" ? ["prompt", { message: `/tau_host_tools ${JSON.stringify(args.tools)}` }] : [op, args];
           void this.command(channel, command, commandArgs, onReply).catch(error => this.deps.log(`channel ${ch}: ${String(error)}`));
         } });
@@ -433,7 +432,7 @@ export class ChannelTable {
     const frame = parseWire(line);
     if (!frame) throw invalid("Invalid channel frame");
     const member = channel.members.get(link.id)!;
-    const isReply = ["extension_ui_response", "ui_response", "host_tool_result", "host_uri_result"].includes(frame.type);
+    const isReply = ["extension_ui_response", "ui_response", "host_tool_result"].includes(frame.type);
     const op = isReply ? null : frame.type;
     const extension = isExtensionCommand(frame);
     const refuse = (code: string, error: string) => {
@@ -442,7 +441,7 @@ export class ChannelTable {
     if (op !== null && !extension && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
       return refuse("session_busy", "Another web app is editing this session's history; retry once it finishes");
     }
-    if (op !== null && ["set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
+    if (op !== null && op === "set_host_tools") throw invalid("This command is owned by the host daemon");
     if (extension && /^\/tau_host_tools\b/.test(frame.message as string)) throw invalid("This command is owned by the host daemon");
     let out = frame, id: string | null = null;
     if (isReply) {
@@ -477,7 +476,7 @@ export class ChannelTable {
     if (channel.editor !== undefined && channel.editor !== link.id) throw new HostOpError(409, "session_busy", "Another web app is editing this session's history; retry once it finishes");
     channel.editor = link.id;
   }
-  setTools(link: DaemonLink, ch: string, tools: unknown[], schemes: HostUriScheme[]): void { this.member(link, ch).shared?.setTools(link.id, tools, schemes); }
+  setTools(link: DaemonLink, ch: string, tools: unknown[]): void { this.member(link, ch).shared?.setTools(link.id, tools); }
   kill(link: DaemonLink, ch: string, force: boolean): void { const channel = this.member(link, ch); if (force) { channel.stopReason ??= "asked"; channel.transport.killTree(true); } else this.stopChannel(channel); }
   close(link: DaemonLink, ch: string): void {
     const channel = this.member(link, ch); channel.members.delete(link.id); channel.lifecycle?.setPreparing(link.id, false); channel.lifecycle?.linkGone(link.id); channel.shared?.remove(link.id);

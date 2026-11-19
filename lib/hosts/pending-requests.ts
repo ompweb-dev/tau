@@ -29,9 +29,9 @@ export const idOf = (value: unknown): string | null =>
   typeof value === "string" || typeof value === "number" ? String(value) : null;
 
 const DIALOG_UI_METHODS = new Set(["select", "confirm", "input", "editor"]);
-const OPENS = new Map([["ui_request", "ui"], ["host_tool_call", "tool"], ["host_uri_request", "uri"]]);
-const CLOSES = new Map([["ui_end", "ui"], ["ui_response", "ui"], ["extension_ui_response", "ui"], ["host_tool_result", "tool"], ["host_uri_result", "uri"]]);
-const CANCELS = new Map([["host_tool_cancel", "tool"], ["host_uri_cancel", "uri"]]);
+const OPENS = new Map([["ui_request", "ui"], ["host_tool_call", "tool"]]);
+const CLOSES = new Map([["ui_end", "ui"], ["ui_response", "ui"], ["extension_ui_response", "ui"], ["host_tool_result", "tool"]]);
+const CANCELS = new Map([["host_tool_cancel", "tool"]]);
 
 /** The blocking request a frame opens or closes. */
 export function requestKey(frame: WireFrame): { key: string; open: boolean } | null {
@@ -51,8 +51,8 @@ export function requestKey(frame: WireFrame): { key: string; open: boolean } | n
 }
 
 // A line without one of these cannot matter: skips JSON-parsing streamed output.
-const STDOUT_LINES = /"type":"(?:extension_ui_request|session|ui_request|ui_end|host_tool_call|host_tool_cancel|host_uri_request|host_uri_cancel|agent_start|agent_end)"|"command":"get_state"/;
-const STDIN_LINES = /"type":"(?:extension_ui_response|ui_response|host_tool_result|host_uri_result)"/;
+const STDOUT_LINES = /"type":"(?:extension_ui_request|session|ui_request|ui_end|host_tool_call|host_tool_cancel|agent_start|agent_end)"|"command":"get_state"/;
+const STDIN_LINES = /"type":"(?:extension_ui_response|ui_response|host_tool_result)"/;
 
 export class PendingRequests {
   /** Raw line of each open request, or null once it no longer fits under the cap. */

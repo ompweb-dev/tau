@@ -104,7 +104,7 @@ function parseLine(line: string): unknown {
   }
 }
 
-const REQUEST_TYPES = new Set(["host_tool_call", "host_uri_request", "ui_request"]);
+const REQUEST_TYPES = new Set(["host_tool_call", "ui_request"]);
 const requestId = (frame: RpcFrame) => {
   if (frame.type === "extension_ui_request" && typeof frame.method === "string" && DIALOG_UI_METHODS.has(frame.method) && typeof frame.id === "string") {
     return frame.id;

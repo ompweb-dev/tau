@@ -2655,7 +2655,7 @@ test("an outbox message survives unmount and is dispatched without its tab", asy
   assert.deepEqual(world.outbox, []);
   assert.equal(world.calls.filter((call) => call.body?.type === "prompt").length, 1);
   assert.equal(world.esInstances.length, 1, "no observer is opened for the unmounted chat");
-  for (const type of ["set_host_tools", "set_host_uri_schemes", "get_subagents"]) {
+  for (const type of ["set_host_tools", "get_subagents"]) {
     assert.equal(world.calls.some((call) => call.body?.type === type), false, `no ${type} for the unmounted chat`);
   }
 });
@@ -4519,7 +4519,6 @@ test("HTTP discovery of a new wrapper replaces an old still-open stream before h
   await settle();
   const restored = world.calls.slice(registrationsBefore).filter((c) => c.method === "POST").map((c) => c.body.type);
   assert.equal(restored.includes("set_host_tools"), true);
-  assert.equal(restored.includes("set_host_uri_schemes"), true);
   assert.equal(w.latest.subagents.find((s) => s.id === "new-child")?.status, "started");
   assert.equal(w.latest.streamState.streamingMessage?.content[0].text, "new wrapper partial");
   await act(async () => { replacement.emit({ type: "message_update", message: assistantMsg("new", "new wrapper live-only tokens") }); });
@@ -4550,7 +4549,6 @@ test("foreground catch-up replaces an idle CLOSED source and resumes later live-
   await settle();
   const restored = world.calls.slice(registrationsBefore).filter((c) => c.method === "POST").map((c) => c.body.type);
   assert.equal(restored.includes("set_host_tools"), true);
-  assert.equal(restored.includes("set_host_uri_schemes"), true);
   assert.equal(w.latest.subagents.find((s) => s.id === "resumed-child")?.status, "started");
   assert.equal(w.latest.agentRunning, true);
   assert.equal(w.latest.streamState.streamingMessage?.content[0].text, "busy snapshot");

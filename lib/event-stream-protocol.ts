@@ -56,7 +56,7 @@ export interface ConnectionDiagnostics {
  * pi without awaiting its reply (lib/rpc-manager.ts dispatchCommand). */
 export const NO_PI_REPLY_COMMANDS: ReadonlySet<string> = new Set([
   "get_btw_history", "btw_cancel",
-  "host_tool_result", "host_uri_result", "ui_response", "ui_input",
+  "host_tool_result", "ui_response", "ui_input",
   "outbox_add", "outbox_remove", "outbox_scope",
 ]);
 

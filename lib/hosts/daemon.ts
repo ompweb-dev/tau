@@ -399,7 +399,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         case "stdin": channels.stdin(link, message.ch, message.line); return;
         case "kill": channels.kill(link, message.ch, message.force); return;
         case "interest": channels.setInterest(link, message.ch, message.on, message.preparing); return;
-        case "host_tools": channels.setTools(link, message.ch, message.tools, message.schemes); return;
+        case "host_tools": channels.setTools(link, message.ch, message.tools); return;
         case "req": void answer(link, message.id, message.op, message.args); return;
       }
     } catch (error) { log("ignored a channel command: " + reason(error)); }

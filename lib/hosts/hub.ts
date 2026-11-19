@@ -36,7 +36,6 @@ import {
   type UnknownMessage,
   type OpenChannelRequest,
   type OpenChannelResult,
-  type HostUriScheme,
   type Unsequenced,
   UnknownMessageLog,
   type UpMessage,
@@ -1275,10 +1274,10 @@ export class RemoteRpcTransport implements RpcTransport {
     sendDown(linkFor(this.hostId), { type: "interest", ch: this.ch, on: this.interested, preparing: this.preparing > 0 }, this.ch);
   }
 
-  async setHostTools(tools: unknown[], schemes: HostUriScheme[]): Promise<void> {
+  async setHostTools(tools: unknown[]): Promise<void> {
     if (this.closed || this.exitInfo) throw new Error("RPC channel is closed");
-    validateHostTools(tools, schemes);
-    sendDown(linkFor(this.hostId), { type: "host_tools", ch: this.ch, tools, schemes }, this.ch);
+    validateHostTools(tools);
+    sendDown(linkFor(this.hostId), { type: "host_tools", ch: this.ch, tools }, this.ch);
   }
 
   close(): void {

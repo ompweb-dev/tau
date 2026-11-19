@@ -43,7 +43,7 @@ import { toast } from "@/components/ui/toast";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { validateOutgoingPrompt } from "@/lib/image-attachments";
 import { createActiveGoal, parseActiveGoal, type ActiveGoal, type ActivePlan } from "@/lib/web-mode-state";
-import type { HostToolDefinition, HostUriSchemeDefinition, RpcAvailableSlashCommand, SessionStatsInfo, TodoPhase } from "@/lib/pi-types";
+import type { HostToolDefinition, RpcAvailableSlashCommand, SessionStatsInfo, TodoPhase } from "@/lib/pi-types";
 import { isRecord } from "@/lib/type-guards";
 import { subscribeSessionsChanged } from "@/lib/session-change-bus";
 import { EVENT_STREAM_CLOSED, EVENT_STREAM_OPEN, addToOutbox, dropFromOutbox, newOutboxId, openEventStream, reconcileOutbox, subscribeOutbox, type EventStream, type LocalOutboxEntry } from "@/lib/event-stream";
@@ -1460,7 +1460,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // A held-message stream ("connected" mode) was opened without asking pi whether a run is going; the running
   // channel treats an open stream as carrying the run, so the chat asks once that stream attaches (below).
   const adoptObservedRunRef = useRef<(sid: string, source: EventStream) => void>(() => {});
-  /** `restoreWrapper`: re-register what a wrapper loses (host tools, URI schemes, roster) once attached. "connected":
+  /** `restoreWrapper`: re-register what a wrapper loses (host tools, roster) once attached. "connected":
    * the session may have no wrapper yet (the server opens the channel for its held messages alone, docs/specs/
    * 2026-11-04-message-outbox-design.md): do everything that talks to pi only on `connected`, which comes once one
    * is attached, since any command would start one. */
@@ -1705,29 +1705,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [HOST_TOOL_DEFINITIONS]);
 
-  /** URI schemes the agent's read/write tools can resolve through the web UI.
-   * `pi-web://clipboard` lets the agent read the user's clipboard (best-effort:
-   * the browser may gate clipboard reads behind a permission prompt) and copy
-   * text back. */
-  const HOST_URI_SCHEMES = useMemo<HostUriSchemeDefinition[]>(() => [
-    {
-      scheme: "pi-web",
-      description: "Browser-integrated resources: pi-web://clipboard reads/writes the user's clipboard via the web UI.",
-      writable: true,
-    },
-  ], []);
-
-  const registerHostUriSchemes = useCallback(async (sid: string) => {
-    try {
-      await sendAgentCommand(sid, { type: "set_host_uri_schemes", schemes: HOST_URI_SCHEMES });
-    } catch {
-      // A refused registration leaves no URI bridge: nothing to do.
-    }
-  }, [HOST_URI_SCHEMES]);
-
   reconnectActionsRef.current = (sid: string) => {
     void registerHostTools(sid);
-    void registerHostUriSchemes(sid);
     void refreshSubagentRoster(sid);
   };
 
@@ -1769,49 +1748,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [onOpenFile, onOpenUrl, respondHostTool, session?.hostId, session?.cwd, newSessionHostId, newSessionCwd]);
 
-  /** Answer a host_uri_request (agent read/write of a registered scheme). */
-  const respondHostUri = useCallback(async (sid: string, id: string, frame: { content?: string; contentType?: "text/markdown" | "application/json" | "text/plain"; isError?: boolean; error?: string }) => {
-    try {
-      await sendAgentCommand(sid, { type: "host_uri_result", id, ...frame });
-    } catch (e) {
-      console.error("Failed to send host URI result:", e);
-    }
-  }, []);
-
-  const handleHostUriRequest = useCallback(async (id: string, operation: "read" | "write", url: string, content?: string) => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    const resource = url.replace(/^pi-web:\/\//i, "") || "";
-    if (resource === "clipboard") {
-      if (operation === "read") {
-        if (typeof navigator === "undefined" || !navigator.clipboard?.readText) {
-          await respondHostUri(sid, id, { isError: true, error: "Clipboard read is not available in this browser" });
-          return;
-        }
-        try {
-          const text = await navigator.clipboard.readText();
-          await respondHostUri(sid, id, { content: text || "(clipboard is empty)", contentType: "text/plain" });
-        } catch {
-          // Permission denied / document not focused: surface a readable error.
-          await respondHostUri(sid, id, { isError: true, error: "Clipboard read was denied. Click into the tau window and try again." });
-        }
-        return;
-      }
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(content ?? "");
-          await respondHostUri(sid, id, {});
-          return;
-        } catch {
-          await respondHostUri(sid, id, { isError: true, error: "Clipboard write failed in this browser" });
-          return;
-        }
-      }
-      await respondHostUri(sid, id, { isError: true, error: "Clipboard write is not available in this browser" });
-      return;
-    }
-    await respondHostUri(sid, id, { isError: true, error: `Unknown pi-web resource: ${resource}` });
-  }, [respondHostUri]);
 
   const sendExtensionCustomInput = useCallback(async (request: UiCustomFrame, data: string) => {
     const sid = sessionIdRef.current;
@@ -2788,15 +2724,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (typeof event.targetId === "string") pendingHostToolControllersRef.current.get(event.targetId)?.abort();
         break;
       }
-      case "host_uri_request": {
-        // The wrapper only forwards REGISTERED schemes (see rpc-manager).
-        const id = typeof event.id === "string" ? event.id : "";
-        const url = typeof event.url === "string" ? event.url : "";
-        const operation = event.operation === "write" ? "write" as const : "read" as const;
-        const content = typeof event.content === "string" ? event.content : undefined;
-        if (id && url) void handleHostUriRequest(id, operation, url, content);
-        break;
-      }
       case "subagent_progress": {
         // Progress frames carry the full AgentProgress snapshot (throttled to
         // one per 150ms and flushed at terminal). The reliable key is
@@ -2929,7 +2856,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiFrame(event as unknown as UiPresentationFrame);
         break;
     }
-  }, [addNotice, addUnconfirmedRunErrorNotice, catchUp, eventCoalescer, clearLiveToolResults, clearTerminalReconcileTimer, endExtensionDialog, finishPromptWithoutStream, handleExtensionUiFrame, handleHostToolCall, handleHostUriRequest, loadSession, reloadActiveSessionHistory, mergeSubagents, onAgentEnd, openExtensionDialog, receiveCorrelatedMessage, reconcileAgentState, refreshLiveModelState, refreshSubagentRoster, resetSubagentActivityState, applyAuthoritativeModel, beginAuthoritativeModelSync, setCompacting, setLiveToolResult, surfaceQuotaOnStream, updateQueuedMessages, applyQueueStateSnapshot]);
+  }, [addNotice, addUnconfirmedRunErrorNotice, catchUp, eventCoalescer, clearLiveToolResults, clearTerminalReconcileTimer, endExtensionDialog, finishPromptWithoutStream, handleExtensionUiFrame, handleHostToolCall, loadSession, reloadActiveSessionHistory, mergeSubagents, onAgentEnd, openExtensionDialog, receiveCorrelatedMessage, reconcileAgentState, refreshLiveModelState, refreshSubagentRoster, resetSubagentActivityState, applyAuthoritativeModel, beginAuthoritativeModelSync, setCompacting, setLiveToolResult, surfaceQuotaOnStream, updateQueuedMessages, applyQueueStateSnapshot]);
   handleAgentEventRef.current = handleAgentEvent;
   syncActionsRef.current = {
     metadata: (context, version, hasLive = liveModelMeta !== null || currentModelOverride !== null) => {
@@ -3981,10 +3908,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentRunning(true);
       setAgentPhase(agentState.state.isStreaming ? { kind: "waiting_model" } : { kind: "running_command" });
       dispatch({ type: "start" });
-      // Register the host-tool + URI bridges so the agent can call
-      // open_url/notify/open_file and resolve pi-web://clipboard.
+      // Register the host tools so the agent can call open_url/notify/open_file.
       void registerHostTools(sid);
-      void registerHostUriSchemes(sid);
       // Rehydrate the live roster (missed lifecycle/progress frames).
       // Tracked + session-guarded: a session switch during the delay must
       // not issue a stale get_subagents against the old session.
@@ -4006,7 +3931,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setBashRunning(true);
       void waitForBashSettlement(sid);
     }
-  }, [applyNativeCompacting, refreshSubagentRoster, registerHostTools, registerHostUriSchemes, waitForBashSettlement, waitForPromptSettlement]);
+  }, [applyNativeCompacting, refreshSubagentRoster, registerHostTools, waitForBashSettlement, waitForPromptSettlement]);
   // Attach to a run pi has going for `sid` when this chat has no stream yet: on
   // load, and when the running channel reports a run that started after the load
   // (another tab or device, or a send from a chat instance the user left).

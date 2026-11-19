@@ -32,7 +32,7 @@ export interface RpcTransport {
   setPreparing?(on: boolean, takeOver?: boolean): void;
   /** Acquire (rejects while another server edits) or release the host's history-edit lease. */
   setEditing?(on: boolean): Promise<void>;
-  setHostTools?(tools: unknown[], schemes: { scheme: string; writable: boolean }[]): Promise<void>;
+  setHostTools?(tools: unknown[]): Promise<void>;
   /** Leave the shared channel without terminating its process. */
   close?(): void;
   /** Correlates log lines: the child's pid here, the channel id on a linked host. */

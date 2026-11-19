@@ -1,10 +1,10 @@
 import { isRecord } from "../type-guards";
-import { HostOpError, type HostUriScheme } from "./link-protocol";
+import { HostOpError } from "./link-protocol";
 import { requestKey, type WireFrame } from "./pending-requests";
 
 /** `def`: the tool definition pi was advertised when it made the call. */
 type Callback = { frame: WireFrame; lines: string[]; executor: string | null; def?: string };
-type Registration = { tools: Record<string, unknown>[]; schemes: HostUriScheme[] };
+type Registration = { tools: Record<string, unknown>[] };
 type SharedRequestDeps = {
   members(): string[];
   isUp(id: string): boolean;
@@ -13,15 +13,12 @@ type SharedRequestDeps = {
   write(op: string, args: Record<string, unknown>, onReply?: () => void): void;
 };
 
-export function validateHostTools(tools: unknown[], schemes: HostUriScheme[]): void {
+export function validateHostTools(tools: unknown[]): void {
   const valid = Array.isArray(tools) && tools.every(tool => isRecord(tool) && typeof tool.name === "string" && tool.name.length > 0
     && (tool.description === undefined || typeof tool.description === "string")
     && (tool.label === undefined || typeof tool.label === "string")
     && (tool.parameters === undefined || isRecord(tool.parameters)));
-  if (!valid || !Array.isArray(schemes) || !schemes.every(entry => isRecord(entry) && typeof entry.scheme === "string"
-    && /^[a-zA-Z][a-zA-Z0-9+.-]*$/.test(entry.scheme) && typeof entry.writable === "boolean")) {
-    throw new HostOpError(400, "invalid_request", "Invalid host tool or URI registration");
-  }
+  if (!valid) throw new HostOpError(400, "invalid_request", "Invalid host tool registration");
 }
 
 export class SharedRequests {
@@ -34,7 +31,6 @@ export class SharedRequests {
    * withdrawn still names that definition. A call goes only to a server registering exactly the one it pinned. */
   private toolDefs = new Map<string, string>();
   private toolUnion = "[]";
-  private schemeUnion = "[]";
 
   constructor(private readonly deps: SharedRequestDeps) {}
 
@@ -51,8 +47,8 @@ export class SharedRequests {
     if (frame.type === "ui_request" || frame.type === "extension_ui_request") this.dialogs.set(request.key, [line]);
     else if (frame.type === "ui_end") { this.dialogs.delete(request.key); this.completed.add(request.key); }
     else if (request.open) {
-      if (!this.callbacks.has(request.key)) this.callbacks.set(request.key, { frame: { type: frame.type, toolName: frame.toolName, url: frame.url, operation: frame.operation }, lines: [line], executor: null,
-        def: frame.type === "host_tool_call" ? this.toolDefs.get(frame.toolName as string) : undefined });
+      if (!this.callbacks.has(request.key)) this.callbacks.set(request.key, { frame: { type: frame.type, toolName: frame.toolName }, lines: [line], executor: null,
+        def: this.toolDefs.get(frame.toolName as string) });
       this.dispatch();
       return false;
     } else {
@@ -84,11 +80,9 @@ export class SharedRequests {
 
   prompt(id: string): void { this.lastPrompt = id; }
 
-  setTools(id: string, tools: unknown[], schemes: HostUriScheme[]): void {
-    validateHostTools(tools, schemes);
-    const writable = new Map<string, boolean>();
-    for (const { scheme, writable: canWrite } of schemes) writable.set(scheme, (writable.get(scheme) ?? false) || canWrite);
-    this.registrations.set(id, { tools: tools as Record<string, unknown>[], schemes: [...writable].map(([scheme, canWrite]) => ({ scheme, writable: canWrite })) });
+  setTools(id: string, tools: unknown[]): void {
+    validateHostTools(tools);
+    this.registrations.set(id, { tools: tools as Record<string, unknown>[] });
     this.updateUnion(); this.dispatch();
   }
 
@@ -100,30 +94,22 @@ export class SharedRequests {
   }
 
   private updateUnion(): void {
-    const tools = new Map<string, Record<string, unknown>>(), schemes = new Map<string, boolean>();
+    const tools = new Map<string, Record<string, unknown>>();
     for (const id of this.deps.members()) {
       const registration = this.registrations.get(id);
       for (const tool of registration?.tools ?? []) if (!tools.has(tool.name as string)) tools.set(tool.name as string, tool);
-      for (const { scheme, writable } of registration?.schemes ?? []) schemes.set(scheme, (schemes.get(scheme) ?? false) || writable);
     }
     // pi's output is ordered: a call read before its reply to this union was made under the previous definitions.
     const advertised = [...tools].map(([name, tool]) => [name, JSON.stringify(tool)] as const);
     const confirm = () => { for (const [name, def] of advertised) this.toolDefs.set(name, def); };
     const mergedTools = [...tools.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    const mergedSchemes = [...schemes].sort(([a], [b]) => a.localeCompare(b)).map(([scheme, writable]) => ({ scheme, writable }));
-    const toolUnion = JSON.stringify(mergedTools), schemeUnion = JSON.stringify(mergedSchemes);
+    const toolUnion = JSON.stringify(mergedTools);
     if (toolUnion !== this.toolUnion) { this.toolUnion = toolUnion; this.deps.write("set_host_tools", { tools: mergedTools }, confirm); }
-    if (schemeUnion !== this.schemeUnion) { this.schemeUnion = schemeUnion; this.deps.write("set_host_uri_schemes", { schemes: mergedSchemes }); }
   }
 
   private eligible(id: string, call: Callback): boolean {
     if (!this.deps.isUp(id) || !this.deps.members().includes(id)) return false;
-    const registration = this.registrations.get(id);
-    if (call.frame.type === "host_tool_call") {
-      return registration?.tools.some(tool => tool.name === call.frame.toolName && JSON.stringify(tool) === call.def) ?? false;
-    }
-    const scheme = typeof call.frame.url === "string" ? call.frame.url.split(":", 1)[0] : "";
-    return registration?.schemes.some(entry => entry.scheme === scheme && (call.frame.operation !== "write" || entry.writable)) ?? false;
+    return this.registrations.get(id)?.tools.some(tool => tool.name === call.frame.toolName && JSON.stringify(tool) === call.def) ?? false;
   }
 
   private dispatch(): void {

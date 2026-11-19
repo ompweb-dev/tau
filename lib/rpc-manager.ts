@@ -452,11 +452,6 @@ export class AgentSessionWrapper {
   private parkedHostTools = new Map<string, ReturnType<typeof setTimeout>>();
   /** Listeners tau attaches itself (waitForTurnEnd), not tabs: a parked host call waits for a tab. */
   private readonly internalListeners = new WeakSet<EventListener>();
-  /** URI schemes the web UI registered via set_host_uri_schemes. */
-  private hostUriSchemes: Map<string, { writable?: boolean }> = new Map();
-  private registeredHostUriSchemes: Array<{ scheme?: unknown; writable?: unknown; [key: string]: unknown }> | null = null;
-  /** host_uri_request ids awaiting a host_uri_result from the browser. */
-  private pendingHostUris: Map<string, UnsequencedAgentEvent> = new Map();
   /** Callback delivery is not permission to repeat an action after a snapshot/reconnect. */
   private deliveredCallbacks = new Set<string>();
   /** Message commands other servers wrote to this shared child (PEER_MESSAGE_FRAME markers). */
@@ -531,7 +526,7 @@ export class AgentSessionWrapper {
     // A human/host response can outlive the current streaming turn. Reaping it
     // ends the pi child and aborts that request, even without a Stop.
     return this.isAlive() && (this.promptRunning || this.streaming || this.compacting || (!ignoreShell && this.bashRunning)
-      || this.pendingUiRequests.size > 0 || this.pendingHostTools.size > 0 || this.pendingHostUris.size > 0);
+      || this.pendingUiRequests.size > 0 || this.pendingHostTools.size > 0);
   }
 
   isAwaitingInput(): boolean {
@@ -921,15 +916,13 @@ export class AgentSessionWrapper {
       else if (type === "prompt_error") this.publishNotifications({ ...outcome, type, errorMessage: typeof outcome.error === "string" ? outcome.error : "Prompt failed" });
       return;
     }
-    if (this.hostOwnedLifecycle && (event.type === "host_tool_call" || event.type === "host_uri_request") && typeof event.id === "string") {
+    if (this.hostOwnedLifecycle && event.type === "host_tool_call" && typeof event.id === "string") {
       const key = `${event.type}:${event.id}`;
       if (this.deliveredCallbacks.has(key)) return;
       this.deliveredCallbacks.add(key);
       // Only the read-only listing and the idempotent GitHub tools run again (handled below); anything else may already have run.
-      if (this.replaying && !(event.type === "host_tool_call" && typeof event.toolName === "string" && (event.toolName === "list_sessions" || GITHUB_REPLAY_SAFE_TOOLS.has(event.toolName)))) {
-        this.proc.sendFrame(event.type === "host_tool_call"
-          ? { type: "host_tool_result", id: event.id, isError: true, result: { content: [{ type: "text", text: unknownOutcome(event.toolName) }] } }
-          : { type: "host_uri_result", id: event.id, isError: true, error: AGENT_TOOL_UNKNOWN_OUTCOME });
+      if (this.replaying && !(typeof event.toolName === "string" && (event.toolName === "list_sessions" || GITHUB_REPLAY_SAFE_TOOLS.has(event.toolName)))) {
+        this.proc.sendFrame({ type: "host_tool_result", id: event.id, isError: true, result: { content: [{ type: "text", text: unknownOutcome(event.toolName) }] } });
         return;
       }
     }
@@ -1101,38 +1094,6 @@ export class AgentSessionWrapper {
         const targetId = typeof event.targetId === "string" ? event.targetId : "";
         this.serverToolCalls.get(targetId)?.abort();
         if (targetId && this.cancelPendingHostTool(targetId)) {
-          notifyRunningChange();
-          return;
-        }
-        break;
-      }
-      case "host_uri_request": {
-        const id = typeof event.id === "string" ? event.id : "";
-        const url = typeof event.url === "string" ? event.url : "";
-        // Route registered schemes to an attached UI (the browser answers via
-        // host_uri_result); unknown schemes / no listener are rejected so the
-        // agent's read/write never hangs.
-        const scheme = url.split(":")[0] ?? "";
-        const operation = event.operation === "write" ? "write" : "read";
-        const registered = this.hostUriSchemes.get(scheme);
-        if (id && scheme && registered && (operation !== "write" || registered.writable) && this.hasBrowserSubscribers()) {
-          this.pendingHostUris.set(id, event);
-          this.emit(event);
-          notifyRunningChange();
-          return;
-        }
-        this.proc.sendFrame({
-          type: "host_uri_result",
-          id,
-          isError: true,
-          error: `URI scheme \"${scheme}\" is not registered by tau`,
-        });
-        return;
-      }
-      case "host_uri_cancel": {
-        const targetId = typeof event.targetId === "string" ? event.targetId : "";
-        if (targetId && this.pendingHostUris.delete(targetId)) {
-          this.emit(event);
           notifyRunningChange();
           return;
         }
@@ -1333,18 +1294,6 @@ export class AgentSessionWrapper {
     this.rejectPendingHostTools("The web UI disconnected while the agent was waiting for this host tool", "cross");
   }
 
-  /** Reject every outstanding host URI request (browser disconnected / destroy). */
-  private rejectPendingHostUris(message: string): void {
-    for (const id of this.pendingHostUris.keys()) {
-      this.proc.sendFrame({
-        type: "host_uri_result",
-        id,
-        isError: true,
-        error: message,
-      });
-    }
-    this.pendingHostUris.clear();
-  }
 
   private emit(nativeEvent: UnsequencedAgentEvent): void {
     // Tool-result images go out (and into the replay snapshot) as media URLs:
@@ -1565,7 +1514,6 @@ export class AgentSessionWrapper {
       // agent never waits forever on a tool nobody will answer.
       if (!this.hasBrowserSubscribers()) {
         this.rejectPendingHostTools("The web UI disconnected while the agent was waiting for this host tool", "own");
-        this.rejectPendingHostUris("The web UI disconnected while the agent was waiting for this URI request");
         // The last tab left. Start (not extend) the reap clock, so a session
         // that was never watched at all — /api/agent/new — is
         // cleaned up on the same schedule as one whose tab just closed.
@@ -1709,8 +1657,7 @@ export class AgentSessionWrapper {
       this.historyEditInFlight ||
       (this.awaitingAgentStart && !awaitingExpired) ||
       this.pendingUiRequests.size > 0 ||
-      this.pendingHostTools.size > 0 ||
-      this.pendingHostUris.size > 0;
+      this.pendingHostTools.size > 0;
 
     if (
       state.isStreaming === false &&
@@ -1968,9 +1915,6 @@ export class AgentSessionWrapper {
             // Like initial startup, a runtime that never accepted host tools may reject this optional registration.
             await this.dispatchCommand({ type: "set_host_tools", tools: [] }).catch(() => {});
           }
-          if (this.registeredHostUriSchemes !== null) {
-            await this.dispatchCommand({ type: "set_host_uri_schemes", schemes: this.registeredHostUriSchemes });
-          }
         }
       } catch (error) {
         // Never leave the replacement running with nobody reading its frames.
@@ -2026,7 +1970,7 @@ export class AgentSessionWrapper {
     return this.isRunning() || this.historyEditInFlight || this.historyMutationPendingCount > 0
       || this.pendingCommands > ownedPendingCommands
       || this.pendingMessageCommands > 0 || this.pendingUiRequests.size > 0
-      || this.pendingHostTools.size > 0 || this.pendingHostUris.size > 0;
+      || this.pendingHostTools.size > 0;
   }
 
   /** Lifts the taint of OLD uncertain admissions once none can echo any more; never confirms or replays them. Settlement
@@ -2464,7 +2408,7 @@ export class AgentSessionWrapper {
           const previousNames = this.hostToolNames;
           this.hostToolNames = new Set(merged.map((t) => t.name as string));
           try {
-            await this.proc.transport.setHostTools!(merged, [...this.hostUriSchemes].map(([scheme, { writable }]) => ({ scheme, writable: writable === true })));
+            await this.proc.transport.setHostTools!(merged);
           } catch (error) {
             this.hostToolNames = previousNames;
             throw error;
@@ -2489,43 +2433,6 @@ export class AgentSessionWrapper {
           this.pendingHostTools.delete(command.id);
           this.unparkHostTool(command.id);
         }
-        this.proc.sendFrame(command as { type: string; [key: string]: unknown });
-        return null;
-      }
-
-      case "set_host_uri_schemes": {
-        const schemes = Array.isArray(command.schemes) ? command.schemes as Array<{ scheme?: unknown; writable?: unknown; [key: string]: unknown }> : [];
-        if (this.hostOwnedLifecycle) {
-          const previous = this.hostUriSchemes;
-          this.hostUriSchemes = new Map(schemes.filter((entry) => typeof entry.scheme === "string" && entry.scheme).map((entry) => [entry.scheme as string, { writable: entry.writable === true }]));
-          try {
-            const tools = this.registeredHostTools ?? [];
-            const merged = loadWebServerSettings().agentToolsEnabled
-              ? [...tools, ...AGENT_TOOL_DEFINITIONS.filter((tool) => !tools.some((entry) => entry.name === tool.name))]
-              : tools;
-            await this.proc.transport.setHostTools!(merged, [...this.hostUriSchemes].map(([scheme, { writable }]) => ({ scheme, writable: writable === true })));
-          } catch (error) {
-            this.hostUriSchemes = previous;
-            throw error;
-          }
-          this.registeredHostUriSchemes = schemes;
-          return null;
-        }
-        await this.proc.sendCommand({ type: "set_host_uri_schemes", schemes }, undefined, (success) => {
-          if (!success) return;
-          this.registeredHostUriSchemes = schemes;
-          this.hostUriSchemes = new Map();
-          for (const entry of schemes) {
-            if (typeof entry.scheme === "string" && entry.scheme) {
-              this.hostUriSchemes.set(entry.scheme, { writable: entry.writable === true });
-            }
-          }
-        });
-        return null;
-      }
-
-      case "host_uri_result": {
-        if (typeof command.id === "string") this.pendingHostUris.delete(command.id);
         this.proc.sendFrame(command as { type: string; [key: string]: unknown });
         return null;
       }
@@ -2611,9 +2518,6 @@ export class AgentSessionWrapper {
     this.parkedHostTools.clear();
     this.hostToolNames.clear();
     this.registeredHostTools = null;
-    this.pendingHostUris.clear();
-    this.hostUriSchemes.clear();
-    this.registeredHostUriSchemes = null;
     notifyRunningChange();
     await untilHostDown(this.host, disposed);
   }

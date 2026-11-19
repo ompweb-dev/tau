@@ -69,7 +69,6 @@ export const PEER_MESSAGE_FRAME = "peer_message_command";
 /** Shared-channel frame `{t, outcome}` a daemon puts in the other members' output for one link's `prompt_result` or
  * `prompt_error` (its command id dropped): the elected notifier must hear a run failed whichever server prompted it. */
 export const PEER_PROMPT_OUTCOME_FRAME = "peer_prompt_outcome";
-export type HostUriScheme = { scheme: string; writable: boolean };
 
 /** Named `req.args` keys for each session op, in parameter order. Named, not
  * positional, so an omitted optional argument never turns into `null`. */
@@ -131,7 +130,7 @@ export type DownMessage =
   | { type: "stdin"; seq: number; ch: string; line: string }
   | { type: "kill"; seq: number; ch: string; force: boolean }
   | { type: "interest"; seq: number; ch: string; on: boolean; preparing: boolean }
-  | { type: "host_tools"; seq: number; ch: string; tools: unknown[]; schemes: HostUriScheme[] }
+  | { type: "host_tools"; seq: number; ch: string; tools: unknown[] }
   /** `op` is whatever the sender named: the daemon answers one it does not know with 501 `unknown_op`. */
   | { type: "req"; seq: number; id: string; op: string; args: unknown }
   | { type: "ping" }
@@ -357,12 +356,8 @@ export function decodeDown(line: string): DownMessage | UnknownMessage {
       return { type: "kill", seq: seqNum(o, "seq"), ch: str(o, "ch"), force: bool(o, "force") };
     case "interest":
       return { type: "interest", seq: seqNum(o, "seq"), ch: str(o, "ch"), on: bool(o, "on"), preparing: bool(o, "preparing") };
-    case "host_tools": {
-      const schemes = o.schemes;
-      if (!Array.isArray(schemes) || !schemes.every((entry) => isObj(entry) && typeof entry.scheme === "string" && typeof entry.writable === "boolean")) fail("schemes must be an array of {scheme, writable}");
-      return { type: "host_tools", seq: seqNum(o, "seq"), ch: str(o, "ch"), tools: Array.isArray(o.tools) ? o.tools : fail("tools must be an array"),
-        schemes: (schemes as Obj[]).map((entry) => ({ scheme: entry.scheme as string, writable: entry.writable as boolean })) };
-    }
+    case "host_tools":
+      return { type: "host_tools", seq: seqNum(o, "seq"), ch: str(o, "ch"), tools: Array.isArray(o.tools) ? o.tools : fail("tools must be an array") };
     case "req":
       return { type: "req", seq: seqNum(o, "seq"), id: str(o, "id"), op: str(o, "op"), args: "args" in o ? o.args : fail("args must be present") };
     case "ping":
