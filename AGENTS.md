@@ -508,7 +508,7 @@ The todo plan (`TodoList`) and subagent roster sit pinned above the input, each 
 - Painting uses the CSS Custom Highlight API (`omp-search`, `omp-search-current` in `globals.css`). Each click target is used once (`onSearchTargetHandled`); an empty query clears everything.
 
 ### MCP configuration (`lib/pi/mcp-config.ts`, `/api/mcp`, `components/McpConfig.tsx`)
-- Project files are resolved in the order `.omp/mcp.json`, `.omp/.mcp.json`, `mcp.json`, `.mcp.json` at the git top level (cwd for non-git dirs); the user file is `<agent dir>/mcp.json`. Server definitions support `stdio`, `http` and `sse` with exactly one of `command`/`url`, validated before any write. Writes are atomic under a cross-process lock and preserve unrelated keys; `previousName` renames.
+- The project file is `<cwd>/.pi/mcp.json` (pi reads it only for a trusted project, and from the session cwd, not the git top level); the user file is `<agent dir>/mcp.json`. Other apps' configurations are listed read-only as such; pi reads none of them. Server definitions support `stdio`, `http` and `sse` with exactly one of `command`/`url`, validated before any write. Writes are atomic under a cross-process lock and preserve unrelated keys; `previousName` renames.
 - The endpoint follows the `/api/files` root rules and never exposes environment variables or headers.
 - Configuration only: no live status or actions. tau never sends `/mcp` as a prompt; changes apply when a session starts or reloads.
 

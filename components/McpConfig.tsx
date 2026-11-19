@@ -10,7 +10,7 @@ type McpServer = { name: string; config: Record<string, unknown> };
 // User-level servers arrive as a sanitized DTO (no raw config — env/headers
 // can hold credentials and are never serialized); summary fields are computed
 // server-side from the config.
-type McpUserConfig = { path: string; servers: Array<{ name: string; status: string; type: string; enabled: boolean; valid: boolean }>; disabledServers: string[]; error?: string };
+type McpUserConfig = { path: string; servers: Array<{ name: string; status: string; type: string; enabled: boolean; valid: boolean }>; error?: string };
 type McpInventoryServer = { name: string; source: string; status: "disabled" | "configured"; type?: string; sourcePath?: string };
 type McpResponse = { servers?: McpServer[]; user?: McpUserConfig; inventory?: McpInventoryServer[]; path?: string; error?: string };
 
@@ -156,9 +156,9 @@ export function McpConfig({ cwd }: { cwd: string | null }) {
   const displayedServers = inventory ?? [];
   const groups = Array.from(new Set(displayedServers.map((server) => server.source))).map((source) => ({
     source,
-    title: source === "User level" ? t("mcpConfig.sourceUser") : source === "Project level" ? t("mcpConfig.sourceProject") : source === "Disabled" ? t("mcpConfig.sourceDisabled") : source,
+    title: source === "User level" ? t("mcpConfig.sourceUser") : source === "Project level" ? t("mcpConfig.sourceProject") : source,
     servers: displayedServers.filter((server) => server.source === source),
-    managed: ["User level", "Project level", "Disabled"].includes(source),
+    managed: ["User level", "Project level"].includes(source),
   }));
   const managedCount = groups.filter((group) => group.managed).reduce((sum, group) => sum + group.servers.length, 0);
   const otherGroups = groups.filter((group) => !group.managed);

@@ -1673,7 +1673,6 @@
   "mcpConfig.disable": "Disable",
   "mcpConfig.sourceUser": "pi user configuration",
   "mcpConfig.sourceProject": "Project configuration",
-  "mcpConfig.sourceDisabled": "Discovered · disabled",
   "mcpConfig.shadowed": "Project override",
   "mcpConfig.connectionHint": "Enabled reflects configuration. Servers without a verified connection state are not marked as connected.",
   "mcpConfig.otherSources": "MCP configuration from other apps",

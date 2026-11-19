@@ -26,16 +26,14 @@ export async function GET(request: Request) {
     const user = readUserMcpConfig();
     const inventory: McpLiveServer[] = [
       ...user.servers.map(({ name, config }) => ({ name, source: "User level", sourcePath: user.path, status: config.enabled === false ? "disabled" as const : "configured" as const, type: typeof config.type === "string" ? config.type : typeof config.url === "string" ? "http" : "stdio" })),
-      ...user.disabledServers.map((name) => ({ name, source: "Disabled", sourcePath: user.path, status: "disabled" as const })),
       ...Object.entries(file?.config.mcpServers ?? {}).map(([name, config]) => ({ name, source: "Project level", sourcePath: file?.path, status: config.enabled === false ? "disabled" as const : "configured" as const, type: typeof config.type === "string" ? config.type : typeof config.url === "string" ? "http" : "stdio" })),
-      ...readDiscoveredMcpServers(cwd ?? undefined, user.disabledServers),
+      ...readDiscoveredMcpServers(cwd ?? undefined),
     ];
     // The user-level config may carry bearer tokens/API keys in `headers` and
     // credentials in `env`. The UI only renders name/status/type/enabled —
     // never serialize the raw user-level server configs to the client.
     const safeUser = {
       path: user.path,
-      disabledServers: user.disabledServers,
       error: user.error,
       servers: user.servers.map(({ name, config }) => {
         const type = typeof config.type === "string" && config.type !== "stdio" ? config.type

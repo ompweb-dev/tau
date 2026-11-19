@@ -1673,7 +1673,6 @@
   "mcpConfig.disable": "停用",
   "mcpConfig.sourceUser": "pi 使用者組態",
   "mcpConfig.sourceProject": "專案組態",
-  "mcpConfig.sourceDisabled": "已探索 · 已停用",
   "mcpConfig.shadowed": "專案覆寫",
   "mcpConfig.connectionHint": "「已啟用」僅反映組態狀態。未經連線狀態驗證的伺服器不會標示為已連線。",
   "mcpConfig.otherSources": "來自其他應用程式的 MCP 組態",

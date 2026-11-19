@@ -1634,7 +1634,6 @@
   "mcpConfig.disable": "無効にする",
   "mcpConfig.sourceUser": "pi のユーザー設定",
   "mcpConfig.sourceProject": "プロジェクト設定",
-  "mcpConfig.sourceDisabled": "検出されたサーバー · 無効",
   "mcpConfig.shadowed": "プロジェクト設定を優先",
   "mcpConfig.connectionHint": "有効・無効は設定値です。接続状態を確認できないサーバーを接続済みとは表示しません。",
   "mcpConfig.otherSources": "他のアプリのMCP設定",

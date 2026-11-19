@@ -1,22 +1,18 @@
-import { execFileSync } from "child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join, relative, resolve, sep } from "path";
-import { getAgentDir } from "./paths";
+import { basename, dirname, join, resolve } from "path";
+import { getAgentDir, getConfigDirName } from "./paths";
 import { isRecord } from "../type-guards";
-import { createGitEnvironment } from "../project-command-env";
 
 const MAX_MCP_CONFIG_BYTES = 512 * 1024;
 const MAX_DISCOVERED_MCP_CONFIG_BYTES = 5 * 1024 * 1024;
 const SERVER_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const MCP_FILENAMES = [join(".omp", "mcp.json"), join(".omp", ".mcp.json"), "mcp.json", ".mcp.json"];
 
 export type McpServer = Record<string, unknown>;
 export type McpFile = Record<string, unknown> & { mcpServers?: Record<string, McpServer> };
 export type McpUserConfig = {
   path: string;
   servers: Array<{ name: string; config: McpServer }>;
-  disabledServers: string[];
   error?: string;
 };
 
@@ -37,27 +33,20 @@ function serverEntries(config: McpFile): Array<{ name: string; config: McpServer
 }
 
 function readMcpUserConfig(path: string): McpUserConfig {
-  if (!existsSync(path)) return { path, servers: [], disabledServers: [] };
+  if (!existsSync(path)) return { path, servers: [] };
   try {
     if (statSync(path).size > MAX_DISCOVERED_MCP_CONFIG_BYTES) throw new Error("configuration is too large to inspect");
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
     if (!isRecord(parsed)) throw new Error("configuration must contain a JSON object");
     if (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers)) throw new Error("mcpServers must be an object");
-    return {
-      path,
-      servers: serverEntries(parsed as McpFile),
-      disabledServers: Array.isArray(parsed.disabledServers)
-        ? parsed.disabledServers.filter((name): name is string => typeof name === "string").sort((a, b) => a.localeCompare(b))
-        : [],
-    };
+    return { path, servers: serverEntries(parsed as McpFile) };
   } catch (error) {
-    return { path, servers: [], disabledServers: [], error: error instanceof Error ? error.message : String(error) };
+    return { path, servers: [], error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-/** OMP's active user-level server configuration. This is deliberately separate
- * from compatibility providers such as Claude Code, which do not describe the
- * MCP connections owned by OMP. */
+/** pi's global server configuration (`<agent dir>/mcp.json`). This is deliberately
+ * separate from other apps' configurations, which pi does not read. */
 export function readUserMcpConfig(path = join(getAgentDir(), "mcp.json")): McpUserConfig {
   return readMcpUserConfig(path);
 }
@@ -75,7 +64,8 @@ function discoverMcpConfigPaths(root: string): string[] {
   const paths = new Set<string>([join(root, ".claude.json"), join(root, "mcp.json"), join(root, ".mcp.json")]);
   try {
     for (const entry of readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !entry.name.startsWith(".")) continue;
+      // pi's own project file is the project configuration, not another app's.
+      if (!entry.isDirectory() || !entry.name.startsWith(".") || entry.name === getConfigDirName()) continue;
       const directory = join(root, entry.name);
       paths.add(join(directory, "mcp.json"));
       paths.add(join(directory, "config.json"));
@@ -87,14 +77,14 @@ function discoverMcpConfigPaths(root: string): string[] {
   return [...paths].filter(existsSync);
 }
 
-function readTomlMcpServers(path: string, source: string, disabledNames: Set<string>): McpLiveServer[] {
+function readTomlMcpServers(path: string, source: string): McpLiveServer[] {
   try {
     if (statSync(path).size > MAX_DISCOVERED_MCP_CONFIG_BYTES) return [];
     const text = readFileSync(path, "utf8");
     const sections = [...text.matchAll(/^\s*\[mcp_servers(?:\.([A-Za-z0-9_-]+)|\."([^"]+)")\]\s*$/gm)];
     return sections.flatMap((section, index) => {
       const name = section[1] ?? section[2];
-      if (!name || disabledNames.has(name)) return [];
+      if (!name) return [];
       const body = text.slice((section.index ?? 0) + section[0].length, sections[index + 1]?.index);
       return [{ name, source, sourcePath: path, status: /^\s*enabled\s*=\s*false\s*$/m.test(body) ? "disabled" as const : "configured" as const, type: /^\s*url\s*=/m.test(body) ? "http" : "stdio" }];
     });
@@ -104,8 +94,7 @@ function readTomlMcpServers(path: string, source: string, disabledNames: Set<str
 }
 
 /** Read installed provider configs by MCP schema, never by individual server name. */
-export function readDiscoveredMcpServers(cwd?: string, disabled = [] as string[]): McpLiveServer[] {
-  const disabledNames = new Set(disabled);
+export function readDiscoveredMcpServers(cwd?: string): McpLiveServer[] {
   const paths = new Set(discoverMcpConfigPaths(homedir()));
   if (cwd) for (const path of discoverMcpConfigPaths(cwd)) paths.add(path);
   const servers: McpLiveServer[] = [];
@@ -113,7 +102,7 @@ export function readDiscoveredMcpServers(cwd?: string, disabled = [] as string[]
   for (const path of paths) {
     const source = sourceName(path);
     if (path.endsWith(".toml")) {
-      for (const server of readTomlMcpServers(path, source, disabledNames)) {
+      for (const server of readTomlMcpServers(path, source)) {
         const key = `${server.source}:${server.name}`;
         if (!seen.has(key)) { seen.add(key); servers.push(server); }
       }
@@ -121,7 +110,6 @@ export function readDiscoveredMcpServers(cwd?: string, disabled = [] as string[]
     }
     const config = readMcpUserConfig(path);
     for (const server of config.servers) {
-      if (disabledNames.has(server.name)) continue;
       const key = `${source}:${server.name}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -136,36 +124,10 @@ function stringRecord(value: unknown, name: string): void {
   if (!isRecord(value) || Object.values(value).some((item) => typeof item !== "string")) throw new Error(`${name} must map strings to strings`);
 }
 
-const projectRootCache = new Map<string, { root: string; expiresAt: number }>();
-const PROJECT_ROOT_TTL_MS = 30_000;
-
-function projectRoot(cwd: string): string {
-  const cached = projectRootCache.get(cwd);
-  if (cached && cached.expiresAt > Date.now()) return cached.root;
-  let root: string;
-  try {
-    root = resolve(execFileSync("git", ["-C", cwd, "rev-parse", "--show-toplevel"], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"], timeout: 10_000, env: createGitEnvironment() }).trim());
-  } catch {
-    // Transient git failure (hang, timeout, sick mount): fall back to the cwd
-    // but do NOT cache it — a cached fallback would aim MCP reads/writes at
-    // the wrong directory for the full TTL instead of retrying git next call.
-    return resolve(cwd);
-  }
-  if (projectRootCache.size > 500) projectRootCache.clear();
-  projectRootCache.set(cwd, { root, expiresAt: Date.now() + PROJECT_ROOT_TTL_MS });
-  return root;
-}
-
-function assertCwdWithinRoot(cwd: string, root: string): void {
-  const path = relative(root, cwd);
-  if (path === ".." || path.startsWith(`..${sep}`)) throw new Error("Project root does not contain workspace");
-}
-
+/** The project file pi reads for a trusted project: `<cwd>/.pi/mcp.json` (pi uses the session cwd, not the git top level). */
 export function resolveMcpConfig(cwd: string): { root: string; path: string } {
-  const root = projectRoot(cwd);
-  assertCwdWithinRoot(cwd, root);
-  const existing = MCP_FILENAMES.map((filename) => join(root, filename)).find(existsSync);
-  return { root, path: existing ?? join(root, MCP_FILENAMES[0]) };
+  const root = resolve(cwd);
+  return { root, path: join(root, getConfigDirName(), "mcp.json") };
 }
 
 export function readMcpConfig(cwd: string): { root: string; path: string; config: McpFile; exists: boolean } {

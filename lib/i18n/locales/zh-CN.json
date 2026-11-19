@@ -1634,7 +1634,6 @@
   "mcpConfig.disable": "禁用",
   "mcpConfig.sourceUser": "pi 用户配置",
   "mcpConfig.sourceProject": "项目配置",
-  "mcpConfig.sourceDisabled": "已发现 · 已禁用",
   "mcpConfig.shadowed": "项目配置优先",
   "mcpConfig.connectionHint": "启用状态反映配置值。无法确认连接状态的服务器不会标记为已连接。",
   "mcpConfig.otherSources": "其他应用的MCP配置",
