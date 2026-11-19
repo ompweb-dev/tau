@@ -6,7 +6,6 @@ import { HostOpError, PROVIDER_ID_RE } from "@/lib/hosts/link-protocol";
 import { forgetHostProviders } from "@/lib/hosts/pool-starts";
 import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { enableProvider } from "@/lib/omp/model-roles";
 import { disposeUtilityRpc } from "@/lib/omp/rpc-utility";
 import { isRecord } from "@/lib/type-guards";
 
@@ -37,10 +36,9 @@ export async function hostProviders(hostId: string): Promise<HostAuthProvider[]>
 
 /** After a login, key or logout: placement asks the host again; on this machine main's models list and utility pi read
  * auth.json again. */
-export function afterAuthChange(hostId: string, provider: string, loggedIn: boolean): void {
+export function afterAuthChange(hostId: string): void {
   forgetHostProviders(hostId);
   if (hostId !== LOCAL_HOST_ID) return;
-  if (loggedIn) enableProvider(provider);
   invalidateModelsCache();
   disposeUtilityRpc();
 }

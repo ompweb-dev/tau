@@ -22,7 +22,7 @@ import {
   ConfirmDialog,
   useFieldValidation,
 } from "@/components/ui/field";
-import { Plus, Trash2, RefreshCw, AlertCircle, Cpu, Settings, Sparkles, Check as CheckIcon, Layers, RotateCcw, SlidersHorizontal, BookOpen, Search, KeyRound, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, RefreshCw, AlertCircle, Cpu, Settings, Sparkles, Check as CheckIcon, Layers, RotateCcw, BookOpen, Search, KeyRound, ArrowLeft } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
 import { ModelCatalogPicker } from "./ModelCatalogPicker";
@@ -54,7 +54,6 @@ import {
   AddProviderPicker,
   ApiKeyDetail,
   CodeText,
-  ModelRolesDetail,
   ModelsConfigSurface,
   NativeRegistryDetail,
   ProviderIcon,
@@ -1049,7 +1048,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
   const [subTab, setSubTab] = useState<"connected" | "custom" | "system">("connected");
-  const [systemTab, setSystemTab] = useState<"registry" | "picker" | "roles" | "fallbacks">("registry");
+  const [systemTab, setSystemTab] = useState<"registry" | "picker" | "fallbacks">("registry");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
@@ -1179,13 +1178,6 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
     });
   }, [runtimeModels]);
 
-
-  const enableConnectedProvider = useCallback(async (provider: string) => {
-    const response = await fetch("/api/providers/enable", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider }) });
-    const data = await response.json() as { error?: string };
-    if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
-    await loadRuntimeModels();
-  }, [loadRuntimeModels]);
 
   const addCustomProvider = useCallback(() => {
     let finalName = "new-provider";
@@ -1336,9 +1328,8 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
       if (!p) return null;
       return <ApiKeyDetail key={`${authHost}:${p.id}`} provider={p} hostId={authHost} onRefresh={() => { loadApiKeyProviders(); void loadRuntimeModels(); }} />;
     }
-    if (selection.type === "roles") return <ModelRolesDetail models={runtimeModels} />;
     if (selection.type === "registry") return <NativeRegistryDetail models={runtimeModels} connectedProviders={connectedProviders} onChanged={loadRuntimeModels} />;
-    if (selection.type === "fallbacks") return <RetryFallbackDetail models={runtimeModels} />;
+    if (selection.type === "fallbacks") return <RetryFallbackDetail />;
     if (selection.type === "picker") {
       const pickerQuery = composerPickerSearch.trim().toLowerCase();
       const matchesPicker = (model: RuntimeModelEntry) =>
@@ -1407,8 +1398,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
           {!runtimeModelsLoading && connectedProviders.filter((provider) => !runtimeModelsByProvider[provider.id]).map((provider) => (
             <section key={provider.id} style={{ border: "1px dashed var(--border)", borderRadius: "var(--radius-card)", padding: 14, background: "var(--bg-panel)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: 12, fontWeight: 600 }}><ProviderIcon id={provider.id} size={15} />{provider.name}</div>
-              <p style={{ margin: "8px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{provider.disabled ? t("modelsConfig.connectedDisabledDesc") : t("modelsConfig.connectedNoModelsDesc")}</p>
-              {provider.disabled && <button type="button" onClick={() => void enableConnectedProvider(provider.id).catch((error) => toast.error(t("modelsConfig.couldNotEnableProvider"), error instanceof Error ? error.message : String(error)))} style={{ marginTop: 10, padding: "6px var(--control-padding-inline)", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: "var(--text-sm)" }}>{t("modelsConfig.enableInOmp")}</button>}
+              <p style={{ margin: "8px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{t("modelsConfig.connectedNoModelsDesc")}</p>
             </section>
           ))}
         </div>
@@ -1979,14 +1969,6 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                   >
                     <BookOpen size={13} aria-hidden="true" />
                     <span>{t("modelsConfig.navComposerPicker")}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`providers-segmented-btn${systemTab === "roles" ? " active" : ""}`}
-                    onClick={() => { setSystemTab("roles"); setSelection({ type: "roles" }); }}
-                  >
-                    <SlidersHorizontal size={13} aria-hidden="true" />
-                    <span>{t("modelsConfig.navModelRoles")}</span>
                   </button>
                   <button
                     type="button"

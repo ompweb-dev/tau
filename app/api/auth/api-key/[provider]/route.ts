@@ -29,7 +29,7 @@ export async function POST(req: Request, { params }: Params) {
   const hostId = hostIdOf(req);
   try {
     await authOp(hostId, { action: "setApiKey", provider, key }, 60_000);
-    afterAuthChange(hostId, provider, true);
+    afterAuthChange(hostId);
     return Response.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error);
@@ -44,7 +44,7 @@ export async function DELETE(req: Request, { params }: Params) {
   const hostId = hostIdOf(req);
   try {
     await authOp(hostId, { action: "logout", provider }, 60_000);
-    afterAuthChange(hostId, provider, false);
+    afterAuthChange(hostId);
     return Response.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error);

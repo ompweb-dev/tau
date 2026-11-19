@@ -29,7 +29,7 @@ export async function DELETE(req: Request, { params }: Params) {
   const hostId = hostIdOf(req);
   try {
     await authOp(hostId, { action: "logout", provider }, 60_000);
-    afterAuthChange(hostId, provider, false);
+    afterAuthChange(hostId);
     return Response.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error);

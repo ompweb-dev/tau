@@ -8,11 +8,10 @@ import {
   DialogTitle,
   ThemedSelect,
 } from "@/components/ui/primitives";
-import { Plus, Trash2, ArrowDown, ArrowUp } from "lucide-react";
+import { Plus, ArrowDown, ArrowUp } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { formatApiError } from "@/lib/i18n/api-error";
 import {
-  NATIVE_MODEL_ROLES,
   providerInitials,
   type ApiKeyProvider,
   type ConnectedProvider,
@@ -83,12 +82,9 @@ export function TreeNavButton({ icon: Icon, label, selected, onClick }: { icon: 
     </button>
   );
 }
-export function RetryFallbackDetail({ models }: { models: RuntimeModelEntry[] }) {
+export function RetryFallbackDetail() {
   const { t } = useI18n();
   const [settings, setSettings] = useState<RetrySettings | null>(null);
-  const [role, setRole] = useState("default");
-  const [candidate, setCandidate] = useState("");
-  const [candidateEffort, setCandidateEffort] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -142,11 +138,6 @@ export function RetryFallbackDetail({ models }: { models: RuntimeModelEntry[] })
 
   if (!settings) return <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{t("modelsConfig.retryLoading")}</div>;
   const retry = settings.retry ?? {};
-  const chain = retry.fallbackChains?.[role] ?? [];
-  const modelOptions = models.map((model) => `${model.provider}/${model.id}`);
-  const candidateModel = models.find((model) => `${model.provider}/${model.id}` === candidate);
-  const candidateSelector = candidate ? `${candidate}${candidateEffort ? `:${candidateEffort}` : ""}` : "";
-  const updateChain = (next: string[]) => void save({ ...settings, retry: { ...retry, fallbackChains: { ...(retry.fallbackChains ?? {}), [role]: next } } });
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
     <div><SectionTitle>{t("modelsConfig.retryFallbackTitle")}</SectionTitle><p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{t("modelsConfig.retryFallbackDesc")}</p></div>
@@ -156,29 +147,6 @@ export function RetryFallbackDetail({ models }: { models: RuntimeModelEntry[] })
       <label style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-card)", background: "var(--bg-panel)", color: "var(--text)", fontSize: 12 }}>{t("modelsConfig.retryAttempts")} <ThemedSelect value={retry.maxRetries ?? 10} onChange={(nextValue) => void save({ ...settings, retry: { ...retry, maxRetries: Number(nextValue) } })} style={{ marginLeft: 8, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)" }} options={[...[0, 1, 2, 3, 5, 10, 15, 20].map((count) => ({ value: count, label: count }))]} /></label>
       <label style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-card)", background: "var(--bg-panel)", color: "var(--text)", fontSize: 12 }}>{t("modelsConfig.returnToPrimary")} <ThemedSelect value={retry.fallbackRevertPolicy ?? "cooldown-expiry"} onChange={(nextValue) => void save({ ...settings, retry: { ...retry, fallbackRevertPolicy: nextValue as "cooldown-expiry" | "never" } })} style={{ marginLeft: 8, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)" }} options={[{ value: "cooldown-expiry", label: t("modelsConfig.afterCooldown") }, { value: "never", label: t("modelsConfig.never") }]} /></label>
     </div>
-    <section style={{ border: "1px solid var(--border)", borderRadius: "var(--radius-card)", overflow: "hidden" }}>
-      <div style={{ padding: "10px 12px", background: "var(--bg-panel)", display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "var(--text)", fontSize: 12, fontWeight: 600 }}>{t("modelsConfig.fallbackChainFor")}</span><ThemedSelect aria-label={t("modelsConfig.fallbackChainFor")} value={role} onChange={(nextValue) => setRole(nextValue)} style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)" }} options={[...NATIVE_MODEL_ROLES.map((value) => ({ value: value, label: value }))]} /></div>
-      <div style={{ padding: 12, display: "flex", gap: 8 }}>
-        <ThemedSelect aria-label={t("modelsConfig.selectFallbackModel")} value={candidate} onChange={(nextValue) => { setCandidate(nextValue); setCandidateEffort(""); }} style={{ flex: 1, minWidth: 0, padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)" }} options={[{ value: "", label: t("modelsConfig.selectFallbackModel") }, ...modelOptions.map((value) => ({ value: value, label: value }))]} />
-        <ThemedSelect aria-label={t("modelsConfig.thinkingLevels")} value={candidateEffort} disabled={!candidateModel} onChange={setCandidateEffort} style={{ minWidth: 110, padding: "6px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)", opacity: candidateModel ? 1 : 0.55 }} options={[{ value: "", label: t("modelsConfig.modelDefault") }, ...(candidateModel?.thinkingLevels ?? []).map((level) => ({ value: level, label: level }))]} />
-        <button type="button" disabled={!candidate || chain.includes(candidateSelector)} onClick={() => { updateChain([...chain, candidateSelector]); setCandidate(""); setCandidateEffort(""); }} style={{ padding: "6px 10px", border: "none", borderRadius: "var(--radius-control)", background: "var(--accent-strong)", color: "white", cursor: "pointer", fontSize: 12 }}>{t("modelsConfig.add")}</button>
-      </div>
-      {chain.length === 0 ? (
-        <div style={{ padding: "0 12px 12px", color: "var(--text-dim)", fontSize: 12 }}>{t("modelsConfig.noExplicitChain")}</div>
-      ) : (
-        <div style={{ borderTop: "1px solid var(--border)" }}>
-          {chain.map((selector, index) => (
-            <div key={selector} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", color: "var(--text-muted)", fontSize: 12 }}>
-              <span style={{ width: 18, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>{index + 1}</span>
-              <code style={{ flex: 1 }}>{selector}</code>
-              <button type="button" aria-label={`Move ${selector} up`} title={`Move ${selector} up`} disabled={index === 0} onClick={() => { const next = [...chain]; const previous = next[index - 1]; next[index - 1] = next[index]; next[index] = previous; updateChain(next); }} className="ui-focus-ring" style={{ width: 24, height: 24, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: index === 0 ? "default" : "pointer" }}><ArrowUp size={14} /></button>
-              <button type="button" aria-label={`Move ${selector} down`} title={`Move ${selector} down`} disabled={index === chain.length - 1} onClick={() => { const next = [...chain]; const following = next[index + 1]; next[index + 1] = next[index]; next[index] = following; updateChain(next); }} className="ui-focus-ring" style={{ width: 24, height: 24, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: index === chain.length - 1 ? "default" : "pointer" }}><ArrowDown size={14} /></button>
-              <button type="button" aria-label={`Remove ${selector} from chain`} title={`Remove ${selector}`} onClick={() => updateChain(chain.filter((value) => value !== selector))} className="ui-focus-ring" style={{ width: 24, height: 24, padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "none", borderRadius: 4, background: "transparent", color: "var(--text-muted)", cursor: "pointer" }}><Trash2 size={14} /></button>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
     {error && <div role="alert" style={{ color: "var(--status-error)", fontSize: 12 }}>{error}</div>}
   </div>;
 }
@@ -266,84 +234,6 @@ export function NativeRegistryDetail({ models, connectedProviders, onChanged }: 
     </section>
     {isReadOnly && <div role="status" style={{ padding: "9px 11px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.45 }}>{t("modelsConfig.pathScopedNotice")}</div>}
     {error && <div role="alert" style={{ color: "var(--status-error)", fontSize: 12 }}>{error}</div>}
-  </div>;
-}
-export function ModelRolesDetail({ models }: { models: RuntimeModelEntry[] }) {
-  const { t } = useI18n();
-  const [roles, setRoles] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/model-roles")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
-      .then((data: { roles?: Record<string, string> }) => setRoles(data.roles ?? {}))
-      .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/model-roles", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roles }) });
-      const data = await response.json() as { error?: string };
-      if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
-      toast.success(t("modelsConfig.rolesSaved"));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updateRoleModel = (role: string, modelValue: string) => {
-    const current = roles[role] ?? "";
-    const effort = current.match(/:([^,:]+)$/)?.[1] ?? "";
-    setRoles((values) => ({ ...values, [role]: modelValue ? `${modelValue}${effort ? `:${effort}` : ""}` : "" }));
-  };
-
-  const updateRoleThinking = (role: string, effort: string) => {
-    const current = roles[role] ?? "";
-    const modelValue = current.replace(/:([^,:]+)$/, "");
-    setRoles((values) => ({ ...values, [role]: modelValue ? `${modelValue}${effort ? `:${effort}` : ""}` : "" }));
-  };
-
-  return <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-    <div>
-      <SectionTitle>{t("modelsConfig.modelRolesTitle")}</SectionTitle>
-      <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{t("modelsConfig.modelRolesDesc")}</p>
-    </div>
-    {loading ? <div style={{ color: "var(--text-muted)", fontSize: 12 }}>{t("modelsConfig.loadingRoles")}</div> : NATIVE_MODEL_ROLES.map((role) => (
-      <div key={role} className="model-role-row" style={{ display: "grid", gridTemplateColumns: "82px minmax(0, 1fr) minmax(110px, 0.35fr)", alignItems: "center", gap: 10, fontSize: 12 }}>
-        <code style={{ color: "var(--text-muted)" }}>{role}</code>
-        {(() => {
-          const raw = roles[role] ?? "";
-          const selectedModel = raw.replace(/:([^,:]+)$/, "");
-          const selectedThinking = raw.match(/:([^,:]+)$/)?.[1] ?? "";
-          const model = models.find((item) => `${item.provider}/${item.id}` === selectedModel);
-          const modelKnown = !selectedModel || Boolean(model);
-          return <>
-            <ThemedSelect aria-label={`Model override for ${role}`} value={selectedModel} onChange={(nextValue) => updateRoleModel(role, nextValue)} style={{ minWidth: 0, padding: "7px 9px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)", fontSize: 12 }}
-              options={[
-                { value: "", label: t("modelsConfig.noOverride") },
-                ...(!modelKnown && [{ value: selectedModel, label: <>{selectedModel} (not currently available)</> }] || []),
-                ...models.map((item) => ({ value: `${item.provider}/${item.id}`, label: <>{item.name || item.id} ({item.provider}/{item.id})</> })),
-              ]}
-            />
-            <ThemedSelect aria-label={`Thinking level for ${role}`} value={selectedThinking} disabled={!model} onChange={(nextValue) => updateRoleThinking(role, nextValue)} style={{ minWidth: 0, padding: "7px 9px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)", fontSize: 12, opacity: model ? 1 : 0.55 }}
-              options={[
-                { value: "", label: t("modelsConfig.modelDefault") },
-                ...(model?.thinkingLevels ?? []).filter((level) => level !== "off").map((level) => ({ value: level, label: level })),
-              ]}
-            />
-          </>;
-        })()}
-      </div>
-    ))}
-    {error && <div role="alert" style={{ color: "var(--status-error)", fontSize: 12 }}>{error}</div>}
-    <button type="button" onClick={() => void save()} disabled={loading || saving} style={{ alignSelf: "flex-start", padding: "7px 12px", border: "none", borderRadius: "var(--radius-control)", background: "var(--accent-strong)", color: "var(--on-accent)", cursor: saving ? "wait" : "pointer", fontSize: 12, fontWeight: 600 }}>{saving ? t("modelsConfig.saving") : t("modelsConfig.saveRoles")}</button>
   </div>;
 }
 // ── API Key detail ────────────────────────────────────────────────────────────

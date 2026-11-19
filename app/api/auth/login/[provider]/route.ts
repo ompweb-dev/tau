@@ -116,7 +116,7 @@ export async function GET(
             send(event.type === "auth" || event.type === "prompt_request" || event.type === "select_request" ? { ...event, token } : event);
           }
         }
-        if (outcome === "success") afterAuthChange(hostId, provider, true);
+        if (outcome === "success") afterAuthChange(hostId);
         if (!outcome) send({ type: "cancelled" });
       } catch (error) {
         if (req.signal.aborted) send({ type: "cancelled" });

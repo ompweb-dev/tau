@@ -32,7 +32,6 @@ import * as hostsIdMaintenance from "@/app/api/hosts/[id]/maintenance/route";
 import * as manifest from "@/app/api/manifest/route";
 import * as mcp from "@/app/api/mcp/route";
 import * as mediaHash from "@/app/api/media/[hash]/route";
-import * as modelRoles from "@/app/api/model-roles/route";
 import * as modelsConfigCatalog from "@/app/api/models-config/catalog/route";
 import * as modelsConfig from "@/app/api/models-config/route";
 import * as modelsConfigTest from "@/app/api/models-config/test/route";
@@ -47,7 +46,6 @@ import * as ompVersion from "@/app/api/omp-version/route";
 import * as plugins from "@/app/api/plugins/route";
 import * as projectsClone from "@/app/api/projects/clone/route";
 import * as projects from "@/app/api/projects/route";
-import * as providersEnable from "@/app/api/providers/enable/route";
 import * as sessionsIdArchive from "@/app/api/sessions/[id]/archive/route";
 import * as sessionsIdAutoName from "@/app/api/sessions/[id]/auto-name/route";
 import * as sessionsIdContext from "@/app/api/sessions/[id]/context/route";
@@ -132,7 +130,6 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "manifest": manifest,
   "mcp": mcp,
   "media/[hash]": mediaHash,
-  "model-roles": modelRoles,
   "models-config/catalog": modelsConfigCatalog,
   "models-config": modelsConfig,
   "models-config/test": modelsConfigTest,
@@ -147,7 +144,6 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "plugins": plugins,
   "projects/clone": projectsClone,
   "projects": projects,
-  "providers/enable": providersEnable,
   "sessions/[id]/archive": sessionsIdArchive,
   "sessions/[id]/auto-name": sessionsIdAutoName,
   "sessions/[id]/context": sessionsIdContext,

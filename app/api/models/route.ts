@@ -2,7 +2,6 @@ import { statSync } from "fs";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, withSafeModelLoadFailure, type ModelsData } from "@/lib/models-cache";
 import { disposeUtilityRpc, runUtilityCommand, type OmpModel } from "@/lib/omp/rpc-utility";
 import { getModelsConfigPath } from "@/lib/omp/paths";
-import { readDisabledProviders } from "@/lib/omp/model-roles";
 import { readAnthropicSlowMode } from "@/lib/omp/settings-config";
 
 // The omp model registry (auth + models.yml) is global, not per-cwd, so one
@@ -100,10 +99,9 @@ async function loadModels(): Promise<ModelsData> {
       && typeof (provider as { authenticated?: unknown }).authenticated === "boolean"
     ))
     : [];
-  const disabledProviders = readDisabledProviders();
   const connectedProviders = loginProviders
     .filter((provider) => provider.authenticated)
-    .map((provider) => ({ id: provider.id, name: provider.name, disabled: disabledProviders.has(provider.id) }));
+    .map((provider) => ({ id: provider.id, name: provider.name }));
   for (const m of available) {
     const key = `${m.provider}:${m.id}`;
     nameMap.set(key, m.name);

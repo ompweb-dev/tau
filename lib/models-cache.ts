@@ -3,7 +3,7 @@ export interface ModelsData {
   modelList: { id: string; name: string; provider: string; supportsFastMode?: boolean; supportsSlowMode?: boolean }[];
   defaultModel: { provider: string; modelId: string } | null;
   thinkingLevels: Record<string, string[]>;
-  connectedProviders?: { id: string; name: string; disabled: boolean }[];
+  connectedProviders?: { id: string; name: string }[];
   modelError?: string;
 }
 
