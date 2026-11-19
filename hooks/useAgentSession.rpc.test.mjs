@@ -3383,7 +3383,7 @@ function attachNativeWrapper(t, sid) {
     },
     sendFrame() {},
     async dispose() {},
-  }, process.cwd(), null, false, "", undefined, onlineHost);
+  }, process.cwd(), null, "", undefined, onlineHost);
   wrapper.start();
   world.wrappers.set(sid, wrapper);
   t.after(() => wrapper.destroyAndWait());
@@ -3996,7 +3996,7 @@ async function attachEditableWrapper(t, native, { holdHistory = false } = {}) {
     callExtension(command, args) { return this.sendCommand(command === "tau_edit" ? { type: "edit_message", entryId: args.entryId } : { type: command, ...args }); },
     sendFrame() {},
     async dispose() { listeners.clear(); },
-  }, process.cwd(), null, false, "", undefined, onlineHost);
+  }, process.cwd(), null, "", undefined, onlineHost);
   t.after(() => wrapper.destroyAndWait());
   native.onMove = () => emitNative({ type: "notice", source: "session-persistence", level: "warning", message: "Session moved to a sibling file because another process owns the original" });
   wrapper.onIdentityChange((oldId, newId, options) => {
