@@ -83,7 +83,7 @@ export const SESSION_OP_PARAMS: { readonly [K in keyof SessionOps]: readonly str
   readSessionState: ["id"],
   readSubagentHistory: ["id"],
   readSubagentTranscript: ["id", "subagentId", "mode", "cursor", "file"],
-  renameSessionFile: ["id", "title", "source"],
+  renameSessionFile: ["id", "title"],
   deleteSession: ["id", "liveSessionIds"],
   archiveSession: ["id"],
   listArchives: [],

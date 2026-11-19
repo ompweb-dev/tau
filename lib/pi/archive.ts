@@ -9,7 +9,7 @@ import path from "path";
 import type { Dirent } from "fs";
 import type { ArchivedSessionInfo, SessionHeader } from "../types";
 import { getArchivedSessionsDir, getSessionsDir } from "./paths";
-import { invalidateSessionFileListCache, parseTitleSlotLine, SESSION_TITLE_SLOT_BYTES, type SessionStatus } from "./session-files";
+import { invalidateSessionFileListCache, sessionNameFromEntries, type SessionStatus } from "./session-files";
 import { isValidSessionId } from "../session-file-references-core";
 
 export interface ArchivedSessionRecord {
@@ -130,21 +130,17 @@ function textFromContent(content: unknown): string {
 function parseArchivePrefix(prefix: Buffer, filePath: string, archiveRoot: string): ArchivedSessionRecord | undefined {
   const lines = prefix.toString("utf8").split(/\r?\n/).filter((line) => line.trim());
   if (lines.length === 0) return undefined;
-  let title: string | undefined;
-  let headerIndex = 0;
+  // shortcut: names only from session_info entries inside the prefix; read the whole archive if later renames matter.
+  const infos: Array<{ type?: string; name?: unknown }> = [];
   try {
-    const first = JSON.parse(lines[0]) as Record<string, unknown>;
-    if (first.type === "title" && typeof first.title === "string") {
-      title = first.title || undefined;
-      headerIndex = 1;
-    }
-    const header = JSON.parse(lines[headerIndex]) as SessionHeader;
+    const header = JSON.parse(lines[0]) as SessionHeader;
     if (header.type !== "session" || typeof header.id !== "string") return undefined;
     let messageCount = 0;
     let firstMessage = "";
-    for (const line of lines.slice(headerIndex + 1)) {
+    for (const line of lines.slice(1)) {
       try {
-        const entry = JSON.parse(line) as { type?: string; message?: { role?: string; content?: unknown } };
+        const entry = JSON.parse(line) as { type?: string; name?: unknown; message?: { role?: string; content?: unknown } };
+        if (entry.type === "session_info") infos.push(entry);
         if (entry.type !== "message" || !entry.message) continue;
         messageCount++;
         if (!firstMessage && entry.message.role === "user") firstMessage = textFromContent(entry.message.content);
@@ -158,7 +154,7 @@ function parseArchivePrefix(prefix: Buffer, filePath: string, archiveRoot: strin
       key: path.relative(archiveRoot, filePath).split(path.sep).join("/"),
       id: header.id,
       cwd: typeof header.cwd === "string" ? header.cwd : "",
-      title: title ?? (typeof header.title === "string" ? header.title : undefined),
+      title: sessionNameFromEntries(infos),
       created,
       archivedAt: fileStat.mtime,
       messageCount,
@@ -561,7 +557,7 @@ function archiveSizeLimit(kind: "compressed" | "expanded", limit: number): Trans
 }
 
 async function readArchivedSessionId(filePath: string): Promise<string> {
-  const maxHeaderBytes = 64 * 1024 + SESSION_TITLE_SLOT_BYTES;
+  const maxHeaderBytes = 64 * 1024;
   const file = await open(filePath, "r");
   let prefix: string;
   let bytesRead: number;
@@ -573,11 +569,10 @@ async function readArchivedSessionId(filePath: string): Promise<string> {
     await file.close();
   }
   const lines = prefix.split("\n");
-  const headerIndex = parseTitleSlotLine(lines[0] ?? "") ? 1 : 0;
-  if (lines.length <= headerIndex + 1 && bytesRead === maxHeaderBytes) throw new Error("Archived session header is invalid");
+  if (lines.length <= 1 && bytesRead === maxHeaderBytes) throw new Error("Archived session header is invalid");
   let header: SessionHeader;
   try {
-    header = JSON.parse(lines[headerIndex] ?? "") as SessionHeader;
+    header = JSON.parse(lines[0] ?? "") as SessionHeader;
   } catch {
     throw new Error("Archived session header is invalid");
   }

@@ -4,6 +4,7 @@ import {
   closeSync,
   constants as fsConstants,
   fstatSync,
+  appendFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -18,7 +19,6 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
-  writeSync,
 } from "fs";
 import * as fsRuntime from "fs";
 import * as path from "path";
@@ -33,144 +33,37 @@ import type {
   CompactionEntry,
   SessionEntry,
   SessionHeader,
-  SessionTitleSource,
   SessionTreeNode,
 } from "../types";
 import { getArchivedSessionsDir, getBlobsDir, getSessionsDir } from "./paths";
 import { sessionPathKey } from "../paths";
 
 /**
- * Pure-Node reader/writer for oh-my-pi's session JSONL files (format v3).
- * Ported from oh-my-pi packages/coding-agent/src/session/ (session-entries,
- * session-title-slot, session-listing, session-loader, session-migrations,
- * blob-store) because the @oh-my-pi packages are Bun-only and the server ran
- * on Node (Next.js) when this was written.
+ * Pure-Node reader/writer for pi's session JSONL files (format v3), so the
+ * daemon can list and read sessions without starting pi.
  *
- * File layout: optional fixed-width 256-byte title-slot line, then the
- * {"type":"session"} header line, then entries forming a tree via
- * (id, parentId). Legacy pi v1/v2 files have no title slot and are migrated
- * in memory on load. Large image payloads are externalized to the
- * content-addressed blob store and referenced as "blob:sha256:<hex>".
+ * File layout: the {"type":"session"} header line, then entries forming a tree
+ * via (id, parentId). pi refuses a file whose first entry is not the header.
+ * Legacy v1/v2 files are migrated in memory on load. A session's name is the
+ * latest `session_info` entry's (pi's appendSessionInfo; an empty name clears it).
  */
 
-export const SESSION_TITLE_SLOT_BYTES = 256;
 export const CURRENT_SESSION_VERSION = 3;
 
-// ============================================================================
-// Title slot (fixed-width line 1)
-// ============================================================================
+/** How pi serializes a session_info line (JSON.stringify of `{type, id, ...}`). */
+const SESSION_INFO_LINE_PREFIX = '{"type":"session_info"';
 
-export interface SessionTitleSlot {
-  type: "title";
-  v: 1;
-  title: string;
-  source?: SessionTitleSource;
-  updatedAt: string;
-  pad: string;
+/** The name a session_info record sets, as pi's getSessionName reads it. */
+function sessionInfoName(record: { name?: unknown }): string | undefined {
+  return typeof record.name === "string" ? record.name.trim() || undefined : undefined;
 }
 
-export interface SessionTitleUpdate {
-  title?: string;
-  source?: SessionTitleSource;
-  updatedAt: string;
-}
-
-function titleSlotLine(
-  title: string,
-  source: SessionTitleSource | undefined,
-  updatedAt: string,
-  pad: string,
-): string {
-  const slot: SessionTitleSlot = source
-    ? { type: "title", v: 1, title, source, updatedAt, pad }
-    : { type: "title", v: 1, title, updatedAt, pad };
-  return `${JSON.stringify(slot)}\n`;
-}
-
-/** Longest code-point prefix of `title` whose serialized line fits the slot. */
-function truncateTitleForSlot(
-  title: string,
-  source: SessionTitleSource | undefined,
-  updatedAt: string,
-): string {
-  const codePoints = [...title];
-  let low = 0;
-  let high = codePoints.length;
-  let best = "";
-  while (low <= high) {
-    const mid = (low + high) >>> 1;
-    const candidate = codePoints.slice(0, mid).join("");
-    if (Buffer.byteLength(titleSlotLine(candidate, source, updatedAt, ""), "utf8") <= SESSION_TITLE_SLOT_BYTES) {
-      best = candidate;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
+/** The session name: the latest session_info entry's, or undefined. */
+export function sessionNameFromEntries(entries: ReadonlyArray<{ type?: string; name?: unknown }>): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].type === "session_info") return sessionInfoName(entries[i]);
   }
-  return best;
-}
-
-function isSessionTitleSource(value: unknown): value is SessionTitleSource {
-  return value === "auto" || value === "user";
-}
-
-/** Parse a physical title-slot JSONL line. Returns undefined for anything else. */
-export function parseTitleSlotLine(line: string): SessionTitleSlot | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line);
-  } catch {
-    return undefined;
-  }
-  if (typeof value !== "object" || value === null) return undefined;
-  const record = value as Record<string, unknown>;
-  if (record.type !== "title" || record.v !== 1) return undefined;
-  if (typeof record.title !== "string" || typeof record.updatedAt !== "string" || typeof record.pad !== "string") {
-    return undefined;
-  }
-  if (record.source !== undefined && !isSessionTitleSource(record.source)) return undefined;
-  const slot: SessionTitleSlot = {
-    type: "title",
-    v: 1,
-    title: record.title,
-    updatedAt: record.updatedAt,
-    pad: record.pad,
-  };
-  if (record.source) slot.source = record.source as SessionTitleSource;
-  return slot;
-}
-
-/** Serialize the title slot to exactly 256 UTF-8 bytes including the newline. */
-export function serializeTitleSlot(update: SessionTitleUpdate): string {
-  const title = truncateTitleForSlot(update.title ?? "", update.source, update.updatedAt);
-  const unpadded = titleSlotLine(title, update.source, update.updatedAt, "");
-  const padBytes = SESSION_TITLE_SLOT_BYTES - Buffer.byteLength(unpadded, "utf8");
-  if (padBytes < 0) throw new Error("Session title slot metadata exceeds fixed slot size");
-  const line = titleSlotLine(title, update.source, update.updatedAt, " ".repeat(padBytes));
-  if (Buffer.byteLength(line, "utf8") !== SESSION_TITLE_SLOT_BYTES) {
-    throw new Error("Session title slot serialization failed to produce fixed-width output");
-  }
-  return line;
-}
-
-/** Read only the fixed-size head window to detect a physical title slot. */
-export function readTitleSlot(filePath: string): SessionTitleSlot | undefined {
-  let fd: number;
-  try {
-    fd = openSync(filePath, "r");
-  } catch {
-    return undefined;
-  }
-  try {
-    const buffer = Buffer.allocUnsafe(SESSION_TITLE_SLOT_BYTES);
-    const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
-    const head = buffer.subarray(0, bytesRead).toString("utf8");
-    const newlineIndex = head.indexOf("\n");
-    if (newlineIndex < 0) return undefined;
-    return parseTitleSlotLine(head.slice(0, newlineIndex));
-  } finally {
-    closeSync(fd);
-  }
+  return undefined;
 }
 
 // ============================================================================
@@ -375,7 +268,6 @@ export type SessionLoadError = "too_large";
 export interface LoadedSession {
   header: SessionHeader | null;
   entries: SessionEntry[];
-  titleSlot: SessionTitleSlot | undefined;
   /** Set when the file exists but could not be materialized (see loadSessionFile). */
   error?: SessionLoadError;
 }
@@ -403,11 +295,12 @@ export const MAX_SESSION_LOAD_BYTES = 1024 * 1024 * 1024;
  * this never materializes the whole file as a single JS string, so sessions
  * past Node's ~512 MiB string cap still open. Lines exclude the newline; the
  * decoder carries multi-byte characters across chunk boundaries. Returning
- * false from onLine stops the read.
+ * false from onLine stops the read. `from` starts the read at that byte offset.
  */
 export function forEachFileLineSync(
   filePath: string,
   onLine: (line: string, offset: number, length: number) => boolean | void,
+  from = 0,
 ): void {
   const fd = openSync(filePath, "r");
   try {
@@ -415,11 +308,14 @@ export function forEachFileLineSync(
     const decoder = new StringDecoder("utf8");
     // Join a long line only once; offsets count physical bytes, not UTF-16.
     const fragments: string[] = [];
-    let offset = 0;
+    let offset = from;
+    // null reads on from the file position, which starts at 0.
+    let position: number | null = from || null;
     let length = 0;
     for (;;) {
-      const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, position);
       if (bytesRead === 0) break;
+      if (position !== null) position += bytesRead;
       let start = 0;
       while (start < bytesRead) {
         const newline = buffer.indexOf(10, start);
@@ -446,9 +342,9 @@ export function forEachFileLineSync(
 }
 
 /**
- * Load and parse a session file: strip the optional title slot, validate the
- * header, migrate legacy pi v1/v2 shapes, fold the slot title into the header,
- * and optionally resolve blob refs. Missing/malformed files yield
+ * Load and parse a session file: validate the header, migrate legacy pi v1/v2
+ * shapes, set header.title to the session name (latest session_info), and
+ * optionally resolve blob refs. Missing/malformed files yield
  * { header: null, entries: [] } instead of throwing; a session too large to
  * hold in memory additionally sets error:"too_large" so routes can say so
  * instead of reporting it as malformed.
@@ -458,22 +354,16 @@ export function loadSessionFile(filePath: string, options: LoadSessionOptions = 
   try {
     size = statSync(filePath).size;
   } catch {
-    return { header: null, entries: [], titleSlot: undefined };
+    return { header: null, entries: [] };
   }
   if (size > MAX_SESSION_LOAD_BYTES) {
-    return { header: null, entries: [], titleSlot: undefined, error: "too_large" };
+    return { header: null, entries: [], error: "too_large" };
   }
 
-  let titleSlot: SessionTitleSlot | undefined;
   const records: Record<string, unknown>[] = [];
-  let isFirstLine = true;
+  let name: string | undefined;
   try {
     forEachFileLineSync(filePath, (rawLine, offset, length) => {
-      if (isFirstLine) {
-        isFirstLine = false;
-        titleSlot = parseTitleSlotLine(rawLine);
-        if (titleSlot) return;
-      }
       const line = rawLine.trim();
       if (!line) return;
       let record: Record<string, unknown>;
@@ -482,6 +372,7 @@ export function loadSessionFile(filePath: string, options: LoadSessionOptions = 
       } catch {
         return; // Skip malformed line (torn write).
       }
+      if (record?.type === "session_info") name = sessionInfoName(record);
       records.push(records.length > 0 && record && record.type !== "session" && options.projectEntry
         ? options.projectEntry(record as unknown as SessionEntry, offset, length) as unknown as Record<string, unknown>
         : record);
@@ -489,43 +380,31 @@ export function loadSessionFile(filePath: string, options: LoadSessionOptions = 
   } catch (error) {
     // A single line past the string cap, or an allocation failure part-way in.
     const tooLarge = error instanceof RangeError;
-    return { header: null, entries: [], titleSlot, ...(tooLarge ? { error: "too_large" as const } : {}) };
+    return { header: null, entries: [], ...(tooLarge ? { error: "too_large" as const } : {}) };
   }
 
   const headerRecord = records[0];
   if (!headerRecord || headerRecord.type !== "session" || typeof headerRecord.id !== "string") {
-    return { header: null, entries: [], titleSlot };
+    return { header: null, entries: [] };
   }
   const header = headerRecord as unknown as SessionHeader;
   const entries = records.slice(1).filter((record) => record.type !== "session") as unknown as MutableEntry[];
 
   migrateToCurrentVersion(header, entries);
 
-  if (titleSlot) {
-    if (titleSlot.title) {
-      header.title = titleSlot.title;
-      if (titleSlot.source) header.titleSource = titleSlot.source;
-      else delete header.titleSource;
-    } else {
-      delete header.title;
-      delete header.titleSource;
-    }
-  }
+  if (name) header.title = name;
+  else delete header.title;
 
   if (options.resolveBlobs) {
     resolveBlobRefsInEntries(entries, { skipToolResultImages: options.skipToolResultImages });
   }
 
-  return { header, entries, titleSlot };
+  return { header, entries };
 }
 
-/**
- * Bounded, slot-aware header read: parses only the first physical line (plus
- * the second when line 1 is a title slot), capped at 64 KiB. The slot title is
- * folded into the returned header.
- */
+/** Bounded header read: parses only the first physical line, capped at 64 KiB. The header carries no name. */
 export function readSessionHeaderSync(filePath: string, strict = false): SessionHeader | null {
-  const maxHeaderBytes = 64 * 1024 + SESSION_TITLE_SLOT_BYTES;
+  const maxHeaderBytes = 64 * 1024;
   if (strict && !lstatSync(path.dirname(filePath)).isDirectory()) throw new Error(`Cannot inventory symlinked session project at ${filePath}`);
   const expected = strict ? lstatSync(filePath, { bigint: true }) : null;
   if (expected && !expected.isFile()) throw new Error(`Cannot inventory non-regular session path ${filePath}`);
@@ -559,19 +438,7 @@ export function readSessionHeaderSync(filePath: string, strict = false): Session
     if (Buffer.byteLength(head, "utf8") >= maxHeaderBytes) return null;
     firstLineEnd = head.length;
   }
-  const firstLine = head.slice(0, firstLineEnd).trim();
-  if (!firstLine) return null;
-
-  const slot = parseTitleSlotLine(firstLine);
-  let headerLine: string;
-  if (slot) {
-    const rest = head.slice(firstLineEnd + 1);
-    const secondLineEnd = rest.indexOf("\n");
-    if (secondLineEnd === -1 && Buffer.byteLength(rest, "utf8") + firstLineEnd >= maxHeaderBytes) return null;
-    headerLine = (secondLineEnd === -1 ? rest : rest.slice(0, secondLineEnd)).trim();
-  } else {
-    headerLine = firstLine;
-  }
+  const headerLine = head.slice(0, firstLineEnd).trim();
   if (!headerLine) return null;
 
   let header: SessionHeader;
@@ -581,13 +448,7 @@ export function readSessionHeaderSync(filePath: string, strict = false): Session
     return null;
   }
   if (header.type !== "session") return null;
-  if (slot?.title) {
-    header.title = slot.title;
-    if (slot.source) header.titleSource = slot.source;
-  } else if (slot) {
-    delete header.title;
-    delete header.titleSource;
-  }
+  delete header.title;
   return header;
 }
 
@@ -650,6 +511,7 @@ export interface PiSessionInfo {
   path: string;
   id: string;
   cwd: string;
+  /** The session name (latest session_info). */
   title?: string;
   parentSessionPath?: string;
   created: Date;
@@ -851,72 +713,53 @@ function scanTailMessage(suffix: string): { status: SessionStatus; lastMessageAt
 interface SessionListHeader {
   id: string;
   cwd?: string;
-  title?: string;
   parentSession?: string;
   timestamp?: string;
 }
 
-function normalizeTitleOverride(title: string | undefined): string | null | undefined {
-  if (title === undefined) return undefined;
-  return title.trim() ? title : null;
-}
-
-function sessionListHeaderFromRecord(
-  record: Record<string, unknown> | undefined,
-  titleOverride?: string | null,
+/** Parse the header from the prefix window. Falls back to a raw-text scan when
+ * the header line straddles the window. */
+function parseSessionListHeader(
+  content: string,
+  entries: Array<Record<string, unknown>>,
 ): SessionListHeader | undefined {
-  if (record?.type !== "session" || typeof record.id !== "string") return undefined;
-  return {
-    id: record.id,
-    cwd: typeof record.cwd === "string" ? record.cwd : undefined,
-    title:
-      titleOverride === null
-        ? undefined
-        : (titleOverride ?? (typeof record.title === "string" ? record.title : undefined)),
-    parentSession: typeof record.parentSession === "string" ? record.parentSession : undefined,
-    timestamp: typeof record.timestamp === "string" ? record.timestamp : undefined,
-  };
-}
-
-function parseSessionListHeaderLine(line: string, titleOverride?: string | null): SessionListHeader | undefined {
-  if (extractStringProperty(line, "type") !== "session") return undefined;
+  const record = entries[0];
+  if (record?.type === "session" && typeof record.id === "string") {
+    return {
+      id: record.id,
+      cwd: typeof record.cwd === "string" ? record.cwd : undefined,
+      parentSession: typeof record.parentSession === "string" ? record.parentSession : undefined,
+      timestamp: typeof record.timestamp === "string" ? record.timestamp : undefined,
+    };
+  }
+  const line = content.split(/\r?\n/).find((rawLine) => rawLine.trim())?.trim();
+  if (!line || extractStringProperty(line, "type") !== "session") return undefined;
   const id = extractStringProperty(line, "id");
   if (!id) return undefined;
   return {
     id,
     cwd: extractStringProperty(line, "cwd"),
-    title: titleOverride === null ? undefined : (titleOverride ?? extractStringProperty(line, "title")),
     parentSession: extractStringProperty(line, "parentSession"),
     timestamp: extractStringProperty(line, "timestamp"),
   };
 }
 
-/** Parse the header from the prefix window; slot titles override header titles.
- * Falls back to a raw-text scan when the header line straddles the window. */
-function parseSessionListHeader(
-  content: string,
-  entries: Array<Record<string, unknown>>,
-): SessionListHeader | undefined {
-  const firstEntry = entries[0];
-  const parsedSlotTitle = normalizeTitleOverride(
-    firstEntry?.type === "title" && typeof firstEntry.title === "string" ? firstEntry.title : undefined,
-  );
-  const parsedHeader = sessionListHeaderFromRecord(entries[firstEntry?.type === "title" ? 1 : 0], parsedSlotTitle);
-  if (parsedHeader) return parsedHeader;
-
-  let slotTitle: string | null | undefined;
-  let firstNonEmpty = true;
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (firstNonEmpty && extractStringProperty(line, "type") === "title") {
-      slotTitle = normalizeTitleOverride(extractStringProperty(line, "title"));
-      firstNonEmpty = false;
-      continue;
-    }
-    return parseSessionListHeaderLine(line, slotTitle);
+/** The latest session_info name in the file from byte `from` (a line start) on, else `previous`. */
+function scanSessionName(filePath: string, from: number, previous: string | undefined): string | undefined {
+  let name = previous;
+  try {
+    forEachFileLineSync(filePath, (line) => {
+      if (!line.startsWith(SESSION_INFO_LINE_PREFIX)) return;
+      try {
+        name = sessionInfoName(JSON.parse(line) as { name?: unknown });
+      } catch {
+        // Torn line: pi skips it too.
+      }
+    }, from);
+  } catch {
+    // A line past the JS string cap: keep what was found.
   }
-  return undefined;
+  return name;
 }
 
 function readTextSlices(
@@ -948,13 +791,15 @@ function readTextSlices(
 
 /**
  * Scan a single session file into an PiSessionInfo using only a 4 KiB prefix
- * window (plus a 32 KiB tail window when `withStatus` is set). Faithful port
- * of omp's scanSessionFile — messageCount is a prefix-derived lower bound.
+ * window (plus a 32 KiB tail window when `withStatus` is set) — messageCount is
+ * a prefix-derived lower bound — and a line scan for the session name. `nameFrom`
+ * resumes that scan at an earlier size of the same file, keeping its name.
  */
 export function scanSessionInfo(
   filePath: string,
   withStatus = true,
   knownStat?: { size: number; mtime: Date },
+  nameFrom?: { offset: number; name: string | undefined },
 ): PiSessionInfo | undefined {
   try {
     const [content, suffix, size, mtime] = readTextSlices(
@@ -969,12 +814,8 @@ export function scanSessionInfo(
 
     let parsedMessageCount = 0;
     let firstMessage = "";
-    let shortSummary: string | undefined;
     for (let i = 1; i < entries.length; i++) {
-      const entry = entries[i] as { type?: string; message?: { role?: string; content?: unknown }; shortSummary?: string };
-      if (entry.type === "compaction" && typeof entry.shortSummary === "string") {
-        shortSummary = entry.shortSummary;
-      }
+      const entry = entries[i] as { type?: string; message?: { role?: string; content?: unknown } };
       if (entry.type === "message" && entry.message) {
         parsedMessageCount++;
         if (entry.message.role === "user" && !firstMessage) {
@@ -991,11 +832,12 @@ export function scanSessionInfo(
     firstMessage ||= extractFirstDisplayMessageFromPrefix(content) ?? "";
     const messageCount = Math.max(parsedMessageCount, countMessageMarkers(content));
     const tail = withStatus ? scanTailMessage(suffix) : undefined;
+    const name = scanSessionName(filePath, nameFrom?.offset ?? 0, nameFrom?.name);
     return {
       path: filePath,
       id: header.id,
       cwd: header.cwd ?? "",
-      title: header.title ?? shortSummary,
+      title: name,
       parentSessionPath: header.parentSession,
       created: new Date(header.timestamp ?? ""),
       modified: mtime,
@@ -1042,9 +884,9 @@ function getSessionScanCache(): Map<string, SessionScanCacheEntry> {
 /** Invalidate the memoized scan (prefix/suffix window info) for ONE session
  * file. Callers that know exactly which session changed (live RPC events with
  * a session file path, the file watcher with a concrete filename) use this
- * when the file's size+mtime may NOT have changed (title-slot rewrites, title
- * updates, reparent rewrites, delete-while-open) so the list scan picks up the
- * new window without dropping every other session's scan memo. */
+ * when the file's size+mtime may NOT have changed (reparent rewrites,
+ * delete-while-open) so the list scan picks up the new window without
+ * dropping every other session's scan memo. */
 export function invalidateSessionScanCache(filePath: string): void {
   globalThis.__tauSessionScanCache?.delete(scanCacheKey(filePath));
 }
@@ -1076,7 +918,9 @@ function scanSessionInfoCached(filePath: string): PiSessionInfo | undefined {
     return cached.info;
   }
   if (cached) cache.delete(key);
-  const info = scanSessionInfo(filePath, true, stat);
+  // pi only appends: a grown file needs the name scan only past the old end.
+  const nameFrom = cached && stat.size > cached.size ? { offset: cached.size, name: cached.info.title } : undefined;
+  const info = scanSessionInfo(filePath, true, stat, nameFrom);
   // Failed scans are not negatively cached: a transient read error must not
   // hide a session until its next mtime bump.
   if (info) {
@@ -1230,7 +1074,7 @@ function collectSessionFiles(sessionsRoot: string, strict = false): string[] {
 // Title updates + deletion
 // ============================================================================
 
-/** Strip control characters and collapse runs of spaces (omp's #cleanTitle). */
+/** Strip control characters and collapse runs of spaces. */
 export function cleanSessionTitle(raw: string): string {
   return raw
     .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
@@ -1238,68 +1082,58 @@ export function cleanSessionTitle(raw: string): string {
     .trim();
 }
 
-/**
- * Persist a session title. When line 1 is already a title slot the new slot is
- * rewritten IN PLACE: serializeTitleSlot always produces exactly 256 bytes
- * (title truncated by code points to fit), so the overwrite never shifts the
- * rest of the file. Fallback for legacy files without a slot: rewrite the
- * whole file atomically (temp + rename), inserting a fresh slot line and
- * updating the header's title fields.
- *
- * Note: unlike omp's SessionManager.setSessionName this does not append a
- * title_change audit entry — tau only needs the display title, and a
- * bounded 256-byte write cannot corrupt a file a live omp process may hold.
- */
-export function setSessionTitle(filePath: string, title: string, source: SessionTitleSource): boolean {
-  const cleaned = cleanSessionTitle(title);
-  if (!cleaned) return false;
-  const update: SessionTitleUpdate = { title: cleaned, source, updatedAt: new Date().toISOString() };
-
-  if (readTitleSlot(filePath)) {
-    const slotLine = Buffer.from(serializeTitleSlot(update), "utf8");
-    const fd = openSync(filePath, "r+");
+/** The id of the file's last entry (pi's leaf on load), or null when it has none. */
+function lastEntryId(filePath: string, size: number): string | null {
+  const tailBytes = Math.min(size, 64 * 1024);
+  const fd = openSync(filePath, "r");
+  let tail: string;
+  try {
+    const buffer = Buffer.allocUnsafe(tailBytes);
+    tail = buffer.toString("utf8", 0, readSync(fd, buffer, 0, tailBytes, size - tailBytes));
+  } finally {
+    closeSync(fd);
+  }
+  const lines = tail.split("\n");
+  // The first tail line may be cut; a complete one ending the window still counts.
+  for (let i = lines.length - 1; i >= (tailBytes < size ? 1 : 0); i--) {
     try {
-      let offset = 0;
-      while (offset < slotLine.length) {
-        const written = writeSync(fd, slotLine, offset, slotLine.length - offset, offset);
-        if (written === 0) throw new Error("Short write while updating session title slot");
-        offset += written;
-      }
-    } finally {
-      closeSync(fd);
+      const record = JSON.parse(lines[i]) as { type?: unknown; id?: unknown };
+      if (record.type !== "session" && typeof record.id === "string") return record.id;
+      if (record.type === "session") return null;
+    } catch {
+      // Blank, torn or cut line.
     }
-    return true;
   }
+  // Every line in the window was cut or torn (one huge entry): read the whole file.
+  return loadSessionFile(filePath).entries.at(-1)?.id ?? null;
+}
 
-  // Legacy file without a slot: full rewrite through a temp file. Refuse to
-  // materialize a file larger than the load ceiling — renaming a session
-  // should never risk OOMing the server, and legacy slot-less files are rare.
-  let legacySize: number;
+/**
+ * Name a session that no pi process holds, as pi's appendSessionInfo does: one
+ * `session_info` entry appended under the last entry (pi's leaf on load). A live
+ * session is renamed through pi's `set_session_name` instead.
+ */
+export function setSessionTitle(filePath: string, title: string): boolean {
+  const name = cleanSessionTitle(title);
+  if (!name) return false;
+  if (!readSessionHeaderSync(filePath)) throw new Error("Not a session file");
+  const size = statSync(filePath).size;
+  let endsWithNewline = true;
+  const fd = openSync(filePath, "r");
   try {
-    legacySize = statSync(filePath).size;
-  } catch {
-    return false;
+    const last = Buffer.alloc(1);
+    endsWithNewline = readSync(fd, last, 0, 1, size - 1) === 1 && last[0] === 10;
+  } finally {
+    closeSync(fd);
   }
-  if (legacySize > MAX_SESSION_LOAD_BYTES) {
-    return false;
-  }
-  const content = readFileSync(filePath, "utf8");
-  const lines = content.split("\n");
-  const headerIndex = lines.findIndex((line) => line.trim().length > 0);
-  if (headerIndex === -1) throw new Error("Cannot rename an empty session file");
-  let header: Record<string, unknown>;
-  try {
-    header = JSON.parse(lines[headerIndex]) as Record<string, unknown>;
-  } catch {
-    throw new Error("Cannot rename a session file with a malformed header");
-  }
-  if (header.type !== "session") throw new Error("Not a session file");
-  header.title = cleaned;
-  header.titleSource = source;
-  lines[headerIndex] = JSON.stringify(header);
-  const body = serializeTitleSlot(update) + lines.join("\n");
-
-  writeSessionFileAtomicSync(filePath, body, "title");
+  const entry = {
+    type: "session_info",
+    id: randomUUID().slice(0, 8),
+    parentId: lastEntryId(filePath, size),
+    timestamp: new Date().toISOString(),
+    name,
+  };
+  appendFileSync(filePath, `${endsWithNewline ? "" : "\n"}${JSON.stringify(entry)}\n`);
   return true;
 }
 

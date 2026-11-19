@@ -23,8 +23,8 @@ import {
   getLeafEntryId,
   loadSessionFile,
   MAX_SESSION_LOAD_BYTES,
-  parseTitleSlotLine,
   readSessionHeaderSync,
+  sessionNameFromEntries,
   setSessionTitle,
   writeSessionFileAtomicSync,
 } from "../pi/session-files";
@@ -60,7 +60,7 @@ import type { SessionHistoryCursor } from "../session-sync";
 import { extractSubagentHistory, readCompletionArtifact, readSubagentTranscriptPage, readTranscriptCompletion, resolveSubagentArtifact, resolveSubagentSessionFile, subagentTranscriptPath } from "../subagent-history";
 import { SUBAGENT_ID_RE } from "../subagent-types";
 import { isRecord } from "../type-guards";
-import type { ArchivedSessionInfo, ManagedProject, ProjectLaunchConfig, SessionContext, SessionInfo, SessionTitleSource } from "../types";
+import type { ArchivedSessionInfo, ManagedProject, ProjectLaunchConfig, SessionContext, SessionInfo } from "../types";
 import { resolveProject } from "../worktree";
 
 export type OpResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; error: string };
@@ -108,7 +108,7 @@ export interface SessionOps {
   readSubagentHistory(id: string): Promise<OpResult<unknown>>;
   /** `file`: a pi-subagents child's own session file (its progress names it), read only inside the parent's artifacts dir. */
   readSubagentTranscript(id: string, subagentId: string, mode: "page" | "completion", cursor: number, file?: string): Promise<OpResult<unknown>>;
-  renameSessionFile(id: string, title: string, source?: SessionTitleSource): Promise<OpResult<null>>;
+  renameSessionFile(id: string, title: string): Promise<OpResult<null>>;
   /** `liveSessionIds`: sessions main has a live omp process for; their files are never rewritten. */
   deleteSession(id: string, liveSessionIds: string[]): Promise<OpResult<{ skippedChildren?: Array<{ id: string; reason: string }> }>>;
   archiveSession(id: string): Promise<OpResult<{ archivedPath: string }>>;
@@ -354,7 +354,7 @@ export const sessionOps: SessionOps = {
         path: filePath,
         id: header.id,
         cwd: header.cwd ?? "",
-        name: header.title,
+        name: sessionNameFromEntries(displayEntries),
         created: header.timestamp,
         modified,
         messageCount: context.messages.length,
@@ -455,10 +455,10 @@ export const sessionOps: SessionOps = {
     return ok(readSubagentTranscriptPage(resolved, fromByte));
   },
 
-  async renameSessionFile(id, title, source = "user") {
+  async renameSessionFile(id, title) {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
-    setSessionTitle(filePath, title, source);
+    setSessionTitle(filePath, title);
     invalidateSessionCaches(filePath);
     return ok(null);
   },
@@ -519,8 +519,7 @@ export const sessionOps: SessionOps = {
                 const head = Buffer.alloc(64 * 1024);
                 const bytes = readSync(fd, head, 0, head.length, 0);
                 const lines = head.toString("utf8", 0, bytes).split("\n");
-                const headerIndex = parseTitleSlotLine(lines[0] ?? "") ? 1 : 0;
-                const parsed = JSON.parse(lines[headerIndex] ?? "{}") as { id?: unknown };
+                const parsed = JSON.parse(lines[0] ?? "{}") as { id?: unknown };
                 if (typeof parsed.id === "string") oversizedId = parsed.id;
               } finally {
                 closeSync(fd);
@@ -549,12 +548,10 @@ export const sessionOps: SessionOps = {
         }
 
         let lines: string[];
-        let headerIndex: number;
         let header: { type?: string; id?: string; parentSession?: string };
         try {
           lines = readFileSync(childPath, "utf8").split("\n");
-          headerIndex = parseTitleSlotLine(lines[0] ?? "") ? 1 : 0;
-          header = JSON.parse(lines[headerIndex]) as typeof header;
+          header = JSON.parse(lines[0]) as typeof header;
         } catch {
           continue;
         }
@@ -563,7 +560,7 @@ export const sessionOps: SessionOps = {
         header.parentSession = linkedByPath
           ? (grandparentPath ?? parentSession)
           : (grandparentId ?? parentSession);
-        lines[headerIndex] = JSON.stringify(header);
+        lines[0] = JSON.stringify(header);
         try {
           // Atomic: writeFileSync truncates first, so a crash or ENOSPC here
           // would permanently truncate a session the user did NOT delete.

@@ -81,10 +81,10 @@ export async function PATCH(
     if (typeof name !== "string" || !name.trim()) {
       return Response.json({ error: "name is required", code: "session_name_required" }, { status: 400 });
     }
-    // A running omp process owns its session file; route the rename through it
-    // so the in-memory title cannot clobber ours on the next flush. This runs
-    // before the path check because omp does not create the session file until
-    // the history holds an assistant message.
+    // A running pi holds its session: rename through it (`set_session_name`), so
+    // its in-memory leaf and name stay in step with the file. This runs before
+    // the path check because pi does not create the session file until the
+    // history holds an assistant message.
     let renamed = false;
     const rpc = getRpcSession(id);
     if (rpc?.isAlive?.() && typeof rpc.send === "function") {
@@ -93,7 +93,7 @@ export async function PATCH(
         renamed = true;
       } catch (error) {
         if (error instanceof WebRpcError && error.code === "session_busy") throw error;
-        // Fall back to the on-disk title slot below.
+        // Fall back to a session_info entry in the file below.
       }
     }
     if (!renamed) {

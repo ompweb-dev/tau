@@ -600,9 +600,10 @@ Location: `<agent dir>/sessions/--<cwd without its leading separator, / \ : repl
 - Entries form a tree via `(id, parentId)`; the leaf is the last entry. Other types (`thinking_level_change`, `label`,
   `branch_summary`, `custom_message`, `custom`, `session_info`, ...) must be tolerated; `session-reader.ts` renders
   `message` and `custom_message` and ignores the rest.
-- pi names a session with `session_info` entries (the latest wins). tau's rename (`setSessionTitle`) still writes
-  ompweb's 256-byte `{"type":"title"}` slot before the header plus a `title` field in the header, and the listing reads
-  those; check the code before relying on either.
+- pi names a session with `session_info` entries (the latest wins, an empty name clears it). tau renames a live
+  session through pi's `set_session_name`; a file no pi holds gets one appended `session_info` entry under the last
+  entry (`setSessionTitle`), never anything before the header. The listing scans the file for the latest one (resumed
+  from the old end when the file grew); archived sessions are named from the first 128 KiB only.
 - tau's own entries: `custom` `client-message-entry` / `client-message-resolution` (message identity and origin) and
   `custom` `tau_btw` (side questions).
 - A session's artifacts (subagent transcripts, `local/`) live in the sibling directory `<file without .jsonl>/`.

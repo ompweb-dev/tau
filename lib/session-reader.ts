@@ -320,7 +320,7 @@ export function invalidateSessionPathCache(sessionId: string): void {
   }
 }
 
-/** Bounded, title-slot-aware header read (never loads message bodies). */
+/** Bounded header read (never loads message bodies); the header carries no name. */
 export function readSessionHeader(filePath: string): SessionHeader | null {
   return readSessionHeaderSync(filePath);
 }
@@ -595,7 +595,7 @@ function historyFileVersion(stat: Stats): string {
   return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
 }
 
-/** The shared loader still owns title slots, lenient parsing and migrations.
+/** The shared loader still owns lenient parsing and migrations.
  * Discard bodies before retaining each entry; keep only selection inputs. */
 function historyEntryMetadata(entry: SessionEntry): SessionEntry {
   const compact: Record<string, unknown> = {
@@ -1296,7 +1296,7 @@ export function entryToUiMessage(
       };
     default:
       // model_change, thinking_level_change, service_tier_change, label,
-      // title_change, session_init, ttsr_injection, mode_change, custom,
+      // session_init, ttsr_injection, mode_change, custom,
       // session_info: metadata entries with no chat rendering.
       return null;
   }

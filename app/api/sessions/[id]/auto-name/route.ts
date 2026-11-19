@@ -8,8 +8,8 @@ import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/li
  * POST /api/sessions/[id]/auto-name
  *
  * pi has no title generator: answers the existing title, else a title derived
- * from the first user message, which it saves (through the live process too
- * when there is one). `generated` is always false.
+ * from the first user message, which it saves (through the live process when
+ * there is one, else as a session_info entry in the file). `generated` is always false.
  */
 export async function POST(
   _req: Request,
@@ -41,18 +41,22 @@ export async function POST(
       return Response.json({ error: "Wait for the history edit to finish", code: "session_busy" }, { status: 409 });
     }
 
-    // Save title both to disk and through the live process so it persists immediately.
-    const renamed = await sessionOps.renameSessionFile(id, derived, "auto");
-    if (!renamed.ok) return opErrorResponse(renamed);
-    invalidateHostSessionList(resolved.host.id);
+    // A live pi holds the session: name it there. Otherwise append to the file.
     const rpc = getRpcSession(id);
+    let named = false;
     if (rpc?.isAlive?.()) {
       try {
         await rpc.send({ type: "set_session_name", name: derived });
+        named = true;
       } catch {
-        // Saved on disk; ignore RPC sync failure.
+        // Fall back to the file.
       }
     }
+    if (!named) {
+      const renamed = await sessionOps.renameSessionFile(id, derived);
+      if (!renamed.ok) return opErrorResponse(renamed);
+    }
+    invalidateHostSessionList(resolved.host.id);
     return Response.json({ title: derived, generated: false, usage: null });
   } catch (error) {
     if (error instanceof HostOpError) return apiErrorResponse(error);

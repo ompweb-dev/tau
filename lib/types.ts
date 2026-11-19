@@ -5,15 +5,12 @@ import type { MessageOrigin, SessionOriginRef } from "./message-origin";
 // tau cannot import the Bun-only @oh-my-pi packages, so the on-disk
 // shapes are re-declared here. Legacy pi v1/v2 fields are kept optional.
 
-export type SessionTitleSource = "auto" | "user";
-
 export interface SessionHeader {
   type: "session";
   version?: number;
   id: string;
-  /** Current title, folded in from the fixed-width title slot (line 1) on load. */
+  /** The session name (latest session_info), set by loadSessionFile; never stored in the header. */
   title?: string;
-  titleSource?: SessionTitleSource;
   timestamp: string;
   cwd: string;
   /** Extra workspace roots beyond cwd (multi-root workspace). */
@@ -370,19 +367,10 @@ export interface LabelEntry extends SessionEntryBase {
   label: string | undefined;
 }
 
-/** Legacy pi rename entry; omp replaced it with the title slot + title_change. */
+/** pi's session name entry (appendSessionInfo); the latest one names the session, an empty name clears it. */
 export interface SessionInfoEntry extends SessionEntryBase {
   type: "session_info";
   name?: string;
-}
-
-/** Append-only audit entry recording a session title change (omp). */
-export interface TitleChangeEntry extends SessionEntryBase {
-  type: "title_change";
-  title: string;
-  previousTitle?: string;
-  source: SessionTitleSource;
-  trigger?: string;
 }
 
 /** Tracks which time-traveling rules have been injected this session (omp). */
@@ -423,7 +411,6 @@ export type SessionEntry =
   | CustomMessageEntry
   | LabelEntry
   | SessionInfoEntry
-  | TitleChangeEntry
   | TtsrInjectionEntry
   | SessionInitEntry
   | ModeChangeEntry;
