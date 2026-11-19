@@ -197,11 +197,6 @@ function patchEstimatedTokensAfter(result: unknown): void {
 // the app expects (same command surface pi-web's in-process wrapper offered).
 // ============================================================================
 
-interface IdentityChangeOptions {
-  /** The old id still names this wrapper (session moved files, not switched). */
-  keepOldId?: boolean;
-}
-
 /** No replacing frame after a successful prompt reply: expose uncertainty rather than leave it delivering. */
 export const HANDOFF_FALLBACK_MS = 2 * 60_000;
 type HandOff = { error?: string; mayHaveBeenSent?: boolean };
@@ -436,10 +431,7 @@ export class AgentSessionWrapper {
   private handshaking = false;
   private readonly disconnectDestroyMs: number;
   private onDestroyCallback: (() => void) | null = null;
-  private onIdentityChangeCallback: ((oldId: string, newId: string, options?: IdentityChangeOptions) => void) | null = null;
-  /** omp reported a `session-persistence` notice: its next identity change is
-   * the same conversation moving to a sibling file, not a session switch. */
-  private sessionMovePending = false;
+  private onIdentityChangeCallback: ((oldId: string, newId: string) => void) | null = null;
   private unsubscribeFrames: (() => void) | null = null;
   private readonly detectNotification = createNotificationDetector();
   /** Agent activity since the last `session_settled`: background work may still run after the turn ended. */
@@ -744,11 +736,10 @@ export class AgentSessionWrapper {
       if (!this._alive) return;
       const wasRunning = this.streaming || this.promptRunning;
       const oldId = this._sessionId;
-      const moved = this.sessionMovePending;
       // A shared reopen can install the new identity's snapshot while this read is in flight (cleared when it started).
       const live = this.hostOwnedLifecycle ? { open: new Map(this.openMessages), message: this.streamingMessage, id: this.streamingMessageId } : null;
       this.applyIdentity(state);
-      if (oldId && oldId !== this._sessionId && !moved) {
+      if (oldId && oldId !== this._sessionId) {
         if (live) {
           for (const [messageId, message] of live.open) this.openMessages.set(messageId, message);
           this.streamingMessage = live.message;
@@ -869,11 +860,7 @@ export class AgentSessionWrapper {
     if (state.queuedMessages !== undefined) this.nativeQueuedMessages = state.queuedMessages;
     const oldId = this._sessionId;
     const identityChanged = Boolean(oldId) && (state.sessionId !== oldId || (state.sessionFile && state.sessionFile !== this._sessionFile));
-    // omp >= 18.5 moves a session it does not own onto a new file on its first
-    // write (`session-persistence` notice). The conversation continues, so the
-    // live stream and run state must survive; only the id changes.
-    const moved = identityChanged && this.sessionMovePending;
-    if (identityChanged && !moved) {
+    if (identityChanged) {
       this.abortServerToolCalls();
       this.resetStream();
       this.promptRunning = false;
@@ -890,33 +877,6 @@ export class AgentSessionWrapper {
     this.compacting = state.isCompacting;
     // The path cache resolves ids to files on this machine only (file authorization).
     if (this._sessionFile && this.host.id === LOCAL_HOST_ID) cacheSessionPath(this._sessionId, this._sessionFile);
-    if (moved) {
-      this.sessionMovePending = false;
-      if (oldId !== this._sessionId) {
-        // Tabs still showing the old id are still viewing this conversation.
-        this.movedFromIds.push(oldId);
-        // Keep the old id routable: other tabs still address it, and a fresh
-        // `--resume` of the old file would fork again (its owner lives on).
-        this.onIdentityChangeCallback?.(oldId, this._sessionId, { keepOldId: true });
-        this.invalidateSessionLists();
-      }
-    }
-  }
-
-  /** Re-read identity after omp reported that it moved this session to a new file. */
-  private async followSessionMove(): Promise<void> {
-    this.sessionMovePending = true;
-    try {
-      const state = await this.getStateWithTimeout();
-      if (this._alive) this.applyIdentity(state);
-    } catch {
-      // The next get_state-driven refresh still applies the pending move.
-    } finally {
-      // A persistence warning that is not a move changes no identity; do not
-      // let it mask a later genuine session switch.
-      if (this.sessionMovePending && this._alive) this.sessionMovePending = false;
-      notifyRunningChange({ refreshSessionList: true });
-    }
   }
 
   handleProcessExit(
@@ -1063,9 +1023,6 @@ export class AgentSessionWrapper {
         // event.result.estimatedTokensAfter for the banner.
         patchEstimatedTokensAfter(event.result);
         this.invalidateSessionLists();
-        break;
-      case "notice":
-        if (event.source === "session-persistence") void this.followSessionMove();
         break;
       case "session_info_update":
         if (typeof event.title === "string") this._sessionName = event.title;
@@ -1757,7 +1714,7 @@ export class AgentSessionWrapper {
   }
 
   /** Called when a session-changing command re-keyed this wrapper (branch/new_session/switch_session). */
-  onIdentityChange(cb: (oldId: string, newId: string, options?: IdentityChangeOptions) => void): void {
+  onIdentityChange(cb: (oldId: string, newId: string) => void): void {
     this.onIdentityChangeCallback = cb;
   }
 
@@ -1870,14 +1827,6 @@ export class AgentSessionWrapper {
     let leased = false;
     const sessionId = this._sessionId;
     const sessionFile = this._sessionFile;
-    let persistenceError: Error | null = null;
-    // Keep observing through the authoritative post-edit state query too.
-    // The ordinary notice path still emits the native error to every observer.
-    const unsubscribe = proc.onFrame((frame) => {
-      if (frame.type === "notice" && frame.source === "session-persistence" && frame.level === "error") {
-        persistenceError ??= new Error(typeof frame.message === "string" ? frame.message : "pi could not persist the history edit");
-      }
-    });
     notifyRunningChange();
     try {
       if (proc.transport?.setEditing) {
@@ -1887,7 +1836,6 @@ export class AgentSessionWrapper {
         });
       }
       const before = await this.getStateWithTimeout();
-      if (persistenceError) throw persistenceError;
       if (before.sessionId !== sessionId || before.sessionFile !== sessionFile
         || this._sessionId !== sessionId || this._sessionFile !== sessionFile) {
         throw new WebRpcError("The session changed before the history edit", "session_changed");
@@ -1908,7 +1856,6 @@ export class AgentSessionWrapper {
         throw new Error("pi returned an invalid history edit result");
       }
       const after = await this.getStateWithTimeout();
-      if (persistenceError) throw persistenceError;
       const unchanged = after.sessionId === sessionId && after.sessionFile === sessionFile;
       // Only applyIdentity's native move path can retain the originating id.
       // A reply naming a different conversation is never sufficient evidence.
@@ -1936,12 +1883,10 @@ export class AgentSessionWrapper {
         // A timed-out navigation may still be running in a hook. Do not let a
         // later mutation race it once the web-side fence is released.
         await this.destroyAndWait("session-unresponsive", true);
-        if (persistenceError) throw persistenceError;
         throw new WebRpcError("The pi session stopped responding and was reset.", "session_unresponsive");
       }
-      throw persistenceError ?? error;
+      throw error;
     } finally {
-      unsubscribe();
       this.historyEditInFlight = false;
       if (leased) void proc.transport?.setEditing?.(false).catch(() => {}); // A lost release ends when this link drops.
       notifyRunningChange();
@@ -3404,11 +3349,10 @@ function registerSession(created: AgentSessionWrapper): void {
     for (const [key, wrapper] of registry) if (wrapper === created) registry.delete(key);
     notifyRunningChange({ refreshSessionList: true });
   });
-  created.onIdentityChange((oldId, newId, options) => {
-    // A move keeps the old ids routable; a branch/new/switch serves another conversation, so every old key goes.
-    if (!options?.keepOldId) for (const [key, wrapper] of registry) if (wrapper === created) registry.delete(key);
+  created.onIdentityChange((_oldId, newId) => {
+    // A branch/new/switch serves another conversation, so every old key goes.
+    for (const [key, wrapper] of registry) if (wrapper === created) registry.delete(key);
     registry.set(newId, created);
-    if (options?.keepOldId) for (const listener of globalThis.__tauSessionMoveListeners ?? []) listener(oldId, newId);
     notifyRunningChange({ refreshSessionList: true });
   });
   registry.set(created.sessionId, created);

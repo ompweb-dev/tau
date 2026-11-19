@@ -27,7 +27,6 @@ type Channel = {
   startup: Promise<void>; exited: boolean; opened: boolean; forceTimer?: NodeJS.Timeout;
   /** The id given to the assistant message pi is streaming (piStreamFrame). */
   messageId?: string;
-  sessionMovePending?: boolean;
   /** The link holding the history-edit lease: other links' history mutations are refused. */
   editor?: string;
   /** Why the daemon stopped it (lifecycle reason or "asked"); unset for a crash. */
@@ -320,8 +319,7 @@ export class ChannelTable {
   private noteIdentity(channel: Channel, frame: WireFrame): void {
     const id = frame.sessionId;
     if (typeof id === "string" && isValidSessionId(id) && id !== channel.pending.sessionId) {
-      if (channel.pending.sessionId && !channel.sessionMovePending) { channel.aliases.clear(); channel.files.clear(); }
-      channel.sessionMovePending = false;
+      if (channel.pending.sessionId) { channel.aliases.clear(); channel.files.clear(); }
       channel.pending.sessionId = id; channel.aliases.add(id); if (channel.opened) this.deps.channelsChanged?.(channel.ch);
     }
     if (typeof frame.sessionFile === "string" && frame.sessionFile) {
@@ -344,10 +342,6 @@ export class ChannelTable {
     const agentEvent = wireEvent(frame);
     const event = agentEvent ?? frame;
     if (agentEvent) channel.snapshot.note(agentEvent);
-    if (event?.type === "notice" && event.source === "session-persistence" && event.level !== "error") {
-      // Until a `session` frame names the moved session, recovery must not record the old id/file pair.
-      channel.sessionMovePending = true; this.deps.runningChanged?.();
-    }
     if (event?.type === "agent_start" || event?.type === "agent_end" || event?.type === "session_info_update") this.deps.sessionsChanged?.();
     if (channel.resuming && (event?.type === "agent_start" || event?.type === "agent_end")) { channel.resuming = false; this.deps.runningChanged?.(); }
     if (frame.type === "response" && (typeof frame.id === "string" || typeof frame.id === "number")) {
@@ -448,7 +442,6 @@ export class ChannelTable {
     if (op !== null && !extension && channel.editor !== undefined && channel.editor !== link.id && HISTORY_MUTATING_COMMANDS.has(op)) {
       return refuse("session_busy", "Another web app is editing this session's history; retry once it finishes");
     }
-    if (op === "fork" || op === "new_session" || op === "switch_session") channel.sessionMovePending = false;
     if (op !== null && ["set_host_tools", "set_host_uri_schemes"].includes(op)) throw invalid("This command is owned by the host daemon");
     if (extension && /^\/tau_host_tools\b/.test(frame.message as string)) throw invalid("This command is owned by the host daemon");
     let out = frame, id: string | null = null;
@@ -516,7 +509,7 @@ export class ChannelTable {
   }
   running(): HostResumeEntry[] {
     // A recovered session starts on the version already applied: the resume manifest never names one.
-    return [...this.channels.values()].filter(channel => (channel.lifecycle?.isRunning || channel.resuming) && channel.pending.sessionId && channel.launch.sessionFile && !channel.sessionMovePending)
+    return [...this.channels.values()].filter(channel => (channel.lifecycle?.isRunning || channel.resuming) && channel.pending.sessionId && channel.launch.sessionFile)
       .map(channel => { const launch = { ...channel.launch }; delete launch.configVersion; delete launch.configServer; return { sessionId: channel.pending.sessionId!, launch }; });
   }
   /** Resumes each entry once; returns the entries whose resume failed. */
