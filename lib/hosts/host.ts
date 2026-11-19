@@ -21,8 +21,6 @@ export interface SpawnRequest {
   recordedCwd: string | null;
   sessionFile: string;
   toolNames?: string[];
-  /** `provider/modelId` bound at spawn (--model); resume only. */
-  spawnModel?: string;
 }
 
 export interface SpawnResult {

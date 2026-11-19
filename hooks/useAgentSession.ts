@@ -3406,7 +3406,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await sendAgentCommand(sid, { type: "set_model", provider, modelId });
       await refreshLiveModelState(sid);
     } catch (e) {
-      // A cold-start failure (e.g. an unrestorable saved model, #277) must not
+      // A failed switch (e.g. a provider without credentials) must not
       // keep claiming the new model: drop the optimistic pick unless a newer
       // one replaced it, and explain why in a notice.
       setCurrentModelOverride((cur) => (cur === choice ? null : cur));

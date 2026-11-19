@@ -4689,7 +4689,7 @@ test("a held file snapshot cannot roll back a newer RPC model choice", async () 
   assert.equal(w.latest.thinkingLevel, "high");
 });
 
-test("a model switch shows at once and rolls back with a notice when it fails (#277)", async () => {
+test("a model switch shows at once and rolls back with a notice when it fails", async () => {
   resetWorld();
   primeSession("s1", [userMsg("u0", "q")]);
   Object.assign(world.sessions.get("s1"), { model: { provider: "test", modelId: "old-model" }, thinkingLevel: "low" });

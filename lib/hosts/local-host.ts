@@ -25,13 +25,10 @@ export function mapPresetToolNames(toolNames: string[]): string[] {
 const FULL_PRESET_KEY = [...PRESET_FULL].map((n) => n.toLowerCase()).sort().join(",");
 
 /** Extra CLI args for spawning `pi --mode rpc` for a session. */
-export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], launchConfig?: ProjectLaunchConfig, modelOverride?: string): string[] {
+export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], launchConfig?: ProjectLaunchConfig): string[] {
   const args: string[] = [];
   if (sessionFile) {
     args.push("--session", sessionFile);
-    if (modelOverride && !modelOverride.startsWith("-") && !/\s/.test(modelOverride)) {
-      args.push("--model", modelOverride);
-    }
   } else if (toolNames !== undefined) {
     const presetKey = toolNames.map((n) => n.toLowerCase()).sort().join(",");
     if (toolNames.length === 0) {
@@ -132,7 +129,7 @@ export const localHost: Omit<Host, "workspaceOps"> = {
       // Re-read per spawn so a respawn picks up environment values the user
       // added in Settings after the session was created (#104).
       env: getAgentEnvOverrides(),
-      extraArgs: [...await projectTrustArgs(cwd), ...buildSessionSpawnArgs(request.sessionFile, request.toolNames, launchConfig, request.spawnModel)],
+      extraArgs: [...await projectTrustArgs(cwd), ...buildSessionSpawnArgs(request.sessionFile, request.toolNames, launchConfig)],
     });
     return {
       transport,

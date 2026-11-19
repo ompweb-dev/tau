@@ -125,15 +125,14 @@ export class HostResumeTracker {
       if (typeof launch.cwd !== "string" || !isAbsolute(launch.cwd)
         || !(launch.recordedCwd === null || typeof launch.recordedCwd === "string")
         || typeof launch.sessionFile !== "string" || !isAbsolute(launch.sessionFile)
-        || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))
-        || !(launch.spawnModel === undefined || typeof launch.spawnModel === "string")) throw new Error("Invalid recovery launch");
+        || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))) throw new Error("Invalid recovery launch");
       const root = realpathSync(this.root);
       let file: string;
       try { file = realpathSync(resolve(launch.sessionFile)); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; } // A deleted session must not block the rest.
       if (!file.startsWith(root + sep) || readSessionHeaderSync(file)?.id !== entry.sessionId || seen.has(entry.sessionId)) throw new Error("Recovery session is outside its owning session root or duplicated");
       seen.add(entry.sessionId);
-      entries.push({ sessionId: entry.sessionId, launch: { cwd: launch.cwd, recordedCwd: launch.recordedCwd, sessionFile: file, ...(launch.toolNames === undefined ? {} : { toolNames: launch.toolNames as string[] }), ...(launch.spawnModel === undefined ? {} : { spawnModel: launch.spawnModel }) } });
+      entries.push({ sessionId: entry.sessionId, launch: { cwd: launch.cwd, recordedCwd: launch.recordedCwd, sessionFile: file, ...(launch.toolNames === undefined ? {} : { toolNames: launch.toolNames as string[] }) } });
     }
     return entries;
   }

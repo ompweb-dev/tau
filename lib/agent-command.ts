@@ -114,49 +114,9 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
     const target = await sessionSpawnTarget(id, host);
     if (!target) return Response.json({ error: "Session not found", code: "session_not_found" }, { status: 404 });
 
-    // A cold set_model must reach pi before the saved model is restored:
-    // spawning with only the session makes pi restore (or fail to restore)
-    // the saved model before the RPC below ever runs (#277). Binding the requested
-    // model at spawn time skips that restore check. Live children never
-    // reach this path (they take the fast path above), and any other command
-    // keeps the previous spawn behavior.
-    const spawnModel =
-      type === "set_model" &&
-      typeof command.provider === "string" &&
-      typeof command.modelId === "string" &&
-      command.provider.trim() &&
-      command.modelId.trim() &&
-      !command.provider.startsWith("-") &&
-      !command.modelId.startsWith("-") &&
-      !/\s/.test(command.provider) &&
-      !/\s/.test(command.modelId)
-        ? `${command.provider}/${command.modelId}`
-        : undefined;
-
-    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, spawnModel, host, true);
+    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, host, true);
     // This command inherits the open's preparation lease, so the shared child cannot idle out before it is sent.
     return await session.withPendingCommand(async () => {
-      if (spawnModel) {
-        // Try the normal RPC first: when it succeeds it also records the new
-        // model in the session, so later spawns restore it without an override.
-        // If set_model fails although the spawn already bound the model (seen
-        // for a provider without credentials), the switch itself
-        // succeeded: verify from live state and report success rather than a
-        // false failure. A mismatch rethrows the RPC error, so a real failure
-        // still surfaces.
-        try {
-          const result = await session.send(command);
-          return Response.json({ success: true, data: result });
-        } catch (error) {
-          const state = (await session.send({ type: "get_state" })) as {
-            model?: { id?: unknown; provider?: unknown };
-          } | null;
-          if (state?.model?.provider === command.provider && state?.model?.id === command.modelId) {
-            return Response.json({ success: true, data: { id: command.modelId, provider: command.provider } });
-          }
-          throw error;
-        }
-      }
       const result = await send(session);
       return Response.json({ success: true, data: result });
     }, true);

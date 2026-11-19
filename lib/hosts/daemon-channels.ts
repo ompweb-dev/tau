@@ -187,7 +187,7 @@ export class ChannelTable {
   private async ensure(id: string | null, requested: SpawnRequest, preparingLinkId?: string): Promise<Channel> {
     const creationId = requested.creationId;
     if (creationId !== undefined && (typeof creationId !== "string" || !CREATION_ID_RE.test(creationId))) throw invalid("Invalid creation identity");
-    const fingerprint = creationId === undefined ? "" : JSON.stringify([requested.cwd, requested.recordedCwd ?? null, requested.sessionFile, requested.toolNames ?? null, requested.spawnModel ?? null]);
+    const fingerprint = creationId === undefined ? "" : JSON.stringify([requested.cwd, requested.recordedCwd ?? null, requested.sessionFile, requested.toolNames ?? null]);
     const creation = creationId === undefined ? undefined : this.creations.get(creationId);
     if (creation) {
       if (creation.fingerprint !== fingerprint) throw new HostOpError(409, "creation_conflict", "Creation identity belongs to another request");

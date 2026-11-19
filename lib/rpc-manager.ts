@@ -2755,7 +2755,7 @@ async function resumeSession({ id, hostId }: InterruptibleSession): Promise<void
     if (hostOwnsLifecycle(hostId)) return;
     const target = host && await sessionSpawnTarget(id, host);
     if (!host || !target) return;
-    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host);
+    const { session } = await startRpcSession(id, target.sessionFile, target.cwd, undefined, target.recordedCwd, host);
     await session.send({ type: "prompt", message: RESUME_PROMPT });
     console.log(`[tau] resumed interrupted session ${id}`);
   } catch (error) {
@@ -2902,7 +2902,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
         const target = host && await sessionSpawnTarget(input.sessionId, host);
         if (!host || !target) throw new Error(`Session not found: ${input.sessionId}`);
         // The open's preparation lease keeps an idle shared child until the message is sent.
-        const started = await startRpcSession(input.sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, undefined, host, true);
+        const started = await startRpcSession(input.sessionId, target.sessionFile, target.cwd, undefined, target.recordedCwd, host, true);
         wrapper = started.session;
         cold = true;
       }
@@ -2998,7 +2998,7 @@ export async function startNewRpcSession(
     return { ok: false, status: 409, code: "prepared_cwd_changed", error: "The prepared worktree is no longer available" };
   }
   const tempKey = `__new__${creationId ?? randomUUID()}`;
-  const started = await startRpcSession(tempKey, "", spawnCwd, toolNames, undefined, undefined, host, preparingCommand, creationId);
+  const started = await startRpcSession(tempKey, "", spawnCwd, toolNames, undefined, host, preparingCommand, creationId);
   // Without this a file request under a brand-new cwd would 403 for up to the allowed-roots cache TTL.
   // Never for another host: its paths do not exist on this machine.
   if (host.id === LOCAL_HOST_ID) allowFileRoot(spawnCwd);
@@ -3014,16 +3014,6 @@ export async function startRpcSession(
   /** The cwd recorded in the session file header, used to detect a spawn
    * fallback (recorded dir gone) and warn the user. Omit for new sessions. */
   recordedCwd?: string | null,
-  /** Model to bind at spawn time as `provider/modelId` (--model). Only used
-   * when resuming: it replaces the saved model and skips its restore check,
-   * so a cold set_model can recover a session whose saved model is gone
-   * (#277). Ignored when a live child is reused; the caller's set_model RPC
-   * then runs against that child as before. The spawn alone does not rewrite
-   * the session file, so a later spawn without an override still hits the
-   * old saved model until pi records a new one (a successful set_model RPC
-   * or a completed turn); the picker path re-binds on each cold switch, so
-   * the user is never stuck on the unrestorable model. */
-  spawnModel?: string,
   host: Host = getHost(LOCAL_HOST_ID),
   preparingCommand = false,
   /** Stable independent creation; never set for ordinary standalone starts or resumes. */
@@ -3031,7 +3021,7 @@ export async function startRpcSession(
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
-  const launch: SpawnRequest = { cwd, recordedCwd: recordedCwd ?? null, sessionFile, toolNames, spawnModel, ...(creationId === undefined ? {} : { creationId }) };
+  const launch: SpawnRequest = { cwd, recordedCwd: recordedCwd ?? null, sessionFile, toolNames, ...(creationId === undefined ? {} : { creationId }) };
 
   // A child of this session the host still ran from before a restart of this
   // server is being adopted or killed. Waiting here, before the registry and
