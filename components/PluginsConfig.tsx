@@ -28,7 +28,8 @@ function PluginsConfigSurface({ embedded, isMobile, onClose, children }: { embed
 }
 
 type PluginScope = PluginPackageInfo["scope"];
-type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
+// pi has no enable/disable command: `pi config` filters a package's resources in its TUI.
+type PluginAction = "install" | "remove" | "update";
 
 function shortenPath(path: string): string {
   return path.replace(/^\/(?:Users|home)\/[^/]+/, "~");
@@ -213,57 +214,6 @@ function buttonStyle(disabled?: boolean, danger?: boolean): React.CSSProperties 
     fontSize: 12,
     opacity: disabled ? 0.5 : 1,
   };
-}
-
-function Toggle({
-  enabled,
-  loading,
-  onToggle,
-  label,
-}: {
-  enabled: boolean;
-  loading: boolean;
-  onToggle: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={loading}
-      title={label}
-      aria-label={label}
-      aria-pressed={enabled}
-      style={{
-        flexShrink: 0,
-        width: 40,
-        height: 22,
-        borderRadius: 11,
-        border: "none",
-        padding: 0,
-        cursor: loading ? "wait" : "pointer",
-        background: enabled ? "var(--accent-strong)" : "var(--border)",
-        position: "relative",
-        transition: "background var(--dur-med) var(--ease-out-warm)",
-        opacity: loading ? 0.65 : 1,
-      }}
-    >
-      <span
-        style={{
-          position: "absolute",
-          top: 3,
-          left: 3,
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          background: "var(--bg)",
-          boxShadow: "var(--shadow-card)",
-          transform: enabled ? "translateX(18px)" : "translateX(0)",
-          transition: "transform var(--dur-med) var(--ease-out-warm)",
-        }}
-      />
-    </button>
-  );
 }
 
 function SegmentedScope({
@@ -463,33 +413,14 @@ function PackageDetail({
   const key = packageKey(pkg);
   const busy = busyKey?.endsWith(key) ?? false;
   const reloadBusy = busyKey === "reload";
-  const enabled = !pkg.disabled;
   const [confirmRemove, setConfirmRemove] = useState(false);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 680 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180, flex: 1 }}>
-          <Toggle
-            enabled={enabled}
-            loading={busy || reloadBusy}
-            onToggle={() => onAction(pkg.disabled ? "enable" : "disable", pkg)}
-            label={pkg.disabled ? t("pluginsConfig.enablePackage") : t("pluginsConfig.disablePackage")}
-          />
           <ScopeTag scope={pkg.scope} />
-          {pkg.disabled ? (
-            <span
-              style={{
-                fontSize: 10,
-                padding: "1px 5px",
-                borderRadius: 3,
-                background: "rgba(120,120,120,0.12)",
-                color: "var(--text-dim)",
-              }}
-            >
-              {t("pluginsConfig.badgeDisabled")}
-            </span>
-          ) : pkg.filtered && (
+          {pkg.filtered && (
             <span
               style={{
                 fontSize: 10,
@@ -698,8 +629,6 @@ export function PluginsConfig({
         const messageKeys: Record<Exclude<PluginAction, "remove">, string> = {
           install: "pluginsConfig.packageInstalled",
           update: "pluginsConfig.packageUpdated",
-          disable: "pluginsConfig.packageDisabledMsg",
-          enable: "pluginsConfig.packageEnabledMsg",
         };
         setActionMessage(t(messageKeys[action]));
         toast.success(t(messageKeys[action]));
