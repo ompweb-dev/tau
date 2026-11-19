@@ -1448,8 +1448,8 @@ function CompactionMessageView({ message, sessionId }: { message: CustomMessage;
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
   const time = formatTime(message.timestamp, locale);
-  // omp ≥17.4 compaction entries carry the maintenance method and the real
-  // post-compaction token count; older sessions only have tokensBefore.
+  // pi compaction entries carry only tokensBefore; sessions written by omp may
+  // also carry the maintenance method and the post-compaction token count.
   const details = (message.details ?? null) as { tokensBefore?: unknown; tokensAfter?: unknown; method?: unknown } | null;
   const tokensBefore = typeof details?.tokensBefore === "number" ? details.tokensBefore : null;
   const tokensAfter = typeof details?.tokensAfter === "number" ? details.tokensAfter : null;

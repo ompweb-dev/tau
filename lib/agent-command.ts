@@ -139,12 +139,11 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
       if (spawnModel) {
         // Try the normal RPC first: when it succeeds it also records the new
         // model in the session, so later spawns restore it without an override.
-        // But in omp 18.12.6 set_model can fail spuriously with "Model not
-        // found" for a catalog model whose provider has no credentials
-        // configured, even though the spawn already bound it. In that case the
-        // switch itself succeeded — verify from live state and report success
-        // rather than a false failure. A mismatch (e.g. an omp without --model
-        // precedence) rethrows the RPC error, so a real failure still surfaces.
+        // If set_model fails although the spawn already bound the model (seen
+        // with omp for a provider without credentials), the switch itself
+        // succeeded: verify from live state and report success rather than a
+        // false failure. A mismatch rethrows the RPC error, so a real failure
+        // still surfaces.
         try {
           const result = await session.send(command);
           return Response.json({ success: true, data: result });

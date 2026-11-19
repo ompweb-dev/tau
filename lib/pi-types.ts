@@ -90,10 +90,10 @@ export interface RpcSessionState {
   autoRetryEnabled?: boolean;
   messageCount: number;
   queuedMessageCount: number;
-  /** Includes admitted submissions, scheduled turns and background deliveries; absent on older OMP. */
+  /** Includes admitted submissions, scheduled turns and background deliveries (RpcProcess derives it from pi's `agent_settled`). */
   isSettled?: boolean;
   hasPendingAsyncWork?: boolean;
-  /** Displayable queue-chip texts (omp ≥ 18.4.4); mirrored live by `queue_update`. */
+  /** Displayable queue-chip texts, from pi's last `queue_update` (RpcProcess fills them into `get_state`). */
   queuedMessages?: QueuedMessages;
   /** Native RPC/session metadata can correlate accepted input without matching its text. */
   supportsClientMessageIds?: boolean;

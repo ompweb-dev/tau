@@ -15,8 +15,6 @@ import { RpcProcess } from "./rpc-process";
 
 // Extensions stay ENABLED: they can register models and login providers, and
 // omitting them made the web UI's model/provider lists disagree with the CLI's.
-// Measured against a real install (omp/17.1.3): ready-frame latency is the same
-// either way (~3.6s with vs ~4.0s without over 4 runs each).
 // pi has no language servers to skip; MCP is its startup work the utility never needs.
 const UTILITY_EXTRA_ARGS = ["--no-session", "--no-skills", "--no-mcp"];
 const READY_TIMEOUT_MS = 60_000;

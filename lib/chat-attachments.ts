@@ -1,11 +1,9 @@
 /**
  * Text-attachment budget.
  *
- * Nothing on the OMP side limits these: attached file contents are inlined
- * into the prompt as text, and OMP's RPC transport advertises (in its `ready`
- * frame) `maxFrameBytes` 1 MiB with chunked v2 frames reassembling up to
- * 64 MiB — omp/18.1.17 accepts a 3 MB logical command frame. The binding
- * ceilings are tau's own 8 MiB JSON request body
+ * Attached file contents are inlined into the prompt as text; pi reads JSON
+ * lines from stdin with no frame limit of its own. The binding ceilings are
+ * tau's own 8 MiB JSON request body
  * (`MAX_AGENT_COMMAND_REQUEST_BYTES`) and the model's context window, so the
  * budget is enforced on the aggregate rather than per file.
  */
