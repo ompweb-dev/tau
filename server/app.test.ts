@@ -222,7 +222,7 @@ test("a trailing slash 308-redirects to the path without it, behind the gate", a
 
 test("each route answers under its own path with decoded params, and the manifest stays gated", async (t) => {
   // A space and a non-ASCII name pin the decoded `[...path]` segments, taken from the right index.
-  mkdirSync(path.join(ENV.PI_CODING_AGENT_DIR, "blobs"), { recursive: true });
+  mkdirSync(path.join(ENV.PI_CODING_AGENT_DIR, "tau", "media"), { recursive: true });
   const file = path.join(ENV.PI_CODING_AGENT_DIR, "my file é.txt");
   writeFileSync(file, "HELLO");
   const read = await fetch(url(`/api/files${file.split(path.sep).join("/").replace(/^\/?/, "/")}?type=read`));
@@ -231,7 +231,7 @@ test("each route answers under its own path with decoded params, and the manifes
 
   // A `:param` is decoded too: only the decoded hash (`%61` is `a`) names this PNG-signed blob.
   const hash = "a".repeat(64);
-  writeFileSync(path.join(ENV.PI_CODING_AGENT_DIR, "blobs", hash), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  writeFileSync(path.join(ENV.PI_CODING_AGENT_DIR, "tau", "media", hash), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   assert.equal((await fetch(url(`/api/media/%61${hash.slice(1)}`))).status, 200);
 
   // Static segments win over `:id`: agent/new has no GET, and the search streams NDJSON.

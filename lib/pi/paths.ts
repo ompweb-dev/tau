@@ -47,11 +47,6 @@ export function getArchivedSessionsDir(): string {
   return path.join(path.dirname(getSessionsDir()), "archive", "sessions");
 }
 
-/** Content-addressed blob store referenced from session entries. */
-export function getBlobsDir(): string {
-  return path.join(getAgentDir(), "blobs");
-}
-
 /** Settings file (JSON): ~/.pi/agent/settings.json. */
 export function getSettingsPath(): string {
   return path.join(getAgentDir(), "settings.json");

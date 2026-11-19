@@ -166,7 +166,7 @@ export function isValidSubagentId(subagentId: string): boolean {
 
 /** Header-less files: tell "too large" from "missing or malformed" (the bounded header read returns null for both). */
 function unreadableSession(filePath: string): OpResult<never> {
-  const loaded = loadSessionFile(filePath, { resolveBlobs: false });
+  const loaded = loadSessionFile(filePath);
   if (loaded.error === "too_large") return sessionTooLarge();
   return fail(404, "session_file_malformed", "Session file is missing or malformed");
 }
@@ -335,11 +335,10 @@ export const sessionOps: SessionOps = {
     if (!filePath) return sessionNotFound();
     try {
       // Single unified read path: the cached parse serves unchanged files from
-      // memory (a stat per request), and blob resolution happens on a per-entry
-      // deep copy so shared cached objects are never mutated.
+      // memory (a stat per request); shared cached objects are never mutated.
       const header = readSessionHeader(filePath);
       if (header === null) return unreadableSession(filePath);
-      const displayEntries = await getSessionEntriesForDisplayAsync(filePath, { skipToolResultImages: deferToolResultImages });
+      const displayEntries = await getSessionEntriesForDisplayAsync(filePath);
       const leafId = getLeafEntryId(displayEntries);
       const tree = projectTreeForResponse(buildSessionTree(displayEntries));
       const context = buildSessionContext(displayEntries, leafId, { deferThinking, deferToolResultImages });
@@ -387,8 +386,8 @@ export const sessionOps: SessionOps = {
           includePreCompaction,
         }));
       }
-      // Deduplicated cached read; blob resolution on per-entry deep copies.
-      const entries = await getSessionEntriesForDisplayAsync(filePath, { skipToolResultImages: deferToolResultImages });
+      // Deduplicated cached read.
+      const entries = await getSessionEntriesForDisplayAsync(filePath);
       const context = buildSessionContext(entries, leafId, {
         deferThinking,
         deferToolResultImages,
@@ -645,11 +644,8 @@ export const sessionOps: SessionOps = {
 
   async readMedia(hash) {
     if (!/^[0-9a-f]{64}$/.test(hash)) return fail(400, "invalid_hash", "Invalid media hash");
-    // As /api/media: the sweep can delete our copy between lookup and read once
-    // omp's blob is complete; one more lookup then finds the blob.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const file = mediaFilePath(hash);
-      if (!file) break;
+    const file = mediaFilePath(hash);
+    if (file) {
       try {
         return ok(readFileSync(file));
       } catch (error) {

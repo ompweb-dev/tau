@@ -1,19 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { getBlobsDir, getTauDataDir } from "./pi/paths";
+import { getTauDataDir } from "./pi/paths";
 import { isRecord } from "./type-guards";
 
 /**
  * Tool-result images reach the browser as `/api/media/<sha256>` URLs instead of
- * inline base64, so big screenshots never sit in the chat's React state. The
- * hash is omp's own blob address (sha256 of the image bytes): history entries
- * already carry it as `blob:sha256:<hash>`, and live output is hashed here and
- * copied into tau's media directory until omp writes its own blob.
+ * inline base64, so big screenshots never sit in the chat's React state. pi
+ * stores images inline in the session file; each is hashed (sha256 of the
+ * bytes) and copied into tau's media directory.
  */
 
 const HASH_RE = /^[a-f0-9]{64}$/;
-const BLOB_PREFIX = "blob:sha256:";
 /** Twice the 240px tool-result preview, for high-density screens. */
 const THUMB_PX = 480;
 const SWEEP_EVERY_MS = 24 * 60 * 60 * 1000;
@@ -44,7 +42,7 @@ function writeAtomic(file: string, data: Uint8Array): void {
   }
 }
 
-/** Daily: drop copies omp now holds as complete blobs, and anything older than 30 days (previews regenerate on demand). */
+/** Daily: drop anything older than 30 days (copies and previews regenerate on demand). */
 function sweepMediaCache(): void {
   const now = Date.now();
   if (now - (globalThis.__tauMediaSweptAt ?? 0) < SWEEP_EVERY_MS) return;
@@ -58,9 +56,7 @@ function sweepMediaCache(): void {
   for (const name of names) {
     const file = path.join(mediaDir(), name);
     try {
-      const stat = statSync(file);
-      const hasBlob = HASH_RE.test(name) && fileSize(path.join(getBlobsDir(), name)) === stat.size;
-      if (hasBlob || now - stat.mtimeMs > MAX_AGE_MS) unlinkSync(file);
+      if (now - statSync(file).mtimeMs > MAX_AGE_MS) unlinkSync(file);
     } catch {
       // Removed concurrently or unreadable: the next sweep retries.
     }
@@ -93,8 +89,7 @@ export function storeInlineImage(base64: string): string {
   }
   const size = Buffer.byteLength(base64, "base64");
   const copy = path.join(mediaDir(), hash);
-  // omp writes blobs in place: keep our own copy unless its blob is already complete.
-  if (fileSize(path.join(getBlobsDir(), hash)) !== size && fileSize(copy) !== size) writeAtomic(copy, Buffer.from(base64, "base64"));
+  if (fileSize(copy) !== size) writeAtomic(copy, Buffer.from(base64, "base64"));
   return hash;
 }
 
@@ -116,18 +111,10 @@ function imageBlockAsUrl(block: unknown): unknown {
   }
   if (typeof data !== "string" || data === "") return block;
   let hash: string;
-  if (data.startsWith(BLOB_PREFIX)) {
-    hash = data.slice(BLOB_PREFIX.length);
-    if (!HASH_RE.test(hash)) return block;
-    if (!existsSync(path.join(getBlobsDir(), hash)) && !existsSync(path.join(mediaDir(), hash))) {
-      return { type: "text", text: `[image unavailable: blob ${hash.slice(0, 12)}… not found]` };
-    }
-  } else {
-    try {
-      hash = storeInlineImage(data);
-    } catch {
-      return block; // Disk trouble: keep showing the inline image.
-    }
+  try {
+    hash = storeInlineImage(data);
+  } catch {
+    return block; // Disk trouble: keep showing the inline image.
   }
   return { type: "image", ...(typeof mimeType === "string" ? { mimeType } : {}), url: `/api/media/${hash}` };
 }
@@ -154,7 +141,7 @@ function mapMessages(value: unknown): unknown {
   return mapped.some((message, i) => message !== value[i]) ? mapped : value;
 }
 
-/** An omp agent event with its tool-result images as media URLs (same object when it has none). */
+/** An agent event with its tool-result images as media URLs (same object when it has none). */
 export function eventWithToolResultImageUrls<E extends { type: string; [key: string]: unknown }>(event: E): E {
   const swap = (key: string, value: unknown): E => (value === event[key] ? event : { ...event, [key]: value });
   switch (event.type) {
@@ -175,22 +162,14 @@ export function eventWithToolResultImageUrls<E extends { type: string; [key: str
   }
 }
 
-/**
- * File holding a stored image: omp's blob, else tau's copy. omp writes
- * blobs in place, so a blob that differs in size from our copy is still being
- * written and the copy is served instead.
- */
+/** File holding a stored image (tau's copy), or null. */
 export function mediaFilePath(hash: string): string | null {
   if (!HASH_RE.test(hash)) return null;
-  const blob = path.join(getBlobsDir(), hash);
   const copy = path.join(mediaDir(), hash);
-  const blobSize = fileSize(blob);
-  const copySize = fileSize(copy);
-  if (blobSize !== undefined && (copySize === undefined || blobSize === copySize)) return blob;
-  return copySize === undefined ? null : copy;
+  return fileSize(copy) === undefined ? null : copy;
 }
 
-/** Raster image type from magic bytes; null for anything else (the blob store also holds non-images). */
+/** Raster image type from magic bytes; null for anything else. */
 export function imageMimeType(bytes: Buffer): string | null {
   if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";

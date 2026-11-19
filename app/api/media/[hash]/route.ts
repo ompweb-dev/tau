@@ -31,14 +31,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ hash: st
   const cachedBytes = cached ? await readIfPresent(cached) : null;
   if (cachedBytes) return image(cachedBytes, "image/webp");
 
-  // The sweep can delete our copy between lookup and read once omp's blob is
-  // complete; one more lookup then finds the blob.
-  let bytes: Buffer | null = null;
-  for (let attempt = 0; attempt < 2 && !bytes; attempt++) {
-    const file = mediaFilePath(hash);
-    if (!file) break;
-    bytes = await readIfPresent(file);
-  }
+  const file = mediaFilePath(hash);
+  let bytes = file ? await readIfPresent(file) : null;
   // A remote session's image: ask the linked hosts (only bytes that hash to `hash` come back).
   const remote = bytes ? null : await fetchMediaFromHosts(hash);
   if (remote) bytes = Buffer.from(remote.buffer, remote.byteOffset, remote.byteLength);

@@ -4,7 +4,6 @@ import { getAgentDir } from "./pi/paths";
 import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { isClientMessageId } from "./client-message-ids";
 import {
-  containsBlobRef,
   invalidateAllSessionScanCaches,
   invalidateSessionFileListCache,
   invalidateSessionScanCache,
@@ -12,9 +11,7 @@ import {
   loadSessionFile,
   MAX_SESSION_LOAD_BYTES,
   readSessionHeaderSync,
-  resolveBlobRefsInEntries,
   type PiSessionInfo,
-  type ResolveBlobOptions,
 } from "./pi/session-files";
 import type {
   AgentMessage,
@@ -442,52 +439,11 @@ export class SessionFileTooLargeError extends Error {
   }
 }
 
-/**
- * Display-path entry read for the session/context routes: reuses the memoized
- * (size, mtimeMs) parse cache WITHOUT blob resolution for entries that don't
- * reference blobs, and deep-copies ONLY the entries that do before resolving
- * their blob refs. The cache stays clean (shared objects are never mutated),
- * and the expensive deep copy is paid only for blob-bearing entries — the
- * common image-free session clones nothing (the array is shallow-copied).
- * Throws SessionFileTooLargeError when the file exceeds the load ceiling.
- */
-export function getSessionEntriesForDisplay(filePath: string, options: ResolveBlobOptions = {}): SessionEntry[] {
-  const entries = loadEntriesOrThrowTooLarge(filePath);
-  return toDisplayEntries(entries, options);
-}
-
-/** Blob-resolution transform shared by the sync and deduplicated display
- * reads. */
-function toDisplayEntries(entries: SessionEntry[], options: ResolveBlobOptions): SessionEntry[] {
-  if (entries.length === 0) return entries;
-  // Blob-bearing entries are deep-copied so resolution never mutates the
-  // shared cache object; blob-free entries are shared as-is.
-  const out: SessionEntry[] = new Array(entries.length);
-  let copiedAny = false;
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (
-      options.skipToolResultImages &&
-      entry.type === "message" &&
-      ((entry.message as { role?: string } | null | undefined)?.role === "toolResult")
-    ) {
-      // Caller turns these images into media URLs — share the entry without blob work.
-      out[i] = entry;
-      continue;
-    }
-    if (!containsBlobRef(entry)) {
-      out[i] = entry;
-      continue;
-    }
-    // Blob-bearing entries are deep-copied so resolution never mutates the
-    // shared cache object.
-    out[i] = structuredClone(entry) as SessionEntry;
-    copiedAny = true;
-  }
-  if (copiedAny) {
-    resolveBlobRefsInEntries(out, options);
-  }
-  return out;
+/** Display-path entry read for the session/context routes: the memoized
+ * (size, mtimeMs) parse, shared (callers must not mutate it). Throws
+ * SessionFileTooLargeError when the file exceeds the load ceiling. */
+export function getSessionEntriesForDisplay(filePath: string): SessionEntry[] {
+  return loadEntriesOrThrowTooLarge(filePath);
 }
 
 // In-flight parse dedup, keyed like the entries cache. Concurrent display
@@ -512,10 +468,7 @@ function getInFlightEntries(): Map<string, Promise<SessionEntry[]>> {
  * parse and resolve to the SAME entry array (callers must treat it as
  * immutable, like all cached entry reads). Rejections are never memoized: a
  * transient failure must not poison later reads. */
-export async function getSessionEntriesForDisplayAsync(
-  filePath: string,
-  options: ResolveBlobOptions = {},
-): Promise<SessionEntry[]> {
+export async function getSessionEntriesForDisplayAsync(filePath: string): Promise<SessionEntry[]> {
   const key = sessionPathKey(filePath);
   const cache = getSessionEntriesCache();
   // Same too-large gate as the sync display read: past the load ceiling the
@@ -538,20 +491,19 @@ export async function getSessionEntriesForDisplayAsync(
     if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
       cache.delete(key);
       cache.set(key, cached);
-      return toDisplayEntries(cached.entries, options);
+      return cached.entries;
     }
   }
 
   const inFlight = getInFlightEntries().get(key);
-  if (inFlight) return inFlight.then((entries) => toDisplayEntries(entries, options));
+  if (inFlight) return inFlight;
 
   // Defer the synchronous parse by one microtask so same-tick callers land
   // on the in-flight map instead of each starting their own parse.
   const parse = Promise.resolve().then(() => loadSessionEntriesCached(filePath));
   getInFlightEntries().set(key, parse);
   try {
-    const entries = await parse;
-    return toDisplayEntries(entries, options);
+    return await parse;
   } finally {
     const map = getInFlightEntries();
     if (map.get(key) === parse) map.delete(key);
@@ -770,7 +722,7 @@ export function getSessionHistoryPage(
       closeSync(fd);
     }
   }
-  const entries = toDisplayEntries(rawEntries, { skipToolResultImages: options.deferToolResultImages });
+  const entries = rawEntries;
   const history: SessionHistoryPage = {
     ...page,
     context: {

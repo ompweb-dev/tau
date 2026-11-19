@@ -35,7 +35,7 @@ import type {
   SessionHeader,
   SessionTreeNode,
 } from "../types";
-import { getArchivedSessionsDir, getBlobsDir, getSessionsDir } from "./paths";
+import { getArchivedSessionsDir, getSessionsDir } from "./paths";
 import { sessionPathKey } from "../paths";
 
 /**
@@ -137,129 +137,6 @@ function migrateToCurrentVersion(header: SessionHeader, entries: MutableEntry[])
 }
 
 // ============================================================================
-// Blob store (read side)
-// ============================================================================
-
-const BLOB_PREFIX = "blob:sha256:";
-const BLOB_HASH_RE = /^[a-f0-9]{64}$/;
-
-function isBlobRef(data: string): boolean {
-  return data.startsWith(BLOB_PREFIX);
-}
-
-/** Extract the hash from a blob ref; the hash check confines reads to the blob dir. */
-function parseBlobRef(data: string): string | null {
-  if (!data.startsWith(BLOB_PREFIX)) return null;
-  const hash = data.slice(BLOB_PREFIX.length);
-  return BLOB_HASH_RE.test(hash) ? hash : null;
-}
-
-function readBlobSync(hash: string): Buffer | null {
-  try {
-    return readFileSync(path.join(getBlobsDir(), hash));
-  } catch {
-    return null;
-  }
-}
-
-function isImageBlock(value: unknown): value is { type: "image"; data: string; mimeType?: string } {
-  return isRecord(value) && value.type === "image" && typeof value.data === "string";
-}
-
-function isImageDataPayload(value: unknown): value is { data: string; mimeType?: string } {
-  if (!isRecord(value) || typeof value.data !== "string") return false;
-  if (isImageBlock(value)) return true;
-  return typeof value.mimeType === "string" && value.mimeType.toLowerCase().startsWith("image/");
-}
-
-/** Degrade a missing-blob image block to a visible text placeholder in place. */
-function degradeMissingBlobImage(block: Record<string, unknown>, hash: string): void {
-  block.type = "text";
-  block.text = `[image unavailable: blob ${hash.slice(0, 12)}… not found]`;
-  delete block.data;
-  delete block.mimeType;
-  delete block.source;
-}
-
-function resolveBlobsInValue(value: unknown, key: string | undefined): void {
-  if (Array.isArray(value)) {
-    for (const item of value) resolveBlobsInValue(item, key);
-    return;
-  }
-  if (!isRecord(value)) return;
-  const record = value as Record<string, unknown>;
-
-  if (
-    isImageDataPayload(value) &&
-    isBlobRef(value.data) &&
-    ((key === "content" && isImageBlock(value)) || key === "images")
-  ) {
-    const hash = parseBlobRef(value.data);
-    if (!hash) return;
-    const blob = readBlobSync(hash);
-    if (blob) record.data = blob.toString("base64");
-    else degradeMissingBlobImage(record, hash);
-    return;
-  }
-
-  if (
-    record.type === "image_generation_call" &&
-    typeof record.result === "string" &&
-    isBlobRef(record.result)
-  ) {
-    const hash = parseBlobRef(record.result);
-    const blob = hash ? readBlobSync(hash) : null;
-    if (blob) record.result = blob.toString("base64");
-  }
-
-  if (typeof record.image_url === "string" && isBlobRef(record.image_url)) {
-    const hash = parseBlobRef(record.image_url);
-    const blob = hash ? readBlobSync(hash) : null;
-    // Externalized data URLs are stored as the raw UTF-8 data-URL string.
-    if (blob) record.image_url = blob.toString("utf8");
-  }
-
-  for (const [childKey, item] of Object.entries(record)) {
-    resolveBlobsInValue(item, childKey);
-  }
-}
-
-/** Cheap precheck so blob-free entries skip the resolution walk entirely. */
-export function containsBlobRef(value: unknown): boolean {
-  if (typeof value === "string") return isBlobRef(value);
-  if (Array.isArray(value)) {
-    for (const item of value) if (containsBlobRef(item)) return true;
-    return false;
-  }
-  if (!isRecord(value)) return false;
-  for (const key in value) {
-    if (containsBlobRef(value[key])) return true;
-  }
-  return false;
-}
-
-export interface ResolveBlobOptions {
-  /** Leave blob refs inside toolResult messages unresolved (the caller turns
-   * those images into /api/media URLs instead of inlining them). */
-  skipToolResultImages?: boolean;
-}
-
-/** Resolve blob references in loaded entries back to inline base64. Mutates in place. */
-export function resolveBlobRefsInEntries(entries: SessionEntry[], options: ResolveBlobOptions = {}): void {
-  for (const entry of entries) {
-    if (
-      options.skipToolResultImages &&
-      entry.type === "message" &&
-      ((entry.message as { role?: string } | null | undefined)?.role === "toolResult")
-    ) {
-      continue;
-    }
-    if (!containsBlobRef(entry)) continue;
-    resolveBlobsInValue(entry, undefined);
-  }
-}
-
-// ============================================================================
 // Session file loading
 // ============================================================================
 
@@ -272,9 +149,7 @@ export interface LoadedSession {
   error?: SessionLoadError;
 }
 
-export interface LoadSessionOptions extends ResolveBlobOptions {
-  /** Resolve blob:sha256 image references to inline base64 for display. */
-  resolveBlobs?: boolean;
+export interface LoadSessionOptions {
   /** Retain only an entry's indexing metadata while scanning. Runs before
    * legacy migration; byte ranges exclude LF but include any CR. */
   projectEntry?: (entry: SessionEntry, offset: number, length: number) => SessionEntry;
@@ -343,8 +218,8 @@ export function forEachFileLineSync(
 
 /**
  * Load and parse a session file: validate the header, migrate legacy pi v1/v2
- * shapes, set header.title to the session name (latest session_info), and
- * optionally resolve blob refs. Missing/malformed files yield
+ * shapes and set header.title to the session name (latest session_info).
+ * Missing/malformed files yield
  * { header: null, entries: [] } instead of throwing; a session too large to
  * hold in memory additionally sets error:"too_large" so routes can say so
  * instead of reporting it as malformed.
@@ -394,10 +269,6 @@ export function loadSessionFile(filePath: string, options: LoadSessionOptions = 
 
   if (name) header.title = name;
   else delete header.title;
-
-  if (options.resolveBlobs) {
-    resolveBlobRefsInEntries(entries, { skipToolResultImages: options.skipToolResultImages });
-  }
 
   return { header, entries };
 }
