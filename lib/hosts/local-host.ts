@@ -119,7 +119,7 @@ export async function projectTrustArgs(cwd: string): Promise<string[]> {
 }
 
 /** This machine: `child_process.spawn` and direct `fs`. */
-export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
+export const localHost: Omit<Host, "workspaceOps"> = {
   id: "local",
   label: "This machine",
   sessionOps,

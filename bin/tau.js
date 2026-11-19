@@ -46,17 +46,6 @@ if (process.argv[2] === "preflight") {
   );
   return;
 }
-if (process.argv[2] === "recover-host") {
-  process.env.TAU_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
-  module.require("jiti").createJiti(__filename).import("../lib/hosts/recovery.ts").then(
-    ({ runHostRecoveryCli }) => runHostRecoveryCli(process.argv.slice(3)).then((code) => process.exit(code)),
-    (error) => {
-      console.error(`Host recovery failed: ${error instanceof Error ? error.message : String(error)}`);
-      process.exit(1);
-    },
-  );
-  return;
-}
 // `tau host` runs in this process: a supervisor's SIGTERM must reach the daemon, not a wrapper.
 if (process.argv[2] === "host") {
   process.argv.splice(2, 1);

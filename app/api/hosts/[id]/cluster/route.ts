@@ -47,12 +47,7 @@ function valueOf<T>(result: OpResult<T>): T {
 }
 
 function requireReady(host: Host): void {
-  const block = clusterJoinBlock({ status: host.status(), supports: (operation) => host.supportsWorkspaceOp(operation) });
-  if (block === null) return;
-  if (block !== "upgrade") throw new HostOpError(409, "host_offline", `${host.label} is offline`);
-  throw host.id === LOCAL_HOST_ID
-    ? new HostOpError(409, "host_restart_required", "Restart this machine's tau host daemon to join the cluster")
-    : new HostOpError(409, "host_upgrade_required", `Update tau on ${host.label} to join the cluster`);
+  if (clusterJoinBlock({ status: host.status() }) !== null) throw new HostOpError(409, "host_offline", `${host.label} is offline`);
 }
 
 /** The host's projects in its own order (mergeProjects: the order the user sees), then its hidden registry entries, which move too. */

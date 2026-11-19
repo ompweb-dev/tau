@@ -43,8 +43,8 @@ export interface HostSoftwareUpdate {
   blockers?: HostUpdateBlocker[];
   /** An available update is blocked only by forceable blockers: an update request with `force` would be accepted, ending this host's sessions. Absent from a daemon that predates force; never infer it. */
   canForceUpdate?: boolean;
-  /** How a force would be carried out. A native daemon sets "native" whenever `canForceUpdate`; the web server adds "recovery" for an older daemon it can recover through its recovery path instead. */
-  forceMethod?: "native" | "recovery";
+  /** How a force would be carried out: "native" whenever `canForceUpdate`. */
+  forceMethod?: "native";
   /** The first blocker's message, human-readable. Never infer compatibility or permission from it or from a version number. */
   blockedReason: string | null;
   updateCommand: string;

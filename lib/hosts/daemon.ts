@@ -279,7 +279,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   function makeLink(login: HostLink, primary: boolean): DaemonLink {
     const link = new DaemonLink(login, "l" + ++linkId, { allowHttp: options.allowHttp, primary, log, keepOnVersionMismatch: true,
       hello: (link, replay) => encodeLine({ type: "hello", v: link.version, ompVersion, tauVersion: packageJson.version,
-        workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), platform: process.platform, home: homedir(),
+        platform: process.platform,
         ack: link.ackedDown, channels: channels.listing(link, replay),
         link: { id: link.id, notifier: notifierId === link.id } }),
       handleDown,
@@ -317,7 +317,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     links.set(login.url, link);
     const maintenance = new DaemonMaintenance(login, {
       hello: () => ({ type: "hello", apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        tauVersion: packageJson.version, ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, piVersion: ompVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"] }),
       handleRequest: (op, args) => runMaintenance(link, op, args),
       // A staged candidate that awaits its server's cutover acknowledges its operation here, not on the application link.
@@ -366,9 +366,9 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     try {
       if (op === "status") return {
         apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        tauVersion: packageJson.version, ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, piVersion: ompVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"],
-        workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), sessionProcesses: channels.size,
+        sessionProcesses: channels.size,
         activeTurns: channels.activeTurns, sessions: channels.maintenanceSessions(),
         drained, busyReason: busyReason(), operation: getHostUpdateOperation(),
       };

@@ -6,24 +6,14 @@ import type { SessionOps } from "./session-ops";
 import type { HostCapacity } from "./capacity";
 import type { ConfigState } from "./daemon-cluster-config";
 import type { SpawnRequest } from "./host";
-import { isWorkspaceOp, WORKSPACE_OP_PARAMS } from "../workspace-types";
+import { WORKSPACE_OP_PARAMS } from "../workspace-types";
 import type { WorkspaceFileEvent } from "../workspace-types";
 
-/** Application Protocol v12 uses maintenance API v1 on a separate authenticated connection.
- * v10/v11 application links are accepted only by the upgrade shim, never by the session runtime. */
-/** 11: the same wire as 10, renumbered: prerelease daemons already sent 10 with omp RPC channel lines, which this
- * server cannot read. 10: channel stdin/stdout lines are the runner's `{t}` frames (`cmd`/`res`/`hello`/…), no longer omp RPC frames;
- * `open.launch.configVersion`, the `config_state` report and the `clusterConfig` op.
- * 9: `open.launch.shareCredentials` (removed with the auth broker). 8: pool capacity reports, creation identity and project preparation. 7: shared host-owned channels, lifecycle,
- * dialogs and callbacks. 6: composer uploads
- * `upload_ack` up message, the `uploadStart`/`uploadAbort`/`uploadAttach` ops. 5: a line over `pieceBytes` goes as
- * `part` messages and a large result as several binary frames, both sent fair across channels
- * (docs/specs/2026-10-31-websocket-link-design.md, D7). 4: the link is one WebSocket: text frames carry the messages,
- * binary frames large results, `ack` messages replace the ack header and the POST answer.
- * Rules for changing it: docs/specs/2026-10-28-remote-hosts-design.md, "Protocol versions and compatibility". */
-export const LINK_PROTOCOL_VERSION = 12;
-/** Oldest full application protocol; the v10/v11 update-only shim is outside this range. */
-export const MIN_LINK_PROTOCOL_VERSION = 12;
+/** tau's application protocol, v1 its first. A released version changes only compatibly from here: the rules are in
+ * docs/specs/2026-10-28-remote-hosts-design.md, "Protocol versions and compatibility". Host maintenance (updates,
+ * inventory) is a separate protocol with its own version: maintenance-protocol.ts. */
+export const LINK_PROTOCOL_VERSION = 1;
+export const MIN_LINK_PROTOCOL_VERSION = 1;
 /** A configuration version: the manifest's SHA-256, in lowercase hex. */
 export const CONFIG_VERSION_RE = /^[0-9a-f]{64}$/;
 /** A pi provider id (`anthropic`, `openai-codex`, `amazon-bedrock`, a models.json name). */
@@ -39,9 +29,9 @@ export const LINK_LIMITS = {
   // (~10.7 MiB), and the rest is room for the streamed reply.
   channelBufferBytes: 32 * 1024 * 1024,
   flushMs: 16,
-  /** Largest `part` line and binary frame payload (v5); an uplink text frame batches lines up to it. */
+  /** Largest `part` line and binary frame payload; an uplink text frame batches lines up to it. */
   pieceBytes: 256 * 1024,
-  /** v5: a side sends queued lines and result pieces only while less than this is sent and not acked (spec D7), so a
+  /** A side sends queued lines and result pieces only while less than this is sent and not acked (spec D7), so a
    * small message never waits behind more than this plus one piece in kernel, proxy or peer buffers (768 KiB: about
    * 3.1 s at 2 Mbit). It also caps throughput at about this per round trip. Control lines go regardless. */
   unackedBytes: 2 * 256 * 1024,
@@ -110,7 +100,7 @@ export const SESSION_OP_PARAMS: { readonly [K in keyof SessionOps]: readonly str
   preparePoolProject: ["input"],
 };
 
-/** Unknown additions are answered with 501; pool preparation needs a v8 peer. */
+/** Unknown additions are answered with 501. */
 export const HOST_OP_NAMES = [...(Object.keys(SESSION_OP_PARAMS) as (keyof SessionOps)[]), ...Object.keys(WORKSPACE_OP_PARAMS) as (keyof typeof WORKSPACE_OP_PARAMS)[], "open", "close", "editLease", "sessionFileExists", "invalidateSessionLists", "checkUpdates", "updateSoftware", "uploadStart", "uploadAbort", "uploadAttach", "setUploadRetention", "clusterConfig", "auth"] as const;
 
 export type HostOpName = (typeof HOST_OP_NAMES)[number];
@@ -132,7 +122,7 @@ export class HostOpError extends Error {
   }
 }
 
-/** v5: one slice of a sequenced line longer than `pieceBytes` (`LinkSender` cuts it, `PartJoiner` joins it): `data`
+/** One slice of a sequenced line longer than `pieceBytes` (`LinkSender` cuts it, `PartJoiner` joins it): `data`
  * starts at UTF-16 offset `at` of the line; `end` marks the last slice. */
 export type Part = { type: "part"; seq: number; at: number; end: boolean; data: string };
 
@@ -164,18 +154,15 @@ export type UpMessage =
       type: "hello";
       v: number;
       ompVersion: string | null;
-      /** Running daemon's application version; absent on older hosts. */
-      tauVersion?: string;
+      tauVersion: string;
       link?: { id: string; notifier: boolean };
-      workspaceOps?: string[];
       platform: string;
-      home: string;
       ack: number;
       channels: HelloChannel[];
     }
   | { type: "stdout"; seq: number; ch: string; line: string }
   | { type: "stderr"; seq: number; ch: string; chunk: string }
-  /** `reason`: v7, the daemon stopped it on purpose (abandoned, idle, asked); absent for a crash. */
+  /** `reason`: the daemon stopped it on purpose (abandoned, idle, asked); absent for a crash. */
   | { type: "exit"; seq: number; ch: string; code: number | null; signal: string | null; reason?: string }
   | { type: "resync"; seq: number; ch: string }
   | { type: "notifier"; seq: number; on: boolean }
@@ -184,13 +171,13 @@ export type UpMessage =
   /** The daemon's link samples, at most LINK_LIMITS.statsSamples; a hub that predates it skips the type. Advisory: the
    * receiver keeps the valid ones and counts the rest in `invalid` (decodeUp only; a sender leaves it out). */
   | { type: "stats"; seq: number; samples: LinkStatSample[]; invalid?: number }
-  /** v8: a fresh resource sample; unsequenced and never retained for replay. */
+  /** A fresh resource sample; unsequenced and never retained for replay. */
   | { type: "capacity"; sample: HostCapacity }
-  /** v10: the daemon's cluster configuration state, at link up, on each change and after each host.json reload, and
+  /** The daemon's cluster configuration state, at link up, on each change and after each host.json reload, and
    * whether the configuration it holds is this link's server's (`owned`); unsequenced and never retained for replay,
    * but the latest one that found the send window full goes once there is room. */
   | { type: "config_state"; state: ConfigState; owned: boolean }
-  /** v6: the daemon has written `received` bytes of upload `id` for this start `attempt`, `done` once all of them are
+  /** The daemon has written `received` bytes of upload `id` for this start `attempt`, `done` once all of them are
    * written and synced; with `error` the upload failed and its staged file is gone. */
   | { type: "upload_ack"; seq: number; id: string; attempt: string; received: number; done: boolean; error?: { status: number; code: string; message: string } }
   | { type: "workspace_file"; seq: number; id: string; epoch: string; event: WorkspaceFileEvent }
@@ -491,11 +478,9 @@ export function decodeUp(line: string): UpMessage | UnknownMessage {
         type: "hello",
         v: int(o, "v"),
         ompVersion: nullable(o, "ompVersion", str),
-        ...(o.tauVersion === undefined ? {} : { tauVersion: str(o, "tauVersion") }),
-        ...(o.workspaceOps === undefined ? {} : { workspaceOps: strings(o, "workspaceOps").slice(0, Object.keys(WORKSPACE_OP_PARAMS).length).filter(isWorkspaceOp) }),
+        tauVersion: str(o, "tauVersion"),
         ...(o.link === undefined ? {} : { link: helloLink(o.link) }),
         platform: str(o, "platform"),
-        home: str(o, "home"),
         ack: seqNum(o, "ack"),
         channels: channels(o),
       };

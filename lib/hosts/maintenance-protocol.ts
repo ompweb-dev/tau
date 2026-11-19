@@ -14,7 +14,7 @@ export type MaintenanceHello = {
   apiVersion: number;
   protocolVersion: number;
   tauVersion: string;
-  ompVersion: string | null;
+  piVersion: string | null;
   platform: string;
   capabilities: MaintenanceOp[];
 };
@@ -72,10 +72,10 @@ const short = (value: unknown): value is string => typeof value === "string" && 
 /** A hello's fields once its apiVersion is known to be this API's, else null. Capabilities this side does not know are
  * dropped, so a later revision of API 1 may add operations without breaking the handshake. */
 export function parseHello(frame: Record<string, unknown>): MaintenanceHello | null {
-  const { apiVersion, protocolVersion, tauVersion, ompVersion, platform, capabilities } = frame;
+  const { apiVersion, protocolVersion, tauVersion, piVersion, platform, capabilities } = frame;
   if (apiVersion !== MAINTENANCE_API_VERSION || typeof protocolVersion !== "number" || !Number.isInteger(protocolVersion)) return null;
-  if (!short(tauVersion) || !short(platform) || !(ompVersion === null || short(ompVersion)) || !Array.isArray(capabilities)) return null;
-  return { type: "hello", apiVersion: MAINTENANCE_API_VERSION, protocolVersion, tauVersion, ompVersion, platform, capabilities: MAINTENANCE_OPS.filter((op) => capabilities.includes(op)) };
+  if (!short(tauVersion) || !short(platform) || !(piVersion === null || short(piVersion)) || !Array.isArray(capabilities)) return null;
+  return { type: "hello", apiVersion: MAINTENANCE_API_VERSION, protocolVersion, tauVersion, piVersion, platform, capabilities: MAINTENANCE_OPS.filter((op) => capabilities.includes(op)) };
 }
 
 /** The wire form of a failure, read from an Error or a `res` frame alike: a status in 400..599 (`status`, or the

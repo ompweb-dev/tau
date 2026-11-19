@@ -11,7 +11,6 @@ import { runHashPasswordCommand } from "../bin/tau-hash-password";
 import { checkLaunchSecurity, parseLaunchOptions } from "../bin/tau-options";
 import { runHostCli } from "@/lib/hosts/host-cli";
 import { runHostUpdateWorker } from "../lib/hosts/update-worker";
-import { runHostRecoveryCli } from "../lib/hosts/recovery";
 import { runServerUpdateWorker } from "../lib/server-update-worker";
 
 // Before any server module loads: app/api/manifest reads public/ from it when it loads, and the daemon names
@@ -25,7 +24,6 @@ if (command === "host-update-worker") {
   process.exit(await runHostUpdateWorker(process.argv[3] || ""));
 }
 if (command === "server-update-worker") process.exit(await runServerUpdateWorker(process.argv[3] || ""));
-if (command === "recover-host") process.exit(await runHostRecoveryCli(process.argv.slice(3)));
 if (command === "host") process.exit(await runHostCli(process.argv.slice(3)));
 // The host updater finds this command in a release by PREFLIGHT_MARKER before it runs it: an older tau starts the web server instead.
 if (command === "preflight") process.exit(await (await import("../lib/hosts/preflight")).runPreflight());

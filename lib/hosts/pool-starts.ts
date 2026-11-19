@@ -8,7 +8,7 @@ import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import type { ProjectLaunchConfig } from "../types";
 import type { Host } from "./host";
-import { adoptedChild, authOp, getHost, getHostCapacity, getHostLinkProtocol, isHostConfigCurrent, reconcilePooledChild } from "./hub";
+import { adoptedChild, authOp, getHost, getHostCapacity, isHostConfigCurrent, reconcilePooledChild } from "./hub";
 import { CREATION_ID_RE, HostOpError, type HelloChannel } from "./link-protocol";
 import { loadPools, pathApi, selectPoolHost, type PoolHostSnapshot } from "./pools";
 
@@ -378,9 +378,8 @@ function reservePooledSession(input: PoolCreateInput, start: Start, authorize: (
       const snapshots = new Map<string, PoolHostSnapshot>();
       for (const member of pool.members) {
         const host = getHost(member.hostId);
-        const linkProtocol = getHostLinkProtocol(member.hostId) ?? 0;
         // A cluster member behind the master's configuration stays in the map, marked, so selection skips it before any preparation.
-        if (host) snapshots.set(member.hostId, { status: host.status(), linkProtocol, configCurrent: isHostConfigCurrent(member.hostId), capacity: getHostCapacity(member.hostId), ...(authenticated ? { canAuthenticate: authenticated.get(member.hostId) === true } : {}) });
+        if (host) snapshots.set(member.hostId, { status: host.status(), configCurrent: isHostConfigCurrent(member.hostId), capacity: getHostCapacity(member.hostId), ...(authenticated ? { canAuthenticate: authenticated.get(member.hostId) === true } : {}) });
       }
       const pending = new Map<string, number>();
       for (const current of journal.starts) {

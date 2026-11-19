@@ -110,7 +110,7 @@ function validParticipant(value: unknown): value is UpgradeParticipant {
     && typeof value.label === "string" && (value.currentVersion === null || typeof value.currentVersion === "string")
     && (value.protocolVersion === null || Number.isSafeInteger(value.protocolVersion))
     && (value.targetVersion === null || typeof value.targetVersion === "string" && HOST_VERSION_PATTERN.test(value.targetVersion))
-    && typeof value.needsUpgrade === "boolean" && ["maintenance", "legacy", "local", "shared-local", "none"].includes(String(value.recovery))
+    && typeof value.needsUpgrade === "boolean" && ["maintenance", "local", "shared-local", "none"].includes(String(value.recovery))
     && (value.sessionProcesses === null || Number.isSafeInteger(value.sessionProcesses) && Number(value.sessionProcesses) >= 0)
     && (value.activeTurns === null || Number.isSafeInteger(value.activeTurns) && Number(value.activeTurns) >= 0)
     && (value.blockedReason === null || typeof value.blockedReason === "string")
@@ -182,7 +182,7 @@ export function buildUpgradePlan(input: { id: string; fromVersion: string; targe
     const missing = local && input.localMissing;
     const incompatible = host.hostVersion === null || host.hostVersion < input.compatibility.min || host.hostVersion > input.compatibility.max;
     const needsUpgrade = shared || missing || incompatible;
-    const recovery: UpgradeParticipant["recovery"] = local ? shared ? "shared-local" : "local" : maintenance ? "maintenance" : host.upgradeOnly ? "legacy" : "none";
+    const recovery: UpgradeParticipant["recovery"] = local ? shared ? "shared-local" : "local" : maintenance ? "maintenance" : "none";
     const blockedReason = needsUpgrade && !missing && (host.status === "offline" && !maintenance || recovery === "none")
       ? `${host.label || host.id}: host compatibility and recovery could not be established; reconnect it before upgrading the server` : null;
     return {
@@ -236,7 +236,7 @@ export async function prepareUpgradePlan(attemptId: string, targetVersion: strin
       }
       if (!status.tau.updateAvailable || status.tau.availableVersion !== targetVersion || !status.tau.canUpdate && !status.tau.canForceUpdate) {
         host.blockedReason = status.tau.blockedReason || "This host has no verified update/recovery path to the candidate server version";
-      } else if (!status.tau.canUpdate || status.tau.forceMethod === "recovery" || host.recovery === "legacy") plan.requiresForce = true;
+      } else if (!status.tau.canUpdate) plan.requiresForce = true;
     } catch (error) { host.blockedReason = error instanceof Error ? error.message : "The host update path could not be checked"; }
   }));
   if (!needsNpm && candidate.pin.npm) {
@@ -305,7 +305,7 @@ async function coordinateHosts(attemptId: string): Promise<UpgradePlan> {
   }
   const approvedInventory = identity.inventory;
   const revalidate = async (): Promise<void> => {
-    const current = inventoryIdentity(await getHostUpgradeInventory(required.flatMap((host) => host.operationId ? [host.operationId] : [])));
+    const current = inventoryIdentity(await getHostUpgradeInventory());
     if (JSON.stringify(current.map((host) => host.id)) !== JSON.stringify(plan.hosts.map((host) => host.id).sort())) {
       throw new UpgradePlanError("plan_changed", "The registered host set changed before server cutover", 412);
     }

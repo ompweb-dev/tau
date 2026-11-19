@@ -11,7 +11,6 @@ import type { CapacitySnapshot } from "./hub";
 
 export interface PoolHostSnapshot {
   status: HostStatus;
-  linkProtocol: number;
   /** False for a cluster member that is not on the master's configuration (`isHostConfigCurrent`); it is never chosen. */
   configCurrent: boolean;
   capacity: CapacitySnapshot | null;

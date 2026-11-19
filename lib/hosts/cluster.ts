@@ -12,12 +12,10 @@ export const CLUSTER_LABEL = "Cluster";
 export const CLUSTER_PROJECTS_DIR = "tau-cluster";
 /**
  * Why a host cannot join the cluster now, or null: the one rule behind the join route and the Settings switch.
- * Non-online hosts retain their status as the reason; online ones (older link protocols are refused at link time) need the
- * operation below ("upgrade").
+ * A host that is not online cannot join; its status is the reason.
  */
-export function clusterJoinBlock(host: { status: HostStatus; supports: (operation: "gitOrigins") => boolean }): Exclude<HostStatus, "online"> | "upgrade" | null {
-  if (host.status !== "online") return host.status;
-  return host.supports("gitOrigins") ? null : "upgrade";
+export function clusterJoinBlock(host: { status: HostStatus }): Exclude<HostStatus, "online"> | null {
+  return host.status === "online" ? null : host.status;
 }
 
 export class ClusterError extends Error {

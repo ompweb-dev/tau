@@ -47,5 +47,4 @@ export interface Host {
   /** Session and project file operations, run on this host. */
   readonly sessionOps: SessionOps;
   readonly workspaceOps: WorkspaceOps;
-  supportsWorkspaceOp(name: keyof WorkspaceOps): boolean;
 }

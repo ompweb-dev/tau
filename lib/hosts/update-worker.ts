@@ -62,8 +62,6 @@ export interface HostUpdateDescriptor {
   force?: boolean;
   /** The protocol range the candidate must speak for a maintenance receipt to acknowledge it, while its application protocol may await the server's cutover. */
   receipt?: { min: number; max: number };
-  /** Set by the recovery CLI: the old daemon was drained (idle proven) through its private control endpoint, and is resumed if this update fails before it is stopped. */
-  recovery?: { drained: boolean };
 }
 interface WorkerRuntime {
   process: typeof ProcessRuntime;
@@ -718,12 +716,6 @@ function recordPreflight(d: HostUpdateDescriptor): string {
   writeHostUpdateJson(join(hostUpdateRoot(), d.id, "preflight.json"), { id: d.id, version: d.version, nonce });
   return nonce;
 }
-/** Only recovery's drained old daemon: put it back to work when staging fails before anything was stopped. */
-async function resumeDrainedDaemon(): Promise<void> {
-  const { requestHostControl } = await import("./host-control");
-  await requestHostControl("resume");
-}
-
 function markHostUpdatePrepared(d: HostUpdateDescriptor): HostUpdateStoredState {
   const state = readHostUpdateState();
   if (state?.operation.id !== d.id || state.operation.version !== d.version || state.operation.state !== "running") throw new Error("Host update no longer owns the operation");
@@ -795,7 +787,6 @@ function validateDescriptor(path: string): HostUpdateDescriptor {
   if (d.releasePin !== undefined) d.releasePin = validateApprovedReleasePin(d.releasePin, d.version, d.releaseRepo);
   if (d.releasePin && d.restartOnly) throw new Error("An existing installation cannot be adopted as an approved release without artifact evidence");
   if (d.receipt !== undefined && (!d.receipt || !Number.isSafeInteger(d.receipt.min) || !Number.isSafeInteger(d.receipt.max) || d.receipt.min < 1 || d.receipt.max < d.receipt.min)) throw new Error("Invalid host update descriptor: the approved protocol range");
-  if (d.recovery !== undefined && (!d.recovery || typeof d.recovery.drained !== "boolean")) throw new Error("Invalid host update descriptor");
   // The daemon's process snapshot, or what an earlier engine recorded instead: an identity, or the service it had verified.
   if (d.process !== undefined ? typeof d.process !== "object" || d.process === null || Array.isArray(d.process) : !(d.systemd || (typeof d.daemonIdentity === "string" && d.daemonIdentity && d.daemonIdentity.length <= 200))) throw new Error("Invalid host update descriptor: the daemon's process identity is missing");
   assertOwnedPath(dirname(path), true);
@@ -915,10 +906,6 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
       }
     }
     if (error instanceof UnsafeHostRestartError) recoveryRequired = true;
-    if (d?.recovery?.drained && !stopped && !stopPending) {
-      try { await resumeDrainedDaemon(); }
-      catch (resumeError) { recoveryRequired = true; message += `; the old host stays drained and must be resumed with \`tau host resume\`: ${resumeError instanceof Error ? resumeError.message : String(resumeError)}`; }
-    }
     if (d?.restartOnly && stopped) message += "; existing shared installation retained; the previous loaded runtime cannot be restored without reinstalling";
     if (d?.restartOnly && stopPending && stopped && plan && runtime) {
       try { await launchDaemon(d, plan, runtime, join(dirname(path), "health.json"), d.version, nonce); }

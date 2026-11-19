@@ -185,7 +185,7 @@ function JoinDialog({ host, localJoins, reload, onClose }: { host: HostRow; loca
 /** `localReason`: this machine is not a member yet, so a join adds it too, and why its own daemon is not ready for that. */
 type ClusterState = { pools: HostPool[]; poolsLoaded: boolean; poolsFailed: boolean; localReason: string | null; masterFailed: boolean };
 
-const joinBlock = (row: HostRow) => clusterJoinBlock({ status: row.status, supports: (operation) => row.workspaceOps.includes(operation) });
+const joinBlock = (row: HostRow) => clusterJoinBlock({ status: row.status });
 
 function HostCard({ host, cluster, onRename, onRevoke, onJoin, onLeave }: { host: HostRow; cluster: ClusterState; onRename: () => void; onRevoke: () => void; onJoin: () => void; onLeave: () => void }) {
   const { t } = useI18n();
@@ -196,7 +196,7 @@ function HostCard({ host, cluster, onRename, onRevoke, onJoin, onLeave }: { host
   // Otherwise only a non-member needs a ready host, and this machine too while it is not a member: leaving always works.
   const unavailable = !cluster.poolsLoaded && cluster.poolsFailed ? t("hostsConfig.poolsUnavailable") : null;
   const block = cluster.poolsLoaded && !member && linked ? joinBlock(host) : null;
-  const joinReason = unavailable ?? (block === "upgrade" || block === "needs-upgrade" ? t("hostsConfig.joinUpgrade")
+  const joinReason = unavailable ?? (block === "needs-upgrade" ? t("hostsConfig.joinUpgrade")
     : block === "omp-missing" ? hostStatusText(t, host)
         : block !== null ? t("hostsConfig.joinOffline")
           : !member ? cluster.localReason : null);
@@ -210,7 +210,7 @@ function HostCard({ host, cluster, onRename, onRevoke, onJoin, onLeave }: { host
   // so it needs an update; a member without a report yet is still being brought up to date, unless this machine cannot
   // serve its configuration, which the message above the rows says once.
   const memberBlock = member && linked ? joinBlock(host) : null;
-  const outdated = memberBlock === "upgrade" || memberBlock === "needs-upgrade";
+  const outdated = memberBlock === "needs-upgrade";
   const config = member && !outdated ? linked?.clusterConfig : undefined;
   const updating = cluster.masterFailed ? null : t("hostsConfig.configUpdating");
   const configLine = !member || !linked || host.status === "offline" ? null
