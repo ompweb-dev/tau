@@ -4,10 +4,9 @@ import { readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir } from "../omp/paths";
-import { listPlugins, runOmpCli } from "../omp/plugins-cli";
 import { loadWebServerSettings } from "../web-settings";
 import { isClusterMember } from "./cluster";
-import { buildManifest, ClusterConfigError, MIRRORED, type ConfigManifest, type ConfigRoot, type PluginEntry } from "./cluster-config";
+import { buildManifest, ClusterConfigError, MIRRORED, type ConfigManifest, type ConfigRoot } from "./cluster-config";
 import { hostFromBearer } from "./host-bearer";
 import { loadPools } from "./pools";
 import { LOCAL_HOST_ID, type HostRecord } from "./registry";
@@ -16,36 +15,14 @@ import { LOCAL_HOST_ID, type HostRecord } from "./registry";
 
 type Current = { manifest: ConfigManifest; content(hash: string): Uint8Array | null };
 
-// Four 30 s sync ticks: a plugin installed or removed on the master reaches the members within about two minutes.
-const PLUGIN_LIST_TTL_MS = 120_000;
 const noStore = { "cache-control": "no-store" };
 
-let plugins: { at: number; list: PluginEntry[] } | null = null;
 let building: Promise<Current> | null = null;
 let cached: { fingerprint: string; current: Current } | null = null;
 
-/** A failed read keeps the last good list (members remove the plugins the manifest lacks, so never an empty one), retried after the same lifetime; with no list ever read it is an error. */
-async function readPluginList(): Promise<PluginEntry[]> {
-  try {
-    plugins = { at: Date.now(), list: await listPlugins((args) => runOmpCli(args, 30_000)) };
-  } catch {
-    // Never omp's own output: it may name paths or settings.
-    console.log(`[tau] cluster-config the plugin list cannot be read${plugins ? "; serving the last one read" : ""}`);
-    if (!plugins) throw new ClusterConfigError("unreadable", "the plugin list cannot be read (omp plugin list failed)");
-    plugins = { at: Date.now(), list: plugins.list };
-  }
-  return plugins.list;
-}
-
-function pluginList(): Promise<PluginEntry[]> {
-  if (plugins && Date.now() - plugins.at < PLUGIN_LIST_TTL_MS) return Promise.resolve(plugins.list);
-  return readPluginList();
-}
-
 /**
  * Path, file identity (device, inode), size, modification and change time, and executable bit of every file `buildManifest` would read, following links, without
- * reading any content. Mirrors buildManifest's walk (skipped `.git` and `node_modules`, link loops, `.yaml` standing in
- * for an absent `.yml`). A read error makes the fingerprint unlike any other, so buildManifest runs and reports it
+ * reading any content. Mirrors buildManifest's walk (skipped `.git` and `node_modules`, link loops). A read error makes the fingerprint unlike any other, so buildManifest runs and reports it
  * instead of a cached manifest standing.
  */
 async function treeFingerprint(roots: Record<ConfigRoot, string>): Promise<string> {
@@ -92,8 +69,8 @@ async function treeFingerprint(roots: Record<ConfigRoot, string>): Promise<strin
 }
 
 /**
- * Rebuilt only when the fingerprint (files, agent environment, plugin list) differs from the last build's. One build at
- * a time: concurrent callers share its walk, its `omp plugin list` and its result. Throws ClusterConfigError.
+ * Rebuilt only when the fingerprint (files, agent environment) differs from the last build's. One build at a time:
+ * concurrent callers share its walk and its result. Throws ClusterConfigError.
  */
 export function currentClusterConfig(): Promise<Current> {
   building ??= build().finally(() => {
@@ -104,11 +81,10 @@ export function currentClusterConfig(): Promise<Current> {
 
 async function build(): Promise<Current> {
   const roots = { agent: getAgentDir(), home: homedir() };
-  const list = await pluginList();
   const { agentEnv } = loadWebServerSettings();
-  const fingerprint = JSON.stringify([await treeFingerprint(roots), agentEnv, list]);
+  const fingerprint = JSON.stringify([await treeFingerprint(roots), agentEnv]);
   if (cached?.fingerprint === fingerprint) return cached.current;
-  const current = buildManifest(roots, { agentEnv, plugins: list });
+  const current = buildManifest(roots, { agentEnv });
   cached = { fingerprint, current };
   return current;
 }

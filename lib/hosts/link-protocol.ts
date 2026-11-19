@@ -410,15 +410,13 @@ function channels(o: Obj): HelloChannel[] {
 }
 
 const CONFIG_FILES: readonly string[] = ["none", "current", "failed"];
-const CONFIG_PLUGINS: readonly string[] = ["none", "pending", "current", "failed"];
 
 /** A daemon's ConfigState (`config_state`, the `clusterConfig` result). Throws LinkProtocolError. */
 export function decodeConfigState(value: unknown): ConfigState {
   if (!isObj(value)) fail("config state must be an object");
-  const { files, plugins } = value;
+  const { files } = value;
   if (typeof files !== "string" || !CONFIG_FILES.includes(files)) fail("Invalid files state");
-  if (typeof plugins !== "string" || !CONFIG_PLUGINS.includes(plugins)) fail("Invalid plugins state");
-  return { version: nullable(value, "version", str), files: files as ConfigState["files"], plugins: plugins as ConfigState["plugins"], error: nullable(value, "error", str), missingCommands: strings(value, "missingCommands") };
+  return { version: nullable(value, "version", str), files: files as ConfigState["files"], error: nullable(value, "error", str), missingCommands: strings(value, "missingCommands") };
 }
 
 function capacitySample(value: unknown): HostCapacity {

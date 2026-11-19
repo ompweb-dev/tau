@@ -7,12 +7,17 @@ export const CONFIG_LIMITS = { fileBytes: 5_242_880, bundleBytes: 52_428_800, ma
 
 export type ConfigRoot = "agent" | "home";
 
-/** Mirrored entries: files and directories, relative to the pi agent directory or to the home directory. */
+/**
+ * Mirrored entries: what pi 1.5.2 reads as user configuration from the agent directory (`settings.json`, whose `packages`
+ * pi installs at startup, models, MCP servers, the global context file, system prompts, resource directories) and
+ * `~/.agents/skills`. Never credentials (`auth.json`, `mcp-auth.json`), sessions or caches (`npm/`, `git/`, `bin/`).
+ */
 export const MIRRORED: readonly { root: ConfigRoot; path: string; kind: "file" | "dir" }[] = [
-  ...["settings.json", "models.json", "mcp.json", ".mcp.json", "AGENTS.md", "RULES.md", "SYSTEM.md", "APPEND_SYSTEM.md", "TITLE_SYSTEM.md", "secrets.yml", ".env"].map(
+  // pi loads the first context file it finds: every candidate is mirrored so a member's own one cannot shadow the master's.
+  ...["settings.json", "models.json", "mcp.json", "AGENTS.override.md", "AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md"].map(
     (path) => ({ root: "agent" as const, path, kind: "file" as const }),
   ),
-  ...["skills", "agents", "rules", "instructions", "commands", "prompts", "hooks", "extensions", "tools"].map((path) => ({
+  ...["skills", "prompts", "themes", "extensions"].map((path) => ({
     root: "agent" as const,
     path,
     kind: "dir" as const,
@@ -20,33 +25,30 @@ export const MIRRORED: readonly { root: ConfigRoot; path: string; kind: "file" |
   { root: "home", path: ".agents/skills", kind: "dir" },
 ];
 
-/** `config.yml` key paths a member keeps for itself (spec K2). A path covers everything below it. */
+/** `settings.json` key paths a member keeps for itself (spec K2): local paths and programs, installation identity, terminal. A path covers everything below it. */
 export const LOCAL_SETTINGS: readonly (readonly string[])[] = [
   ["shellPath"],
-  ["python", "interpreter"],
-  ["browser"],
-  ["worktree", "base"],
-  ["plan", "autosaveDir"],
-  ["shellMinimizer", "settingsPath"],
-  ["mnemopi", "dbPath"],
-  ["workspace", "additionalDirectories"],
-  ["skills", "customDirectories"],
+  ["shellCommandPrefix"],
+  ["npmCommand"],
+  ["selfUpdateCommand"],
+  ["externalEditor"],
+  ["sessionDir"],
+  ["httpProxy"],
   ["extensions"],
-  ["images", "urls"],
-  ["providers", "tinyModelDevice"],
-  ["providers", "tinyModelDtype"],
-  ["tts"],
-  ["stt"],
-  ["tui"],
+  ["skills"],
+  ["prompts"],
+  ["themes"],
+  ["deviceId"],
+  ["trackingId"],
+  ["lastChangelogVersion"],
+  ["extensionChangelogVersions"],
   ["terminal"],
-  ["lsp"],
-  ["auth", "broker"],
+  ["showHardwareCursor"],
+  ["fullscreenWheelScrollLines"],
 ];
 
 export interface ManifestFile { root: ConfigRoot; path: string; hash: string; size: number; exec: boolean }
-/** `source` (npm only): the master's dependency spec for the plugin (`github:…`, a range, `file:…`); null for a linked plugin; absent from a master that cannot read it. */
-export interface PluginEntry { kind: "npm" | "marketplace"; id: string; version: string | null; enabled: boolean; source?: string | null }
-export interface ConfigManifest { version: string; files: ManifestFile[]; agentEnv: Record<string, string>; plugins: PluginEntry[] }
+export interface ConfigManifest { version: string; files: ManifestFile[]; agentEnv: Record<string, string> }
 
 export class ClusterConfigError extends Error {
   constructor(readonly code: "file_too_large" | "bundle_too_large" | "invalid_settings" | "invalid_path" | "unreadable", message: string) {
@@ -167,7 +169,7 @@ function canonicalJson(value: unknown): string {
 /** Reads the mirrored entries under the two roots. `content(hash)` returns the bytes of a manifest file. */
 export function buildManifest(
   roots: Record<ConfigRoot, string>,
-  extra: { agentEnv: Record<string, string>; plugins: PluginEntry[] },
+  extra: { agentEnv: Record<string, string> },
 ): { manifest: ConfigManifest; content(hash: string): Uint8Array | null } {
   const files: ManifestFile[] = [];
   const contents = new Map<string, Uint8Array>();
@@ -177,7 +179,7 @@ export function buildManifest(
     if (size > CONFIG_LIMITS.fileBytes) throw new ClusterConfigError("file_too_large", `${path} is ${size} bytes, over the ${CONFIG_LIMITS.fileBytes} byte limit`);
   };
 
-  /** `source` is where the master keeps it; `path` is the manifest path (differs for `config.yaml`). */
+  /** `source` is where the master keeps it; `path` is the manifest path. */
   const addFile = (root: ConfigRoot, path: string, source: string, stat: Stats) => {
     if (!isManagedPath(root, path)) throw new ClusterConfigError("invalid_path", `${path} cannot be mirrored: its name is not a safe relative path`);
     checkSize(path, stat.size);
@@ -219,10 +221,9 @@ export function buildManifest(
   }
 
   files.sort((a, b) => compare(a.root, b.root) || compare(a.path, b.path));
-  const plugins = [...extra.plugins].sort((a, b) => compare(a.kind, b.kind) || compare(a.id, b.id));
   const agentEnv = Object.fromEntries(Object.keys(extra.agentEnv).sort().map((key) => [key, extra.agentEnv[key]]));
-  const version = sha256(canonicalJson({ files, agentEnv, plugins }));
-  const manifest = { version, files, agentEnv, plugins };
+  const version = sha256(canonicalJson({ files, agentEnv }));
+  const manifest = { version, files, agentEnv };
   // Empty files add entries but no bytes to the bundle: their count alone can make the manifest longer than a member reads.
   if (Buffer.byteLength(JSON.stringify(manifest)) > CONFIG_LIMITS.manifestBytes) {
     throw new ClusterConfigError("bundle_too_large", `too many files to mirror (${files.length}): their list exceeds ${CONFIG_LIMITS.manifestBytes} bytes`);

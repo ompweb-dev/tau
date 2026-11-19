@@ -16,7 +16,6 @@ import { MAINTENANCE_API_VERSION, type MaintenanceOp } from "./maintenance-proto
 import { ChannelTable } from "./daemon-channels";
 import { credentialsEnv, serverFetch, startBrokerForwarder } from "./daemon-broker";
 import { createClusterConfig } from "./daemon-cluster-config";
-import { runOmpCli } from "../omp/plugins-cli";
 import { HostResumeTracker, type HostResumeEntry } from "./host-resume";
 import { CONFIG_VERSION_RE, CREATION_ID_RE, encodeLine, HostOpError, isHostOp, LINK_LIMITS, LINK_PROTOCOL_VERSION, SESSION_OP_PARAMS, type DownMessage, type OpenChannelRequest, type UnknownMessage } from "./link-protocol";
 import { localHost, resolveSpawnCwdResult } from "./local-host";
@@ -129,7 +128,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       if (!pending) throw new Error("the web server is no longer linked to this host");
       return pending;
     },
-    runOmp: runOmpCli,
     commandExists,
     // Never called while createClusterConfig runs: `config` is set by then.
     onState: state => reportConfig(state),

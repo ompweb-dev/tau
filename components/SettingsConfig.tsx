@@ -962,8 +962,8 @@ function CompactionMethodOrder({ value, onChange, ...aria }: { value: readonly C
   );
 }
 
-/** Tabs that edit the mirrored configuration (spec K1): `config.yml`, `models.yml`, MCP servers, skills, plugins and
- * agents. Interface, System, usage, hosts and notifications belong to this browser or this server only. */
+/** Tabs that edit the mirrored configuration (spec K1): `settings.json` (packages included), `models.json`, MCP servers,
+ * skills (agents: an omp leftover, `agents/` is not mirrored). Interface, System, usage, hosts and notifications belong to this browser or this server only. */
 const CLUSTER_CONFIG_TABS: readonly SettingsTab[] = ["safety", "models", "providers", "intelligence", "agents", "mcp", "skills", "plugins"];
 
 export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCallsDefaultCollapsedChange, hideToolActivity, onHideToolActivityChange, neverFoldActivity, onNeverFoldActivityChange, showToolCallsUnfolded, onShowToolCallsUnfoldedChange, expandThinkingByDefault, onExpandThinkingByDefaultChange, onHideThinkingBlockChange, providerUsageVisible, onProviderUsageVisibleChange, scopeNativeSelectAll, onScopeNativeSelectAllChange, openUrlAutomatically, onOpenUrlAutomaticallyChange, cwd, remoteHost, cluster, sessionId, onModelsSaved, onPluginsReloaded, appUpdate, onRefreshAppUpdate, onRequestAppUpdate, onSelectTab, onClose }: {

@@ -935,10 +935,10 @@ function noteConfigState(link: Link, state: ConfigState, owned: boolean): void {
   notifyHostsChange();
 }
 
-/** The member runs this server's configuration as it is now, plugins included: Settings' `current`, and the sync's target otherwise. */
+/** The member runs this server's configuration as it is now: Settings' `current`, and the sync's target otherwise. */
 function configCurrent(link: Link): boolean {
   const state = link.configState;
-  return link.configOwned && state !== null && state.version !== null && state.version === hub().masterConfig.version && state.files === "current" && state.plugins === "current";
+  return link.configOwned && state !== null && state.version !== null && state.version === hub().masterConfig.version && state.files === "current";
 }
 
 /** `whole`: for a `part` that completes a line, that line decoded. `joined`: that line itself, which gets no dedup of
@@ -1885,7 +1885,7 @@ export interface LinkedHostRow {
   serverVersion: number;
   workspaceOps: string[];
   /** v10: the daemon's last cluster configuration report; `owned` when the configuration it holds is this server's,
-   * `current` when that is the master's version with its plugins in line. */
+   * `current` when that is the master's version. */
   clusterConfig?: ConfigState & { owned: boolean; current: boolean };
 }
 
@@ -1956,7 +1956,7 @@ const CLUSTER_CONFIG_OP_MS = 60_000;
 
 /** `clusterConfig` on a host's daemon (v10), waiting at most 60 s. The state it answers is kept only while the link has
  * sent no `config_state` since it came up: the daemon reports each change at once, ahead of its sequenced answer, so a
- * report that arrived first may already be newer (the plugin step finishing) and an answer must not take it back. */
+ * report that arrived first may already be newer (the MCP command check finishing) and an answer must not take it back. */
 export async function clusterConfigOp(hostId: string, args: { action: "apply"; version: string } | { action: "restore" }): Promise<{ state: ConfigState; owned: boolean }> {
   const link = linkFor(hostId);
   link.configOps += 1;
@@ -1995,8 +1995,8 @@ export async function syncClusterConfig(): Promise<void> {
   const ready = (link: Link) => link.configOps === 0;
   const before = members();
   if (!before) return;
-  // Read and sent with no await between: a host that joins meanwhile gets its apply after this restore. A host without omp
-  // still gets it: its files go back before its plugins are tried.
+  // Read and sent with no await between: a host that joins meanwhile gets its apply after this restore. A host without pi
+  // still gets it.
   for (const link of hub().links.values()) {
     if (link.id !== LOCAL_HOST_ID && !before.has(link.id) && (link.configOwned || link.configState === null) && isLinkUp(link.status) && ready(link)) clusterConfigOp(link.id, { action: "restore" }).catch(() => {});
   }

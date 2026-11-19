@@ -170,7 +170,7 @@ test("joining asks for the folder, prefilled from the host's home, and sends it"
   assert.deepEqual(calls.filter((call) => call.url.startsWith("/api/home")), [{ method: "GET", url: "/api/home?hostId=h1" }]);
   assert.ok(within(dialog).getByText(/Its Git projects that match a cluster repository or can be added as one become cluster projects, unless they are inside or contain the cluster folder/));
   assert.ok(within(dialog).getByText(/Laptop will use this machine's provider logins/));
-  assert.ok(within(dialog).getByText("It receives this machine's omp configuration (settings, models, MCP servers, skills, plugins, rules), API keys and environment values included, in place of its own until it leaves; its own is kept and put back then."));
+  assert.ok(within(dialog).getByText("It receives this machine's pi configuration (settings and packages, models, MCP servers, skills, prompts, extensions, context files), API keys and environment values included, in place of its own until it leaves; its own is kept and put back then."));
   assert.equal(calls.some((call) => call.method === "PUT"), false);
 
   await user.click(within(dialog).getByRole("button", { name: "Add to cluster" }));
@@ -287,12 +287,12 @@ test("a leave whose own configuration could not be put back says so and why", as
   await waitFor(() => assert.deepEqual(errors, ["Laptop left the cluster, but its own omp configuration could not be put back: tau/own-config/agent is not readable. It is retried automatically while the host is linked."]));
 });
 
-const configState = (fields = {}) => ({ version: "a".repeat(64), files: "current", plugins: "current", error: null, missingCommands: [], owned: true, current: true, ...fields });
+const configState = (fields = {}) => ({ version: "a".repeat(64), files: "current", error: null, missingCommands: [], owned: true, current: true, ...fields });
 const configLines = (name) => within(rowOf(name)).queryAllByText(/^(Configuration:|Not installed on this host:|Update tau on this host first)/).map((line) => line.textContent);
 
 for (const [label, overrides, lines] of [
   ["current", { clusterConfig: configState() }, ["Configuration: same as the master"]],
-  ["updating", { clusterConfig: configState({ plugins: "pending", current: false }) }, ["Configuration: updating…"]],
+  ["updating", { clusterConfig: configState({ version: "b".repeat(64), current: false }) }, ["Configuration: updating…"]],
   ["not reported yet", {}, ["Configuration: updating…"]],
   ["failed", { clusterConfig: configState({ files: "failed", error: "the master answered 500 for the manifest", current: false }) }, ["Configuration: failed — the master answered 500 for the manifest"]],
   ["held by another server", { clusterConfig: configState({ owned: false, current: false }) }, ["Configuration: held by another tau server; remove it from that server's cluster first"]],
@@ -306,7 +306,7 @@ for (const [label, overrides, lines] of [
   });
 }
 
-const MASTER_ERROR = { code: "file_too_large", message: "rules/big.md is 6000000 bytes, over the 5242880 byte limit" };
+const MASTER_ERROR = { code: "file_too_large", message: "skills/big.md is 6000000 bytes, over the 5242880 byte limit" };
 const masterErrors = () => screen.queryAllByText(/^Members cannot get this machine's configuration/).map((line) => line.textContent);
 
 test("a master configuration the members cannot get is said once, above the member rows, until it works again", async (t) => {
@@ -329,7 +329,7 @@ test("without linked members the master configuration error is not shown", async
 });
 
 test("while members cannot get this machine's configuration, no member row says it is updating", async (t) => {
-  const hosts = [hostRow(), linked("h1", "Laptop"), linked("h2", "Desk", { clusterConfig: configState({ plugins: "pending", current: false }) })];
+  const hosts = [hostRow(), linked("h1", "Laptop"), linked("h2", "Desk", { clusterConfig: configState({ version: "b".repeat(64), current: false }) })];
   const { frame } = await showHosts(t, { hosts, pools: cluster("local", "h1", "h2") });
   assert.deepEqual([configLines("Laptop"), configLines("Desk")], [["Configuration: updating…"], ["Configuration: updating…"]]);
   frame({ hosts, masterConfigError: MASTER_ERROR });
