@@ -28,6 +28,8 @@ export const LINK_PROTOCOL_VERSION = 12;
 export const MIN_LINK_PROTOCOL_VERSION = 12;
 /** A configuration version: the manifest's SHA-256, in lowercase hex. */
 export const CONFIG_VERSION_RE = /^[0-9a-f]{64}$/;
+/** A pi provider id (`anthropic`, `openai-codex`, `amazon-bedrock`, a models.json name). */
+export const PROVIDER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 /** Safe identity shared by spawn requests and reconnect channel metadata. */
 export const CREATION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
@@ -112,7 +114,7 @@ export const SESSION_OP_PARAMS: { readonly [K in keyof SessionOps]: readonly str
 };
 
 /** Unknown additions are answered with 501; pool preparation needs a v8 peer. */
-export const HOST_OP_NAMES = [...(Object.keys(SESSION_OP_PARAMS) as (keyof SessionOps)[]), ...Object.keys(WORKSPACE_OP_PARAMS) as (keyof typeof WORKSPACE_OP_PARAMS)[], "open", "close", "editLease", "sessionFileExists", "invalidateSessionLists", "checkUpdates", "updateSoftware", "uploadStart", "uploadAbort", "uploadAttach", "setUploadRetention", "clusterConfig"] as const;
+export const HOST_OP_NAMES = [...(Object.keys(SESSION_OP_PARAMS) as (keyof SessionOps)[]), ...Object.keys(WORKSPACE_OP_PARAMS) as (keyof typeof WORKSPACE_OP_PARAMS)[], "open", "close", "editLease", "sessionFileExists", "invalidateSessionLists", "checkUpdates", "updateSoftware", "uploadStart", "uploadAbort", "uploadAttach", "setUploadRetention", "clusterConfig", "auth"] as const;
 
 export type HostOpName = (typeof HOST_OP_NAMES)[number];
 

@@ -14,6 +14,7 @@ import { DaemonLink, dialable, nextRedialDelay } from "./daemon-link";
 import { DaemonMaintenance } from "./daemon-maintenance";
 import { MAINTENANCE_API_VERSION, type MaintenanceOp } from "./maintenance-protocol";
 import { ChannelTable } from "./daemon-channels";
+import { createDaemonAuth } from "./daemon-auth";
 import { createClusterConfig } from "./daemon-cluster-config";
 import { HostResumeTracker, type HostResumeEntry } from "./host-resume";
 import { CONFIG_VERSION_RE, CREATION_ID_RE, encodeLine, HostOpError, isHostOp, LINK_LIMITS, LINK_PROTOCOL_VERSION, SESSION_OP_PARAMS, type DownMessage, type OpenChannelRequest, type UnknownMessage } from "./link-protocol";
@@ -132,6 +133,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const resume = new HostResumeTracker();
   // A cluster member runs on the master's configuration (spec K3-K6): fetched over the link that asks, with its token.
   // Each link is told whether the configuration this host holds is its server's.
+  const auth = createDaemonAuth();
   const config = createClusterConfig({
     roots: () => ({ agent: getAgentDir(), home: homedir() }),
     stateDir: () => join(getAgentDir(), "tau"),
@@ -495,6 +497,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         else if (args.action === "restore") await config.restore(link.login.url);
         else throw new HostOpError(400, "invalid_request", "Invalid cluster configuration request");
         return { state: config.state(), owned: config.holds(link.login.url) };
+      case "auth": return auth.run(args);
       default: {
         const run = sessionOps[op] as (...params: unknown[]) => Promise<unknown>;
         const result = await run.apply(sessionOps, SESSION_OP_PARAMS[op].map(name => args[name]));
@@ -512,6 +515,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     resume.freeze();
     // The configuration first: its requests to a server are aborted at once, so no start waiting on them holds the stop.
     const configStopped = config.stop();
+    auth.stop();
     stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await channels.stop(); await configStopped; resume.dispose(); finish(code); })();
     return stopping;
   }

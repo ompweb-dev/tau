@@ -1,54 +1,37 @@
-import { invalidateModelsCache } from "@/lib/models-cache";
-import { runUtilityCommand } from "@/lib/omp/rpc-utility";
+import { apiErrorResponse } from "@/lib/api-utils";
+import { afterAuthChange, hostIdOf, hostProviders, providerIdOr400 } from "@/lib/host-auth";
+import { authOp } from "@/lib/hosts/hub";
 
-/** Entry of omp's `get_logout_accounts` response. Labels never carry a raw key. */
-interface OmpProviderAccount {
-  credentialId: number;
-  label: string;
-  detail: string;
-  type: "api_key" | "oauth";
-}
+type Params = { params: Promise<{ provider: string }> };
 
-function isAccount(value: unknown): value is OmpProviderAccount {
-  if (typeof value !== "object" || value === null) return false;
-  const a = value as Record<string, unknown>;
-  return Number.isInteger(a.credentialId) && typeof a.label === "string" && typeof a.detail === "string"
-    && (a.type === "api_key" || a.type === "oauth");
-}
-
-// omp's `active` flag is relative to the utility process's own throwaway
-// session, not to any chat, so it is deliberately not passed on.
-/** Stored credentials omp holds for one provider. */
-export async function GET(_req: Request, { params }: { params: Promise<{ provider: string }> }) {
+/** The credential pi stores for one provider on `?hostId=`: at most one (auth.json keeps one per provider), id 0. */
+export async function GET(req: Request, { params }: Params) {
   const { provider } = await params;
+  const invalid = providerIdOr400(provider);
+  if (invalid) return invalid;
   try {
-    const { accounts } = await runUtilityCommand<{ accounts?: unknown }>(
-      { type: "get_logout_accounts", providerId: provider },
-      30_000,
-    );
-    const list = Array.isArray(accounts) ? accounts.filter(isAccount) : [];
-    return Response.json({
-      supported: true,
-      accounts: list.map(({ credentialId, label, detail, type }) => ({ credentialId, label, detail, type })),
-    });
+    const entry = (await hostProviders(hostIdOf(req))).find((p) => p.id === provider);
+    const accounts = entry?.stored ? [{ credentialId: 0, label: entry.name, detail: entry.stored === "oauth" ? "OAuth" : "API key", type: entry.stored }] : [];
+    return Response.json({ supported: true, accounts });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return apiErrorResponse(error);
   }
 }
 
-/** Remove one stored credential (`?credentialId=`); omp picks the next account. */
-export async function DELETE(req: Request, { params }: { params: Promise<{ provider: string }> }) {
-  const raw = new URL(req.url).searchParams.get("credentialId") ?? "";
-  const credentialId = Number(raw);
-  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(credentialId)) {
-    return Response.json({ error: "credentialId must be an integer" }, { status: 400 });
+/** Remove the stored credential (`?credentialId=0`). */
+export async function DELETE(req: Request, { params }: Params) {
+  if (new URL(req.url).searchParams.get("credentialId") !== "0") {
+    return Response.json({ error: "credentialId must be 0", code: "invalid_request" }, { status: 400 });
   }
   const { provider } = await params;
+  const invalid = providerIdOr400(provider);
+  if (invalid) return invalid;
+  const hostId = hostIdOf(req);
   try {
-    await runUtilityCommand({ type: "logout", providerId: provider, credentialId }, 60_000);
-    invalidateModelsCache();
+    await authOp(hostId, { action: "logout", provider }, 60_000);
+    afterAuthChange(hostId, provider, false);
     return Response.json({ ok: true });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return apiErrorResponse(error);
   }
 }

@@ -1938,6 +1938,12 @@ export async function masterConfigVersion(): Promise<string> {
   }
 }
 
+/** The `auth` op on a host's daemon: its own pi logins (lib/hosts/daemon-auth.ts). Unknown or offline hosts throw HostOpError. */
+export function authOp(hostId: string, args: Record<string, unknown>, timeoutMs = linkTimings.opTimeoutMs): Promise<unknown> {
+  if (!getHost(hostId)) return Promise.reject(new HostOpError(404, "host_not_found", "Unknown host"));
+  return request(hostId, "auth", args, timeoutMs);
+}
+
 const CLUSTER_CONFIG_OP_MS = 60_000;
 
 /** `clusterConfig` on a host's daemon (v10), waiting at most 60 s. The state it answers is kept only while the link has

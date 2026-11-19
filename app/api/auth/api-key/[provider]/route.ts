@@ -1,57 +1,52 @@
 import { apiErrorResponse } from "@/lib/api-utils";
-import { type OmpLoginProvider, type OmpModel, runUtilityCommand } from "@/lib/omp/rpc-utility";
+import { afterAuthChange, hostIdOf, hostProviders, providerIdOr400 } from "@/lib/host-auth";
+import { authOp } from "@/lib/hosts/hub";
+import { isRecord } from "@/lib/type-guards";
 
 type Params = { params: Promise<{ provider: string }> };
 
-// omp stores API keys in its encrypted SQLite credential store (agent.db),
-// which tau must never write from Node, and the omp RPC login command only
-// bridges browser-based flows (providers that prompt for a key before opening
-// a URL are rejected by omp's RPC mode). Keys therefore cannot be stored or
-// removed from the web UI.
-const API_KEY_WRITE_GUIDANCE =
-  "tau cannot manage stored API keys directly. Run `pi` in a terminal and use /login (or /logout), " +
-  "set the provider's environment variable (e.g. OPENAI_API_KEY), or configure an apiKey on a " +
-  "custom provider in ~/.pi/agent/models.json.";
-
-// GET /api/auth/api-key/[provider] — returns auth status (never returns the actual key)
-export async function GET(_req: Request, { params }: Params) {
+// GET /api/auth/api-key/[provider]?hostId= — auth status on that host (never the key)
+export async function GET(req: Request, { params }: Params) {
   const { provider } = await params;
+  const invalid = providerIdOr400(provider);
+  if (invalid) return invalid;
   try {
-    const { models } = await runUtilityCommand<{ models: OmpModel[] }>(
-      { type: "get_available_models" },
-      120_000,
-    );
-    const { providers: loginProviders } = await runUtilityCommand<{ providers: OmpLoginProvider[] }>(
-      { type: "get_login_providers" },
-      30_000,
-    );
-    const loginProvider = loginProviders.find((p) => p.id === provider);
-    const modelCount = models.filter((m) => m.provider === provider).length;
-    return Response.json({
-      provider,
-      displayName: loginProvider?.name ?? provider,
-      configured: modelCount > 0 || loginProvider?.authenticated === true,
-      models: modelCount,
-    });
+    const entry = (await hostProviders(hostIdOf(req))).find((p) => p.id === provider);
+    return Response.json({ provider, displayName: entry?.name ?? provider, configured: entry?.configured === true, models: entry?.models ?? 0, stored: entry?.stored ?? null });
   } catch (error) {
     return apiErrorResponse(error);
   }
 }
 
-// POST /api/auth/api-key/[provider] — not supported against omp's credential store
-export async function POST(_req: Request, { params }: Params) {
+// POST /api/auth/api-key/[provider]?hostId= { key } — store the key in that host's pi auth.json
+export async function POST(req: Request, { params }: Params) {
   const { provider } = await params;
-  return Response.json(
-    { error: `Cannot store an API key for "${provider}" from tau. ${API_KEY_WRITE_GUIDANCE}`, code: "api_key_store_unsupported" },
-    { status: 501 },
-  );
+  const invalid = providerIdOr400(provider);
+  if (invalid) return invalid;
+  const body: unknown = await req.json().catch(() => null);
+  const key = isRecord(body) && typeof body.key === "string" ? body.key.trim() : "";
+  if (!key) return Response.json({ error: "key is required", code: "invalid_request" }, { status: 400 });
+  const hostId = hostIdOf(req);
+  try {
+    await authOp(hostId, { action: "setApiKey", provider, key }, 60_000);
+    afterAuthChange(hostId, provider, true);
+    return Response.json({ ok: true });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
 }
 
-// DELETE /api/auth/api-key/[provider] — not supported against omp's credential store
-export async function DELETE(_req: Request, { params }: Params) {
+// DELETE /api/auth/api-key/[provider]?hostId= — remove the stored credential (environment variables and models.json stay)
+export async function DELETE(req: Request, { params }: Params) {
   const { provider } = await params;
-  return Response.json(
-    { error: `Cannot remove the API key for "${provider}" from tau. ${API_KEY_WRITE_GUIDANCE}`, code: "api_key_remove_unsupported" },
-    { status: 501 },
-  );
+  const invalid = providerIdOr400(provider);
+  if (invalid) return invalid;
+  const hostId = hostIdOf(req);
+  try {
+    await authOp(hostId, { action: "logout", provider }, 60_000);
+    afterAuthChange(hostId, provider, false);
+    return Response.json({ ok: true });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
 }
