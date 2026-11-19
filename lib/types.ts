@@ -324,17 +324,10 @@ export interface ServiceTierChangeEntry extends SessionEntryBase {
 export interface CompactionEntry extends SessionEntryBase {
   type: "compaction";
   summary: string;
-  shortSummary?: string;
   firstKeptEntryId: string;
   tokensBefore: number;
-  /** Written by omp only: maintenance method that fired (e.g. "remote-compacted", "handoff"). */
-  method?: string;
-  tokensAfter?: number;
   details?: unknown;
-  preserveData?: Record<string, unknown>;
-  fromExtension?: boolean;
   fromHook?: boolean;
-  warning?: string;
 }
 
 export interface BranchSummaryEntry extends SessionEntryBase {
@@ -342,7 +335,6 @@ export interface BranchSummaryEntry extends SessionEntryBase {
   fromId: string;
   summary: string;
   details?: unknown;
-  fromExtension?: boolean;
   fromHook?: boolean;
 }
 

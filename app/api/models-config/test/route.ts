@@ -55,7 +55,7 @@ export async function POST(req: Request) {
     const { models } = await runIsolatedUtilityCommand<{ models: PiModel[] }>(
       { type: "get_available_models" },
       {
-        env: { PI_CODING_AGENT_DIR: tempDir, PI_PROFILE: "", XDG_DATA_HOME: "" },
+        env: { PI_CODING_AGENT_DIR: tempDir, XDG_DATA_HOME: "" },
         timeoutMs: TEST_TIMEOUT_MS,
         signal: req.signal,
       },

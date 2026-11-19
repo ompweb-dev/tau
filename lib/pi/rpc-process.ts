@@ -141,7 +141,6 @@ export function spawnPiTransport(options: RpcProcessOptions): RpcTransport {
   const extPath = resolveTauExtensionPath();
   const args = ["--mode", "rpc", ...(extPath ? ["--extension", extPath] : []), ...(options.extraArgs ?? [])];
   const env = sanitizeProjectCommandEnvironment({ ...process.env, ...options.env });
-  if (options.env?.PI_PROFILE === undefined) delete env.PI_PROFILE;
   return spawnLocalRpcTransport({ bin, args, cwd: options.cwd, env, spawn: options.dependencies?.spawn });
 }
 

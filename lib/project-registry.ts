@@ -86,7 +86,7 @@ function canonicalProjectPath(value: string): string {
 /** Launch args the web UI manages itself; a workspace config must never carry
  *  them (bare or `--flag=value`), or a stored config could hijack the session
  *  boundary (`--cwd`/`--resume`/`--session`) or the RPC mode. */
-const RESERVED_LAUNCH_ARGS: Record<string, true> = { "--mode": true, "rpc-ui": true, "--cwd": true, "--resume": true, "--session": true };
+const RESERVED_LAUNCH_ARGS: Record<string, true> = { "--mode": true, "--cwd": true, "--resume": true, "--session": true };
 const RESERVED_LAUNCH_ARG_PREFIXES = ["--mode=", "--cwd=", "--resume=", "--session="];
 export function isReservedLaunchArg(arg: string): boolean {
   return RESERVED_LAUNCH_ARGS[arg] === true || RESERVED_LAUNCH_ARG_PREFIXES.some((prefix) => arg.startsWith(prefix));

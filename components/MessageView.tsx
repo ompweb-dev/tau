@@ -1448,12 +1448,8 @@ function CompactionMessageView({ message, sessionId }: { message: CustomMessage;
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
   const time = formatTime(message.timestamp, locale);
-  // pi compaction entries carry only tokensBefore; sessions written by omp may
-  // also carry the maintenance method and the post-compaction token count.
-  const details = (message.details ?? null) as { tokensBefore?: unknown; tokensAfter?: unknown; method?: unknown } | null;
+  const details = (message.details ?? null) as { tokensBefore?: unknown } | null;
   const tokensBefore = typeof details?.tokensBefore === "number" ? details.tokensBefore : null;
-  const tokensAfter = typeof details?.tokensAfter === "number" ? details.tokensAfter : null;
-  const method = typeof details?.method === "string" && details.method ? details.method : null;
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -1464,21 +1460,9 @@ function CompactionMessageView({ message, sessionId }: { message: CustomMessage;
         </div>
         <div data-selection-scope="message" tabIndex={-1} style={{ padding: "11px 13px 12px" }}>
           <div style={{ color: "var(--text)", fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>{t("messageView.conversationCompacted")}</div>
-          {(method || (tokensBefore !== null && tokensAfter !== null)) && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-              {method && (
-                <span style={{ padding: "1px 7px", borderRadius: 4, background: "var(--bg-subtle)", color: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 600 }}>
-                  {method}
-                </span>
-              )}
-              {tokensBefore !== null && tokensAfter !== null && (
-                <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-                  {t("messageView.compactionTokenDelta", {
-                    before: formatCompactNumber(tokensBefore, locale),
-                    after: formatCompactNumber(tokensAfter, locale),
-                  })}
-                </span>
-              )}
+          {tokensBefore !== null && (
+            <div style={{ marginBottom: 8, color: "var(--text-muted)", fontSize: 11 }}>
+              {t("messageView.compactionTokensBefore", { before: formatCompactNumber(tokensBefore, locale) })}
             </div>
           )}
           <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: 14, lineHeight: 1.5 }}>{t("messageView.compactionDescription")}</div>

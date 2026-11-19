@@ -5,7 +5,7 @@ import { isRecord } from "./type-guards";
  * browser (in-app toasts, in-page system notifications, settings).
  */
 
-export const NOTIFICATION_TYPES = ["completed", "input", "error", "modelSwitch"] as const;
+export const NOTIFICATION_TYPES = ["completed", "input", "error"] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 export interface NotificationEvent {
@@ -13,10 +13,8 @@ export interface NotificationEvent {
   type: NotificationType | "test";
   sessionId: string;
   sessionName: string | null;
-  /** Question, error text, or model-switch reason. */
+  /** Question or error text. */
   detail?: string;
-  from?: string;
-  to?: string;
 }
 
 /** One entry of the persisted notification history; `id` is the replace-tag `<sessionId>:<type>`. */
@@ -38,7 +36,7 @@ export interface NotificationPrefs {
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   enabled: false,
-  types: { completed: true, input: true, error: true, modelSwitch: false },
+  types: { completed: true, input: true, error: true },
   whenActive: "toast",
   locale: "en",
 };
@@ -92,15 +90,6 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
     case "error":
       body = detail ? t("notifications.errorBody", { detail }) : t("notifications.errorBodyNoDetail");
       break;
-    case "modelSwitch":
-      if (event.from && event.to) {
-        body = detail
-          ? t("notifications.modelSwitchBody", { from: event.from, to: event.to, detail })
-          : t("notifications.modelSwitchBodyNoDetail", { from: event.from, to: event.to });
-      } else {
-        body = detail;
-      }
-      break;
     case "test":
       body = t("notifications.testBody");
       break;
@@ -113,8 +102,6 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
     sessionId: event.sessionId,
   };
 }
-
-const MODEL_SWITCH_NOTICE_SOURCES = new Set(["prewalk", "plan-yolo"]);
 
 const NOTIFICATION_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
@@ -154,12 +141,6 @@ export function createNotificationDetector(): Detect {
         if (failureReported) return [];
         failureReported = true;
         return [{ ...base, type: "error", detail: str(frame.errorMessage) ?? str(frame.detail) }];
-      }
-      case "notice": {
-        const source = str(frame.source);
-        const message = str(frame.message);
-        if (!source || !message || !MODEL_SWITCH_NOTICE_SOURCES.has(source)) return [];
-        return [{ ...base, type: "modelSwitch", detail: message }];
       }
       case "prompt_result": {
         if (frame.agentInvoked !== true) return [];

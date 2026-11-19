@@ -17,7 +17,6 @@ notification is shown for a session the user is currently viewing.
 | `completed` | `session_settled` (tau's name for pi's `agent_settled`, `lib/pi/rpc-process.ts`), unless the last `prompt_result` of that stretch had `status` `error` or `aborted` | "Task finished." |
 | `input` | `extension_ui_request` with `method` `select`, `confirm`, `input`, `editor`, `ask` or `open_url` that tau does not auto-answer | "Waiting for your answer: <title or first question>" |
 | `error` | `prompt_result` with `agentInvoked: true` and `status: "error"`, an asynchronous prompt failure (`response` with `success: false`), or pi child exit while a run or its background work is in progress; one notification per run | "Run failed: <error.message>" |
-| `modelSwitch` | `retry_fallback_applied {from, to, reason?}`, or `notice` with `source` `prewalk` or `plan-yolo` | "Switched <from> → <to>: <reason>", or the notice text |
 
 The title is the session name, falling back to the cwd's last path segment.
 
@@ -31,12 +30,6 @@ Rules:
   too. A run woken by background work with no prompt also completes this way.
 - Local slash commands (`prompt_result` with `agentInvoked: false`), aborted
   runs, `auto_retry_start` and `auto_retry_end {success: true}` never notify.
-- The `modelSwitch` reason is `retry_fallback_applied.reason` when present
-  (usage-aware fallback). pi sends a reason-less fallback before the
-  `auto_retry_start` of the same failure, so the detector holds it and takes
-  that frame's `errorMessage` (classifier refusals such as Fable falling back
-  to Opus, rate limits, provider failures). A fallback still held at
-  `auto_retry_end`, `prompt_result` or `session_settled` is sent without one.
 - Every notification has tag `<sessionId>:<type>`, so a repeat replaces the
   previous one instead of stacking. Notifications are not retracted when they
   stop applying.
@@ -63,12 +56,10 @@ six HTTP/1.1 connections per host, so a tab must not open another stream.
 
 ```ts
 interface NotificationEvent {
-  type: "completed" | "input" | "error" | "modelSwitch" | "test";
+  type: "completed" | "input" | "error" | "test";
   sessionId: string;
   sessionName: string | null;
-  detail?: string; // question, error text, or model-switch reason
-  from?: string;
-  to?: string;
+  detail?: string; // question or error text
 }
 ```
 
@@ -176,7 +167,7 @@ A `SettingsTabs` category `notifications` (icon `Bell`). Contents:
   needs HTTPS; add to Home Screen first (iOS browser tab); blocked by the
   browser; unsupported.
 - **Toggles**, one per type: Task finished (on), Waiting for input (on), Run
-  failed (on), Model switched automatically (off).
+  failed (on).
 - **When I'm using tau in another tab**: "Show an in-app toast" (default)
   or "Always send a system notification".
 - **Send test notification**: a real push for subscribed devices, else a
@@ -185,7 +176,7 @@ A `SettingsTabs` category `notifications` (icon `Bell`). Contents:
 ```ts
 interface NotificationPrefs {
   enabled: boolean; // default false
-  types: Record<"completed" | "input" | "error" | "modelSwitch", boolean>;
+  types: Record<"completed" | "input" | "error", boolean>;
   whenActive: "toast" | "system";
   locale: string; // UI locale, for server-rendered pushes
 }
