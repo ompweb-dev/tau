@@ -9,22 +9,16 @@ afterEach(cleanup);
 
 test("the launch editor exposes legacy values and saves an explicit correction or clear", async () => {
   const saved = [];
-  const props = { projectPath: "/workspace", initialConfig: { profile: "nova insight", extraArgs: ["--profile", "work"] }, onClose() {}, onSave: async (config) => { saved.push(config); } };
+  const props = { projectPath: "/workspace", initialConfig: { extraArgs: ["--cwd", "/elsewhere"] }, onClose() {}, onSave: async (config) => { saved.push(config); } };
   const view = render(React.createElement(ProjectLaunchConfigDialog, props));
-  const profile = view.getByDisplayValue("nova insight");
   const args = view.getByRole("textbox", { name: translate("projectLaunchConfig.extraArgsLabel") });
-  assert.equal(args.value, "--profile\nwork");
+  assert.equal(args.value, "--cwd\n/elsewhere");
   const save = view.getByRole("button", { name: translate("projectLaunchConfig.save") });
-  assert.equal(profile.getAttribute("aria-invalid"), "true");
-  assert.equal(save.disabled, true);
-  fireEvent.change(profile, { target: { value: "work" } });
   fireEvent.change(args, { target: { value: "--verbose" } });
   fireEvent.click(save);
-  await waitFor(() => assert.deepEqual(saved[0], { profile: "work", extraArgs: ["--verbose"] }));
+  await waitFor(() => assert.deepEqual(saved[0], { extraArgs: ["--verbose"] }));
   await waitFor(() => assert.equal(save.disabled, false));
-  fireEvent.change(profile, { target: { value: "" } });
   fireEvent.change(args, { target: { value: "" } });
-  await waitFor(() => assert.equal(save.disabled, false));
   fireEvent.click(save);
   await waitFor(() => assert.equal(saved[1], null));
 });

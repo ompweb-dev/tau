@@ -476,11 +476,9 @@ export interface ArchivedSessionInfo {
   hostId?: string;
 }
 
-/** Workspace-level omp launch configuration; only affects omp children spawned for that workspace. */
+/** Workspace-level pi launch configuration; only affects pi children spawned for that workspace. */
 export interface ProjectLaunchConfig {
-  /** The OMP profile to use. */
-  profile?: string;
-  /** Extra OMP CLI args, stored as an array. */
+  /** Extra pi CLI args, stored as an array. */
   extraArgs?: string[];
 }
 

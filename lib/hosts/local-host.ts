@@ -1,7 +1,6 @@
 import { existsSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
 import { comparableProjectPath } from "../comparable-path";
-import { isValidProfileName } from "../profile-name";
 import { getAgentEnvOverrides } from "../pi/agent-env";
 import { spawnPiTransport } from "../pi/rpc-process";
 import { isReservedLaunchArg, loadProjectRegistry } from "../project-registry";
@@ -42,11 +41,6 @@ export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[],
     } else {
       const mapped = mapPresetToolNames(toolNames);
       if (mapped.length > 0) args.push("--tools", mapped.join(","));
-    }
-  }
-  if (launchConfig?.profile !== undefined) {
-    if (!launchConfig.profile || !isValidProfileName(launchConfig.profile)) {
-      throw new HostOpError(400, "stored_invalid_profile", "Invalid saved workspace profile. Open the workspace launch configuration and correct or clear the profile before starting a session.");
     }
   }
   if (launchConfig?.extraArgs) {

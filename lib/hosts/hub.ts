@@ -1085,7 +1085,6 @@ function projectEntry(value: unknown): ProjectRegistryEntry | null {
     typeof path !== "string" || !path || typeof addedAt !== "string" || typeof hidden !== "boolean"
     || !optionalString(alias) || !optionalNumber(sortOrder) || !optionalNumber(pinOrder)
     || !(launchConfig === undefined || (isRecord(launchConfig)
-      && optionalString(launchConfig.profile)
       && (launchConfig.extraArgs === undefined || (Array.isArray(launchConfig.extraArgs) && launchConfig.extraArgs.every((arg) => typeof arg === "string")))))
   ) return null;
   return { path, addedAt, hidden, alias, sortOrder, pinOrder, launchConfig } as ProjectRegistryEntry;

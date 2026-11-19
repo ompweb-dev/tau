@@ -64,8 +64,7 @@ export function isValidPoolOrigin(value: unknown): value is string {
 function validLaunchConfig(value: unknown): boolean {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
-  return (value.profile === undefined || (typeof value.profile === "string" && value.profile.trim().length > 0 && !value.profile.trim().startsWith("-")))
-    && (value.extraArgs === undefined || (Array.isArray(value.extraArgs) && value.extraArgs.length <= 32
+  return (value.extraArgs === undefined || (Array.isArray(value.extraArgs) && value.extraArgs.length <= 32
       && value.extraArgs.every((arg) => typeof arg === "string" && arg.length > 0 && arg.length <= 256 && !isReservedLaunchArg(arg))));
 }
 

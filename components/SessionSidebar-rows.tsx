@@ -300,7 +300,6 @@ function ProjectRow({
                 <span style={{ display: "grid", gap: 3, maxWidth: 360, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 11 }}>
                   <strong style={{ fontFamily: "inherit", fontSize: 11 }}>{t("sessionSidebar.launchConfigDirectory")}</strong>
                   <span>{project.poolId ? project.origin : project.path}</span>
-                  {project.launchConfig?.profile && <span>profile: {project.launchConfig.profile}</span>}
                   {project.launchConfig?.extraArgs?.map((arg, index) => <span key={`${arg}-${index}`}>{arg}</span>)}
                 </span>
               )}

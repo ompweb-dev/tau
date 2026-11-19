@@ -216,7 +216,6 @@ lib/
   models-cache.ts, model-catalog.ts, model-scope.ts   models list cache, models.dev catalog
   skills-service.ts, skill-lock.ts, skill-updates.ts   skill discovery mirroring pi
   project-registry.ts, project-ordering.ts, pooled-projects.ts, worktree.ts, git-clone.ts, project-clone.ts   projects
-  profile-name.ts        `isValidProfileName`
   web-settings.ts, web-auth.ts, web-auth-secret.ts, web-password-hash.ts, request-security.ts   settings and auth gate
   self-update.ts, server-update-worker.ts, upgrade-plan.ts, upgrade-process.ts, upgrade-types.ts, npm-update.ts, update-policy.ts   server upgrades
   stt.ts, stt-jobs.ts    speech-to-text (stt-jobs.ts is server-only)

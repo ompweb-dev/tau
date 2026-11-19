@@ -3,7 +3,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useModalDialog } from "@/hooks/useModalDialog";
-import { isValidProfileName } from "@/lib/profile-name";
 import { useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
 import { appendProgress, cloneDirectoryName } from "@/lib/git-clone";
@@ -58,7 +57,7 @@ function isWindowsDriveRoot(directory: string): boolean {
 
 interface Props {
   onCancel: () => void;
-  onSelect: (path: string, launchConfig?: { profile?: string; extraArgs?: string[] }) => void;
+  onSelect: (path: string, launchConfig?: { extraArgs?: string[] }) => void;
   busy?: boolean;
   error?: string | null;
   host: { id: string; name: string };
@@ -74,7 +73,6 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   const [directories, setDirectories] = useState<DirectoryEntry[]>([]);
   const [drives, setDrives] = useState<DirectoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [profile, setProfile] = useState("");
   const [extraArgs, setExtraArgs] = useState("");
   const [loading, setLoading] = useState(!pool);
   const [cloneUrl, setCloneUrl] = useState("");
@@ -137,14 +135,13 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   const hasUncommittedPath = !pool && pathInput.trim() !== currentPath;
   const cloneName = cloneUrl.trim() ? cloneDirectoryName(cloneUrl) : null;
   const cloneTarget = cloneName && currentPath ? `${currentPath.replace(/[\\/]+$/, "")}${currentPath.includes("\\") ? "\\" : "/"}${cloneName}` : null;
-  const profileInvalid = profile.trim() !== "" && !isValidProfileName(profile.trim());
-  const canSelect = Boolean(pool ? pathInput.trim() : currentPath) && !loading && !hasUncommittedPath && !locked && (!cloneUrl.trim() || cloneName !== null) && !profileInvalid;
+  const canSelect = Boolean(pool ? pathInput.trim() : currentPath) && !loading && !hasUncommittedPath && !locked && (!cloneUrl.trim() || cloneName !== null);
   const goDisabled = loading || locked || !pathInput.trim();
   const canNavigateUp = !locked && (Boolean(parentDirectory) || isWindowsDriveRoot(currentPath));
   const submitSelection = async () => {
     if (locked || cloneAbortRef.current) return;
     const args = extraArgs.split("\n").map((arg) => arg.trim()).filter(Boolean);
-    const launchConfig = { profile: profile.trim() || undefined, extraArgs: args.length ? args : undefined };
+    const launchConfig = { extraArgs: args.length ? args : undefined };
     if (pool || !cloneUrl.trim()) {
       onSelect(pool ? pathInput.trim() : currentPath, launchConfig);
       return;
@@ -367,10 +364,6 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
               {cloneLog.replace(/\r/g, "")}
             </pre>
           )}
-          <input className="directory-picker-profile" value={profile} onChange={(event) => setProfile(event.target.value)} placeholder={t("directoryPicker.profilePlaceholder")} aria-label={t("directoryPicker.profileLabel")} aria-invalid={profileInvalid || undefined} style={{ width: "100%", height: 30, boxSizing: "border-box", marginBottom: profileInvalid || profile.trim() ? 3 : 7, padding: "0 8px", background: "var(--bg-panel)", border: `1px solid ${profileInvalid ? "var(--status-error)" : "var(--border)"}`, borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }} />
-          {profileInvalid
-            ? <div role="alert" style={{ marginBottom: 7, color: "var(--status-error)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileInvalid")}</div>
-            : profile.trim() ? <div style={{ marginBottom: 7, color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>{t("projectLaunchConfig.profileRule")}</div> : null}
           <textarea className="directory-picker-extra-args" value={extraArgs} onChange={(event) => setExtraArgs(event.target.value)} placeholder={t("directoryPicker.extraArgsPlaceholder")} aria-label={t("directoryPicker.extraArgsLabel")} rows={2} style={{ width: "100%", boxSizing: "border-box", resize: "vertical", padding: "6px 8px", background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text)", fontFamily: "var(--font-mono)", fontSize: 11 }} />
         </div>
         <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "1px solid var(--border)" }}>
