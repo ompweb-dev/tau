@@ -20,7 +20,7 @@ test("the launch editor exposes legacy values and saves an explicit correction o
   fireEvent.change(profile, { target: { value: "work" } });
   fireEvent.change(args, { target: { value: "--verbose" } });
   fireEvent.click(save);
-  await waitFor(() => assert.deepEqual(saved[0], { profile: "work", advisor: undefined, extraArgs: ["--verbose"] }));
+  await waitFor(() => assert.deepEqual(saved[0], { profile: "work", extraArgs: ["--verbose"] }));
   await waitFor(() => assert.equal(save.disabled, false));
   fireEvent.change(profile, { target: { value: "" } });
   fireEvent.change(args, { target: { value: "" } });

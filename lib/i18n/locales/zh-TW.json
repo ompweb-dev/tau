@@ -1382,7 +1382,7 @@
   "settingsTabs.usage.label": "用量統計",
   "settingsTabs.usage.description": "權杖數、費用、快取分析與模型用量明細",
   "settingsTabs.intelligence.label": "代理與智慧",
-  "settingsTabs.intelligence.description": "顧問、記憶、自主學習、壓縮與重試",
+  "settingsTabs.intelligence.description": "記憶、自主學習、壓縮與重試",
   "settingsTabs.mcp.label": "擴充功能與工具",
   "settingsTabs.mcp.description": "MCP 伺服器、受管技能與 OMP 外掛程式",
   "settingsTabs.system.label": "系統",

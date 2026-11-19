@@ -1382,7 +1382,7 @@
   "settingsTabs.usage.label": "Usage",
   "settingsTabs.usage.description": "Tokens, costs, cache analytics, and model breakdown",
   "settingsTabs.intelligence.label": "Agent & Intelligence",
-  "settingsTabs.intelligence.description": "Advisor, memory, autolearn, compaction and retry",
+  "settingsTabs.intelligence.description": "Memory, autolearn, compaction and retry",
   "settingsTabs.mcp.label": "Extensions & Tools",
   "settingsTabs.mcp.description": "MCP servers, managed skills, and OMP plugins",
   "settingsTabs.system.label": "System",

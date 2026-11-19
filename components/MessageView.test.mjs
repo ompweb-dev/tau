@@ -691,15 +691,6 @@ test("hub jobs without structured details keeps the raw result", () => {
   assert.match(html, /Still Running/);
 });
 
-test("advisor custom messages use the localized advisor label", () => {
-  const html = renderToStaticMarkup(React.createElement(MessageView, {
-    message: { role: "custom", customType: "advisor", content: "Consider handling the edge case.", display: true },
-  }));
-  assert.match(html, /Advisor/);
-  assert.match(html, /Consider handling the edge case/);
-  assert.doesNotMatch(html, /customType/);
-});
-
 test("async-result notices start collapsed to their first line and expand to the exact line layout", () => {
   const view = render(React.createElement(MessageView, {
     message: {

@@ -593,7 +593,7 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
     15.13.1. Starting a session is refused; it never uses the host's own stored
     logins. Joining a running session is never refused.
   - **Which server decides.** The server whose `open` starts a process decides
-    its credentials, an advisor replacement included (`withCredentials` in
+    its credentials (`withCredentials` in
     `lib/hosts/daemon-channels.ts`); a server that joins a running process does
     not change them. The resume manifest keeps the server URL
     (`launch.credentialsServer`). A launch whose link is no longer in `host.json`
@@ -1844,7 +1844,7 @@ during the wait.
   Attachment preparation uses the wrapper's pending-command protection too, so
   disconnect and idle cleanup cannot dispose a submitted prompt's session while
   a slow copy is still running. Later commands await the send fence before
-  selecting/replacing the wrapper, so Stop and an Advisor change cannot overtake it;
+  selecting/replacing the wrapper, so Stop cannot overtake it;
   a command through any registry alias of the same wrapper (`getRpcSessionKeys`)
   waits too. The Attached files block can push a prompt past the host link's
   line cap: the transport then refuses it before queueing with 413

@@ -1343,7 +1343,7 @@
   "settingsTabs.usage.label": "利用状況",
   "settingsTabs.usage.description": "トークン使用量、コスト、キャッシュ節約、モデル別分析",
   "settingsTabs.intelligence.label": "Agent & Intelligence",
-  "settingsTabs.intelligence.description": "Advisor, memory, autolearn, compaction and retry",
+  "settingsTabs.intelligence.description": "Memory, autolearn, compaction and retry",
   "settingsTabs.mcp.label": "Extensions & Tools",
   "settingsTabs.mcp.description": "MCP servers, managed skills, and OMP plugins",
   "settingsTabs.system.label": "システム",

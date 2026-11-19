@@ -1343,7 +1343,7 @@
   "settingsTabs.usage.label": "用量与分析",
   "settingsTabs.usage.description": "Token 消耗、费用、缓存节省及模型分析",
   "settingsTabs.intelligence.label": "智能体与智能",
-  "settingsTabs.intelligence.description": "顾问、记忆、自动学习、压缩与重试",
+  "settingsTabs.intelligence.description": "记忆、自动学习、压缩与重试",
   "settingsTabs.mcp.label": "扩展与工具",
   "settingsTabs.mcp.description": "MCP 服务端、托管技能与 OMP 插件",
   "settingsTabs.system.label": "系统",

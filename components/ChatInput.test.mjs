@@ -184,7 +184,7 @@ test("keeps the model selector visible when a model error leaves no options", ()
 });
 
 
-test("renders goal, planning, and advisor indicators at the composer", () => {
+test("renders goal and planning indicators at the composer", () => {
   const html = renderToStaticMarkup(
     React.createElement(ChatInput, {
       async onSend() { return { status: "accepted" }; },
@@ -196,31 +196,13 @@ test("renders goal, planning, and advisor indicators at the composer", () => {
       modelNames: {},
       activeGoal: { objective: "Ship the active goal bar", startedAt: 0 },
       activePlan: { objective: "Plan the implementation" },
-      advisorEnabled: true,
-      onAdvisorChange() {},
     }),
   );
 
   assert.match(html, /Ship the active goal bar/);
   assert.match(html, /(Planning in progress|chatInput\.planningInProgress)/);
-  // The advisor toggle moved into the plus menu: no pressed toggle inline,
-  // but the plus trigger renders for the same props.
   assert.doesNotMatch(html, /aria-pressed="true"/);
   assert.match(html, /aria-label="(More actions|chatInput\.plusMenu)"/);
-});
-
-test("shows the advisor thunder indicator with the reviewing model and reasoning", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(ChatInput, {
-      async onSend() { return { status: "accepted" }; },
-      onAbort() {},
-      isStreaming: true,
-      advisorActive: true,
-      advisorModel: { name: "GPT-5.6 Luna", reasoning: "xhigh" },
-    }),
-  );
-
-  assert.match(html, /aria-label="[^"]*GPT-5\.6 Luna[^"]*xhigh[^"]*"/);
 });
 
 test("filters model options by display name, identifier, and provider", () => {

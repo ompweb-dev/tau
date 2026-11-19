@@ -143,10 +143,10 @@ class FakeSharedWorker {
 }
 
 /** A command over the session socket: `world.socketAnswer` may answer it as the worker would (e.g. transport_lost), else the agent route does. */
-async function answerCommand(port, { n, sessionId, advisor, body }) {
+async function answerCommand(port, { n, sessionId, body }) {
   let answer = await world.socketAnswer?.(JSON.parse(body));
   if (!answer) {
-    const res = await fetchStub(`/api/agent/${encodeURIComponent(sessionId)}${advisor ? "?advisor=1" : ""}`, { method: "POST", body });
+    const res = await fetchStub(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", body });
     answer = { status: res.status, body: await res.json() };
   }
   port.onmessage?.({ data: { cmd: n, recvAt: null, repliedAt: null, attempts: 1, deduped: false, behindBytes: 0, ...answer } });
@@ -3763,24 +3763,6 @@ test("an abandoned new-chat /btw is still asked, but neither promotes, attaches 
   assert.ok(world.calls.some((call) => call.url.startsWith("/api/agent/created") && call.body?.question === "asked before leaving"));
 });
 
-test("forking carries the advisor choice to the child's next native command", async () => {
-  resetWorld();
-  primeSession("advisor-parent", [userMsg("u0", "q")]);
-  const forked = [];
-  const w = await mountSession("advisor-parent", undefined, { onSessionForked: (id) => forked.push(id) });
-  await act(async () => { w.latest.handleAdvisorChange(true); });
-  world.holds.push({
-    match: (method, url) => method === "POST" && url.startsWith("/api/agent/advisor-parent"),
-    produce: async () => ({ value: { success: true, data: { newSessionId: "advisor-child" } } }),
-  });
-  await act(async () => { await w.latest.handleFork("e0", false); });
-  assert.deepEqual(forked, ["advisor-child"]);
-  assert.equal(localStorage.getItem("omp-advisor-enabled:advisor-child"), "true");
-  const { sendAgentCommand } = await import("@/lib/agent-client");
-  await sendAgentCommand("advisor-child", { type: "get_state" });
-  assert.ok(world.calls.some((call) => call.url === "/api/agent/advisor-child?advisor=1"));
-});
-
 test("an edit-and-resend fork puts the branched prompt into the child's composer", async () => {
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   for (const [editPrompt, child] of [[true, "edit-child"], [false, "keep-child"]]) {
@@ -6219,7 +6201,6 @@ test("a lost pooled creation response retries the original identity and frozen i
     await w.latest.handleModelChange("anthropic", "changed-after-loss");
     await w.latest.handleThinkingLevelChange("high");
     await w.latest.handleToolPresetChange("none");
-    w.latest.handleAdvisorChange(true);
   });
   await act(async () => { await w.latest.loadSlashCommands(); });
   let sending;
