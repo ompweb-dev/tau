@@ -25,7 +25,7 @@ if (command === "host-update-worker") {
 }
 if (command === "server-update-worker") process.exit(await runServerUpdateWorker(process.argv[3] || ""));
 if (command === "host") process.exit(await runHostCli(process.argv.slice(3)));
-// The host updater finds this command in a release by PREFLIGHT_MARKER before it runs it: an older tau starts the web server instead.
+// The host updater finds this command in a release by PREFLIGHT_MARKER before it runs it, and refuses a release without it.
 if (command === "preflight") process.exit(await (await import("../lib/hosts/preflight")).runPreflight());
 if (command === "hash-password" || command === "hash_password") {
   process.exit(await runHashPasswordCommand().catch((error: unknown) => {

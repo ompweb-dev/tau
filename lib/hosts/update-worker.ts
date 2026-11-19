@@ -183,7 +183,7 @@ export function readHostUpdateState(): HostUpdateStoredState | null {
   assertOwnedPath(file);
   if (lstatSync(file).size > 65536) throw new Error("Host update status is too large");
   const state = JSON.parse(readFileSync(file, "utf8")) as HostUpdateStoredState;
-  if (!state.operation || !["tau", "omp"].includes(state.operation.target) || !["running", "failed", "succeeded"].includes(state.operation.state) || !/^[a-zA-Z0-9-]{1,80}$/.test(state.operation.id) || !HOST_VERSION_PATTERN.test(state.operation.version) || !Number.isFinite(state.startedAt)) throw new Error("Invalid host update status");
+  if (!state.operation || state.operation.target !== "tau" || !["running", "failed", "succeeded"].includes(state.operation.state) || !/^[a-zA-Z0-9-]{1,80}$/.test(state.operation.id) || !HOST_VERSION_PATTERN.test(state.operation.version) || !Number.isFinite(state.startedAt)) throw new Error("Invalid host update status");
   return state;
 }
 export function finishHostUpdate(id: string, error?: string): void {
@@ -556,23 +556,19 @@ export interface HostReleasePreflightInput {
   version: string;
   /** The JavaScript runtime that runs an npm/bun release; not used for a binary one. */
   runtime?: string;
-  /** The release already runs here: a candidate that predates the preflight command is restarted unchecked instead of refused. */
-  restartOnly?: boolean;
   releasePin?: ApprovedReleasePin;
   requireReleasePin?: boolean;
 }
-/** `preflight` must start the candidate's resolved pi and get its get_state answer before cutover.
- * A restart-only update without a pin may retain an installation that predates preflight. */
+/** `preflight` must start the candidate's resolved pi and get its get_state answer before cutover; a release without the
+ * command fails the update and keeps the prior install. */
 export async function preflightHostRelease(d: HostReleasePreflightInput, release: string): Promise<void> {
   if (d.requireReleasePin !== undefined && typeof d.requireReleasePin !== "boolean" || d.requireReleasePin && !d.releasePin) throw new Error("Missing approved release pin for preflight");
-  const pin = d.releasePin === undefined ? undefined : validateApprovedReleasePin(d.releasePin, d.version);
+  if (d.releasePin !== undefined) validateApprovedReleasePin(d.releasePin, d.version);
   const binary = d.installMethod === "binary";
   const entry = binary ? join(release, process.platform === "win32" ? "tau.exe" : "tau") : join(release, "bin", "tau.js");
-  // Detected statically: an older tau takes `preflight` for a positional and starts the web server.
+  // Detected statically: a build without the command takes `preflight` for a positional and starts the web server.
   if (!(binary ? readFileSync(entry).includes(Buffer.from(PREFLIGHT_MARKER_BASE64, "base64")) : existsSync(join(release, "lib", "hosts", "preflight.ts")))) {
-    if (pin || binary && !d.restartOnly) throw new Error("The new host release has no preflight command to check its pi runtime with");
-    console.warn(`tau ${d.version} has no preflight command; its pi runtime was not checked`);
-    return;
+    throw new Error("The new host release has no preflight command to check its pi runtime with");
   }
   const command = (args: string[], timeout: number) => exec(binary ? entry : d.runtime!, binary ? args : [entry, ...args], { cwd: release, timeout, env: workerEnvironment(), maxBuffer: 1024 * 1024, windowsHide: true });
   const detail = (error: unknown) => (String((error as { stderr?: unknown }).stderr ?? "").trim() || (error instanceof Error ? error.message : String(error))).slice(-500);

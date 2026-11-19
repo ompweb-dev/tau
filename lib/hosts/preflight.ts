@@ -13,7 +13,7 @@ import { spawnPiTransport } from "../omp/rpc-process";
 // shortcut: no credentials env, --resume/--tools or cluster config as the daemon adds; upgrade if those break a start.
 
 /** Only this module embeds it (the scratch cwd's prefix): the host updater finds the command in a compiled release
- * by it (update-worker.ts holds it base64-encoded). An older tau takes `preflight` for a positional instead. */
+ * by it (update-worker.ts holds it base64-encoded) and refuses a release without it. */
 export const PREFLIGHT_MARKER = "tau-preflight-scratch-";
 
 export async function runPreflight(timeoutMs = 30_000): Promise<number> {
