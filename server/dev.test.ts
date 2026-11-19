@@ -22,7 +22,7 @@ test("a SIGHUP to the dev parent also stops the server it re-ran", { skip: proce
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("TAU_")));
   const parent = Bun.spawn([process.execPath, "server/dev.ts", "-H", "127.0.0.1", "-p", "0"], {
     cwd: repo,
-    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_OMP_BIN: "/nonexistent/omp", TAU_DISABLE_AUTOUPDATE: "1" },
+    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_PI_BIN: "/nonexistent/omp", TAU_DISABLE_AUTOUPDATE: "1" },
     stdout: "pipe",
     stderr: "ignore",
   });
@@ -65,7 +65,7 @@ test("hot reload of a shared worker dependency keeps the dev server listening", 
   const parent = Bun.spawn([process.execPath, "--hot", "server/dev.ts", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: source,
     detached: true,
-    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_OMP_BIN: "/nonexistent/omp", TAU_DISABLE_AUTOUPDATE: "1" },
+    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_PI_BIN: "/nonexistent/omp", TAU_DISABLE_AUTOUPDATE: "1" },
     stdout: "pipe",
     stderr: "inherit",
   });

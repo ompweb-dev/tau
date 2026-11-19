@@ -3,7 +3,7 @@ import { homedir } from "os";
 import { comparableProjectPath } from "../comparable-path";
 import { isValidOmpProfile } from "../omp-profile";
 import { getAgentEnvOverrides } from "../omp/agent-env";
-import { spawnOmpTransport } from "../omp/rpc-process";
+import { spawnPiTransport } from "../omp/rpc-process";
 import { readNativeSettings } from "../omp/settings-config";
 import { isReservedLaunchArg, loadProjectRegistry } from "../project-registry";
 import { invalidateSessionEntriesCache, invalidateSessionListCache, invalidateSessionListMeta } from "../session-reader";
@@ -131,7 +131,7 @@ export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
         throw new HostOpError(409, "prepared_cwd_changed", "The prepared worktree is no longer available");
       }
     }
-    const transport = spawnOmpTransport({
+    const transport = spawnPiTransport({
       cwd,
       // Re-read per spawn so a respawn picks up environment values the user
       // added in Settings after the session was created (#104).

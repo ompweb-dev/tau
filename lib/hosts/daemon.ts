@@ -2,7 +2,7 @@ import { lstatSync, realpathSync, mkdirSync, watch } from "node:fs";
 import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { getOmpVersion } from "../omp/omp-cli";
+import { getPiVersion } from "../omp/omp-cli";
 import { getAgentDir, getSessionsDir } from "../omp/paths";
 import { ProjectPathError } from "../project-registry";
 import { isValidSessionId } from "../session-file-references-core";
@@ -152,7 +152,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       const resolved = launch.creationId === undefined ? resolveSpawnCwdResult(launch.recordedCwd ?? launch.cwd) : { cwd: launch.cwd, fellBack: false };
       // A sharing session never starts on this host's own logins: no link, or no usable broker, refuses.
       if (launch.credentialsServer !== undefined && !links.has(launch.credentialsServer)) throw new HostOpError(409, "credentials_link_gone", "The web server that shares its credentials with this session is no longer linked to this host");
-      const env = await credentialsEnv(launch, { forwarder, ompVersion: getOmpVersion });
+      const env = await credentialsEnv(launch, { forwarder, ompVersion: getPiVersion });
       // Never on this host's own configuration: the master's version is applied first, or the start is refused (spec K4).
       if (launch.configVersion !== undefined) {
         if (launch.credentialsServer === undefined) throw new HostOpError(409, "cluster_config_failed", "A cluster session must start through the web server that shares its configuration");
@@ -534,7 +534,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   const startupRecovery = recover();
   operationsInFlight++;
-  const versionRead = getOmpVersion().then(version => { ompVersion = version; }).catch(error => log("could not read omp version: " + reason(error)))
+  const versionRead = getPiVersion().then(version => { ompVersion = version; }).catch(error => log("could not read omp version: " + reason(error)))
     .finally(() => {
       operationsInFlight--;
       if (!stopped) for (const link of links.values()) link.start();

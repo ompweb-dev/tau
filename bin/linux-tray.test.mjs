@@ -226,7 +226,7 @@ test("service env file round-trips quoted and escaped values", () => {
     PORT: "30187",
     TAU_HOSTNAME: "0.0.0.0",
     TAU_PASSWORD: 'pa"ss\\word',
-    TAU_OMP_BIN: "/home/u/.bun/bin/omp",
+    TAU_PI_BIN: "/home/u/.bun/bin/omp",
   };
   const parsed = parseServiceEnv(serializeServiceEnv(entries));
   assert.deepEqual(parsed, entries);

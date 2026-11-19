@@ -98,7 +98,7 @@ function controlFixture(t, { url, longRoot = false } = {}) {
     ...process.env, HOME: scratch, USERPROFILE: scratch, PI_CODING_AGENT_DIR: agentDir,
     XDG_CONFIG_HOME: join(scratch, "config"), XDG_DATA_HOME: join(scratch, "data"),
     XDG_STATE_HOME: join(scratch, "state"), XDG_CACHE_HOME: join(scratch, "cache"),
-    TAU_OMP_BIN: omp, TAU_DISABLE_AUTOUPDATE: "1",
+    TAU_PI_BIN: omp, TAU_DISABLE_AUTOUPDATE: "1",
   };
   mkdirSync(join(agentDir, "tau"), { recursive: true, mode: 0o700 });
   writeFileSync(join(agentDir, "tau", "host.json"), JSON.stringify({ url: url ?? "http://127.0.0.1:9", token: "private-cli-fixture-token" }), { mode: 0o600 });

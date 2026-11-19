@@ -61,18 +61,18 @@ function findPiOnPath(): string | null {
 }
 
 function probePiBin(): string | null {
-  const override = process.env.TAU_PI_BIN || process.env.TAU_OMP_BIN;
+  const override = process.env.TAU_PI_BIN;
   if (override) return existsSync(override) ? override : null;
   return findPiOnPath();
 }
 
-/** What every caller that needs pi reports when resolveOmpBin finds none. */
-export const OMP_NOT_FOUND = "pi binary not found. Install @earendil-works/pi-coding-agent or set TAU_PI_BIN.";
+/** What every caller that needs pi reports when resolvePiBin finds none. */
+export const PI_NOT_FOUND = "pi binary not found. Install @earendil-works/pi-coding-agent or set TAU_PI_BIN.";
 
-/** Resolve the `pi` binary: TAU_PI_BIN (or TAU_OMP_BIN) override, else `pi` on PATH.
+/** Resolve the `pi` binary: TAU_PI_BIN override, else `pi` on PATH.
  * Returns null when none exists. A hit is cached while the file exists; a miss is
  * re-probed after MISS_TTL_MS, or at once with `fresh`. */
-export function resolveOmpBin(fresh = false): string | null {
+export function resolvePiBin(fresh = false): string | null {
   if (fresh) {
     cachedBin = null;
     binMissAt = 0;
@@ -92,19 +92,15 @@ export function resolveOmpBin(fresh = false): string | null {
   return null;
 }
 
-export const resolvePiBin = resolveOmpBin;
-
 /** Return the installed CLI version, using file metadata to invalidate cached
  * results without launching pi on every visit. An expiry covers opaque
  * launchers; concurrent callers share a probe. */
-export function getOmpVersion(): Promise<string | null> {
-  versionProbe ??= probeOmpVersion().finally(() => {
+export function getPiVersion(): Promise<string | null> {
+  versionProbe ??= probePiVersion().finally(() => {
     versionProbe = null;
   });
   return versionProbe;
 }
-
-export const getPiVersion = getOmpVersion;
 
 /** Identity of the binary on disk; changes when it is replaced or updated. */
 export function versionFingerprint(bin: string): string | null {
@@ -117,8 +113,8 @@ export function versionFingerprint(bin: string): string | null {
   }
 }
 
-async function probeOmpVersion(): Promise<string | null> {
-  const bin = resolveOmpBin();
+async function probePiVersion(): Promise<string | null> {
+  const bin = resolvePiBin();
   const fingerprint = bin ? versionFingerprint(bin) : null;
   const now = Date.now();
   if (fingerprint && cachedVersion?.fingerprint === fingerprint && now < cachedVersion.expiresAt) {

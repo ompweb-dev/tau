@@ -213,7 +213,7 @@ function patchEstimatedTokensAfter(result: unknown): void {
 
 // ============================================================================
 // AgentSessionWrapper
-// Wraps one session's tau-omp runner (its channel, runner/src/channel.ts) with the interface the rest of
+// Wraps one session's pi process (`pi --mode rpc` with lib/pi/tau-extension.ts) with the interface the rest of
 // the app expects (same command surface pi-web's in-process wrapper offered).
 // ============================================================================
 

@@ -97,7 +97,7 @@ ${envXml}
 function buildHostEnv({ svcPath, ompBin, agentDir }) {
   return {
     PATH: svcPath,
-    ...(ompBin ? { TAU_OMP_BIN: ompBin } : {}),
+    ...(ompBin ? { TAU_PI_BIN: ompBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
 }
@@ -107,13 +107,13 @@ function install(pkgArg) {
   const siblingNpx = path.join(path.dirname(nodeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
-  // Only an explicit override: tau runs its own omp (tau-omp). A stock omp on PATH cannot run its sessions.
-  const ompBin = process.env.TAU_OMP_BIN || null;
+  // An explicit pi for the service; without it the service finds pi on PATH.
+  const ompBin = process.env.TAU_PI_BIN || null;
   if (ompBin) {
     try {
       fs.accessSync(ompBin, fs.constants.X_OK);
     } catch {
-      fail(`TAU_OMP_BIN=${ompBin} is not executable`);
+      fail(`TAU_PI_BIN=${ompBin} is not executable`);
     }
   }
 
@@ -155,7 +155,7 @@ function install(pkgArg) {
     ...(installName ? { TAU_NAME: installName } : {}),
     ...(passwordHash ? { TAU_PASSWORD_HASH: passwordHash } : {}),
     ...(trustedHeaderDigest ? { TAU_TRUSTED_HEADER_SHA256: trustedHeaderDigest } : {}),
-    ...(ompBin ? { TAU_OMP_BIN: ompBin } : {}),
+    ...(ompBin ? { TAU_PI_BIN: ompBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
   const web = buildPlist({ label: LABEL, args: [npxBin, "--yes", pkg], env, logName: "tau" });

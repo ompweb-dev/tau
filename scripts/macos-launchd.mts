@@ -15,8 +15,8 @@
 //   TAU_PASSWORD     Optional plaintext password, hashed before it is written
 //   TAU_PASSWORD_HASH  Password hash from `tau hash-password` (preferred)
 //   TAU_NO_OPEN      Set to 0 to auto-open the browser          default 1 (no auto-open)
-//   TAU_OMP_BIN      Override for tau's own omp (tau-omp)  default the bundled one
-//   PI_CODING_AGENT_DIR  Custom omp agent directory                 default ~/.omp/agent
+//   TAU_PI_BIN       The pi binary                             default pi on PATH
+//   PI_CODING_AGENT_DIR  Custom pi agent directory                  default ~/.pi/agent
 //
 // Example (loopback-only; require auth + trusted HTTPS proxy/VPN for remote access):
 //   TAU_PASSWORD=secret tau-launchd install
@@ -83,13 +83,13 @@ function install(pkgArg?: string): void {
   const siblingNpx = path.join(path.dirname(nodeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
-  // Only an explicit override: tau runs its own omp (tau-omp). A stock omp on PATH cannot run its sessions.
-  const ompBin = process.env.TAU_OMP_BIN || null;
+  // An explicit pi for the service; without it the service finds pi on PATH.
+  const ompBin = process.env.TAU_PI_BIN || null;
   if (ompBin) {
     try {
       fs.accessSync(ompBin, fs.constants.X_OK);
     } catch {
-      fail(`TAU_OMP_BIN=${ompBin} is not executable`);
+      fail(`TAU_PI_BIN=${ompBin} is not executable`);
     }
   }
 
@@ -126,7 +126,7 @@ function install(pkgArg?: string): void {
     TAU_HOSTNAME: hostname,
     TAU_NO_OPEN: noOpen,
     ...(passwordHash ? { TAU_PASSWORD_HASH: passwordHash } : {}),
-    ...(ompBin ? { TAU_OMP_BIN: ompBin } : {}),
+    ...(ompBin ? { TAU_PI_BIN: ompBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
   const envXml = Object.entries(env)

@@ -34,7 +34,7 @@ if (process.argv[2] === "hash-password" || process.argv[2] === "hash_password") 
 }
 
 function startLauncher() {
-// `tau preflight` (lib/hosts/preflight.ts): what an updater runs on a candidate release; it prints "preflight ok: <omp> <version>".
+// `tau preflight` (lib/hosts/preflight.ts): what an updater runs on a candidate release; it prints "preflight ok: <pi> <version>".
 if (process.argv[2] === "preflight") {
   process.env.TAU_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
   module.require("jiti").createJiti(__filename).import("../lib/hosts/preflight.ts").then(

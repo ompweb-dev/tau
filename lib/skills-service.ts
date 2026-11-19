@@ -5,7 +5,7 @@ import * as path from "path";
 import { promisify } from "util";
 import { parse as parseYaml } from "yaml";
 import { existingPathWithinRootsChecker, getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { resolveOmpBin, versionFingerprint, wrapWindowsScript } from "@/lib/omp/omp-cli";
+import { resolvePiBin, versionFingerprint, wrapWindowsScript } from "@/lib/omp/omp-cli";
 import { ensureAgentDir, getAgentDir } from "@/lib/omp/paths";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
 import { isRecord } from "@/lib/type-guards";
@@ -345,7 +345,7 @@ async function discoverSkillsViaCli(cwd: string, ompBin: string | null): Promise
  * a project root (an agent directory below a project) keeps its user skills. */
 export async function discoverSkills(
   cwd: string,
-  ompBin: string | null = resolveOmpBin(),
+  ompBin: string | null = resolvePiBin(),
   scope?: "user",
 ): Promise<SkillsWithDiagnostics> {
   const viaCli = await discoverSkillsViaCli(cwd, ompBin);
@@ -382,7 +382,7 @@ export async function getSkillToggleRoots(cwd?: string): Promise<Set<string>> {
   return roots;
 }
 
-export async function loadSkillsWithInstallInfo(cwd: string, ompBin: string | null = resolveOmpBin(), scope?: "user") {
+export async function loadSkillsWithInstallInfo(cwd: string, ompBin: string | null = resolvePiBin(), scope?: "user") {
   const [{ skills, diagnostics }, toggleRoots] = await Promise.all([discoverSkills(cwd, ompBin, scope), getSkillToggleRoots(cwd)]);
   const isTogglable = existingPathWithinRootsChecker(toggleRoots);
   return {
@@ -396,7 +396,7 @@ export async function loadSkillsWithInstallInfo(cwd: string, ompBin: string | nu
 
 /** The user level only, for a request without a cwd (a cluster member's settings act on this machine's, spec K7): omp
  * runs in its agent directory, where no project lies, and a project-scope entry is left out all the same. */
-export async function loadUserSkillsWithInstallInfo(ompBin: string | null = resolveOmpBin()) {
+export async function loadUserSkillsWithInstallInfo(ompBin: string | null = resolvePiBin()) {
   const listed = await loadSkillsWithInstallInfo(ensureAgentDir(), ompBin, "user");
   return { ...listed, skills: listed.skills.filter((skill) => skill.sourceInfo?.scope !== "project") };
 }

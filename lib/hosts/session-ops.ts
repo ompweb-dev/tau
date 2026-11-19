@@ -13,7 +13,7 @@ import { promisify } from "util";
 import { comparableProjectPath } from "../comparable-path";
 import { MAX_SESSION_SEARCH_QUERY_LENGTH, searchSessions as searchSessionContent } from "../session-content-search";
 import { mediaFilePath } from "../media-cache";
-import { OMP_NOT_FOUND, resolveOmpBin, wrapWindowsScript } from "../omp/omp-cli";
+import { PI_NOT_FOUND, resolvePiBin, wrapWindowsScript } from "../omp/omp-cli";
 import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "../omp/archive";
 import {
   archiveSessionFileWithArtifacts,
@@ -303,9 +303,9 @@ function normalizeCwd(cwd: string): string {
  * positional argument; verified against oh-my-pi main.ts/flag-tables.ts).
  */
 async function runOmpExport(filePath: string, outputPath: string): Promise<void> {
-  const bin = resolveOmpBin();
+  const bin = resolvePiBin();
   if (!bin) {
-    throw new Error(OMP_NOT_FOUND);
+    throw new Error(PI_NOT_FOUND);
   }
   const target = wrapWindowsScript(bin, ["--export", filePath, outputPath]);
   await execFileAsync(target.file, target.args, {
@@ -632,7 +632,7 @@ export const sessionOps: SessionOps = {
       return ok({ html: readFileSync(outputPath, "utf8"), fileName });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes(OMP_NOT_FOUND)) return fail(500, "omp_not_found", message);
+      if (message.includes(PI_NOT_FOUND)) return fail(500, "omp_not_found", message);
       throw error;
     } finally {
       rmSync(outputPath, { force: true });

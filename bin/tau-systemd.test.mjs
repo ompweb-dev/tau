@@ -62,7 +62,7 @@ test("writeServiceEnv creates the parent directory and a private file", () => {
 test("buildUnit points at the generated env file and keeps runtime settings out of the unit", () => {
   const unit = buildUnit({
     tauBin: "/usr/local/bin/tau",
-    env: { TAU_OMP_BIN: "/home/u/.bun/bin/omp" },
+    env: { TAU_PI_BIN: "/home/u/.bun/bin/omp" },
     home: "/home/u",
     envPath: "/home/u/.omp/agent/web-service.env",
   });
@@ -85,7 +85,7 @@ test("buildUnit points at the generated env file and keeps runtime settings out 
 test("buildHostUnit runs `tau host` with the web unit's env file and never gives up restarting", () => {
   const options = {
     tauBin: "/usr/local/bin/tau",
-    env: { TAU_OMP_BIN: "/home/u/.bun/bin/omp" },
+    env: { TAU_PI_BIN: "/home/u/.bun/bin/omp" },
     home: "/home/u",
     envPath: "/home/u/.omp/agent/web-service.env",
   };
@@ -126,7 +126,7 @@ test("buildUnit adds the launcher interpreter dir for Bun/npm installs of omp", 
 
     const unit = buildUnit({
       tauBin: "/usr/local/bin/tau",
-      env: { TAU_OMP_BIN: path.join(fakeBinDir, "omp") },
+      env: { TAU_PI_BIN: path.join(fakeBinDir, "omp") },
       home: "/home/u",
       envPath: "/home/u/.omp/agent/web-service.env",
     });
@@ -198,7 +198,7 @@ test("install creates the env file and unit with LAN settings", { skip: process.
       PORT: "40123",
     };
     delete childEnv.PI_CODING_AGENT_DIR;
-    delete childEnv.TAU_OMP_BIN;
+    delete childEnv.TAU_PI_BIN;
 
     const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: childEnv,
@@ -225,7 +225,7 @@ test("install creates the env file and unit with LAN settings", { skip: process.
       TAU_TRUSTED_HEADER_SHA256: "a".repeat(64),
     });
     assert.match(readFileSync(unitPath, "utf8"), /EnvironmentFile=.*web-service\.env/);
-    assert.doesNotMatch(readFileSync(unitPath, "utf8"), /TAU_OMP_BIN/);
+    assert.doesNotMatch(readFileSync(unitPath, "utf8"), /TAU_PI_BIN/);
     const hostUnit = readFileSync(path.join(path.dirname(unitPath), "tau-host.service"), "utf8");
     assert.match(hostUnit, /^ExecStart=.*\/tau host$/m);
     assert.match(hostUnit, /EnvironmentFile=.*web-service\.env/);
@@ -254,7 +254,7 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
       TAU_HOSTNAME: "0.0.0.0",
     };
     delete base.PI_CODING_AGENT_DIR;
-    delete base.TAU_OMP_BIN;
+    delete base.TAU_PI_BIN;
     delete base.TAU_PASSWORD;
 
     const provided = hashPassword("preset-password");
@@ -295,7 +295,7 @@ test("install fails loudly when the omp launcher interpreter is missing", () => 
       // it breaks the premise when node and bun share a directory.
       PATH: binDir,
       TAU_SYSTEMD_BIN: fakeTau,
-      TAU_OMP_BIN: path.join(binDir, "omp"),
+      TAU_PI_BIN: path.join(binDir, "omp"),
       PORT: "40123",
     };
     const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
@@ -344,7 +344,7 @@ function runWithFakeSystemctl(command, { hostUnit = true, active = false, dir: s
     { mode: 0o755 },
   );
   const env = { ...process.env, HOME: home, PATH: binDir, TAU_SYSTEMD_BIN: fakeTau, TAU_DISABLE_AUTOUPDATE: "1" };
-  for (const key of ["PI_CODING_AGENT_DIR", "TAU_OMP_BIN", "TAU_PASSWORD"]) delete env[key];
+  for (const key of ["PI_CODING_AGENT_DIR", "TAU_PI_BIN", "TAU_PASSWORD"]) delete env[key];
   const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), command], { env, encoding: "utf8" });
   const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
   rmSync(log, { force: true });

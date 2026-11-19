@@ -15,7 +15,7 @@ import { runHostRecoveryCli } from "../lib/hosts/recovery";
 import { runServerUpdateWorker } from "../lib/server-update-worker";
 
 // Before any server module loads: app/api/manifest reads public/ from it when it loads, and the daemon names
-// lib/omp/session-edit-extension.mjs in it to omp.
+// lib/pi/tau-extension.ts in it to pi.
 process.env.TAU_PACKAGE_DIR ??= path.dirname(realpathSync(process.execPath));
 const root = process.env.TAU_PACKAGE_DIR;
 const SEE_README = `https://github.com/${releaseRepo()}#single-binary shows how to run \`tau\` and \`tau host\` as services instead.`;

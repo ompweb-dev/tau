@@ -45,9 +45,10 @@ for (const log of result.logs) console.log(log);
 if (!result.success) process.exit(1);
 
 // The static root (server/binary.ts): the client, the public files, the KaTeX CSS and fonts (where the server
-// resolves the katex package), and the licenses of what ships. pi is not shipped: the binary spawns the one on PATH.
+// resolves the katex package), and the licenses of what ships. pi is not shipped: the binary spawns the one on PATH,
+// with tau's own pi extension (lib/pi/tau-extension.ts, resolveTauExtensionPath) from here.
 const copy = (from: string, to: string) => cpSync(from, path.join(out, to), { recursive: true });
-for (const file of ["dist", "public", "LICENSE"]) copy(path.join(root, file), file);
+for (const file of ["dist", "public", "LICENSE", "lib/pi/tau-extension.ts"]) copy(path.join(root, file), file);
 const releaseTag = process.env.TAU_RELEASE_TAG || (process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined);
 if (releaseTag) {
   if (!/^(?:v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?|\d{8}T\d{6}Z-[a-f0-9]{7,40})$/.test(releaseTag)) throw new Error("Invalid binary release tag");

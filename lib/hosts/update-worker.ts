@@ -17,8 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { setTimeout as pause } from "node:timers/promises";
 const exec = promisify(execFile);
-// A prerelease archive carries tau (~112 MB) plus its omp runner (~284 MB on linux-x64, ~172 MB gzipped), and a
-// release's runner asset (lib/omp/runner-fetch.ts) is held to the member limit: sized with headroom for both.
+// Sized for a tau release archive (~112 MB) with ample headroom.
 // scripts/check-host-release-archive.ts holds every built archive to these in CI.
 export const HOST_RELEASE_MAX_ARCHIVE = 512 * 1024 * 1024;
 export const HOST_RELEASE_MAX_EXPANDED = 1024 * 1024 * 1024;
@@ -388,7 +387,7 @@ export function validateApprovedReleasePin(value: unknown, version?: string, rep
   const assets: Record<string, string> = {};
   for (const name of Object.keys(value.assets).sort()) {
     const digest = value.assets[name];
-    if (!/^tau-(?:(?:linux|darwin)-(?:x64|arm64)\.tar\.gz|windows-x64\.zip|omp-(?:(?:linux|darwin)-(?:x64|arm64)|windows-x64\.exe))$/.test(name) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return invalid();
+    if (!/^tau-(?:(?:linux|darwin)-(?:x64|arm64)\.tar\.gz|windows-x64\.zip)$/.test(name) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return invalid();
     assets[name] = digest;
   }
   if (value.npm === undefined) return { version: value.version, releaseRepo: value.releaseRepo, assets };
@@ -425,9 +424,6 @@ export async function stageBinary(source: HostReleaseSource, staging: string): P
   const binary = join(release, process.platform === "win32" ? "tau.exe" : "tau");
   if (!existsSync(join(release, "dist", "index.html"))) throw new Error("Incomplete host binary release layout");
   chmodSync(binary, 0o755);
-  // Releases from before the runner became its own asset (preflightHostRelease fetches it otherwise) carry it here.
-  const runner = join(release, process.platform === "win32" ? "tau-omp.exe" : "tau-omp");
-  if (existsSync(runner)) chmodSync(runner, 0o755);
   if (!(await binaryReportsVersion(binary, release, source.version))) throw new Error("Downloaded host binary reports a different version");
   return release;
 }
@@ -567,11 +563,10 @@ export interface HostReleasePreflightInput {
   releasePin?: ApprovedReleasePin;
   requireReleasePin?: boolean;
 }
-/** Pinned updates stage their approved runner before any candidate command; ordinary updates keep the candidate's
- * `fetch-omp` behavior. Then `preflight` must start the resolved session runner and receive its hello before cutover.
+/** `preflight` must start the candidate's resolved pi and get its get_state answer before cutover.
  * A restart-only update without a pin may retain an installation that predates preflight. */
 export async function preflightHostRelease(d: HostReleasePreflightInput, release: string): Promise<void> {
-  if (d.requireReleasePin !== undefined && typeof d.requireReleasePin !== "boolean" || d.requireReleasePin && !d.releasePin) throw new Error("Missing approved release pin for runner preflight");
+  if (d.requireReleasePin !== undefined && typeof d.requireReleasePin !== "boolean" || d.requireReleasePin && !d.releasePin) throw new Error("Missing approved release pin for preflight");
   const pin = d.releasePin === undefined ? undefined : validateApprovedReleasePin(d.releasePin, d.version);
   const binary = d.installMethod === "binary";
   const entry = binary ? join(release, process.platform === "win32" ? "tau.exe" : "tau") : join(release, "bin", "tau.js");

@@ -5,7 +5,7 @@ import { homedir } from "os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { isRecord } from "../type-guards";
-import { resolveOmpBin } from "./omp-cli";
+import { resolvePiBin } from "./omp-cli";
 import { getAgentsBundledCacheDir, getProjectAgentsDir, getUserAgentsDir } from "./paths";
 
 export type AgentSource = "bundled" | "user" | "project";
@@ -164,7 +164,7 @@ async function scanRoot(root: AgentScanRoot, diagnostics: AgentDiagnostic[]): Pr
 export function unpackBundled(targetDir: string, force = false): { targetDir: string; total: number; written: number; skipped: number } {
   const safeTargetDir = secureScopeDir(targetDir);
   const before = new Set(readdirSync(safeTargetDir, { withFileTypes: true }).filter((entry) => entry.name.toLowerCase().endsWith(".md")).map((entry) => entry.name));
-  const bin = resolveOmpBin() ?? "omp";
+  const bin = resolvePiBin() ?? "omp";
   execFileSync(bin, ["agents", "unpack", "--dir", safeTargetDir, "--json", ...(force ? ["--force"] : [])], { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env: createChildProcessEnvironment() });
   const after = readdirSync(safeTargetDir, { withFileTypes: true }).filter((entry) => entry.name.toLowerCase().endsWith(".md")).map((entry) => entry.name);
   const written = after.filter((name) => !before.has(name)).length;
@@ -188,7 +188,7 @@ export async function discoverAgents(cwd?: string): Promise<{ agents: AgentInfo[
   const diagnostics: AgentDiagnostic[] = [];
   const roots = buildAgentScanRoots(cwd);
   const bundledPath = await ensureBundledAgentsCache();
-  if (!resolveOmpBin()) diagnostics.push({ type: "error", message: "omp binary is not installed; bundled agents could not be unpacked" });
+  if (!resolvePiBin()) diagnostics.push({ type: "error", message: "omp binary is not installed; bundled agents could not be unpacked" });
   const byName = new Map<string, AgentInfo>();
   for (const root of roots) {
     for (const agent of await scanRoot(root, diagnostics)) {

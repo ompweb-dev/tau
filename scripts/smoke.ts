@@ -1,7 +1,7 @@
 // `npm run smoke [-- --package <dir> | --binary <path>]`: starts tau (`node <dir>/bin/tau.js`, or the compiled
 // binary) on a free port with a throwaway HOME, waits for its automatic local host, and checks the shipped
 // bundle, the SPA, a hashed asset, the API, a session listed through the daemon, a live session started through
-// `pi --mode rpc` (no model call) and the SSE stream, then stops both. pi comes from PATH unless --omp names one.
+// `pi --mode rpc` (no model call) and the SSE stream, then stops both. pi comes from PATH unless --pi names one.
 // <dir>: the repo root (after `npm run build`) or a packed install;
 // <path>: release/tau-<os>-<arch>/tau, whose directory holds the static files.
 // Prints one `ok <step>` / `FAIL <step>: <detail>` line per step.
@@ -13,7 +13,7 @@ import { parseArgs } from "node:util";
 import { releaseRepo } from "../lib/release-repo";
 import { isProcessAlive } from "../lib/process-identity";
 
-const { values } = parseArgs({ args: Bun.argv.slice(2), options: { package: { type: "string" }, binary: { type: "string" }, omp: { type: "string" }, "second-server": { type: "boolean" } } });
+const { values } = parseArgs({ args: Bun.argv.slice(2), options: { package: { type: "string" }, binary: { type: "string" }, pi: { type: "string" }, "second-server": { type: "boolean" } } });
 const binary = values.binary && path.resolve(values.binary);
 const dir = binary ? path.dirname(binary) : path.resolve(values.package ?? path.join(import.meta.dir, ".."));
 const tau = binary ? [binary] : ["node", path.join(dir, "bin", "tau.js")];
@@ -68,7 +68,7 @@ const base = `http://127.0.0.1:${port}`;
 
 const temp = mkdtempSync(path.join(os.tmpdir(), "tau-smoke-"));
 const home = path.join(temp, "home");
-const agentDir = path.join(home, ".omp", "agent");
+const agentDir = path.join(home, ".pi", "agent");
 mkdirSync(agentDir, { recursive: true });
 // The daemon lists it: its id must be a UUID, and its cwd must exist.
 const SESSION_ID = "5a0c0e5e-0000-4000-8000-000000000001";
@@ -80,7 +80,7 @@ writeFileSync(path.join(agentDir, "sessions", "-project", `2026-01-01_${SESSION_
   { type: "message", id: "m0", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: "hello" } },
   { type: "message", id: "m1", parentId: "m0", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
 ].map((line) => `${JSON.stringify(line)}\n`).join(""));
-// USERPROFILE: os.homedir() on Windows, so the real ~/.omp stays untouched there too.
+// USERPROFILE: os.homedir() on Windows, so the real ~/.pi stays untouched there too.
 const env: Record<string, string | undefined> = {
   ...process.env,
   HOME: home,
@@ -89,9 +89,9 @@ const env: Record<string, string | undefined> = {
   // A smoke launched from an installed agent inherits its package root; test this install instead.
   TAU_PACKAGE_DIR: dir,
 };
-// TAU_PI_BIN / TAU_OMP_BIN: an agent shell points it at its own pi; test this install's pi instead unless --omp is passed.
-for (const name of ["TAU_PASSWORD", "TAU_PASSWORD_HASH", "TAU_OMP_BIN", "TAU_PI_BIN"]) delete env[name];
-if (values.omp) env.TAU_PI_BIN = path.resolve(values.omp);
+// TAU_PI_BIN: an agent shell points it at its own pi; test this install's pi instead unless --pi is passed.
+for (const name of ["TAU_PASSWORD", "TAU_PASSWORD_HASH", "TAU_PI_BIN"]) delete env[name];
+if (values.pi) env.TAU_PI_BIN = path.resolve(values.pi);
 
 let log = "";
 let launcher: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;

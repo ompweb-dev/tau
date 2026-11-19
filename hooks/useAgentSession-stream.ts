@@ -263,7 +263,7 @@ export const EXTERNAL_RUN_POLL_MS = 2_000;
 // or the run was interrupted between a tool call and its result). Stop polling;
 // the cheap heuristic below re-arms the poll if the transcript grows again.
 export const EXTERNAL_RUN_STALE_MS = 60_000;
-// A cold tau-omp start (extension + skill + LSP discovery) can take
+// A cold pi start (extension + skill + LSP discovery) can take
 // far longer than a few seconds, and the SSE route may only answer once the
 // child is ready. Give up only after the child would have timed out anyway
 // (rpc-process waitReady, server-side) rather than dropping the prompt.

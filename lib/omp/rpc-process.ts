@@ -5,7 +5,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { sanitizeProjectCommandEnvironment } from "../project-command-env";
 import { isRecord } from "../type-guards";
-import { OMP_NOT_FOUND, resolveOmpBin } from "./omp-cli";
+import { PI_NOT_FOUND, resolvePiBin } from "./omp-cli";
 import { type RpcTransport, spawnLocalRpcTransport } from "./rpc-transport";
 import { LINK_LIMITS } from "../hosts/link-protocol";
 import { SubagentBridge } from "./subagent-bridge";
@@ -75,7 +75,7 @@ export interface RpcProcessOptions {
   adopted?: true;
   /** Injectable process boundary for deterministic transport tests. */
   dependencies?: {
-    resolveOmpBin?: typeof resolveOmpBin;
+    resolvePiBin?: typeof resolvePiBin;
     spawn?: typeof spawn;
   };
 }
@@ -125,18 +125,18 @@ export function resolveTauExtensionPath(): string | null {
     const candidate = join(here, "..", "pi", "tau-extension.ts");
     if (existsSync(candidate)) return candidate;
   } catch {
-    // Compiled binary or virtual URL: fall back to cwd.
+    // Compiled binary: import.meta.url is Bun's virtual /$bunfs/; TAU_PACKAGE_DIR above is its directory.
   }
-  const cwdCandidate = join(process.cwd(), "lib", "pi", "tau-extension.ts");
-  return existsSync(cwdCandidate) ? cwdCandidate : null;
+  // Never the cwd: that would load whatever lib/pi/tau-extension.ts the session's project holds into pi.
+  return null;
 }
 
 /** Spawns `pi --mode rpc` with the sanitized child environment. */
-export function spawnOmpTransport(options: RpcProcessOptions): RpcTransport {
-  const resolveBin = options.dependencies?.resolveOmpBin ?? resolveOmpBin;
+export function spawnPiTransport(options: RpcProcessOptions): RpcTransport {
+  const resolveBin = options.dependencies?.resolvePiBin ?? resolvePiBin;
   const bin = resolveBin();
   if (!bin) {
-    throw new Error(OMP_NOT_FOUND);
+    throw new Error(PI_NOT_FOUND);
   }
   const extPath = resolveTauExtensionPath();
   const args = ["--mode", "rpc", ...(extPath ? ["--extension", extPath] : []), ...(options.extraArgs ?? [])];
@@ -188,7 +188,7 @@ export class RpcProcess {
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: RpcProcessOptions) {
-    this.transport = options.transport ?? spawnOmpTransport(options);
+    this.transport = options.transport ?? spawnPiTransport(options);
     this.cwd = options.cwd;
     if (options.onFrame) this.frameListeners.add(options.onFrame);
 

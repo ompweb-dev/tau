@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PluginEntry } from "../hosts/cluster-config";
 import { createChildProcessEnvironment } from "../project-command-env";
-import { OMP_NOT_FOUND, resolveOmpBin, wrapWindowsScript } from "./omp-cli";
+import { PI_NOT_FOUND, resolvePiBin, wrapWindowsScript } from "./omp-cli";
 
 export const ANSI_RE = /\x1B\[[0-9;]*m/g;
 
@@ -22,8 +22,8 @@ export function parseJsonLoose<T>(stdout: string): T | null {
 
 /** Runs `omp <args>` and answers its stdout; rejects when omp is missing or fails, or when `signal` aborts it (the message is omp's own output, never more than its last 600 characters). */
 export function runOmpCli(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<string> {
-  const bin = resolveOmpBin();
-  if (!bin) return Promise.reject(new Error(OMP_NOT_FOUND));
+  const bin = resolvePiBin();
+  if (!bin) return Promise.reject(new Error(PI_NOT_FOUND));
   const target = wrapWindowsScript(bin, args);
   // A .cmd launcher runs as cmd.exe, which dies alone when execFile's signal kills it: the abort kills the tree, omp included.
   const launcher = process.platform === "win32" && target.file === "cmd.exe";

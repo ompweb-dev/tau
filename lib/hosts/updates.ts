@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import packageJson from "../../package.json";
 import { checkNpmUpdate, checkPiRegistryVersion, detectInstallMethod } from "../npm-update";
-import { getOmpVersion, resolveOmpBin, wrapWindowsScript } from "../omp/omp-cli";
+import { getPiVersion, resolvePiBin, wrapWindowsScript } from "../omp/omp-cli";
 import { createChildProcessEnvironment } from "../project-command-env";
 import { isUpdateDisabled } from "../update-policy";
 import { isNewerVersion } from "../version-compare";
@@ -198,7 +198,7 @@ async function evaluateHostUpdate(compatibility: HostUpdateCompatibility, refres
   if (targetCompatibility !== undefined) assertCompatibility(targetCompatibility);
   const operation = getHostUpdateOperation();
   const disabled = isUpdateDisabled() ? "Updates are disabled by TAU_DISABLE_AUTOUPDATE" : null;
-  const [npm, ompVersion, piLatest] = await Promise.all([targetVersion === undefined ? checkNpmUpdate(refresh).catch(() => null) : { currentVersion: packageJson.version, availableVersion: targetVersion, updateAvailable: isNewerVersion(targetVersion, packageJson.version) }, getOmpVersion(), checkPiRegistryVersion(refresh)]);
+  const [npm, ompVersion, piLatest] = await Promise.all([targetVersion === undefined ? checkNpmUpdate(refresh).catch(() => null) : { currentVersion: packageJson.version, availableVersion: targetVersion, updateAvailable: isNewerVersion(targetVersion, packageJson.version) }, getPiVersion(), checkPiRegistryVersion(refresh)]);
   const base: HostSoftwareUpdate = { currentVersion: null, availableVersion: null, updateAvailable: false, canUpdate: false, blockers: [], canForceUpdate: false, blockedReason: null, updateCommand: "" };
   base.supportsReleasePin = true;
   base.supportsTwoPhaseUpdate = true;
@@ -426,7 +426,7 @@ export async function startHostUpdate(target: HostUpdateTarget, version: string,
     if (!software.updateAvailable || software.availableVersion !== version) throw new HostUpdateError("candidate_changed", "The available update candidate changed; refresh host updates");
     if (!software.canUpdate && !(force && software.canForceUpdate)) throw new HostUpdateError(software.canForceUpdate ? "host_busy" : "update_blocked", software.blockedReason || "This host update is blocked");
     if (target === "omp") {
-      const piBin = resolveOmpBin(true);
+      const piBin = resolvePiBin(true);
       if (!piBin) throw new HostUpdateError("update_blocked", "pi binary not found on this host");
       if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by TAU_DISABLE_AUTOUPDATE", 403);
       const operation: HostUpdateOperation = { id, target, version, state: "running", ...(force ? { force: true as const } : {}) };

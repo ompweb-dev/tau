@@ -45,17 +45,17 @@ export async function register(): Promise<void> {
     try {
       const { runUtilityCommand } = await import("@/lib/omp/rpc-utility");
       await runUtilityCommand({ type: "get_state" });
-      const { getOmpVersion } = await import("@/lib/omp/omp-cli");
-      const version = await getOmpVersion();
-      console.log(`[tau] omp utility ready (${version ?? "version unknown"})`);
+      const { getPiVersion } = await import("@/lib/omp/omp-cli");
+      const version = await getPiVersion();
+      console.log(`[tau] pi utility ready (${version ?? "version unknown"})`);
     } catch (error) {
-      const { resolveOmpBin } = await import("@/lib/omp/omp-cli");
-      const bin = resolveOmpBin();
+      const { resolvePiBin } = await import("@/lib/omp/omp-cli");
+      const bin = resolvePiBin();
       const detail = error instanceof Error ? error.message : String(error);
       const hint = bin
-        ? `resolved ${bin}; repair with: omp update (or: bun install -g @oh-my-pi/pi-coding-agent@latest)`
-        : "omp binary not found; install oh-my-pi or set TAU_OMP_BIN";
-      console.warn(`[tau] omp utility warm-up failed (routes will retry on demand): ${detail} — ${hint}`);
+        ? `resolved ${bin}; repair with: npm install -g @earendil-works/pi-coding-agent`
+        : "pi binary not found; install @earendil-works/pi-coding-agent or set TAU_PI_BIN";
+      console.warn(`[tau] pi utility warm-up failed (routes will retry on demand): ${detail} — ${hint}`);
     }
   })();
 

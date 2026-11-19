@@ -292,7 +292,7 @@ export async function findUpgradeServerProcesses(installDir: string): Promise<nu
   for (const row of await listProcesses()) {
     if (row.state === "Z" || !belongsToInstall(row, root) || isHostCommand(row.args)) continue;
     const args = row.args.slice(1);
-    if (args.some((arg) => ["recover-host", "host-update-worker", "server-update-worker", "preflight", "fetch-omp", "--version", "--help"].includes(arg) || /(?:^|[/\\])(?:host-update-worker|server-update-worker|recover-host)\.[cm]?[jt]s$/.test(arg))) continue;
+    if (args.some((arg) => ["recover-host", "host-update-worker", "server-update-worker", "preflight", "--version", "--help"].includes(arg) || /(?:^|[/\\])(?:host-update-worker|server-update-worker|recover-host)\.[cm]?[jt]s$/.test(arg))) continue;
     const script = args.some((arg) => inside(root, arg) && [join(root, "bin", "tau.js"), join(root, "server", "main.ts")].some((path) => inside(path, arg)));
     const compiled = [join(root, "tau"), join(root, "tau.exe")].some((path) => inside(path, row.exe));
     if (!script && !compiled) fail(`Cannot determine whether process ${row.pid} is a server in ${root}; refusing to assume its supervisor is independent`);
