@@ -113,15 +113,6 @@ const EDIT_TIMEOUT_MS = 15_000;
  * child does before acking. Finite pooled model/thinking/name setup shares
  * this budget; ordinary commands keep their existing semantics. */
 const PROMPT_ACK_TIMEOUT_MS = 30_000;
-/** Title generation is an LLM call on omp's side. */
-const GENERATE_TITLE_TIMEOUT_MS = 60_000;
-const RENAME_POLL_INTERVAL_MS = 500;
-const RENAME_POLL_TIMEOUT_MS = 20_000;
-/** Background title requests per session. omp declines low-signal openers
- * (a bare greeting), so a later turn of the same session retries. */
-const AUTO_TITLE_MAX_ATTEMPTS = 3;
-/** command_output lines printed by omp's argument-less `/rename`. */
-const RENAME_OUTPUT_RE = /^(Session renamed to |Could not generate a session title|Session name not changed|Rename failed:)/;
 const NON_TERMINAL_CONTINUATION_GRACE_MS = 2_000;
 const AWAITING_AGENT_START_TIMEOUT_MS = 10_000;
 const RESTARTING_MESSAGE = "This session is restarting — retry in a moment.";
@@ -216,11 +207,6 @@ function patchEstimatedTokensAfter(result: unknown): void {
 // Wraps one session's pi process (`pi --mode rpc` with lib/pi/tau-extension.ts) with the interface the rest of
 // the app expects (same command surface pi-web's in-process wrapper offered).
 // ============================================================================
-
-function titleFromResult(result: unknown): string | null {
-  const value = typeof result === "string" ? result : isRecord(result) ? (result.title ?? result.name ?? result.sessionName) : null;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
 
 interface IdentityChangeOptions {
   /** The old id still names this wrapper (session moved files, not switched). */
@@ -981,113 +967,6 @@ export class AgentSessionWrapper {
     }
   }
 
-  /** Whether omp answered `generate_title` with "Unknown command" (cached per child). */
-  private generateTitleUnsupported = false;
-  /** Background title requests made per session id (see autoTitle). */
-  private autoTitleAttempts = new Map<string, number>();
-  private autoTitleInFlight = false;
-  /** Until this time, drop the chat output of a background `/rename`. */
-  private quietRenameUntil = 0;
-
-  /**
-   * Ask omp to generate a title for this session with its own title generator.
-   * Prefers the native `generate_title` RPC command and falls back to the
-   * argument-less `/rename` slash command. Returns null when omp cannot do
-   * either right now (older omp, or the session is mid-run, where `/rename`
-   * would be queued as a prompt). With `quiet`, the `/rename` fallback skips
-   * the prompt bookkeeping (the UI never sees a run) and its output stays out
-   * of the chat.
-   */
-  async generateTitle({ quiet = false }: { quiet?: boolean } = {}): Promise<string | null> {
-    if (this.restarting) throw new WebRpcError(RESTARTING_MESSAGE, "session_restarting");
-    if (!this.isAlive()) throw new Error("Session is no longer running");
-
-    if (this.historyEditInFlight) throw new WebRpcError("Wait for the history edit to finish", "session_busy");
-    this.historyMutationPendingCount += 1;
-    try {
-      return await this.generateSessionTitle(quiet);
-    } finally {
-      this.historyMutationPendingCount -= 1;
-    }
-  }
-
-  private async generateSessionTitle(quiet = false): Promise<string | null> {
-    if (!this.generateTitleUnsupported) {
-      try {
-        const result = await this.proc.sendCommand<unknown>({ type: "generate_title" }, GENERATE_TITLE_TIMEOUT_MS);
-        const title = titleFromResult(result) ?? (await this.readSessionName());
-        if (title) this.adoptSessionName(title);
-        return title;
-      } catch (error) {
-        if (!(error instanceof Error && error.message.includes("Unknown command"))) throw error;
-        this.generateTitleUnsupported = true;
-      }
-    }
-
-    // `/rename` without arguments generates a title (omp >= 18.6). It is a
-    // prompt, so it must never be sent while a run is in flight.
-    if (this.isRunning()) return null;
-    const before = (await this.readSessionName()) ?? "";
-    if (quiet) {
-      // omp saves the title before it prints the result, so the poll below can
-      // finish first: the window closes on that output or on expiry instead.
-      this.quietRenameUntil = Date.now() + GENERATE_TITLE_TIMEOUT_MS;
-      await this.sendNativeMessageCommand({ type: "prompt", message: "/rename" }, PROMPT_ACK_TIMEOUT_MS);
-    } else {
-      await this.send({ type: "prompt", message: "/rename" });
-    }
-    const deadline = Date.now() + RENAME_POLL_TIMEOUT_MS;
-    let title = await this.readSessionName();
-    while (!(title && title !== before) && Date.now() < deadline && this.isAlive()) {
-      await new Promise((resolve) => setTimeout(resolve, RENAME_POLL_INTERVAL_MS));
-      title = await this.readSessionName();
-    }
-    if (title) this.adoptSessionName(title);
-    return title;
-  }
-
-  /**
-   * omp does not title sessions on its own in RPC mode
-   * (can1357/oh-my-pi#14616), so once a turn finishes, ask its title generator
-   * to name an untitled session, as omp's terminal UI does.
-   */
-  private autoTitle(): void {
-    const sessionId = this._sessionId;
-    if (!sessionId || this._sessionName || this.autoTitleInFlight) return;
-    // Every server sharing the child sees the same turn end: only the elected notifier titles it.
-    if (this.hostOwnedLifecycle && !isNotifier(this.host.id)) return;
-    const sessionFile = this._sessionFile;
-    if (!sessionFile) return;
-    // Held across the async file check so a second agent_end cannot start a parallel run.
-    this.autoTitleInFlight = true;
-    void this.host.sessionFileExists(sessionFile)
-      .then(async (exists) => {
-        // omp writes the session file once the history holds an assistant message.
-        const attempts = this.autoTitleAttempts.get(sessionId) ?? 0;
-        if (!exists || this._sessionName || attempts >= AUTO_TITLE_MAX_ATTEMPTS) return;
-        this.autoTitleAttempts.set(sessionId, attempts + 1);
-        await this.generateTitle({ quiet: true });
-      })
-      .catch((error) => {
-        console.warn(`[tau] could not title session ${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
-      })
-      .finally(() => {
-        this.autoTitleInFlight = false;
-      });
-  }
-
-  private async readSessionName(): Promise<string | null> {
-    const state = await this.getStateWithTimeout();
-    const name = typeof state.sessionName === "string" ? state.sessionName.trim() : "";
-    return name || null;
-  }
-
-  private adoptSessionName(title: string): void {
-    this._sessionName = title;
-    this.invalidateSessionLists();
-    notifyRunningChange({ refreshSessionList: true });
-  }
-
   /** Re-read identity after omp reported that it moved this session to a new file. */
   private async followSessionMove(): Promise<void> {
     this.sessionMovePending = true;
@@ -1193,11 +1072,6 @@ export class AgentSessionWrapper {
           notifyRunningChange();
           return;
         }
-        // The output of a background `/rename` (see autoTitle) is not chat content.
-        if (Date.now() < this.quietRenameUntil && typeof event.text === "string" && RENAME_OUTPUT_RE.test(event.text)) {
-          this.quietRenameUntil = 0;
-          return;
-        }
         break;
       }
       case "agent_start":
@@ -1234,7 +1108,6 @@ export class AgentSessionWrapper {
           this.awaitingAgentStartDeadline = 0;
           this.continuationGraceUntil = 0;
           this.invalidateSessionLists();
-          this.autoTitle();
         } else {
           this.continuationGraceUntil = Date.now() + NON_TERMINAL_CONTINUATION_GRACE_MS;
         }

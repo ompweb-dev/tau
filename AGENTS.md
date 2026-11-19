@@ -970,11 +970,10 @@ The table is static imports, not a runtime glob, so `bun build --compile` (`scri
   `--resume` child (which would fork again). A move during startup (before the
   first `get_state`) is aliased too, so the requested id stays routable.
   `onDestroy` removes every key that points at the wrapper.
-- `POST /api/sessions/[id]/auto-name` asks omp to generate the title
-  (`AgentSessionWrapper.generateTitle()`: native `generate_title`, else
-  argument-less `/rename`, never while a run is in flight). Only when omp cannot
-  does it fall back to the stored/derived title (`generated:false`), saved
-  through the live process when there is one.
+- pi has no title generator. `POST /api/sessions/[id]/auto-name` answers the
+  stored title, else one derived from the first user message, saved on disk and
+  through the live process when there is one; `generated` is always false. It
+  never starts a process, and sessions are not titled in the background.
 
 ### Browser compatibility
 Client code (`components/`, `hooks/`) must not call `AbortSignal.timeout`,
