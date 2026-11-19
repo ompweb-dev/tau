@@ -61,10 +61,10 @@ interface Upload {
   done: boolean;
   live: boolean;
   sink: UploadSink | null;
-  attached: { sessionFile: string; path: string; url: string } | null;
+  attached: { sessionFile: string; path: string } | null;
   completionKey?: string;
   /** The attach in flight, shared by overlapping attaches of this upload to this session file. */
-  attaching?: { sessionFile: string; completionKey?: string; result: Promise<{ sessionFile: string; path: string; url: string }> } | null;
+  attaching?: { sessionFile: string; completionKey?: string; result: Promise<{ sessionFile: string; path: string }> } | null;
   attempt: string;
   touched: number;
   workspace?: { directory: string; name: string; conflict: UploadConflictStrategy; pending?: Promise<WorkspaceUploadResult>; result?: WorkspaceUploadResult; timer?: NodeJS.Timeout };
@@ -469,7 +469,7 @@ export function takeUploads(command: Record<string, unknown>, owner: string, tru
   return { ids: ids as string[], receipts };
 }
 
-/** Link (or copy) each upload into the session's `local://uploads/` on its host and append the block naming them to the
+/** Link (or copy) each upload into the session's `local/uploads/` directory on its host and append the block naming them to the
  * command's `message` (spec U1). The uploads stay registered until forgetUploads, so a retried send reuses an attach. */
 export async function attachUploads(
   ids: string[],
@@ -492,10 +492,10 @@ export async function attachUploads(
     if (upload.attaching?.sessionFile !== sessionFile || upload.attaching.completionKey !== upload.completionKey) {
       const completionKey = upload.completionKey;
       const result = hostUploadOp(upload.hostId, "uploadAttach", { id, sessionFile, sessionId }).then((answer) => {
-        if (!isRecord(answer) || typeof answer.path !== "string" || typeof answer.url !== "string") {
+        if (!isRecord(answer) || typeof answer.path !== "string") {
           throw new UploadError(502, "host_bad_result", "The host sent an invalid uploadAttach result");
         }
-        return { sessionFile, path: answer.path, url: answer.url };
+        return { sessionFile, path: answer.path };
       });
       upload.attaching = { sessionFile, completionKey, result };
       const settled = () => { if (upload.attaching?.result === result) upload.attaching = null; };
@@ -504,12 +504,12 @@ export async function attachUploads(
     const attached = await upload.attaching!.result;
     if (uploads().get(id) !== upload || (receipt && !sameUpload(upload, receipt, receipt.owner ?? owner))) throw missing();
     upload.attached = attached;
-    const { url, path } = attached;
-    // The agent reads the exact path in the parentheses; the link target is percent-encoded so no name breaks it.
+    const { path } = attached;
+    // The agent reads the exact path in the code span; the link target is percent-encoded so no name breaks it.
     const href = encodeURI(path.toWellFormed()).replace(/[()#?&]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-    lines.push(`- [${markdownCode(url)}](${href}) (${path}, ${formatUploadSize(upload.size)}, ${upload.type || "application/octet-stream"})`);
+    lines.push(`- [${markdownCode(path)}](${href}) (${formatUploadSize(upload.size)}, ${upload.type || "application/octet-stream"})`);
   }
-  const block = `Attached files (this session's local:// directory):\n${lines.join("\n")}`;
+  const block = `Attached files:\n${lines.join("\n")}`;
   const message = typeof command.message === "string" ? command.message : "";
   command.message = message ? `${message}\n\n${block}` : block;
 }

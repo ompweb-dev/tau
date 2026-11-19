@@ -61,9 +61,6 @@ export interface WorkspaceOps {
   startClone(id: string, parent: string, url: string): Promise<OpResult<{ id: string }>>;
   readClone(id: string, cursor: number): Promise<OpResult<CloneProgress>>;
   cancelClone(id: string): Promise<OpResult<CloneProgress>>;
-  /** The absolute path of a file in a session's `local://` directory on this host (stat'ed, never read). `sessionFile`
-   * is main's hint of the live session file; the host verifies it. */
-  resolveLocalFile(id: string, uri: string, sessionFile: string | null): Promise<OpResult<{ path: string }>>;
   /** One answer per requested path, in order; at most 500 paths. */
   gitOrigins(paths: string[]): Promise<OpResult<{ origins: GitOrigin[] }>>;
 }
@@ -80,7 +77,6 @@ export const WORKSPACE_OP_PARAMS: { readonly [K in keyof WorkspaceOps]: readonly
   browseDirectories: ["path"], defaultCwd: [], startClone: ["id", "parent", "url"], readClone: ["id", "cursor"], cancelClone: ["id"],
   // Older peers cap the advertised prefix before filtering unknown capabilities.
   listFilesInRoot: ["input", "root"],
-  resolveLocalFile: ["id", "uri", "sessionFile"],
   gitOrigins: ["paths"],
 };
 

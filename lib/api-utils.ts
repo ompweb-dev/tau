@@ -45,12 +45,10 @@ export function resolveHostOrError(hostId: unknown): { host: Host } | { response
 
 /** The host a workspace request runs on, plus the session identity to send it. File reads and watches keep the id the
  * request gave: a tab owns the session it was opened for, and a later move must not swap in another session's root.
- * Its live file is passed only while the wrapper still reports that id. `followAlias` (a new `local://` lookup) uses
- * a live session's current id and file instead, since an alias is only a way in. */
+ * Its live file is passed only while the wrapper still reports that id. */
 export async function resolveWorkspaceHost(
   hostId: unknown,
   sessionId: string | null,
-  { followAlias = false }: { followAlias?: boolean } = {},
 ): Promise<{ host: Host; sessionId: string | null; sessionFile: string | null; cwd: string | null; owner?: WorkspaceOwner } | { response: Response }> {
   if (sessionId === null) {
     const resolved = resolveHostOrError(hostId);
@@ -73,13 +71,12 @@ export async function resolveWorkspaceHost(
   if (hostId !== undefined && hostId !== session.host.id) {
     return { response: Response.json({ error: "The session belongs to another host", code: "workspace_host_mismatch" }, { status: 409 }) };
   }
-  const effectiveId = followAlias && running ? running.sessionId : sessionId;
-  const cwd = (running?.sessionId === effectiveId ? running.cwd : undefined) ?? retained?.cwd
-    ?? (await hostSessions(session.host.id)).find((entry) => entry.id === effectiveId)?.cwd;
+  const cwd = (running?.sessionId === sessionId ? running.cwd : undefined) ?? retained?.cwd
+    ?? (await hostSessions(session.host.id)).find((entry) => entry.id === sessionId)?.cwd;
   if (!cwd) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
-  return { host: session.host, sessionId: effectiveId,
-    sessionFile: running?.sessionId === effectiveId ? running.sessionFile || null : null,
-    cwd, owner: { sessionId: effectiveId, cwd } };
+  return { host: session.host, sessionId,
+    sessionFile: running?.sessionId === sessionId ? running.sessionFile || null : null,
+    cwd, owner: { sessionId, cwd } };
 }
 
 /** The JSON error response for a failed host op. */

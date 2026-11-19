@@ -1724,13 +1724,12 @@ export function AppShell({ appName }: { appName: string }) {
     try {
       const { text, isError } = await runHostTool(call.toolName, call.arguments, {
         openUrl: (url) => requestOpenUrl(url, call.sessionId, !viewing()),
-        openFile: (path, name, owner) => {
-          const source = owner ? { ...call, sessionId: owner } : call;
-          if (viewing()) return handleOpenFile(path, name, source);
-          setPendingOpens((queue) => [...queue, { kind: "file", target: path, name, sessionId: call.sessionId, source, crossSession: true }]);
+        openFile: (path, name) => {
+          if (viewing()) return handleOpenFile(path, name, call);
+          setPendingOpens((queue) => [...queue, { kind: "file", target: path, name, sessionId: call.sessionId, source: call, crossSession: true }]);
           return `Asked the user to confirm opening ${path}; they are viewing another tau session.`;
         },
-      }, call.sessionId, controller.signal);
+      }, controller.signal);
       if (controller.signal.aborted) return;
       await sendAgentCommand(call.sessionId, {
         type: "host_tool_result",

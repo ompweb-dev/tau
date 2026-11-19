@@ -84,7 +84,7 @@ export function getSessionDirNameForCwd(cwd: string): string {
 
 const WINDOWS_LOCAL_ROOT_MAX_CHARS = 180;
 
-/** `local://` root for a session. */
+/** A session's local directory (composer uploads land in its `uploads/`). */
 export function sessionLocalRoot(sessionFile: string, sessionId: string, platform: NodeJS.Platform = process.platform): string {
   const candidate = path.resolve(path.dirname(sessionFile), path.basename(sessionFile, ".jsonl"), "local");
   if (platform === "win32" && candidate.length >= WINDOWS_LOCAL_ROOT_MAX_CHARS) {

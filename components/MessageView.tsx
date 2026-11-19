@@ -1230,7 +1230,7 @@ const ToolCallBlock = memo(function ToolCallBlock({
     ? String((block.input as Record<string, unknown>).path).trim()
     : null;
   const agentIds = agentLinkIds(rawFilePath ?? undefined);
-  // `history://`, `proc://`, `local://`, ... are resolved by omp, not files the viewer can open.
+  // A URL (`https://`, `skill://`, ...) is no file the viewer can open.
   const hasUrlScheme = rawFilePath !== null && /^[a-z][a-z0-9+.-]*:\/\//i.test(rawFilePath);
   const webUrl = hasUrlScheme && /^https?:\/\//i.test(rawFilePath) ? readTargetWebUrl(rawFilePath) : null;
   // Strip only a trailing :<line> suffix. Splitting on the first ":" broke

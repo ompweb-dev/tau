@@ -100,7 +100,7 @@
   "settingsConfig.githubActionsPermissionAllow": "無需詢問即可允許",
   "settingsConfig.githubActionsSaveFailed": "無法儲存 GitHub Actions 權限",
   "settingsConfig.uploadRetention": "已傳送的上傳檔案保留時間",
-  "settingsConfig.uploadRetentionDesc": "以「作為檔案」方式附加的檔案，超過此時間後會從所有主機上每個工作階段的 local://uploads 資料夾（包含已封存的工作階段）中刪除。選擇「永不」則永久保留。",
+  "settingsConfig.uploadRetentionDesc": "以「作為檔案」方式附加的檔案，超過此時間後會從所有主機上每個工作階段的 local/uploads 資料夾（包含已封存的工作階段）中刪除。選擇「永不」則永久保留。",
   "settingsConfig.uploadRetentionNever": "永不",
   "settingsConfig.uploadRetentionDays.one": "{count} 天",
   "settingsConfig.uploadRetentionDays.other": "{count} 天",

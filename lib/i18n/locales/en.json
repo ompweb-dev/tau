@@ -100,7 +100,7 @@
   "settingsConfig.githubActionsPermissionAllow": "Allow without asking",
   "settingsConfig.githubActionsSaveFailed": "Could not save the GitHub Actions permission",
   "settingsConfig.uploadRetention": "Delete sent uploads after",
-  "settingsConfig.uploadRetentionDesc": "Files you attach As file are deleted once they are this old, from every session's local://uploads folder on every host, archived sessions included. Never keeps them.",
+  "settingsConfig.uploadRetentionDesc": "Files you attach As file are deleted once they are this old, from every session's local/uploads folder on every host, archived sessions included. Never keeps them.",
   "settingsConfig.uploadRetentionNever": "Never",
   "settingsConfig.uploadRetentionDays.one": "{count} day",
   "settingsConfig.uploadRetentionDays.other": "{count} days",

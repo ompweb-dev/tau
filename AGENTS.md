@@ -93,7 +93,8 @@ pi speaks JSON lines on stdin/stdout: commands answered by `{type:"response", id
 - `paths.ts`: pi's directory rules. Agent dir `~/.pi/agent` (`PI_CODING_AGENT_DIR` overrides it, `PI_CONFIG_DIR`
   renames `.pi`); sessions `<agent dir>/sessions/--<cwd with / \ : as ->--/` (`getSessionDirNameForCwd`); archive
   `<agent dir>/../archive/sessions`; `settings.json`, `models.json`; `getTauDataDir()` (`<agent dir>/tau`); `sessionLocalRoot`
-  (`local://` root: `<session file without .jsonl>/local`, Windows long paths `<tmp>/tau-local/<id>`).
+  (a session's local directory, where uploads land: `<session file without .jsonl>/local`, Windows long paths
+  `<tmp>/tau-local/<id>`).
 - `pi-cli.ts`: `resolvePiBin`, `getPiVersion` (cached by binary fingerprint), `wrapWindowsScript` (`.cmd`/`.bat` via
   `cmd.exe /c`), `PI_NOT_FOUND`.
 - `rpc-process.ts` / `rpc-transport.ts`: `RpcProcess` (see above) over an `RpcTransport` byte pipe
@@ -147,7 +148,6 @@ app/api/
   sessions/[id]/export/route.ts        GET exported HTML (`tau-session-<id>.html`; a remote session's always as an attachment)
   sessions/[id]/archive/route.ts       POST stop the live child, then archive on the session's host
   sessions/[id]/auto-name/route.ts     POST stored title, else one derived from the first user message (`generated` always false)
-  sessions/[id]/local-file/route.ts    GET ?uri=local://… → { path, sessionId } resolved on the owning daemon
   sessions/[id]/subagents/route.ts, subagents/[subagentId]/route.ts   subagent roster history and transcripts
   agent/new/route.ts                   POST start a session (host, pool or cluster target)
   agent/[id]/route.ts                  GET state | POST any agent command (`runAgentCommand`)
@@ -203,8 +203,7 @@ lib/
   session-reader.ts      session parsing, path cache, `buildSessionContext`, `listAllSessions`
   session-search.ts, session-content-search.ts, session-search-matches.ts, session-match-listing.ts   sidebar search
   session-resume.ts      per-web-server auto-resume (transports without host-owned lifecycle)
-  session-local-files.ts daemon side of `local://` resolution
-  local-uri.ts           `local://` parsing (browser and server)
+  session-local-files.ts daemon side: a session's local directory and whether a path lies in it (the file gate)
   file-access.ts, file-authorization.ts   allowed roots and the file gate; `isPiSecretFile`
   file-paths.ts          `getFileApiUrl` and path encoding
   media-cache.ts         tool-result images → /api/media URLs
@@ -536,7 +535,7 @@ The todo plan (`TodoList`) and subagent roster sit pinned above the input, each 
 
 ### Composer file uploads (`docs/specs/2026-11-02-file-uploads-design.md`)
 - Images and text files go inline within the inline budgets (`lib/image-attachments.ts`, `lib/chat-attachments.ts`); everything else, an image switched to **As file**, and anything over a budget is uploaded (2 GiB per file, 20 per message, `lib/upload-limits.ts`).
-- Uploads land in a staging dir on the **session's host** (`lib/hosts/uploads.ts`, `<agent dir>/tau/uploads/`), never on main. The prompt carries `uploads: [id]`; `runAgentCommand` attaches each through `uploadAttach` (hard link into `<session dir>/local/uploads/`, never overwriting; copy on EXDEV; 10-minute op timeout) and appends an "Attached files" block with `local://` URL and absolute path. Ids stay registered until the prompt reaches pi. Attachment preparation holds the wrapper's pending-command protection, and later commands await the send fence (any alias of the wrapper). A prompt pushed past the link's line cap is refused 413 `request_too_large` and the uploads stay registered.
+- Uploads land in a staging dir on the **session's host** (`lib/hosts/uploads.ts`, `<agent dir>/tau/uploads/`), never on main. The prompt carries `uploads: [id]`; `runAgentCommand` attaches each through `uploadAttach` (hard link into `<session dir>/local/uploads/`, never overwriting; copy on EXDEV; 10-minute op timeout) and appends an "Attached files" block naming each file by its absolute path. Ids stay registered until the prompt reaches pi. Attachment preparation holds the wrapper's pending-command protection, and later commands await the send fence (any alias of the wrapper). A prompt pushed past the link's line cap is refused 413 `request_too_large` and the uploads stay registered.
 - **Transfer:** HTTP only. `POST /api/uploads` starts or resumes (`{ received, done }`), `PUT /api/uploads/[id]?offset=N` sends a chunk of at most 1 MiB, answered once the host acked it (409 `upload_offset` with `received`). Main relays the bytes as blob units on the host link (`forwardUploadFrame`); the host's `upload_ack`s are the flow control, and main stops an upload that runs too far ahead (429 `upload_window_exceeded`). Each host `uploadStart` carries a fresh `attempt`; superseded-attempt acks are discarded. Start/attach/abort share one per-id queue.
 - `uploadFile` (`lib/event-stream.ts`) resumes 502/503/504 and network failures itself (same id, back-off, "Reconnecting…") until an outage reaches 5 min (`RESUME_GIVE_UP_MS`), then settles `upload_stalled` so Retry is usable. A bfcache pagehide fails with 410 and a new upload id.
 - Limits on main: 32 unfinished uploads per owner (429 `too_many_uploads`); an entry idle 10 min leaves the registry (a later start re-registers it). The daemon's `sweep` deletes staged files and aborts open uploads idle over 24 h (`STAGED_MAX_AGE_MS`), at start, on every `uploadStart` and hourly; it never rejects.
@@ -545,12 +544,9 @@ The todo plan (`TodoList`) and subagent roster sit pinned above the input, each 
 - Codes: `upload_id_conflict` (composer), `upload_conflict` (file manager).
 - **Ownership:** `requestOwner(req)` (`lib/web-auth.ts`) binds start, chunks and cancel to the login. Attachment also accepts a server-issued completion proof (see the outbox) in the same installation/auth scope within 24 h; never caller-supplied owners or receipts. `uploadFile().promise` returns `{proof?}`; finished chips and drafts keep it. Completed receipts are durable until expiry, so a main restart does not lose a finished, unsent attachment. Switching chats aborts in-flight uploads.
 
-### open_file and `local://`
-- The `open_file` host tool takes an absolute path, a workspace-relative path or a `local://` URL. `runHostTool` (`hooks/useAgentSession-stream.ts`) resolves `local://` **before** a tab exists, with the calling session's id, through `GET /api/sessions/[id]/local-file`, so two sessions' `local://note.md` are two files.
-- The resolver runs on the owning daemon (`resolveLocalFile`, `lib/session-local-files.ts`); main only checks syntax and canonicalizes a live alias (`resolveWorkspaceHost(..., { followAlias: true })`). The daemon uses a live-file hint only after checking it is inside its sessions directory and names the session; otherwise its own index decides. Never derive the root from cwd or the viewed session.
-- `lib/local-uri.ts` parses the URL as pi's local protocol: authority is the first segment, decoded once; query and fragment dropped; `..`-prefixed segments and absolute suffixes refused. Answers in order: 503 `local_root_unavailable`, 403 for a symlink escape, 404 `file_not_found`, 400 `not_a_file`.
-- `runHostTool` bounds the lookup (`LOCAL_FILE_LOOKUP_TIMEOUT_MS`, `AbortController`); `host_tool_cancel`, withdrawal, unmount or a subscription error abort pending lookups and suppress late results. A thrown opener becomes `isError`. A resolved tab stores the route's canonical `sessionId` as `sourceSessionId`.
-- File reads, downloads and watches keep the tab's own `sessionId` and never follow an alias. Every file-tab URL uses `getFileApiUrl` with the tab's host and source session. `authorizeFileAccess` grants session-local access for reads, downloads and watch only (never listing), confined by realpath, and applies `isPiSecretFile`. The watch re-authorizes its target and ends on a swap.
+### open_file
+- The `open_file` host tool takes an absolute or workspace-relative path. pi has no `local://` scheme, and tau hands the agent none: the "Attached files" block names each upload by its absolute path.
+- File reads, downloads and watches carry the tab's own `sessionId` and never follow an alias. Every file-tab URL uses `getFileApiUrl` with the tab's host and source session. `authorizeFileAccess` also admits the session's own local directory (`sessionLocalRootContaining`, `lib/session-local-files.ts`, on the owning daemon) for reads, downloads and watch only (never listing), confined by realpath, and applies `isPiSecretFile`. The watch re-authorizes its target and ends on a swap.
 
 ### Voice transcription (`lib/stt-jobs.ts`, `/api/stt`, `hooks/useDictation.ts`)
 - Configured only by `TAU_STT_ENDPOINT` (with `TAU_STT_KEY`, `TAU_STT_MODEL`); without it dictation is off.

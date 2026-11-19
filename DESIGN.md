@@ -277,7 +277,7 @@ registrations and the subagent roster only after successfully connecting.
   execution through an extension callback.
 - File APIs are not a general filesystem browser. They are restricted to selected
   workspaces, valid Git worktrees, session-referenced files, a session's own
-  `local://` directory, and explicitly selected roots. Paths are canonicalized to
+  `local/` directory (uploads), and explicitly selected roots. Paths are canonicalized to
   reject traversal and symlink escapes, and the agent directory's credential and
   model files stay private (`isPiSecretFile`, `lib/file-access.ts`).
 - Secrets, raw API keys, and credential store contents never appear in API

@@ -1266,9 +1266,8 @@ export function deleteSessionFileWithArtifacts(filePath: string): void {
  * Every transcript (`*.jsonl`, any depth) in a session's artifacts directory:
  * task subagents and their nested subagents, advisors (`__advisor*.jsonl`),
  * `/tan` clones and extension sub-sessions. Each records its own model usage.
- * The top-level `local/` folder is skipped: it is the agent's `local://`
- * scratch space, which omp never writes transcripts to and which can hold
- * arbitrary trees (cloned repos, dependencies). Returns [] without an
+ * The top-level `local/` folder is skipped: it holds composer uploads, never
+ * transcripts, and can hold arbitrary trees. Returns [] without an
  * artifacts directory.
  */
 export function listSessionArtifactTranscripts(sessionFile: string): string[] {

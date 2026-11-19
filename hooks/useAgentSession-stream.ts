@@ -18,7 +18,6 @@ import type {
   SubagentProgress,
 } from "@/lib/subagent-types";
 import { translate } from "@/lib/i18n";
-import { isLocalUri } from "@/lib/local-uri";
 import type { SessionStreamCursor } from "@/lib/session-sync";
 import type { ChatDraft } from "@/lib/draft-store";
 
@@ -313,52 +312,19 @@ export function isSafeOpenUrl(raw: unknown): boolean {
 export interface HostToolHandlers {
   /** Open a validated URL; returns the result text reported to the agent. */
   openUrl: (url: string) => string;
-  /** Open a file tab; may return the result text reported to the agent. `ownerSessionId` is set when the server
-   * resolved a `local://` file for a session under another id (an alias): the tab belongs to that owner. */
-  openFile?: (path: string, name: string, ownerSessionId?: string) => string | void;
-}
-
-/** How long a `local://` lookup may take before the agent is told the server did not answer: the host ops behind it give
- * up after 30 s themselves. */
-export const LOCAL_FILE_LOOKUP_TIMEOUT_MS = 30_000;
-
-/** A session's `local://` file as the absolute path the file viewer opens, found by the server that holds the session. */
-async function resolveLocalFile(sessionId: string | undefined, uri: string, signal?: AbortSignal): Promise<{ ok: true; path: string; sessionId?: string } | { ok: false; error: string }> {
-  if (!sessionId) return { ok: false, error: "A local:// file belongs to a session, and no session asked for it" };
-  const unanswered = { ok: false as const, error: `Could not open ${uri}: the server did not answer` };
-  // An AbortController and a timer, not AbortSignal.timeout (older browsers lack it): a stalled request must not leave
-  // the agent's tool call pending until the tab goes away.
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
-  if (signal?.aborted) controller.abort();
-  const timer = setTimeout(() => controller.abort(), LOCAL_FILE_LOOKUP_TIMEOUT_MS);
-  try {
-    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/local-file?uri=${encodeURIComponent(uri)}`, { signal: controller.signal });
-    const body = (await response.json().catch(() => ({}))) as { path?: unknown; sessionId?: unknown; error?: unknown };
-    if (controller.signal.aborted) return unanswered;
-    if (response.ok && typeof body.path === "string") return { ok: true, path: body.path, ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}) };
-    return { ok: false, error: typeof body.error === "string" ? body.error : `Could not open ${uri} (HTTP ${response.status})` };
-  } catch {
-    return unanswered;
-  } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", abort);
-  }
+  /** Open a file tab; may return the result text reported to the agent. */
+  openFile?: (path: string, name: string) => string | void;
 }
 
 /**
- * Execute an tau host tool (open_url / notify / open_file) and return the
+ * Execute a tau host tool (open_url / notify / open_file) and return the
  * toolResult text. Shared by the session's own stream and by tabs answering
- * calls for a session they are not viewing. `sessionId` is the session the
- * call came from, which owns a `local://` file; required (undefined only when
- * there is none), so a caller that forgets it fails the typecheck.
+ * calls for a session they are not viewing.
  */
 export async function runHostTool(
   toolName: string,
   args: Record<string, unknown>,
   handlers: HostToolHandlers,
-  sessionId: string | undefined,
   signal?: AbortSignal,
 ): Promise<{ text: string; isError: boolean }> {
   const str = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
@@ -392,26 +358,17 @@ export async function runHostTool(
       return { text: "Notification shown", isError: false };
     }
     case "open_file": {
-      const requested = str(args.path) ?? "";
-      if (!requested) return { text: "No path provided", isError: true };
-      let path = requested;
-      let owner: string | undefined;
-      if (isLocalUri(requested)) {
-        const resolved = await resolveLocalFile(sessionId, requested, signal);
-        if (signal?.aborted) return canceled;
-        if (!resolved.ok) return { text: resolved.error, isError: true };
-        path = resolved.path;
-        owner = resolved.sessionId;
-      }
+      const path = str(args.path) ?? "";
+      if (!path) return { text: "No path provided", isError: true };
       let text: string | void = undefined;
       if (handlers.openFile) {
         try {
-          text = handlers.openFile(path, path.split(/[\\/]/).pop() || path, owner);
+          text = handlers.openFile(path, path.split(/[\\/]/).pop() || path);
         } catch (error) {
-          return { text: error instanceof Error ? error.message : `Could not open ${requested}`, isError: true };
+          return { text: error instanceof Error ? error.message : `Could not open ${path}`, isError: true };
         }
       }
-      return { text: text || `Opened ${requested}`, isError: false };
+      return { text: text || `Opened ${path}`, isError: false };
     }
     default:
       return { text: `Host tool "${toolName}" is not available in tau`, isError: true };

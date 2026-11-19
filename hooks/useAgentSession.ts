@@ -1701,7 +1701,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       description: "Open a file in the workspace file viewer.",
       parameters: {
         type: "object",
-        properties: { path: { type: "string", description: "Absolute or workspace-relative file path, or a local:// URL for a file in this session's local:// directory." } },
+        properties: { path: { type: "string", description: "Absolute or workspace-relative file path." } },
         required: ["path"],
       },
     },
@@ -1768,13 +1768,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           window.open(url, "_blank", "noopener,noreferrer")?.focus?.();
           return `Opened ${url}`;
         }),
-        openFile: onOpenFile ? (path, name, owner) => {
+        openFile: onOpenFile ? (path, name) => {
           if (!hookAliveRef.current) throw new Error("File not opened: the requesting chat is no longer active");
           onOpenFile(path, name, {
-            sessionId: owner ?? sid, hostId: createdOwnerRef.current?.hostId ?? session?.hostId ?? newSessionHostId ?? "local", cwd: createdOwnerRef.current?.cwd ?? session?.cwd ?? newSessionCwd,
+            sessionId: sid, hostId: createdOwnerRef.current?.hostId ?? session?.hostId ?? newSessionHostId ?? "local", cwd: createdOwnerRef.current?.cwd ?? session?.cwd ?? newSessionCwd,
           });
         } : undefined,
-      }, sid, controller.signal);
+      }, controller.signal);
       if (!controller.signal.aborted) await respondHostTool(sid, id, text, isError);
     } finally {
       pendingHostToolControllersRef.current.delete(id);

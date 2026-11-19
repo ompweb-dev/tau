@@ -31,7 +31,7 @@ export interface WebServerSettings {
    * re-checks every name before handing it to a spawn.
    */
   agentEnv: Record<string, string>;
-  /** Days a sent upload stays in its session's `local://uploads/` on every host; `null` keeps them for ever (docs/specs/2026-11-02-file-uploads-design.md, U6). */
+  /** Days a sent upload stays in its session's `local/uploads/` on every host; `null` keeps them for ever (docs/specs/2026-11-02-file-uploads-design.md, U6). */
   uploadRetentionDays: number | null;
 }
 

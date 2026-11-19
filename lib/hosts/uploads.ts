@@ -1,6 +1,6 @@
 // Composer file uploads, the daemon's side (docs/specs/2026-11-02-file-uploads-design.md, U3 and U5): an upload is
 // staged as `<agent dir>/tau/uploads/<id>.part` plus `<id>.json`, written in order at the part's length, and on
-// attach hard-linked (or copied) into the session's `local://uploads/`.
+// attach hard-linked (or copied) into the session's `local/uploads/`.
 // Loaded by the daemon through jiti: no `@/` imports and no Bun APIs.
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, createReadStream, realpathSync } from "node:fs";
@@ -19,7 +19,7 @@ import { isRecord } from "../type-guards";
 import { MAX_UPLOAD_BYTES, UPLOAD_ID_RE } from "../upload-limits";
 import { HostOpError, LINK_LIMITS } from "./link-protocol";
 
-/** Uploads land in this subdirectory of the session's `local://` root. */
+/** Uploads land in this subdirectory of the session's local root (`sessionLocalRoot`). */
 export const UPLOADS_LOCAL_DIR = "uploads";
 
 /** Separate daemons' files inside omp's shared Windows temp root, including copied session UUIDs. */
@@ -89,7 +89,7 @@ export function sanitizeUploadName(name: string): string {
 /** What the daemon sends up as `upload_ack`. */
 export type UploadAck = { id: string; attempt: string; received: number; done: boolean; error?: { status: number; code: string; message: string } };
 
-type Receipt = { sessionFile: string; path: string; url: string };
+type Receipt = { sessionFile: string; path: string };
 type FileIdentity = { dev: string; ino: string };
 type WorkspaceReceipt = {
   directory: string; canonical: string; name: string; conflict: UploadConflictStrategy;
@@ -175,7 +175,7 @@ export class StagedUploads {
       const meta: unknown = JSON.parse(await readFile(this.path(id, "json"), "utf8"));
       if (!isRecord(meta) || typeof meta.name !== "string" || !Number.isSafeInteger(meta.size) || typeof meta.type !== "string") return null;
       const { attached } = meta;
-      if (attached !== undefined && !(isRecord(attached) && typeof attached.sessionFile === "string" && typeof attached.path === "string" && typeof attached.url === "string")) return null;
+      if (attached !== undefined && !(isRecord(attached) && typeof attached.sessionFile === "string" && typeof attached.path === "string")) return null;
       const { workspace } = meta;
       if (workspace !== undefined && !(isRecord(workspace) && typeof workspace.directory === "string" && typeof workspace.canonical === "string"
         && typeof workspace.name === "string" && parseUploadConflictStrategy(workspace.conflict as string) === workspace.conflict
@@ -464,14 +464,14 @@ export class StagedUploads {
     });
   }
 
-  /** Op uploadAttach: hard-link (or copy) a finished upload into the session's `local://uploads/`, never over an
+  /** Op uploadAttach: hard-link (or copy) a finished upload into the session's `local/uploads/`, never over an
    * existing file (a taken name gets ` (1)`, ` (2)`, ...). `sessionFile` is already confined to the sessions directory. */
-  async attach(id: unknown, sessionFile: string, sessionId: unknown): Promise<{ path: string; url: string }> {
+  async attach(id: unknown, sessionFile: string, sessionId: unknown): Promise<{ path: string }> {
     if (!isUploadId(id) || typeof sessionId !== "string" || !isValidSessionId(sessionId)) throw new HostOpError(400, "invalid_request", "Invalid upload attach");
     return this.control(id, () => this.finishAttach(id, sessionFile, sessionId));
   }
 
-  private async finishAttach(id: string, sessionFile: string, sessionId: string): Promise<{ path: string; url: string }> {
+  private async finishAttach(id: string, sessionFile: string, sessionId: string): Promise<{ path: string }> {
     const part = this.path(id, "part");
     const meta = await this.meta(id);
     if (meta?.workspace) throw new HostOpError(409, "upload_destination_conflict", "The upload already belongs to a workspace");
@@ -479,7 +479,7 @@ export class StagedUploads {
       // Attached already (the reply was lost): the same session file gets the same answer, any other one finds it gone.
       if (meta.attached.sessionFile === sessionFile) {
         await requireReceiptTarget(meta.attached);
-        return { path: meta.attached.path, url: meta.attached.url };
+        return { path: meta.attached.path };
       }
       throw new HostOpError(404, "upload_missing", "The upload is gone: attach the file again");
     }
@@ -532,7 +532,7 @@ export class StagedUploads {
         }
       }
       // Publish atomically before removing the part; a failed receipt leaves the original metadata and data retryable.
-      const receipt: Receipt = { sessionFile, path: target, url: `local://${relativeDir}/${fileName}` };
+      const receipt: Receipt = { sessionFile, path: target };
       const temporary = `${this.path(id, "json")}.${randomUUID()}.tmp`;
       try {
         await writeFile(temporary, JSON.stringify({ ...meta, attached: receipt } satisfies Meta), { flag: "wx" });
@@ -543,7 +543,7 @@ export class StagedUploads {
         throw error;
       }
       await rm(part, { force: true });
-      return { path: target, url: receipt.url };
+      return { path: target };
     }
   }
 }
