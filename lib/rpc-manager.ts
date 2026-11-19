@@ -2463,19 +2463,19 @@ export class AgentSessionWrapper {
         return this.editMessage(command.entryId);
 
       case "fork": {
-        // omp's `branch` is pi-web's fork: it creates a branched session file
-        // and switches this live process onto it (entryId must be a user
+        // pi's `fork` creates a session file holding the history before the
+        // entry and switches this live process onto it (entryId must be a user
         // message entry, matching the web UI's fork buttons).
         if (this.bashRunning) {
           throw new Error("Cannot fork while a shell command is running");
         }
         const result = await this.proc.sendCommand<{ text: string; cancelled: boolean }>({
-          type: "branch",
+          type: "fork",
           entryId: command.entryId as string,
         });
         if (result.cancelled) return { cancelled: true };
         const newSessionId = await this.refreshIdentityAfterSessionChange();
-        // `text` is the branched prompt omp hands back for edit-and-resend.
+        // `text` is the forked-at prompt pi hands back for edit-and-resend.
         return { cancelled: false, newSessionId, text: result.text };
       }
 
