@@ -411,7 +411,7 @@ export class AgentSessionWrapper {
   /** Positive evidence for this run, retained after native completion but before disk append. */
   private responseObserved = false;
   private responseRunActive = false;
-  /** Counts run boundaries (agent_start/agent_end/prompt_*) and visible assistant output, so a refused prompt can tell what changed meanwhile. */
+  /** Counts run boundaries and resets (every live-snapshot clear, agent_end, a restart) and visible assistant output, so a refused prompt can tell what changed meanwhile. */
   private runBoundaries = 0;
   private visibleOutputs = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -632,6 +632,7 @@ export class AgentSessionWrapper {
     this.openMessages.clear();
     this.liveToolEvents.clear();
     this.streamSequence += 1;
+    this.runBoundaries += 1;
   }
 
   private resetStream(): void {
@@ -1307,7 +1308,6 @@ export class AgentSessionWrapper {
     delete event.web;
     switch (event.type) {
       case "agent_start":
-        this.runBoundaries += 1;
         this.responseObserved = false;
         this.responseRunActive = true;
         this.clearLiveSnapshots();
@@ -1324,7 +1324,6 @@ export class AgentSessionWrapper {
         break;
       case "prompt_error":
       case "prompt_result":
-        this.runBoundaries += 1;
         this.responseRunActive = false;
         this.streaming = false;
         this.compacting = false;
@@ -1875,6 +1874,7 @@ export class AgentSessionWrapper {
       this.awaitingAgentStart = false;
       this.awaitingAgentStartDeadline = 0;
       this.continuationGraceUntil = 0;
+      this.runBoundaries += 1;
       this.bashRunning = false;
       this.streaming = false;
       this.compacting = false;
@@ -2115,7 +2115,7 @@ export class AgentSessionWrapper {
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         // What this dispatch resets, kept so a failure can hand an active run back untouched.
         const before = streamingBehavior ? null : {
-          active: this.streaming || this.promptRunning, runBoundaries: this.runBoundaries, visibleOutputs: this.visibleOutputs,
+          active: this.streaming || this.promptRunning || this.compacting, runBoundaries: this.runBoundaries, visibleOutputs: this.visibleOutputs,
           responseObserved: this.responseObserved, responseRunActive: this.responseRunActive, continuationGraceUntil: this.continuationGraceUntil,
           awaitingAgentStart: this.awaitingAgentStart, awaitingAgentStartDeadline: this.awaitingAgentStartDeadline,
         };
@@ -2176,8 +2176,9 @@ export class AgentSessionWrapper {
               }
               throw error;
             }
-            // A run that started meanwhile (another tab or server) owns the state its agent_start set.
-            if (this.streaming) throw error;
+            // A run that started meanwhile (another tab or server) owns the state its agent_start set, and a prompt
+            // still in flight or acked and awaiting its agent_start owns the pending state.
+            if (this.streaming || this.awaitingAgentStart || this.promptDispatchPendingCount > 1) throw error;
           }
           this.promptRunning = false;
           this.awaitingAgentStart = false;
