@@ -498,6 +498,8 @@ export class RpcProcess {
    * prompt reply carries no data, so the extension answers with a `tau_reply` frame naming `replyId`.
    */
   callExtension<T = unknown>(command: string, args: Record<string, unknown>, timeoutMs = 30_000): Promise<T> {
+    // A pi started without the extension (tests) would send the call, an API key included, to the model as a prompt.
+    if (process.env.TAU_NO_EXTENSION === "1") return Promise.reject(new Error(`/${command} needs tau's pi extension`));
     const replyId = randomUUID();
     const reply = new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {

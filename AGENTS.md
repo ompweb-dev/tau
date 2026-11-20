@@ -86,7 +86,7 @@ pi speaks JSON lines on stdin/stdout: commands answered by `{type:"response", id
 - `TAU_NO_EXTENSION=1` starts pi without the extension (tests only). `resolveTauExtensionPath` looks under
   `TAU_PACKAGE_DIR`, then beside `rpc-process.ts`, never in the session's cwd. Without that flag a missing extension
   refuses the spawn (`TAU_EXTENSION_MISSING`): pi would read every `/tau_*` call as a prompt and send it, an API key
-  included, to the model. With the flag the utility's extension calls are refused for the same reason.
+  included, to the model. With the flag `RpcProcess.callExtension` refuses every call for the same reason.
 
 ### `lib/pi/` (pi foundations)
 
