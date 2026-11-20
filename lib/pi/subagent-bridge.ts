@@ -99,8 +99,9 @@ export class SubagentBridge {
       const index = number(row.index) ?? position;
       const id = foregroundSubagentId(toolCallId, index);
       let [status, progressStatus] = ROW_STATUS[String(row.status)] ?? ["started", "running"];
-      // The call ended: a child it still lists as running ended with it.
-      if (frame.type === "tool_execution_end" && !terminal(status)) [status, progressStatus] = frame.isError === true ? ["failed", "failed"] : ["completed", "completed"];
+      // The call ended: a child it still lists as running ended with it. A detached child is paused, not ended:
+      // pi-subagents keeps it in its foreground runs until someone waits on it.
+      if (frame.type === "tool_execution_end" && !terminal(status) && row.status !== "detached") [status, progressStatus] = frame.isError === true ? ["failed", "failed"] : ["completed", "completed"];
       frames.push(...this.update({
         id, index, agent: text(row.agent) ?? "subagent", status, detached: row.status === "detached",
         description: text(row.sessionName), task: text(row.task), sessionFile: text(row.sessionFile), parentToolCallId: toolCallId,
