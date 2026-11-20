@@ -1051,12 +1051,13 @@ async function deliver(entry: Row): Promise<Outcome> {
   }
 }
 
-/** How an entry goes to pi (spec O3): a prompt during a run as a follow-up, a steer with no run to steer as a
- * follow-up. pi refuses extension commands in `steer` and `follow_up`, so a slash command sent during a run goes as a
- * prompt with its streamingBehavior (queued like a follow-up or steer). */
+/** How an entry goes to pi (spec O3): with no run every entry is a prompt (pi's `follow_up` only queues, so with
+ * no turn it would wait for the next one), during a run a prompt goes as a follow-up. pi refuses extension commands
+ * in `steer` and `follow_up`, so a slash command sent during a run goes as a prompt with its streamingBehavior
+ * (queued like a follow-up or steer). */
 function commandOf(entry: Row, running: boolean): { type: string; streamingBehavior?: "steer" | "followUp" } {
   const slash = entry.message.startsWith("/");
-  if (!running) return { type: entry.mode === "prompt" || slash ? "prompt" : "follow_up" };
+  if (!running) return { type: "prompt" };
   if (slash) return { type: "prompt", streamingBehavior: entry.mode === "steer" ? "steer" : "followUp" };
   return { type: entry.mode === "steer" ? "steer" : "follow_up" };
 }
