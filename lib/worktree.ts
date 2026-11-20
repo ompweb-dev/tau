@@ -222,7 +222,7 @@ export async function registeredProjectFor(cwd: string): Promise<ProjectRegistry
   if (existsSync(join(top, ".git"))) keys.push((await resolveProject(top)).projectRoot);
   const within = (key: string, root: string) => key === root || key.startsWith(`${root}/`);
   return loadProjectRegistry().projects.find((project) => {
-    if (project.hidden) return false;
+    if (project.hidden || project.discovered) return false;
     const root = comparableProjectPath(project.path);
     return keys.some((key) => within(comparableProjectPath(key), root) || within(comparableProjectPath(key), `${root}-worktrees`));
   });

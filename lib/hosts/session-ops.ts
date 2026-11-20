@@ -753,7 +753,7 @@ export const sessionOps: SessionOps = {
     for (const update of merged.values()) {
       const key = comparableProjectPath(update.path);
       if (!registry.projects.some((p) => comparableProjectPath(p.path) === key)) {
-        registry = upsertProject(registry, update.path);
+        registry = upsertProject(registry, update.path, undefined, undefined, true);
         newRoots.push(update.path);
       }
     }

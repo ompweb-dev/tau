@@ -33,6 +33,9 @@ export interface ProjectRegistryEntry {
   pinOrder?: number;
   /** Workspace-level pi launch configuration. */
   launchConfig?: ProjectLaunchConfig;
+  /** Registered only to keep a session-discovered row's display data (reorder, rename, launch config), never added
+   *  by the user: such a project is not trusted (`registeredProjectFor`, pi's `--approve`). An explicit add clears it. */
+  discovered?: true;
 }
 
 export interface ProjectPresentationUpdate {
@@ -130,6 +133,7 @@ export function parseProjectRegistry(raw: string): ProjectRegistryFile {
         sortOrder: "sortOrder" in item && typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder) ? item.sortOrder : undefined,
         pinOrder: "pinOrder" in item && typeof item.pinOrder === "number" && Number.isFinite(item.pinOrder) ? item.pinOrder : undefined,
         launchConfig: parseLaunchConfig(item as Record<string, unknown>),
+        ...("discovered" in item && item.discovered === true ? { discovered: true as const } : {}),
       });
     }
     return { version: 1, projects: entries };
@@ -174,6 +178,7 @@ export function upsertProject(
   path: string,
   now = new Date().toISOString(),
   launchConfig?: ProjectLaunchConfig,
+  discovered = false,
 ): ProjectRegistryFile {
   const canonical = canonicalProjectPath(path);
   const key = comparableProjectPath(canonical);
@@ -182,7 +187,7 @@ export function upsertProject(
   // An omitted launchConfig preserves the stored one: re-adding a workspace
   // (e.g. un-hiding) without config must not wipe it. Explicit clear goes
   // through PATCH with null.
-  projects.push({ path: canonical, addedAt: now, hidden: false, launchConfig: launchConfig ?? existing?.launchConfig });
+  projects.push({ path: canonical, addedAt: now, hidden: false, launchConfig: launchConfig ?? existing?.launchConfig, ...(discovered ? { discovered: true as const } : {}) });
   return { version: 1, projects };
 }
 
