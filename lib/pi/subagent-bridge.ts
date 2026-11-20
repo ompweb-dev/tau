@@ -18,6 +18,8 @@ interface Entry {
   agent: string;
   status: Status;
   detached: boolean;
+  /** Its foreground `subagent` call ended: no later frame of that call can reach it. */
+  callEnded?: true;
   description?: string;
   task?: string;
   sessionFile?: string;
@@ -83,12 +85,12 @@ export class SubagentBridge {
     return null;
   }
 
-  /** The children still running, as get_subagents answers them. A foreground child detached when its call ended is left
-   *  out: no later frame of that call can end it (a wait on it reports under another call), so a snapshot would keep it
-   *  running for good. */
+  /** The children still running, as get_subagents answers them. A foreground child still detached when its call ended is
+   *  left out: no later frame of that call can end it (a wait on it reports under another call), so a snapshot would keep
+   *  it running for good. */
   running(): Array<Record<string, unknown>> {
-    return [...this.entries.values()].filter((entry) => !terminal(entry.status) && !(entry.detached && entry.parentToolCallId))
-      .map((entry) => defined({ ...entry }));
+    return [...this.entries.values()].filter((entry) => !terminal(entry.status) && !(entry.detached && entry.callEnded))
+      .map((entry) => { const copy: Partial<Entry> = { ...entry }; delete copy.callEnded; return defined(copy); });
   }
 
   private foreground(frame: Frame): Frame[] {
@@ -108,6 +110,7 @@ export class SubagentBridge {
       frames.push(...this.update({
         id, index, agent: text(row.agent) ?? "subagent", status, detached: row.status === "detached",
         description: text(row.sessionName), task: text(row.task), sessionFile: text(row.sessionFile), parentToolCallId: toolCallId,
+        ...(frame.type === "tool_execution_end" ? { callEnded: true as const } : {}),
         progress: rowProgress(id, row, progressStatus), lastUpdate: Date.now(),
       }));
     });

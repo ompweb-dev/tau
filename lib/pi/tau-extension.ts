@@ -28,6 +28,7 @@ interface ModelStream extends AsyncIterable<{ type: string; delta?: string }> {
 interface PiContext {
   ui: PiUI;
   cwd: string;
+  isIdle?: () => boolean;
   model?: unknown;
   modelRegistry?: {
     streamSimple(model: unknown, context: { systemPrompt?: string; messages: unknown[] }, options?: { signal?: AbortSignal }): ModelStream;
@@ -308,13 +309,14 @@ export default function tauExtension(pi: PiExtensionAPI): void {
   pi.on("input", (event, ctx) => {
     // A new prompt replaces one pi refused after its input handlers ran (no model or key), so that name never sticks.
     if (!event.streamingBehavior) starting = null;
-    // Names come just before their prompt: the newest of equal texts is this one, an older one was never admitted.
-    const index = named.findLastIndex((item) => item.text === event.text);
+    // Names go out in their prompts' order, so the oldest of equal texts is this one.
+    const index = named.findIndex((item) => item.text === event.text);
     if (index === -1) return;
     const item = named.splice(index, 1)[0];
     if (event.streamingBehavior === "steer") queued.steering.push(item);
     else if (event.streamingBehavior === "followUp") queued.followUp.push(item);
-    else starting = item;
+    // A bare prompt during a run is refused right after its input handlers ("already processing"): it never starts.
+    else if (ctx.isIdle?.() !== false) starting = item;
     if (event.streamingBehavior) emitQueue(ctx);
   });
 

@@ -89,6 +89,8 @@ function canonicalPath(path: string): string {
 }
 
 // macOS and Windows filesystems ignore case by default: a missing `~/.PI` would be pi's `~/.pi`.
+// shortcut: lowercases only (no Unicode normalization) and over-refuses `~/.PI` on a case-sensitive APFS volume; probe the
+// volume's case sensitivity if that ever matters.
 const fold = (path: string) => process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 const within = (path: string, root: string) => {
   const [p, r] = [fold(path), fold(root)];
