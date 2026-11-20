@@ -100,8 +100,8 @@ export function isReservedLaunchArg(arg: string): boolean {
   return RESERVED_LAUNCH_ARGS.has(arg.split("=", 1)[0]);
 }
 
-/** Preserve stored strings so invalid legacy configurations can be corrected
- * rather than leaving orphaned arguments. A legacy `profile` is ignored. */
+/** Preserve stored strings so invalid configurations can be corrected
+ * rather than leaving orphaned arguments. Only `extraArgs` is read. */
 function parseLaunchConfig(item: Record<string, unknown>): ProjectLaunchConfig | undefined {
   const raw = item.launchConfig;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;

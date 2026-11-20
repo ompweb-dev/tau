@@ -29,7 +29,7 @@ import { readAgentToolsEnabledFromDisk } from "./web-settings";
 export const KEEP_DELIVERED_MS = 8 * 24 * 60 * 60 * 1000;
 /** A session that was busy (restarting, an MCP or history edit) or a host op that timed out: tried again after this. */
 export const RETRY_MS = 5_000;
-/** Fixed snapshot budget below the browser link's 32 MiB backlog; per-entry error margin and frame envelope included. */
+/** Fixed snapshot budget; per-entry error margin and frame envelope included. */
 export const MAX_OUTBOX_BYTES = 16 * 1024 * 1024;
 export const GITHUB_WATCH_OUTBOX_OWNER = "tau:github-watch";
 const MAX_GLOBAL_OUTBOX_BYTES = 256 * 1024 * 1024;
@@ -39,8 +39,7 @@ const ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MODES: Record<OutboxMode, true> = { prompt: true, followUp: true, steer: true };
 
 
-/** `advisor` is a retired column (NOT NULL in existing databases): always written as 0, never read. */
-const COLUMNS = "id, session_id, mode, message, images, uploads, owner, advisor, state, error, may_have_been_sent, created_at, upload_receipts, previous_entry_ids, source_session_id, settlement, replacement_id, replacement_digest, payload_bytes, origin";
+const COLUMNS = "id, session_id, mode, message, images, uploads, owner, state, error, may_have_been_sent, created_at, upload_receipts, previous_entry_ids, source_session_id, settlement, replacement_id, replacement_digest, payload_bytes, origin";
 const RECEIPT_PIN_SCHEMA = "CREATE TABLE IF NOT EXISTS github_receipt_pins (session_id TEXT NOT NULL, entry_id TEXT NOT NULL, PRIMARY KEY (entry_id, session_id))";
 
 /** `owner`: the web session whose uploads the entry attaches. */
@@ -570,8 +569,8 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         const settledAt = Date.now();
         database.prepare("UPDATE entries SET done_at = ? WHERE id = ? AND replacement_id = ?").run(settledAt, original.id, original.replacement_id);
         // Persist a matching-ID terminal receipt so this browser can replay after a lost acknowledgement.
-        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, NULL, 0, NULL, ?)`)
-          .run(id, original.session_id, original.mode, original.owner, 0, settledAt, original.source_session_id, original.replacement_id, settledAt);
+        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, NULL, 0, NULL, ?)`)
+          .run(id, original.session_id, original.mode, original.owner, settledAt, original.source_session_id, original.replacement_id, settledAt);
         const entry = row(id);
         if (!entry) throw new Error("The replacement receipt could not be read after commit");
         return { kind: "duplicate", entry, originalSession: original.session_id, replaces: original.id };
@@ -618,11 +617,11 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
       const global = database.prepare("SELECT COALESCE(SUM(payload_bytes), 0) AS bytes, COUNT(*) AS count FROM entries WHERE state != 'delivered'").get() as { bytes: number; count: number };
       if (global.bytes - replacedBytes + payloadBytes > MAX_GLOBAL_OUTBOX_BYTES
         || global.count - (replaceable ? 1 : 0) >= MAX_GLOBAL_OUTBOX_ENTRIES) return { kind: "full" };
-      database.prepare(`INSERT INTO entries (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'held', NULL, 0, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?)`).run(
+      database.prepare(`INSERT INTO entries (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, 'held', NULL, 0, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?)`).run(
         id, sessionId, mode, message,
         imagePayload,
         uploadPayload,
-        entryOwner, 0, now,
+        entryOwner, now,
         savedUploads,
         sessionId, retryDigest, payloadBytes, savedOriginPayload,
       );
@@ -635,8 +634,8 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         retiredRoot = original;
       } else if (!original && typeof replaces === "string") {
         // A browser-only root needs the same durable identity even when this copy's acknowledgement is lost.
-        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, ?, 0, NULL, ?)`)
-          .run(replaces, sessionId, mode, entryOwner, 0, now, sessionId, id, retryDigest, now);
+        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, ?, 0, NULL, ?)`)
+          .run(replaces, sessionId, mode, entryOwner, now, sessionId, id, retryDigest, now);
         retiredRoot = row(replaces);
         if (!retiredRoot) throw new Error("The browser retry mapping could not be read after commit");
       }

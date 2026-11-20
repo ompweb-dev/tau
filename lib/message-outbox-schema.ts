@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS entries (
   uploads TEXT,
   upload_receipts TEXT,
   owner TEXT NOT NULL,
-  advisor INTEGER NOT NULL,
   state TEXT NOT NULL,
   error TEXT,
   may_have_been_sent INTEGER NOT NULL DEFAULT 0,

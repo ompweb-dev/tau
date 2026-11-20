@@ -147,8 +147,8 @@ plaintext password into its transcript. Browser sign-ins last 30 days.
 ### Behind a reverse proxy
 
 Without TLS, tau warns when it listens on a non-loopback address. Serve it over HTTPS through a reverse proxy or a
-VPN, and keep tau itself bound to `127.0.0.1`. The proxy must pass WebSocket upgrades (the browser uses
-`/api/events/link`, hosts use `/api/hosts/link` and `/api/hosts/maintenance`). It must not add its own authentication
+VPN, and keep tau itself bound to `127.0.0.1`. The proxy must pass WebSocket upgrades (hosts use
+`/api/hosts/link` and `/api/hosts/maintenance`). It must not add its own authentication
 on the paths that hosts authenticate with their token: `/api/hosts/link`, `/api/hosts/maintenance` and
 `/api/hosts/cluster-config/…`.
 

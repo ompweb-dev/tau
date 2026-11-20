@@ -82,7 +82,7 @@ export async function PUT(req: Request) {
     }
     for (const project of pool.projects) {
       if (!hasOnlyKeys(project, ["id", "name", "origin", "defaultRef", "clonePaths", "addedAt", "hidden", "alias", "sortOrder", "pinOrder", "launchConfig"])
-        || (project.launchConfig !== undefined && !hasOnlyKeys(project.launchConfig, ["profile", "advisor", "extraArgs"] /* advisor: legacy key, ignored */))) {
+        || (project.launchConfig !== undefined && !hasOnlyKeys(project.launchConfig, ["extraArgs"]))) {
         return fail("Invalid pool project configuration", 400);
       }
     }

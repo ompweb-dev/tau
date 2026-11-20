@@ -263,8 +263,8 @@ registrations and the subagent roster only after successfully connecting.
   which clients get the header is the reverse proxy's job, because tau has no
   client address it can trust.
 - tau's own secrets (`TAU_SECRET_ENV_VARS`: `TAU_PASSWORD`, `TAU_PASSWORD_HASH`,
-  `TAU_TRUSTED_HEADER_SHA256` and its legacy name `TAU_TRUSTED_HEADER_SECRET`)
-  are stripped from every child process environment through
+  `TAU_TRUSTED_HEADER_SHA256`, and defensively `TAU_TRUSTED_HEADER_SECRET`, which
+  the server never reads) are stripped from every child process environment through
   `createChildProcessEnvironment` (`lib/project-command-env.ts`). `TAU_*` values
   that are configuration rather than secrets (`TAU_PACKAGE_DIR`, `TAU_PI_BIN`,
   ...) are kept.

@@ -123,7 +123,7 @@ tau が受け付けるのはハッシュだけです。`--password` フラグは
 
 ### リバースプロキシの背後で
 
-TLS なしで非ループバックアドレスを待ち受けると、tau は警告を出します。リバースプロキシまたは VPN を通して HTTPS で配信し、tau 自体は `127.0.0.1` にバインドしてください。プロキシは WebSocket のアップグレードを通す必要があります（ブラウザは `/api/events/link`、ホストは `/api/hosts/link` と `/api/hosts/maintenance` を使います）。ホストがトークンで認証するパス（`/api/hosts/link`、`/api/hosts/maintenance`、`/api/hosts/cluster-config/…`）には、プロキシ独自の認証を加えないでください。
+TLS なしで非ループバックアドレスを待ち受けると、tau は警告を出します。リバースプロキシまたは VPN を通して HTTPS で配信し、tau 自体は `127.0.0.1` にバインドしてください。プロキシは WebSocket のアップグレードを通す必要があります（ホストは `/api/hosts/link` と `/api/hosts/maintenance` を使います）。ホストがトークンで認証するパス（`/api/hosts/link`、`/api/hosts/maintenance`、`/api/hosts/cluster-config/…`）には、プロキシ独自の認証を加えないでください。
 
 #### 信頼できるプロキシでのパスワード省略
 

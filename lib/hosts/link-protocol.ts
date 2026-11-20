@@ -233,11 +233,6 @@ export function withSeq(line: string, seq: number): string {
   return `${line.slice(0, -SEQ_TAIL.length)}${seq}}\n`;
 }
 
-/** A JSON object's text as a line `LinkSender` numbers (`withSeq`), like encodeQueued without the typed message. */
-export function queuedLine(json: string): string {
-  return `${json.slice(0, -1)},"seq":${SEQ_TAIL}`;
-}
-
 type Obj = Record<string, unknown>;
 
 function fail(message: string): never {
@@ -743,7 +738,7 @@ export class PartJoiner {
   private chunks: string[] | null = null;
   private at = 0;
 
-  /** `maxChars`: the longest joined line in UTF-16 units (the browser link's commands are up to 8 MiB plus their envelope). */
+  /** `maxChars`: the longest joined line in UTF-16 units. */
   constructor(private readonly maxChars: number = LINK_LIMITS.maxLineBytes) {}
 
   /** A copy to try a frame's parts on: the original stays as it was until the frame is known to decode. */

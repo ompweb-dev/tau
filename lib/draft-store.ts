@@ -42,17 +42,6 @@ export interface DraftRecovery {
   promptOnly?: boolean;
 }
 
-/** The `{ data, mimeType }` images in a pi RPC payload; anything else is dropped. */
-export function toDraftImages(value: unknown): ChatDraftImage[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((image: unknown) => (
-    image && typeof image === "object" && "data" in image && "mimeType" in image
-      && typeof image.data === "string" && typeof image.mimeType === "string"
-      ? [{ data: image.data, mimeType: image.mimeType }]
-      : []
-  ));
-}
-
 export function mergeRecoveredText(current: string, { text, replace }: DraftRecovery): string {
   if (!text) return current;
   if (replace && current.startsWith(replace.lead)) return text + current.slice(replace.lead.length);

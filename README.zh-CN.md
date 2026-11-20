@@ -123,7 +123,7 @@ tau 只接受哈希。`--password` 参数会被拒绝。明文的 `TAU_PASSWORD`
 
 ### 在反向代理之后
 
-在非回环地址上无 TLS 监听时，tau 会发出警告。请通过反向代理或 VPN 以 HTTPS 提供服务，并让 tau 本身绑定到 `127.0.0.1`。代理必须转发 WebSocket 升级（浏览器使用 `/api/events/link`，主机使用 `/api/hosts/link` 和 `/api/hosts/maintenance`）。对于主机用令牌认证的路径（`/api/hosts/link`、`/api/hosts/maintenance` 和 `/api/hosts/cluster-config/…`），代理不得再加自己的认证。
+在非回环地址上无 TLS 监听时，tau 会发出警告。请通过反向代理或 VPN 以 HTTPS 提供服务，并让 tau 本身绑定到 `127.0.0.1`。代理必须转发 WebSocket 升级（主机使用 `/api/hosts/link` 和 `/api/hosts/maintenance`）。对于主机用令牌认证的路径（`/api/hosts/link`、`/api/hosts/maintenance` 和 `/api/hosts/cluster-config/…`），代理不得再加自己的认证。
 
 #### 在受信任的代理后跳过密码
 

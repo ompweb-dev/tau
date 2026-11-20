@@ -123,7 +123,7 @@ tau 只接受雜湊。`--password` 參數會被拒絕。明文的 `TAU_PASSWORD`
 
 ### 在反向代理之後
 
-在非迴路位址上無 TLS 監聽時，tau 會發出警告。請透過反向代理或 VPN 以 HTTPS 提供服務，並讓 tau 本身繫結到 `127.0.0.1`。代理必須轉送 WebSocket 升級（瀏覽器使用 `/api/events/link`，主機使用 `/api/hosts/link` 和 `/api/hosts/maintenance`）。對於主機以權杖驗證的路徑（`/api/hosts/link`、`/api/hosts/maintenance` 和 `/api/hosts/cluster-config/…`），代理不得再加上自己的驗證。
+在非迴路位址上無 TLS 監聽時，tau 會發出警告。請透過反向代理或 VPN 以 HTTPS 提供服務，並讓 tau 本身繫結到 `127.0.0.1`。代理必須轉送 WebSocket 升級（主機使用 `/api/hosts/link` 和 `/api/hosts/maintenance`）。對於主機以權杖驗證的路徑（`/api/hosts/link`、`/api/hosts/maintenance` 和 `/api/hosts/cluster-config/…`），代理不得再加上自己的驗證。
 
 #### 在受信任的代理後略過密碼
 

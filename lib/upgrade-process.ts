@@ -285,22 +285,6 @@ function belongsToInstall(row: ProcessInfo, installDir: string): boolean {
   return row.args.slice(0, 4).some((arg) => !arg.startsWith("-") && inside(installDir, isAbsolute(arg) ? arg : resolve(base, arg)));
 }
 
-/** Running servers in this installation; unknown install-bound commands are never silently dismissed. */
-export async function findUpgradeServerProcesses(installDir: string): Promise<number[]> {
-  const root = realpathSync(installDir);
-  const servers: number[] = [];
-  for (const row of await listProcesses()) {
-    if (row.state === "Z" || !belongsToInstall(row, root) || isHostCommand(row.args)) continue;
-    const args = row.args.slice(1);
-    if (args.some((arg) => ["recover-host", "host-update-worker", "server-update-worker", "preflight", "--version", "--help"].includes(arg) || /(?:^|[/\\])(?:host-update-worker|server-update-worker|recover-host)\.[cm]?[jt]s$/.test(arg))) continue;
-    const script = args.some((arg) => inside(root, arg) && [join(root, "bin", "tau.js"), join(root, "server", "main.ts")].some((path) => inside(path, arg)));
-    const compiled = [join(root, "tau"), join(root, "tau.exe")].some((path) => inside(path, row.exe));
-    if (!script && !compiled) fail(`Cannot determine whether process ${row.pid} is a server in ${root}; refusing to assume its supervisor is independent`);
-    servers.push(row.pid);
-  }
-  return servers;
-}
-
 /** `start` and its parents, nearest first; a parent younger than its child is a recycled pid, so the real one is gone. */
 function ancestry(byPid: Map<number, ProcessInfo>, start: ProcessInfo, limit = 8): ProcessInfo[] {
   const chain = [start];
