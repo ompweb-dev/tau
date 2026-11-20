@@ -1,24 +1,23 @@
 import { execFile } from "child_process";
-import { existsSync, promises as fs } from "fs";
+import { existsSync, promises as fs, readFileSync, realpathSync, type Dirent } from "fs";
 import { homedir } from "os";
 import * as path from "path";
 import { promisify } from "util";
 import { parse as parseYaml } from "yaml";
 import { existingPathWithinRootsChecker, getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { resolveOmpBin, versionFingerprint, wrapWindowsScript } from "@/lib/omp/omp-cli";
-import { ensureAgentDir, getAgentDir } from "@/lib/omp/paths";
+import { resolvePiBin, wrapWindowsScript } from "@/lib/pi/pi-cli";
+import { ensureAgentDir, getAgentDir } from "@/lib/pi/paths";
+import { parsePiListOutput } from "@/lib/pi/plugins-cli";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
-import { isRecord } from "@/lib/type-guards";
+import { registeredProjectFor } from "@/lib/worktree";
 import type { SkillInfo } from "@/lib/api-types";
 import { annotateSkillsWithInstallInfo } from "@/lib/skill-lock";
 
 /**
- * Pure-Node skill discovery mirroring omp's providers
- * (oh-my-pi/packages/coding-agent/src/discovery/{builtin,claude,agents,codex,github}.ts).
- * omp-web cannot import the Bun-only SDK, so the scan rules are replicated:
- * each provider contributes <root>/<name>/SKILL.md skills, higher-priority
- * providers win name collisions, and `enabled: false` frontmatter hides a
- * skill entirely.
+ * Pure-Node skill discovery mirroring pi 1.5.2 (dist/core/package-manager.js `resolve` and
+ * `addAutoDiscoveredResources`, dist/core/skills.js `loadSkills`). tau never imports pi's SDK, so the rules are
+ * replicated: the sources are read in pi's precedence order (`resourcePrecedenceRank`), the first skill of a name
+ * wins, and a file reached twice (a symlink) counts once.
  */
 
 export interface SkillDiagnostic {
@@ -30,15 +29,6 @@ export interface SkillDiagnostic {
 export interface SkillsWithDiagnostics {
   skills: SkillInfo[];
   diagnostics: SkillDiagnostic[];
-}
-
-interface SkillScanRoot {
-  dir: string;
-  /** Provider label surfaced as sourceInfo.source (".omp", ".claude", ...). */
-  source: string;
-  scope: "user" | "project";
-  /** omp skips skills without a description for these providers. */
-  requireDescription?: boolean;
 }
 
 export interface ParsedSkillFrontmatter {
@@ -63,100 +53,23 @@ export function parseSkillFrontmatter(content: string): ParsedSkillFrontmatter {
   }
 }
 
-function isTruthyFlag(value: unknown): boolean {
-  return value === true || value === "true";
-}
+/** The only key pi reads (skills.js `loadSkillFromFile`), and only a YAML `true`. */
+const DISABLE_KEY = "disable-model-invocation";
 
-/** Ancestor directories from cwd up to the git repo root (or $HOME / fs root),
- * closest first — matches omp's project-level walk-up discovery. */
-function getAncestorDirs(cwd: string): string[] {
-  const home = homedir();
-  const dirs: string[] = [];
-  let current = path.resolve(cwd);
-  while (true) {
-    dirs.push(current);
-    if (existsSync(path.join(current, ".git"))) break;
-    if (current === home) break;
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return dirs;
-}
-
-/** Scan roots in omp's provider priority order (highest first): .omp (100),
- * .claude (80), .agent/.agents + .codex + .github (70), managed skills (5). */
-function buildScanRoots(cwd: string): SkillScanRoot[] {
-  const home = homedir();
-  const agentDir = getAgentDir();
-  const ancestors = getAncestorDirs(cwd);
-  const projectAncestors = ancestors.filter((dir) => dir !== home);
-  const roots: SkillScanRoot[] = [];
-
-  // builtin (.omp): project walk-up first (closest first), then user dir.
-  for (const dir of projectAncestors) {
-    roots.push({ dir: path.join(dir, ".omp", "skills"), source: ".omp", scope: "project", requireDescription: true });
-  }
-  roots.push({ dir: path.join(agentDir, "skills"), source: ".omp", scope: "user", requireDescription: true });
-
-  // claude compat: user ~/.claude/skills + project .claude/skills walk-up.
-  const claudeHome = process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude");
-  roots.push({ dir: path.join(claudeHome, "skills"), source: ".claude", scope: "user" });
-  for (const dir of projectAncestors) {
-    roots.push({ dir: path.join(dir, ".claude", "skills"), source: ".claude", scope: "project" });
-  }
-
-  // agent dirs compat (.agent/.agents): project walk-up + user home.
-  for (const dir of projectAncestors) {
-    roots.push({ dir: path.join(dir, ".agent", "skills"), source: ".agents", scope: "project" });
-    roots.push({ dir: path.join(dir, ".agents", "skills"), source: ".agents", scope: "project" });
-  }
-  roots.push({ dir: path.join(home, ".agent", "skills"), source: ".agents", scope: "user" });
-  roots.push({ dir: path.join(home, ".agents", "skills"), source: ".agents", scope: "user" });
-
-  // codex compat: user ~/.codex/skills + project .codex/skills.
-  roots.push({ dir: path.join(home, ".codex", "skills"), source: ".codex", scope: "user" });
-  roots.push({ dir: path.join(cwd, ".codex", "skills"), source: ".codex", scope: "project" });
-
-  // github compat: <repoRoot>/.github/skills.
-  const repoRoot = ancestors[ancestors.length - 1];
-  roots.push({ dir: path.join(repoRoot, ".github", "skills"), source: ".github", scope: "project", requireDescription: true });
-
-  // managed auto-learn skills (lowest priority).
-  roots.push({ dir: path.join(agentDir, "managed-skills"), source: "managed", scope: "user", requireDescription: true });
-
-  return roots;
-}
-
-/** Directories the discovery walk reads, for callers that must authorize a
- * skill path (single source of truth with buildScanRoots — a narrower list
- * would reject skills the app itself discovered and installed). Without a cwd
- * only the cwd-independent user-scope roots are returned. */
-export function getSkillScanRootDirs(cwd?: string): string[] {
-  return buildScanRoots(cwd ?? homedir()).map((root) => root.dir);
-}
-
-const DISABLE_INVOCATION_KEYS = ["disable-model-invocation", "disableModelInvocation", "hide"] as const;
-/** Agent Skills standard spelling — used when no variant is present yet. */
-const CANONICAL_DISABLE_KEY = DISABLE_INVOCATION_KEYS[0];
-
-/** True when any of the three spellings omp honors is set
- * (frontmatter.hide === true || frontmatter.disableModelInvocation === true,
- * with `disable-model-invocation` normalized into the latter). */
 export function readDisableModelInvocation(frontmatter: Record<string, unknown>): boolean {
-  return DISABLE_INVOCATION_KEYS.some((key) => isTruthyFlag(frontmatter[key]));
+  return frontmatter[DISABLE_KEY] === true;
 }
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/;
-const DISABLE_KEY_LINE_RE = new RegExp(`^(?:${DISABLE_INVOCATION_KEYS.join("|")})[ \\t]*:.*$`);
+const DISABLE_KEY_LINE_RE = new RegExp(`^${DISABLE_KEY}[ \\t]*:.*$`);
 
 /** Set/clear the disable-model-invocation flag in a SKILL.md, editing the key
- * line already present (in whichever of the three spellings) instead of
- * prepending a second copy, which would make the frontmatter invalid YAML. */
+ * line already present instead of prepending a second copy, which would make
+ * the frontmatter invalid YAML. */
 export function setDisableModelInvocation(content: string, disable: boolean): string {
   const match = FRONTMATTER_RE.exec(content);
   if (!match) {
-    return disable ? `---\n${CANONICAL_DISABLE_KEY}: true\n---\n${content}` : content;
+    return disable ? `---\n${DISABLE_KEY}: true\n---\n${content}` : content;
   }
 
   const eol = match[0].includes("\r\n") ? "\r\n" : "\n";
@@ -168,17 +81,9 @@ export function setDisableModelInvocation(content: string, disable: boolean): st
 
   let next: string[];
   if (disable) {
-    if (hits.length === 0) {
-      next = [`${CANONICAL_DISABLE_KEY}: true`, ...lines];
-    } else {
-      // Keep the spelling the file already uses; drop any duplicate variants so
-      // a stale `hide: true` cannot re-enable hiding on the next toggle.
-      const keep = hits[0];
-      const keyName = /^([\w-]+)/.exec(lines[keep])?.[1] ?? CANONICAL_DISABLE_KEY;
-      next = lines
-        .map((line, index) => (index === keep ? `${keyName}: true` : line))
-        .filter((_, index) => index === keep || !hits.includes(index));
-    }
+    next = hits.length === 0
+      ? [`${DISABLE_KEY}: true`, ...lines]
+      : lines.map((line, index) => (index === hits[0] ? `${DISABLE_KEY}: true` : line)).filter((_, index) => !hits.includes(index) || index === hits[0]);
   } else {
     if (hits.length === 0) return content;
     next = lines.filter((_, index) => !hits.includes(index));
@@ -188,174 +93,252 @@ export function setDisableModelInvocation(content: string, disable: boolean): st
   return block + content.slice(match[0].length);
 }
 
-async function scanRoot(root: SkillScanRoot, diagnostics: SkillDiagnostic[]): Promise<SkillInfo[]> {
-  let entries;
-  try {
-    // `root.dir` is user-controlled and can be outside the app. Keep this
-    // runtime discovery opaque to Next's NFT tracer so builds never glob the
-    // user's profile (or protected Windows junctions).
-    const readDirectory = Reflect.get(fs, "readdir") as typeof fs.readdir;
-    entries = await readDirectory(root.dir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      diagnostics.push({
-        type: "warning",
-        message: `Failed to read skills directory: ${String(error)}`,
-        path: root.dir,
-      });
-    }
-    return [];
-  }
-
-  const skills: SkillInfo[] = [];
-  await Promise.all(entries.map(async (entry) => {
-    if (entry.name.startsWith(".")) return;
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) return;
-    const skillPath = path.join(root.dir, entry.name, "SKILL.md");
-    let content: string;
-    try {
-      content = await fs.readFile(skillPath, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        diagnostics.push({ type: "warning", message: "Failed to read skill file", path: skillPath });
-      }
-      return;
-    }
-    const { frontmatter } = parseSkillFrontmatter(content);
-    if (frontmatter.enabled === false) return;
-    const description = typeof frontmatter.description === "string" ? frontmatter.description : "";
-    if (root.requireDescription && !description) return;
-    const rawName = frontmatter.name;
-    const name = typeof rawName === "string" && rawName.trim() ? rawName.trim() : entry.name;
-    skills.push({
-      name,
-      description,
-      filePath: skillPath,
-      baseDir: path.join(root.dir, entry.name),
-      disableModelInvocation: readDisableModelInvocation(frontmatter),
-      sourceInfo: { source: root.source, scope: root.scope },
-    });
-  }));
-  return skills;
+type ScanMode = "pi" | "agents";
+interface SkillSource {
+  /** Files or directories, as pi resolves them for this source. */
+  paths: string[];
+  /** Directories are walked with collectSkillEntries in this mode; files are taken as they are. */
+  mode: ScanMode;
+  /** sourceInfo.source: ".pi", ".agents", "settings", or the package source. */
+  source: string;
+  scope: "user" | "project";
 }
 
-/** omp provider id (the `source` field is "provider:level") mapped to the
- * provider label the UI renders (the owning directory). */
-const SOURCE_LABEL_BY_PROVIDER: Record<string, string> = {
-  native: ".omp",
-  claude: ".claude",
-  agents: ".agents",
-  codex: ".codex",
-  github: ".github",
-  "omp-managed": "managed",
-};
+/** pi's `collectAncestorAgentsSkillDirs`: `.agents/skills` from cwd up to the git root, or the filesystem root
+ * outside a repository, without the user's own `~/.agents/skills`. */
+function ancestorAgentsSkillDirs(cwd: string): string[] {
+  const userDir = path.join(homedir(), ".agents", "skills");
+  const dirs: string[] = [];
+  const start = path.resolve(cwd);
+  let gitRoot: string | null = null;
+  for (let dir = start; ; dir = path.dirname(dir)) {
+    if (existsSync(path.join(dir, ".git"))) { gitRoot = dir; break; }
+    if (path.dirname(dir) === dir) break;
+  }
+  for (let dir = start; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, ".agents", "skills");
+    if (candidate !== userDir) dirs.push(candidate);
+    if (dir === gitRoot || path.dirname(dir) === dir) break;
+  }
+  return dirs;
+}
 
-/**
- * Map an `omp skill list --json` payload onto the app's SkillInfo shape.
- * Returns undefined for anything that is not a skills data object, and when
- * entries were present but none had the expected shape (upstream drift must
- * fall back to the replica, not render an empty list).
- */
-export function skillsFromCliPayload(data: unknown): SkillsWithDiagnostics | undefined {
-  if (!isRecord(data) || !Array.isArray(data.skills)) return undefined;
-  const rawSkills = data.skills;
-  const rawWarnings = Array.isArray(data.warnings) ? data.warnings : [];
-  const skills: SkillInfo[] = [];
-  for (const raw of rawSkills) {
-    if (!isRecord(raw) || typeof raw.name !== "string" || typeof raw.filePath !== "string") continue;
-    const [provider = "", scope = ""] = typeof raw.source === "string" ? raw.source.split(":") : [];
-    skills.push({
-      name: raw.name,
-      description: typeof raw.description === "string" ? raw.description : "",
-      filePath: raw.filePath,
-      baseDir: typeof raw.baseDir === "string" ? raw.baseDir : raw.filePath.replace(/[\\/]SKILL\.md$/, ""),
-      // omp's `hide` is the frontmatter `hide`/`disableModelInvocation`
-      // (kebab key normalized), the same keys setDisableModelInvocation writes.
-      disableModelInvocation: raw.hide === true,
-      sourceInfo: { source: SOURCE_LABEL_BY_PROVIDER[provider] ?? provider, scope },
+/** The `skills` entries of a pi settings.json, resolved against `baseDir` (`~` is the home directory). */
+function settingsSkillPaths(settingsFile: string, baseDir: string): string[] {
+  let entries: unknown;
+  try { entries = (JSON.parse(readFileSync(settingsFile, "utf8")) as { skills?: unknown }).skills; } catch { return []; }
+  if (!Array.isArray(entries)) return [];
+  // shortcut: pi's `!`/`+`/`-` and glob entries (filters over the auto-discovered skills) are not applied; add them
+  // if users rely on them to hide skills.
+  return entries
+    .filter((entry): entry is string => typeof entry === "string" && !/^[!+-]|[*?]/.test(entry.trim()))
+    .map((entry) => {
+      const trimmed = entry.trim();
+      const expanded = trimmed === "~" ? homedir() : trimmed.startsWith("~/") ? path.join(homedir(), trimmed.slice(2)) : trimmed;
+      return path.resolve(baseDir, expanded);
     });
-  }
-  if (rawSkills.length > 0 && skills.length === 0) return undefined;
-  // omp warnings are { skillPath, message }.
-  const diagnostics: SkillDiagnostic[] = [];
-  for (const raw of rawWarnings) {
-    if (!isRecord(raw) || typeof raw.message !== "string") continue;
-    diagnostics.push({
-      type: "warning",
-      message: raw.message,
-      ...(typeof raw.skillPath === "string" && raw.skillPath ? { path: raw.skillPath } : {}),
-    });
-  }
-  return { skills, diagnostics };
+}
+
+/** pi's `collectPackageResources` for skills: the `pi.skills` entries of package.json, else its `skills/` directory. */
+function packageSkillPaths(root: string): string[] {
+  let manifest: Record<string, unknown> | undefined;
+  try {
+    const pi = (JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { pi?: unknown }).pi;
+    if (pi && typeof pi === "object" && !Array.isArray(pi)) manifest = pi as Record<string, unknown>;
+  } catch { /* no manifest: the convention directory */ }
+  if (!manifest || !["extensions", "skills", "prompts", "themes"].some((key) => manifest[key] !== undefined)) return [path.join(root, "skills")];
+  const entries = Array.isArray(manifest.skills) ? manifest.skills : [];
+  // shortcut: glob and `!`/`+`/`-` manifest entries and a package's settings filter are not applied.
+  return entries.filter((entry): entry is string => typeof entry === "string" && !/^[!+-]|[*?]/.test(entry)).map((entry) => path.resolve(root, entry));
 }
 
 const execFileAsync = promisify(execFile);
-const SKILLS_CLI_TIMEOUT_MS = 15_000;
-// A `skill list` that failed (binary predates the command, hangs, bad output,
-// or omp rejects this project's config) is not re-spawned for the same binary
-// and cwd until the binary changes on disk or this expires. Keyed per cwd so
-// one broken project cannot hide omp's listing for every other project.
-const SKILLS_CLI_MISS_TTL_MS = 5 * 60_000;
-const skillsCliMisses = new Map<string, number>();
+const PI_LIST_TIMEOUT_MS = 30_000;
 
-/**
- * Ask the omp binary for its skill listing (`omp skill list --json` run in cwd,
- * omp >= 18.3.3). The binary is the authoritative source — the same discovery
- * sessions use, including namespaced collision aliases this replica cannot
- * reproduce — and every exec re-reads disk, so installs, uninstalls and
- * toggles show immediately. Returns undefined when no binary is available,
- * when the binary predates the command, or on any exec/parse failure, letting
- * the caller fall back to the replica scan.
- */
-async function discoverSkillsViaCli(cwd: string, ompBin: string | null): Promise<SkillsWithDiagnostics | undefined> {
-  if (!ompBin) return undefined;
-  const cwdPath = path.resolve(cwd);
-  const missKey = `${versionFingerprint(ompBin) ?? ompBin}\0${cwdPath}`;
-  const now = Date.now();
-  if ((skillsCliMisses.get(missKey) ?? 0) > now) return undefined;
-  // Windows .cmd/.bat launchers need cmd.exe, as in the version probe. The
-  // directory goes in as the process cwd, never as an argument: cmd.exe would
-  // interpret `&` and friends in a directory name.
-  const target = wrapWindowsScript(ompBin, ["skill", "list", "--json"]);
+/** Installed package directories as `pi list` prints them (run in cwd), project packages first as pi orders them. */
+async function installedPackages(cwd: string, piBin: string | null, diagnostics: SkillDiagnostic[]) {
+  if (!piBin) return [];
+  // The directory goes in as the process cwd, never as an argument: cmd.exe would interpret `&` in it.
+  const target = wrapWindowsScript(piBin, ["list"]);
   try {
     const { stdout } = await execFileAsync(target.file, target.args, {
-      cwd: cwdPath,
-      timeout: SKILLS_CLI_TIMEOUT_MS,
+      cwd: path.resolve(cwd),
+      timeout: PI_LIST_TIMEOUT_MS,
       maxBuffer: 16 * 1024 * 1024,
       windowsHide: true,
-      // Otherwise this child inherits the server's full environment,
-      // including omp-web's own secrets.
-      env: createChildProcessEnvironment(),
+      // Otherwise this child inherits the server's full environment, including tau's own secrets.
+      env: createChildProcessEnvironment({ FORCE_COLOR: "0", NO_COLOR: "1" }),
     });
-    const listed = skillsFromCliPayload(JSON.parse(stdout));
-    if (listed) return listed;
-  } catch {
-    // Missing/old binary, exec or parse failure — fall back to the replica.
+    const listed = parsePiListOutput(stdout).filter((pkg) => pkg.path);
+    return [...listed.filter((pkg) => pkg.scope === "project"), ...listed.filter((pkg) => pkg.scope === "global")];
+  } catch (error) {
+    diagnostics.push({ type: "warning", message: `pi list failed; package skills are not listed: ${error instanceof Error ? error.message : String(error)}` });
+    return [];
   }
-  for (const [key, retryAt] of skillsCliMisses) if (retryAt <= now) skillsCliMisses.delete(key);
-  skillsCliMisses.set(missKey, now + SKILLS_CLI_MISS_TTL_MS);
-  return undefined;
 }
 
-/** Discover skills for a cwd the way omp does: through the omp binary when it
- * supports `skill list`, else the replica scan below. In the replica, name
- * collisions resolve to the highest-priority provider (scan-root order);
- * result is sorted by name. `ompBin` is a test seam. `scope` "user" scans the
- * user roots only, before the collisions are resolved: a user root that is also
- * a project root (an agent directory below a project) keeps its user skills. */
+/**
+ * Whether a session tau starts in cwd loads the project's .pi and .agents resources: tau passes `--approve` inside a
+ * registered workspace (lib/hosts/local-host.ts projectTrustArgs); elsewhere pi decides as it does in rpc mode, which
+ * has no prompt: the nearest trust.json entry, else `defaultProjectTrust` "always" (pi's core/project-trust.js).
+ * Paths compare as pi's trust-manager compares them: JS `realpathSync` (on Windows it keeps 8.3 short names, unlike
+ * the native one), keys resolved and case-folded on Windows (utils/paths.js `pathsEqual`).
+ * shortcut: a `project_trust` extension handler is not consulted.
+ */
+async function projectTrusted(cwd: string): Promise<boolean> {
+  if (await registeredProjectFor(cwd)) return true;
+  const read = (file: string): Record<string, unknown> => {
+    try { return JSON.parse(readFileSync(path.join(getAgentDir(), file), "utf8")) ?? {}; } catch { return {}; }
+  };
+  const key = (value: string) => process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+  const trust = new Map<string, boolean>();
+  for (const [entry, decision] of Object.entries(read("trust.json"))) if (typeof decision === "boolean" && !trust.has(key(entry))) trust.set(key(entry), decision);
+  let dir = path.resolve(cwd);
+  try { dir = realpathSync(dir); } catch { /* pi falls back to the resolved path too */ }
+  for (;; dir = path.dirname(dir)) {
+    const decision = trust.get(key(dir));
+    if (decision !== undefined) return decision;
+    if (path.dirname(dir) === dir) break;
+  }
+  return read("settings.json").defaultProjectTrust === "always";
+}
+
+/** Skill sources for cwd in pi's precedence order: project settings, project auto-discovery, user settings, user
+ * auto-discovery, packages. `scope` "user", or a project pi would not trust, leaves the project ones out. */
+async function skillSources(cwd: string, piBin: string | null, diagnostics: SkillDiagnostic[], scope?: "user"): Promise<SkillSource[]> {
+  const agentDir = getAgentDir();
+  const projectBase = path.join(path.resolve(cwd), ".pi");
+  const sources: SkillSource[] = [];
+  const trusted = !scope && await projectTrusted(cwd);
+  const projectPaths = [path.join(projectBase, "settings.json"), path.join(projectBase, "skills"), ...ancestorAgentsSkillDirs(cwd)];
+  if (!scope && !trusted && projectPaths.some((entry) => existsSync(entry))) {
+    diagnostics.push({ type: "info", message: "pi does not trust this folder, so its project skills are not loaded: add it as a workspace, or trust it in pi." });
+  }
+  if (trusted) {
+    sources.push({ paths: settingsSkillPaths(path.join(projectBase, "settings.json"), projectBase), mode: "pi", source: "settings", scope: "project" });
+    sources.push({ paths: [path.join(projectBase, "skills")], mode: "pi", source: ".pi", scope: "project" });
+    sources.push({ paths: ancestorAgentsSkillDirs(cwd), mode: "agents", source: ".agents", scope: "project" });
+  }
+  sources.push({ paths: settingsSkillPaths(path.join(agentDir, "settings.json"), agentDir), mode: "pi", source: "settings", scope: "user" });
+  sources.push({ paths: [path.join(agentDir, "skills")], mode: "pi", source: ".pi", scope: "user" });
+  sources.push({ paths: [path.join(homedir(), ".agents", "skills")], mode: "agents", source: ".agents", scope: "user" });
+  for (const pkg of await installedPackages(cwd, piBin, diagnostics)) {
+    if (!trusted && pkg.scope === "project") continue;
+    sources.push({ paths: packageSkillPaths(pkg.path), mode: "pi", source: pkg.source, scope: pkg.scope === "project" ? "project" : "user" });
+  }
+  return sources;
+}
+
+/** Directories the auto-discovery reads (no settings entries, no packages: those belong to their installer), for
+ * callers that must authorize a skill path. Without a cwd only the user directories. */
+export function getSkillScanRootDirs(cwd?: string): string[] {
+  const roots = [path.join(getAgentDir(), "skills"), path.join(homedir(), ".agents", "skills")];
+  if (cwd) roots.push(path.join(path.resolve(cwd), ".pi", "skills"), ...ancestorAgentsSkillDirs(cwd));
+  return roots;
+}
+
+async function entryKind(full: string, entry: Dirent): Promise<{ dir: boolean; file: boolean } | null> {
+  if (!entry.isSymbolicLink()) return { dir: entry.isDirectory(), file: entry.isFile() };
+  try {
+    const stats = await fs.stat(full);
+    return { dir: stats.isDirectory(), file: stats.isFile() };
+  } catch {
+    return null; // A broken symlink.
+  }
+}
+
+/** pi's `collectSkillEntries`: a directory holding SKILL.md is one skill and is not descended; otherwise `.md` files
+ * count at the root in "pi" mode and only below it in "agents" mode, and subdirectories are walked (dot entries and
+ * node_modules skipped). shortcut: pi's .gitignore/.ignore/.fdignore rules are not applied. */
+async function collectSkillEntries(dir: string, mode: ScanMode, root = dir): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const kinds = await Promise.all(entries.map((entry) => entryKind(path.join(dir, entry.name), entry)));
+  if (entries.some((entry, index) => entry.name === "SKILL.md" && kinds[index]?.file)) return [path.join(dir, "SKILL.md")];
+  const found: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const kind = kinds[index];
+    if (!kind || entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    const full = path.join(dir, entry.name);
+    if (kind.file && entry.name.endsWith(".md") && (mode === "pi" ? dir === root : dir !== root)) found.push(full);
+    else if (kind.dir) found.push(...await collectSkillEntries(full, mode, root));
+  }
+  return found;
+}
+
+/** pi's `loadSkillFromFile`: the name is the frontmatter `name` or the parent directory's; no description, no skill. */
+async function loadSkillFile(filePath: string, source: SkillSource, diagnostics: SkillDiagnostic[]): Promise<SkillInfo | null> {
+  if (!filePath.endsWith(".md")) {
+    diagnostics.push({ type: "warning", message: "skill path is not a markdown file", path: filePath });
+    return null;
+  }
+  let content: string;
+  try {
+    content = await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    diagnostics.push({ type: "warning", message: error instanceof Error ? error.message : "failed to read skill file", path: filePath });
+    return null;
+  }
+  const { frontmatter } = parseSkillFrontmatter(content);
+  const description = frontmatter.description;
+  if (typeof description !== "string" || description.trim() === "") {
+    if (path.basename(filePath) === "SKILL.md") diagnostics.push({ type: "warning", message: "description is required", path: filePath });
+    return null;
+  }
+  const baseDir = path.dirname(filePath);
+  return {
+    name: typeof frontmatter.name === "string" && frontmatter.name ? frontmatter.name : path.basename(baseDir),
+    description,
+    filePath,
+    baseDir,
+    disableModelInvocation: readDisableModelInvocation(frontmatter),
+    sourceInfo: { source: source.source, scope: source.scope },
+  };
+}
+
+async function realKey(filePath: string): Promise<string> {
+  try {
+    return await fs.realpath(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
+/** Discover the skills a pi session in cwd loads. The first skill of a name wins, as in pi; the result is sorted by
+ * name. `piBin` (for `pi list`) is a test seam; null lists no package skills. `scope` "user" reads the user sources
+ * only. */
 export async function discoverSkills(
   cwd: string,
-  ompBin: string | null = resolveOmpBin(),
+  piBin: string | null = resolvePiBin(),
   scope?: "user",
 ): Promise<SkillsWithDiagnostics> {
-  const viaCli = await discoverSkillsViaCli(cwd, ompBin);
-  if (viaCli) return viaCli;
   const diagnostics: SkillDiagnostic[] = [];
   const byName = new Map<string, SkillInfo>();
-  for (const root of buildScanRoots(cwd)) {
-    if (scope && root.scope !== scope) continue;
-    for (const skill of await scanRoot(root, diagnostics)) {
-      if (!byName.has(skill.name)) byName.set(skill.name, skill);
+  const seen = new Set<string>();
+  for (const source of await skillSources(cwd, piBin, diagnostics, scope)) {
+    for (const entry of source.paths) {
+      let files: string[];
+      try {
+        files = (await fs.stat(entry)).isDirectory() ? await collectSkillEntries(entry, source.mode) : [entry];
+      } catch {
+        continue; // pi skips a missing path (and warns for a missing settings entry).
+      }
+      for (const file of files) {
+        const skill = await loadSkillFile(file, source, diagnostics);
+        if (!skill) continue;
+        const key = await realKey(file);
+        if (seen.has(key)) continue;
+        if (byName.has(skill.name)) {
+          diagnostics.push({ type: "warning", message: `name "${skill.name}" collision`, path: file });
+          continue;
+        }
+        byName.set(skill.name, skill);
+        seen.add(key);
+      }
     }
   }
   const skills = [...byName.values()].sort((a, b) => {
@@ -368,11 +351,10 @@ export async function discoverSkills(
 /**
  * Roots a SKILL.md must sit under for PATCH /api/skills to rewrite it: the
  * allowed file roots (workspaces the user opened, so their files are the
- * user's) plus the replica's user-owned skill roots (with the project walk-up
- * roots when cwd is itself allowed). This is the allowlist main already had.
- * Skills omp lists from anywhere else (the plugin cache, registry installs,
- * custom directories outside a workspace) are read-only: their files belong
- * to an installer and an update would discard the edit.
+ * user's) plus the auto-discovered skill directories (with the project ones
+ * when cwd is itself allowed). Skills from anywhere else (packages, settings
+ * paths outside a workspace) are read-only: their files belong to an installer
+ * and an update would discard the edit.
  */
 export async function getSkillToggleRoots(cwd?: string): Promise<Set<string>> {
   // Copy: getAllowedFileRoots returns its shared cache set.
@@ -382,8 +364,8 @@ export async function getSkillToggleRoots(cwd?: string): Promise<Set<string>> {
   return roots;
 }
 
-export async function loadSkillsWithInstallInfo(cwd: string, ompBin: string | null = resolveOmpBin(), scope?: "user") {
-  const [{ skills, diagnostics }, toggleRoots] = await Promise.all([discoverSkills(cwd, ompBin, scope), getSkillToggleRoots(cwd)]);
+export async function loadSkillsWithInstallInfo(cwd: string, piBin: string | null = resolvePiBin(), scope?: "user") {
+  const [{ skills, diagnostics }, toggleRoots] = await Promise.all([discoverSkills(cwd, piBin, scope), getSkillToggleRoots(cwd)]);
   const isTogglable = existingPathWithinRootsChecker(toggleRoots);
   return {
     skills: annotateSkillsWithInstallInfo(skills, { cwd, agentDir: getAgentDir() }).map((skill) => ({
@@ -394,9 +376,9 @@ export async function loadSkillsWithInstallInfo(cwd: string, ompBin: string | nu
   };
 }
 
-/** The user level only, for a request without a cwd (a cluster member's settings act on this machine's, spec K7): omp
+/** The user level only, for a request without a cwd (a cluster member's settings act on this machine's, spec K7): `pi list`
  * runs in its agent directory, where no project lies, and a project-scope entry is left out all the same. */
-export async function loadUserSkillsWithInstallInfo(ompBin: string | null = resolveOmpBin()) {
-  const listed = await loadSkillsWithInstallInfo(ensureAgentDir(), ompBin, "user");
+export async function loadUserSkillsWithInstallInfo(piBin: string | null = resolvePiBin()) {
+  const listed = await loadSkillsWithInstallInfo(ensureAgentDir(), piBin, "user");
   return { ...listed, skills: listed.skills.filter((skill) => skill.sourceInfo?.scope !== "project") };
 }

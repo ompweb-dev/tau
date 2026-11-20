@@ -4,7 +4,7 @@ import { homedir } from "os";
 import * as path from "path";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { createChildProcessEnvironment } from "./project-command-env";
 
 const execFileAsync = promisify(execFile);
@@ -33,7 +33,7 @@ export interface WebServiceStatus {
   configFile: string;
   serviceUrl: string;
   version: string;
-  /** The `ompweb host` daemon task that runs next to the web service. */
+  /** The `tau host` daemon task that runs next to the web service. */
   daemon: HostDaemonStatus;
 }
 
@@ -49,16 +49,16 @@ export interface WindowsServiceDefinition {
   script: string;
 }
 
-/** The two units `ompweb-tray install` sets up: the web service and the `ompweb host` daemon. */
+/** The two units `tau-tray install` sets up: the web service and the `tau host` daemon. */
 export function getWindowsServiceDefinitions(repoRoot = getRepoRoot()): { web: WindowsServiceDefinition; host: WindowsServiceDefinition } {
   return {
-    web: { name: "omp-web", script: path.join(repoRoot, "scripts", "windows", "omp-web-service.ps1") },
-    host: { name: "omp-web-host", script: path.join(repoRoot, "scripts", "windows", "omp-web-host.ps1") },
+    web: { name: "tau", script: path.join(repoRoot, "scripts", "windows", "tau-service.ps1") },
+    host: { name: "tau-host", script: path.join(repoRoot, "scripts", "windows", "tau-host.ps1") },
   };
 }
 
 export const DEFAULT_WEB_SERVICE_CONFIG: WebServiceConfig = {
-  port: 30177,
+  port: 30187,
   hostname: "127.0.0.1",
   mode: "start",
   autostart: true,
@@ -67,8 +67,8 @@ export const DEFAULT_WEB_SERVICE_CONFIG: WebServiceConfig = {
 };
 
 export function getRepoRoot(): string {
-  if (process.env.OMP_WEB_PACKAGE_DIR && existsSync(process.env.OMP_WEB_PACKAGE_DIR)) {
-    return process.env.OMP_WEB_PACKAGE_DIR;
+  if (process.env.TAU_PACKAGE_DIR && existsSync(process.env.TAU_PACKAGE_DIR)) {
+    return process.env.TAU_PACKAGE_DIR;
   }
   const fromDirname = path.resolve(__dirname, "..");
   if (existsSync(path.join(fromDirname, "package.json"))) {
@@ -157,7 +157,7 @@ export function getWindowsExecutionEnv(): NodeJS.ProcessEnv {
   const mergedPath = extraPaths.length > 0
     ? `${currentPath}${path.delimiter}${extraPaths.join(path.delimiter)}`
     : currentPath;
-  // The spawned PowerShell child must never see omp-web's own secrets.
+  // The spawned PowerShell child must never see tau's own secrets.
   return createChildProcessEnvironment({
     SystemRoot: sysRoot,
     windir: sysRoot,
@@ -171,7 +171,7 @@ export function getWebServiceConfigPath(): string {
 }
 
 export function getWebServiceLogPath(): string {
-  return path.join(getAgentDir(), "logs", "omp-web-service.log");
+  return path.join(getAgentDir(), "logs", "tau-service.log");
 }
 
 export function getWindowsShortcutPaths(): { desktop: string; startMenu: string; startup: string } {
@@ -179,18 +179,18 @@ export function getWindowsShortcutPaths(): { desktop: string; startMenu: string;
   const appData = process.env.APPDATA || path.join(home, "AppData", "Roaming");
 
   let desktopDir = path.join(home, "Desktop");
-  if (process.env.OneDrive && existsSync(path.join(process.env.OneDrive, "Desktop", "omp-web.lnk"))) {
+  if (process.env.OneDrive && existsSync(path.join(process.env.OneDrive, "Desktop", "tau.lnk"))) {
     desktopDir = path.join(process.env.OneDrive, "Desktop");
-  } else if (process.env.OneDriveConsumer && existsSync(path.join(process.env.OneDriveConsumer, "Desktop", "omp-web.lnk"))) {
+  } else if (process.env.OneDriveConsumer && existsSync(path.join(process.env.OneDriveConsumer, "Desktop", "tau.lnk"))) {
     desktopDir = path.join(process.env.OneDriveConsumer, "Desktop");
-  } else if (existsSync(path.join(home, "OneDrive", "Desktop", "omp-web.lnk"))) {
+  } else if (existsSync(path.join(home, "OneDrive", "Desktop", "tau.lnk"))) {
     desktopDir = path.join(home, "OneDrive", "Desktop");
   }
 
   return {
-    desktop: path.join(desktopDir, "omp-web.lnk"),
-    startMenu: path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "omp-web.lnk"),
-    startup: path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "omp-web-tray.lnk"),
+    desktop: path.join(desktopDir, "tau.lnk"),
+    startMenu: path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "tau.lnk"),
+    startup: path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "tau-tray.lnk"),
   };
 }
 
@@ -285,7 +285,7 @@ export async function isTrayProcessRunning(): Promise<boolean> {
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        '$procs = Get-CimInstance Win32_Process -Filter "Name LIKE \'%powershell%\' OR Name LIKE \'%pwsh%\' OR Name LIKE \'%omp-web-tray%\'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like \'*omp-web-tray.ps1*\' -or $_.CommandLine -like \'*omp-web-service.ps1*\' -or $_.CommandLine -like \'*omp-web-tray.exe*\') }; ($procs | Measure-Object).Count',
+        '$procs = Get-CimInstance Win32_Process -Filter "Name LIKE \'%powershell%\' OR Name LIKE \'%pwsh%\' OR Name LIKE \'%tau-tray%\'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like \'*tau-tray.ps1*\' -or $_.CommandLine -like \'*tau-service.ps1*\' -or $_.CommandLine -like \'*tau-tray.exe*\') }; ($procs | Measure-Object).Count',
       ],
       { timeout: 4000, env: getWindowsExecutionEnv(), windowsHide: true }
     );
@@ -317,7 +317,7 @@ export async function getHostDaemonStatus(): Promise<HostDaemonStatus> {
           "-ExecutionPolicy",
           "Bypass",
           "-Command",
-          '(Get-CimInstance Win32_Process -Filter "Name LIKE \'%powershell%\' OR Name LIKE \'%pwsh%\'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like \'*omp-web-host.ps1*\' } | Measure-Object).Count',
+          '(Get-CimInstance Win32_Process -Filter "Name LIKE \'%powershell%\' OR Name LIKE \'%pwsh%\'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like \'*tau-host.ps1*\' } | Measure-Object).Count',
         ],
         { timeout: 4000, env, windowsHide: true },
       );
@@ -347,7 +347,7 @@ export async function getWebServiceStatus(): Promise<WebServiceStatus> {
   const isInstalled = desktopExists || startMenuExists || startupExists || existsSync(getWebServiceConfigPath());
   let isRunning = await isTrayProcessRunning();
   // Fallback: tray process detection via WMI CommandLine can miss hidden wscript-launched
-  // powershell (or manual `node bin/omp-web.js start`). If the service URL is
+  // powershell (or manual `node bin/tau.js start`). If the service URL is
   // actually listening, report as running even when tray detection fails.
   if (!isRunning) {
     const host = config.hostname || "127.0.0.1";
@@ -492,7 +492,7 @@ export async function toggleAutostart(enable: boolean): Promise<{ success: boole
   await saveWebServiceConfig({ autostart: enable });
   const repoRoot = getRepoRoot();
   const launchVbs = path.join(repoRoot, "scripts", "windows", "launch-tray.vbs");
-  const icoPath = path.join(repoRoot, "public", "omp-web.ico");
+  const icoPath = path.join(repoRoot, "public", "tau.ico");
   const { startup: startupLnk } = getWindowsShortcutPaths();
 
   try {
@@ -505,7 +505,7 @@ export async function toggleAutostart(enable: boolean): Promise<{ success: boole
         $sc.Arguments = '"${launchVbs.replace(/"/g, '`"')}" -Startup'
         $sc.WorkingDirectory = '${homedir().replace(/'/g, "''")}'
         if (Test-Path '${icoPath.replace(/'/g, "''")}') { $sc.IconLocation = '${icoPath.replace(/'/g, "''")},0' }
-        $sc.Description = 'omp-web Background Tray Service'
+        $sc.Description = 'tau Background Tray Service'
         $sc.Save()
       `;
       const psExe = resolvePowerShellBin();
@@ -535,9 +535,9 @@ export async function startTrayService(options: { openBrowser?: boolean } = {}):
   try {
     // Check if task exists: schtasks /query returns 0 if found.
     try {
-      await execFileAsync("schtasks.exe", ["/query", "/tn", "omp-web"], { timeout: 3000, env: getWindowsExecutionEnv(), windowsHide: true });
+      await execFileAsync("schtasks.exe", ["/query", "/tn", "tau"], { timeout: 3000, env: getWindowsExecutionEnv(), windowsHide: true });
       // Task exists, try to run it (ONLOGON tasks can be triggered via /run even without logon trigger).
-      await execFileAsync("schtasks.exe", ["/run", "/tn", "omp-web"], { timeout: 5000, env: getWindowsExecutionEnv(), windowsHide: true });
+      await execFileAsync("schtasks.exe", ["/run", "/tn", "tau"], { timeout: 5000, env: getWindowsExecutionEnv(), windowsHide: true });
       // The daemon follows the web service; its supervisor exits at once when one is already running.
       await execFileAsync("schtasks.exe", ["/run", "/tn", getWindowsServiceDefinitions().host.name], { timeout: 5000, env: getWindowsExecutionEnv(), windowsHide: true }).catch(() => undefined);
       invalidateTrayRunningCache();
@@ -553,7 +553,7 @@ export async function startTrayService(options: { openBrowser?: boolean } = {}):
     }
   } catch { }
   // Native tray exe (dotnet WinForms) — most reliable, no hidden wscript heap.
-  const nativeExe = path.join(getRepoRoot(), "bin", "omp-web-tray.exe");
+  const nativeExe = path.join(getRepoRoot(), "bin", "tau-tray.exe");
   if (existsSync(nativeExe)) {
     try {
       const nativeArgs: string[] = [];
@@ -641,21 +641,21 @@ export async function stopTrayService(): Promise<{ success: boolean; message?: s
   try {
     // Try to end Scheduled Task first (headless service)
     try {
-      await execFileAsync("schtasks.exe", ["/end", "/tn", "omp-web"], { timeout: 3000, env: getWindowsExecutionEnv(), windowsHide: true });
+      await execFileAsync("schtasks.exe", ["/end", "/tn", "tau"], { timeout: 3000, env: getWindowsExecutionEnv(), windowsHide: true });
     } catch { }
     const taskkillExe = resolveTaskkillBin();
     const psCommand = `
-      $trayProcs = Get-CimInstance Win32_Process -Filter "Name LIKE '%powershell%' OR Name LIKE '%pwsh%' OR Name LIKE '%omp-web-tray%'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like '*omp-web-tray.ps1*' -or $_.CommandLine -like '*omp-web-service.ps1*' -or $_.CommandLine -like '*omp-web-tray.exe*') }
+      $trayProcs = Get-CimInstance Win32_Process -Filter "Name LIKE '%powershell%' OR Name LIKE '%pwsh%' OR Name LIKE '%tau-tray%'" -ErrorAction SilentlyContinue | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like '*tau-tray.ps1*' -or $_.CommandLine -like '*tau-service.ps1*' -or $_.CommandLine -like '*tau-tray.exe*') }
       foreach ($p in $trayProcs) {
           Start-Process -FilePath '${taskkillExe.replace(/'/g, "''")}' -ArgumentList "/PID $($p.ProcessId) /T /F" -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue | Out-Null
       }
       # Also kill native tray exe directly by name (in case CommandLine is empty)
-      $nativeProcs = Get-CimInstance Win32_Process -Filter "Name = 'omp-web-tray.exe'" -ErrorAction SilentlyContinue
+      $nativeProcs = Get-CimInstance Win32_Process -Filter "Name = 'tau-tray.exe'" -ErrorAction SilentlyContinue
       foreach ($p in $nativeProcs) {
           Start-Process -FilePath '${taskkillExe.replace(/'/g, "''")}' -ArgumentList "/PID $($p.ProcessId) /T /F" -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue | Out-Null
       }
       # Also kill orphaned node or bun servers on the service port
-      $port = if ($cfg -and $cfg.port) { [int]$cfg.port } else { 30177 }
+      $port = if ($cfg -and $cfg.port) { [int]$cfg.port } else { 30187 }
       $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue | Where-Object { $_.State -eq "Listen" }
       foreach ($c in $conns) {
           $owner = Get-CimInstance Win32_Process -Filter "ProcessId = $($c.OwningProcess)" -ErrorAction SilentlyContinue

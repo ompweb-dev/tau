@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); daemon-owned workspace operations remain in tau; the browser-side upload now uses HTTP only (no browser link).
+
 # Remote Workspaces Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Repository instructions override the skill's review/delegation defaults: use one condensed adversarial review round, not a fresh review lane after every task.

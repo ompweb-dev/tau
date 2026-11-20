@@ -4,7 +4,8 @@ import { basename, dirname, join, resolve } from "path";
 import { promisify } from "util";
 import { normalizeForComparison, samePath, toNativePath } from "./paths";
 import { createGitEnvironment } from "./project-command-env";
-import { loadProjectRegistry } from "./project-registry";
+import { comparableProjectPath } from "./comparable-path";
+import { loadProjectRegistry, type ProjectRegistryEntry } from "./project-registry";
 
 const execFileAsync = promisify(execFile);
 
@@ -118,7 +119,7 @@ function inferRemovedWorktree(cwd: string): ProjectInfo | null {
     }
   }
 
-  // 2. Try registered projects from ~/.omp/agent/projects.json
+  // 2. Try registered projects from the agent dir's projects.json
   try {
     const registry = loadProjectRegistry();
     const candidateNormalized = normalizeForComparison(cwd);
@@ -208,6 +209,25 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
   return info;
 }
 
+/**
+ * The visible registered project that holds cwd: the project directory, a directory inside it, a linked worktree of
+ * its repository (resolveProject collapses a worktree to its main checkout) or a directory inside one, or tau's
+ * `<project>-worktrees/` sibling. Undefined when cwd lies in no workspace registered on this machine.
+ */
+export async function registeredProjectFor(cwd: string): Promise<ProjectRegistryEntry | undefined> {
+  const real = realPathOrSelf(cwd);
+  let top = real;
+  while (!existsSync(join(top, ".git")) && dirname(top) !== top) top = dirname(top);
+  const keys = [real];
+  if (existsSync(join(top, ".git"))) keys.push((await resolveProject(top)).projectRoot);
+  const within = (key: string, root: string) => key === root || key.startsWith(`${root}/`);
+  return loadProjectRegistry().projects.find((project) => {
+    if (project.hidden || project.discovered) return false;
+    const root = comparableProjectPath(realPathOrSelf(project.path));
+    return keys.some((key) => within(comparableProjectPath(key), root) || within(comparableProjectPath(key), `${root}-worktrees`));
+  });
+}
+
 // ============================================================================
 // Worktree operations
 //
@@ -217,7 +237,7 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
 // ============================================================================
 
 /** Main repo root (parent of the shared .git dir), or throws for non-git dirs */
-async function getRepoRoot(cwd: string): Promise<string> {
+export async function getRepoRoot(cwd: string): Promise<string> {
   const commonDir = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
   return realPathOrSelf(dirname(toNativePath(commonDir)));
 }

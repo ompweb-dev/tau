@@ -11,7 +11,7 @@ export function hostFromBearer(request: Request): HostRecord | Response {
     host = token ? hostForToken(token) : null;
   } catch (error) {
     if (!(error instanceof HostRegistryUnreadableError)) throw error;
-    // Never 401: a daemon told its token is unknown stops every omp child.
+    // Never 401: a daemon told its token is unknown stops every pi child.
     return fail("The host registry cannot be read", 503);
   }
   return host ?? fail("Unknown host token", 401);

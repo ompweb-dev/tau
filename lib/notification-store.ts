@@ -2,7 +2,7 @@ import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, rmSync } from 
 import { join } from "path";
 import { Database } from "bun:sqlite";
 import type { PushSubscription } from "web-push";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import {
   isValidNotificationId,
   parseNotificationPrefs,
@@ -13,9 +13,9 @@ import {
 import { isRecord } from "./type-guards";
 
 /**
- * Server-only persistent notification state in omp-web's data directory:
+ * Server-only persistent notification state in tau's data directory:
  * VAPID keys, devices (prefs + push subscription), and the notification
- * history. Every omp-web instance sharing the agent directory shares it;
+ * history. Every tau instance sharing the agent directory shares it;
  * SQLite serializes their writes.
  */
 
@@ -54,7 +54,7 @@ export function parsePushSubscription(value: unknown): PushSubscription | null {
 }
 
 declare global {
-  var __ompNotificationStore: { path: string; db: Database } | undefined;
+  var __tauNotificationStore: { path: string; db: Database } | undefined;
 }
 
 const SCHEMA = `
@@ -115,21 +115,21 @@ function importLegacy(db: Database, file: string): boolean {
 
 /** The store for the current agent directory; reopened when PI_CODING_AGENT_DIR changes. */
 function db(): Database {
-  const dir = join(getAgentDir(), "omp-web");
+  const dir = join(getAgentDir(), "tau");
   const path = join(dir, "notifications.db");
-  const cached = globalThis.__ompNotificationStore;
+  const cached = globalThis.__tauNotificationStore;
   if (cached?.path === path) return cached.db;
   const database = open(dir, path);
   // Only a working store replaces the cached one; a failed open leaves it usable.
   closeNotificationStore();
-  globalThis.__ompNotificationStore = { path, db: database };
+  globalThis.__tauNotificationStore = { path, db: database };
   return database;
 }
 
 /** Closes the cached store. `close(true)` finalizes the statements still alive: without it the file stays open until GC, and Windows keeps it locked. */
 export function closeNotificationStore(): void {
-  globalThis.__ompNotificationStore?.db.close(true);
-  globalThis.__ompNotificationStore = undefined;
+  globalThis.__tauNotificationStore?.db.close(true);
+  globalThis.__tauNotificationStore = undefined;
 }
 
 function open(dir: string, path: string): Database {
@@ -140,7 +140,7 @@ function open(dir: string, path: string): Database {
   const database = new Database(path);
   try {
     database.exec("PRAGMA busy_timeout = 5000");
-    // Switching a new database to WAL takes an exclusive lock that ignores busy_timeout; another omp-web may hold it.
+    // Switching a new database to WAL takes an exclusive lock that ignores busy_timeout; another tau may hold it.
     for (let attempt = 0; ; attempt++) {
       try {
         database.exec("PRAGMA journal_mode = WAL");

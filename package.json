@@ -15,11 +15,11 @@
     "node": ">=24.0.0"
   },
   "bin": {
-    "tau": "bin/omp-web.js",
-    "tau-tray": "bin/omp-web-tray.js",
+    "tau": "bin/tau.js",
+    "tau-tray": "bin/tau-tray.js",
     "tau-tray-linux": "bin/linux-tray.js",
-    "tau-launchd": "bin/omp-web-launchd.js",
-    "tau-systemd": "bin/omp-web-systemd.js"
+    "tau-launchd": "bin/tau-launchd.js",
+    "tau-systemd": "bin/tau-systemd.js"
   },
   "files": [
     "bin",
@@ -37,24 +37,24 @@
     "package.json"
   ],
   "scripts": {
-    "dev": "bun --hot server/dev.ts -H 127.0.0.1 -p 30178",
-    "dev:lan": "bun --hot server/dev.ts -H 0.0.0.0 -p 30178",
+    "dev": "bun --hot server/dev.ts -H 127.0.0.1 -p 30188",
+    "dev:lan": "bun --hot server/dev.ts -H 0.0.0.0 -p 30188",
     "build": "bun scripts/build-client.ts",
     "build:binary": "npm run build && bun scripts/build-binary.ts",
-    "start": "bun server/main.ts -H 127.0.0.1 -p 30177",
-    "start:lan": "bun server/main.ts -H 0.0.0.0 -p 30177",
+    "start": "bun server/main.ts -H 127.0.0.1 -p 30187",
+    "start:lan": "bun server/main.ts -H 0.0.0.0 -p 30187",
     "test": "bun test --parallel --timeout 30000 ./app ./bin ./components ./hooks ./lib ./scripts ./server ./tests",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "tray:install": "node bin/omp-web-tray.js --install",
-    "tray:uninstall": "node bin/omp-web-tray.js --uninstall",
-    "tray:start": "node bin/omp-web-tray.js --start",
-    "tray:status": "node bin/omp-web-tray.js --status",
-    "systemd:install": "node bin/omp-web-systemd.js install",
-    "systemd:uninstall": "node bin/omp-web-systemd.js uninstall",
-    "systemd:start": "node bin/omp-web-systemd.js start",
-    "systemd:stop": "node bin/omp-web-systemd.js stop",
-    "systemd:status": "node bin/omp-web-systemd.js status",
+    "tray:install": "node bin/tau-tray.js --install",
+    "tray:uninstall": "node bin/tau-tray.js --uninstall",
+    "tray:start": "node bin/tau-tray.js --start",
+    "tray:status": "node bin/tau-tray.js --status",
+    "systemd:install": "node bin/tau-systemd.js install",
+    "systemd:uninstall": "node bin/tau-systemd.js uninstall",
+    "systemd:start": "node bin/tau-systemd.js start",
+    "systemd:stop": "node bin/tau-systemd.js stop",
+    "systemd:status": "node bin/tau-systemd.js status",
     "prepack": "npm run build",
     "smoke": "bun scripts/smoke.ts",
     "release:check": "npm run typecheck && npm run lint && npm test && npm run build && npm run smoke"

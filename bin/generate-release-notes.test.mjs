@@ -107,6 +107,6 @@ Older release notes.
     assert.match(notes, /## Contributors/);
     assert.match(notes, /@alice/);
     assert.match(notes, /@bob/);
-    assert.match(notes, /npm install -g @kahme247\/ompweb@0\.4\.0/);
+    assert.match(notes, /npm install -g @ompweb-dev\/tau@0\.4\.0/);
   });
 });

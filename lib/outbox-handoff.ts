@@ -11,7 +11,7 @@ import { isRecord } from "./type-guards";
 import type { AgentMessage } from "./types";
 
 const MAX_HANDOFF_BYTES = 16 * 1024 * 1024;
-const invalidNativeStatus = () => new HostOpError(502, "invalid_client_message_status", "OMP returned invalid client-message status");
+const invalidNativeStatus = () => new HostOpError(502, "invalid_client_message_status", "pi returned invalid client-message status");
 
 /** Native evidence is selective and identity-bearing; malformed data never becomes a guessed acceptance. */
 function nativeStatus(value: unknown, ids: readonly string[]): ClientMessageStatus {
@@ -87,7 +87,7 @@ async function liveChildFor(sessionId: string, ids: readonly string[]) {
   throw failure;
 }
 
-/** Ask the live native child about intents the browser still holds; this never starts or replaces omp. Absence of a
+/** Ask the live native child about intents the browser still holds; this never starts or replaces pi. Absence of a
  * child answers 409 and the browser reads its own history instead; uncertainty answers a retryable 503. */
 export async function reconcileOutboxHandoffs(sessionId: string, ids: readonly string[]): Promise<ClientMessageStatus> {
   const live = await liveChildFor(sessionId, ids);

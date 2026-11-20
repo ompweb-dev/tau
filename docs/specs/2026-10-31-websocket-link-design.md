@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); the host link is still one daemon-dialled WebSocket at `/api/hosts/link` with this sequencing, pieces, fair queues and unacked window, but tau restarted the protocol at v1 (`lib/hosts/link-protocol.ts`, no v3–v6 compatibility paths), the daemon is `tau host`, and the deployment steps were ompweb's.
+
 # WebSocket host link — design
 
 Date: 2026-10-31. Branch: `feat/ws-link` (base `51e40f47`, on `feat/bun-runtime`). Plan: `docs/plans/2026-10-31-websocket-link.md`.

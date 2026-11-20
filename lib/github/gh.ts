@@ -172,13 +172,13 @@ export const defaultGhRunner: GhRunner = (args, input) => {
 };
 
 const NOT_INSTALLED =
-  "`gh` (GitHub CLI) is not installed on the omp-web server machine. Ask the user to install it and run `gh auth login` there.";
-const NOT_LOGGED_IN = "`gh` is not logged in on the omp-web server machine. Ask the user to run `gh auth login` there.";
+  "`gh` (GitHub CLI) is not installed on the tau server machine. Ask the user to install it and run `gh auth login` there.";
+const NOT_LOGGED_IN = "`gh` is not logged in on the tau server machine. Ask the user to run `gh auth login` there.";
 const AUTH_STDERR = /gh auth login|not logged (?:in|into)|HTTP 401|bad credentials/i;
 const LOGIN_CACHE_MS = 60_000;
 
 declare global {
-  var __ompGhLogin: { run: GhRunner; login: string; at: number } | undefined;
+  var __tauGhLogin: { run: GhRunner; login: string; at: number } | undefined;
 }
 
 /**
@@ -190,7 +190,7 @@ export async function checkGh(
   run: GhRunner = defaultGhRunner,
   now: () => number = Date.now,
 ): Promise<{ login: string }> {
-  const cached = globalThis.__ompGhLogin;
+  const cached = globalThis.__tauGhLogin;
   if (cached && cached.run === run && now() - cached.at < LOGIN_CACHE_MS) {
     return { login: cached.login };
   }
@@ -205,7 +205,7 @@ export async function checkGh(
     throw error;
   }
   const login = stdout.trim();
-  globalThis.__ompGhLogin = { run, login, at: now() };
+  globalThis.__tauGhLogin = { run, login, at: now() };
   return { login };
 }
 

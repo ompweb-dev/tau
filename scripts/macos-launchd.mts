@@ -1,37 +1,37 @@
 #!/usr/bin/env node
-// Install ompweb as a macOS launchd user agent (starts at login, restarts on crash).
+// Install tau as a macOS launchd user agent (starts at login, restarts on crash).
 //
-// Usage (installed as the `ompweb-launchd` bin, or run via npx / node directly):
-//   ompweb-launchd [install [package-spec]|uninstall|status]
-//   npx -p @kahme247/ompweb@latest ompweb-launchd install
+// Usage (installed as the `tau-launchd` bin, or run via npx / node directly):
+//   tau-launchd [install [package-spec]|uninstall|status]
+//   npx -p @ompweb-dev/tau@latest tau-launchd install
 //
 // The positional package-spec picks what the service runs via `npx --yes`
-// (default @kahme247/ompweb@latest; env OMP_WEB_PKG is an equivalent override).
+// (default @ompweb-dev/tau@latest; env TAU_PKG is an equivalent override).
 //
 // Configuration (read at install time, baked into the plist):
-//   OMP_WEB_PKG          npm package spec run via npx               default @kahme247/ompweb@latest
-//   PORT                 Server port                                default 30177
-//   OMP_WEB_HOSTNAME     Server bind host                           default 127.0.0.1
-//   OMP_WEB_PASSWORD     Optional plaintext password, hashed before it is written
-//   OMP_WEB_PASSWORD_HASH  Password hash from `ompweb hash-password` (preferred)
-//   OMP_WEB_NO_OPEN      Set to 0 to auto-open the browser          default 1 (no auto-open)
-//   OMP_WEB_OMP_BIN      Override for ompweb's own omp (ompweb-omp)  default the bundled one
-//   PI_CODING_AGENT_DIR  Custom omp agent directory                 default ~/.omp/agent
+//   TAU_PKG          npm package spec run via npx               default @ompweb-dev/tau@latest
+//   PORT                 Server port                                default 30187
+//   TAU_HOSTNAME     Server bind host                           default 127.0.0.1
+//   TAU_PASSWORD     Optional plaintext password, hashed before it is written
+//   TAU_PASSWORD_HASH  Password hash from `tau hash-password` (preferred)
+//   TAU_NO_OPEN      Set to 0 to auto-open the browser          default 1 (no auto-open)
+//   TAU_PI_BIN       The pi binary                             default pi on PATH
+//   PI_CODING_AGENT_DIR  Custom pi agent directory                  default ~/.pi/agent
 //
 // Example (loopback-only; require auth + trusted HTTPS proxy/VPN for remote access):
-//   OMP_WEB_PASSWORD=secret ompweb-launchd install
+//   TAU_PASSWORD=secret tau-launchd install
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 // @ts-expect-error - plain CJS helper, no type declarations
-import { resolvePasswordHash } from "../bin/omp-web-hash-password.js";
+import { resolvePasswordHash } from "../bin/tau-hash-password.js";
 
-const LABEL = "com.kahme247.ompweb";
+const LABEL = "dev.ompweb.tau";
 const HOME = os.homedir();
 const PLIST = path.join(HOME, "Library", "LaunchAgents", `${LABEL}.plist`);
-const LOG_DIR = path.join(HOME, "Library", "Logs", "ompweb");
+const LOG_DIR = path.join(HOME, "Library", "Logs", "tau");
 const DOMAIN = `gui/${process.getuid?.() ?? 0}`;
 
 // Print an error and exit non-zero.
@@ -83,22 +83,22 @@ function install(pkgArg?: string): void {
   const siblingNpx = path.join(path.dirname(nodeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
-  // Only an explicit override: ompweb runs its own omp (ompweb-omp). A stock omp on PATH cannot run its sessions.
-  const ompBin = process.env.OMP_WEB_OMP_BIN || null;
-  if (ompBin) {
+  // An explicit pi for the service; without it the service finds pi on PATH.
+  const piBin = process.env.TAU_PI_BIN || null;
+  if (piBin) {
     try {
-      fs.accessSync(ompBin, fs.constants.X_OK);
+      fs.accessSync(piBin, fs.constants.X_OK);
     } catch {
-      fail(`OMP_WEB_OMP_BIN=${ompBin} is not executable`);
+      fail(`TAU_PI_BIN=${piBin} is not executable`);
     }
   }
 
   // Service parameters with defaults; the positional package spec wins over env.
-  const pkg = pkgArg ?? process.env.OMP_WEB_PKG ?? "@kahme247/ompweb@latest";
-  const port = process.env.PORT ?? "30177";
-  const hostname = process.env.OMP_WEB_HOSTNAME ?? "127.0.0.1";
-  const noOpen = process.env.OMP_WEB_NO_OPEN ?? "1";
-  // Only a hash reaches the plist: omp-web no longer reads a plaintext
+  const pkg = pkgArg ?? process.env.TAU_PKG ?? "@ompweb-dev/tau@latest";
+  const port = process.env.PORT ?? "30187";
+  const hostname = process.env.TAU_HOSTNAME ?? "127.0.0.1";
+  const noOpen = process.env.TAU_NO_OPEN ?? "1";
+  // Only a hash reaches the plist: tau no longer reads a plaintext
   // password, so hash one if it was given here (issue #239).
   const passwordHash = resolvePasswordHash();
   // launchd does not expand `~` in environment values — resolve it now.
@@ -109,7 +109,7 @@ function install(pkgArg?: string): void {
   // manager's own directory must be reachable too when present.
   const asdfBin = which("asdf");
   const svcPath = [
-    ...(ompBin ? [path.dirname(ompBin)] : []),
+    ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
     path.dirname(nodeBin),
@@ -123,10 +123,10 @@ function install(pkgArg?: string): void {
   const env: Record<string, string> = {
     PATH: svcPath,
     PORT: port,
-    OMP_WEB_HOSTNAME: hostname,
-    OMP_WEB_NO_OPEN: noOpen,
-    ...(passwordHash ? { OMP_WEB_PASSWORD_HASH: passwordHash } : {}),
-    ...(ompBin ? { OMP_WEB_OMP_BIN: ompBin } : {}),
+    TAU_HOSTNAME: hostname,
+    TAU_NO_OPEN: noOpen,
+    ...(passwordHash ? { TAU_PASSWORD_HASH: passwordHash } : {}),
+    ...(piBin ? { TAU_PI_BIN: piBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
   const envXml = Object.entries(env)
@@ -151,8 +151,8 @@ ${envXml}
   <key>WorkingDirectory</key><string>${xmlEscape(HOME)}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>${xmlEscape(path.join(LOG_DIR, "ompweb.log"))}</string>
-  <key>StandardErrorPath</key><string>${xmlEscape(path.join(LOG_DIR, "ompweb.err.log"))}</string>
+  <key>StandardOutPath</key><string>${xmlEscape(path.join(LOG_DIR, "tau.log"))}</string>
+  <key>StandardErrorPath</key><string>${xmlEscape(path.join(LOG_DIR, "tau.err.log"))}</string>
 </dict>
 </plist>
 `;
@@ -170,7 +170,7 @@ ${envXml}
   console.log(`installed: ${PLIST}`);
   console.log(`package:   ${pkg} (via npx --yes)`);
   console.log(`url:       http://${hostname}:${port}`);
-  console.log(`logs:      ${path.join(LOG_DIR, "ompweb.log")}`);
+  console.log(`logs:      ${path.join(LOG_DIR, "tau.log")}`);
   if (password) console.log("note:      password is stored in plain text in the plist (mode 600)");
 }
 
@@ -198,6 +198,6 @@ if (command === "install") install(process.argv[3]);
 else if (command === "uninstall") uninstall();
 else if (command === "status") status();
 else {
-  console.error("usage: ompweb-launchd [install [package-spec]|uninstall|status]");
+  console.error("usage: tau-launchd [install [package-spec]|uninstall|status]");
   process.exit(2);
 }

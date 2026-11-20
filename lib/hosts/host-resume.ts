@@ -1,8 +1,8 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { getAgentDir, getSessionsDir } from "../omp/paths";
-import { readSessionHeaderSync } from "../omp/session-files";
+import { getAgentDir, getSessionsDir } from "../pi/paths";
+import { readSessionHeaderSync } from "../pi/session-files";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import { loadWebServerSettings } from "../web-settings";
@@ -25,7 +25,7 @@ export class HostResumeTracker {
   private claims: string[] = [];
 
   constructor(options: { path?: string; sessionsRoot?: string; enabled?: boolean } = {}) {
-    this.path = options.path ?? join(getAgentDir(), "omp-web", "host-running.json");
+    this.path = options.path ?? join(getAgentDir(), "tau", "host-running.json");
     this.root = options.sessionsRoot ?? getSessionsDir();
     this.enabled = options.enabled ?? loadWebServerSettings().autoResumeSessions;
   }
@@ -124,17 +124,15 @@ export class HostResumeTracker {
       const launch = entry.launch;
       if (typeof launch.cwd !== "string" || !isAbsolute(launch.cwd)
         || !(launch.recordedCwd === null || typeof launch.recordedCwd === "string")
-        || typeof launch.sessionFile !== "string" || !isAbsolute(launch.sessionFile) || typeof launch.advisor !== "boolean"
-        || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))
-        || !(launch.spawnModel === undefined || typeof launch.spawnModel === "string")
-        || !(launch.credentialsServer === undefined || typeof launch.credentialsServer === "string")) throw new Error("Invalid recovery launch");
+        || typeof launch.sessionFile !== "string" || !isAbsolute(launch.sessionFile)
+        || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))) throw new Error("Invalid recovery launch");
       const root = realpathSync(this.root);
       let file: string;
       try { file = realpathSync(resolve(launch.sessionFile)); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; } // A deleted session must not block the rest.
       if (!file.startsWith(root + sep) || readSessionHeaderSync(file)?.id !== entry.sessionId || seen.has(entry.sessionId)) throw new Error("Recovery session is outside its owning session root or duplicated");
       seen.add(entry.sessionId);
-      entries.push({ sessionId: entry.sessionId, launch: { cwd: launch.cwd, recordedCwd: launch.recordedCwd, sessionFile: file, advisor: launch.advisor, ...(launch.toolNames === undefined ? {} : { toolNames: launch.toolNames as string[] }), ...(launch.spawnModel === undefined ? {} : { spawnModel: launch.spawnModel }), ...(launch.credentialsServer === undefined ? {} : { credentialsServer: launch.credentialsServer }) } });
+      entries.push({ sessionId: entry.sessionId, launch: { cwd: launch.cwd, recordedCwd: launch.recordedCwd, sessionFile: file, ...(launch.toolNames === undefined ? {} : { toolNames: launch.toolNames as string[] }) } });
     }
     return entries;
   }

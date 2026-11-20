@@ -21,7 +21,7 @@ afterEach(() => {
   globalThis.Worker = originalWorker;
 });
 
-const local = (fields) => ({ id: "local", label: "", status: "offline", ompVersion: null, platform: null, lastSeenAt: null, hostVersion: null, serverVersion: 3, serverPlatform: "linux", daemonManaged: true, ...fields });
+const local = (fields) => ({ id: "local", label: "", status: "offline", piVersion: null, platform: null, lastSeenAt: null, hostVersion: null, serverVersion: 3, serverPlatform: "linux", daemonManaged: true, ...fields });
 const send = (hosts) => {
   const { id } = workers[0].posted.findLast((message) => message.op === "open" && message.channel.kind === "hosts");
   act(() => workers[0].onmessage({ data: { id, type: "message", data: JSON.stringify({ hosts }) } }));
@@ -33,7 +33,7 @@ const mount = async () => {
   render(createElement(LocalDaemonBanner));
   await waitFor(() => assert.ok(opens() > before));
 };
-const text = /needs the ompweb-host service/;
+const text = /needs the tau-host service/;
 
 test("the install banner appears after 90 s offline, once: dismissing it keeps it away", async (t) => {
   await mount();
@@ -42,9 +42,9 @@ test("the install banner appears after 90 s offline, once: dismissing it keeps i
   act(() => t.mock.timers.tick(89_999));
   assert.equal(screen.queryByText(text), null);
   act(() => t.mock.timers.tick(1));
-  assert.ok(screen.getByText(text).textContent.startsWith("This machine needs the ompweb-host service. Install it with:"));
-  // A foreground ompweb (terminal or npx) has no service: it needs `ompweb host` running beside it.
-  assert.deepEqual([...screen.getByRole("status").querySelectorAll("code")].map((code) => code.textContent), ["ompweb systemd install", "ompweb host"]);
+  assert.ok(screen.getByText(text).textContent.startsWith("This machine needs the tau-host service. Install it with:"));
+  // A foreground tau (terminal or npx) has no service: it needs `tau host` running beside it.
+  assert.deepEqual([...screen.getByRole("status").querySelectorAll("code")].map((code) => code.textContent), ["tau systemd install", "tau host"]);
   assert.match(screen.getByRole("status").textContent, /in a terminal or with npx/);
 
   fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));

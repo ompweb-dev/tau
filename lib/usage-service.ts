@@ -1,7 +1,7 @@
 import { statSync } from "fs";
 import { basename, join } from "path";
-import { readModelsConfig } from "./omp/models-config";
-import { forEachFileLineSync, invalidateSessionFileListCache, readSessionHeaderSync } from "./omp/session-files";
+import { readModelsConfig } from "./pi/models-config";
+import { forEachFileLineSync, invalidateSessionFileListCache, readSessionHeaderSync } from "./pi/session-files";
 import { SUBAGENT_ID_RE } from "./subagent-types";
 import { isRecord } from "./type-guards";
 import {
@@ -21,7 +21,7 @@ import type {
  * Version of the rules `parseSessionUsage` applies. Bump it whenever those
  * rules change what a transcript yields: records from other rules are never
  * reused. It is stored per synced file in usage.db — per file, not per
- * database, because several omp-web builds can share one usage.db, so a file
+ * database, because several tau builds can share one usage.db, so a file
  * last synced by any other rule set is re-parsed — and on every in-memory
  * cache entry, since the cache lives on globalThis and outlives a dev hot
  * reload that brings in new rules.
@@ -44,14 +44,14 @@ export const MAX_USAGE_CACHE_BYTES = 64 * 1024 * 1024; // 64 MiB
 let usageCacheApproxBytes = 0;
 
 declare global {
-  var __ompUsageCache: Map<string, SessionUsageCacheEntry> | undefined;
+  var __tauUsageCache: Map<string, SessionUsageCacheEntry> | undefined;
 }
 
 function getUsageCache(): Map<string, SessionUsageCacheEntry> {
-  if (!globalThis.__ompUsageCache) {
-    globalThis.__ompUsageCache = new Map();
+  if (!globalThis.__tauUsageCache) {
+    globalThis.__tauUsageCache = new Map();
   }
-  return globalThis.__ompUsageCache;
+  return globalThis.__tauUsageCache;
 }
 
 function estimateUsageEntryBytes(entry: SessionUsageCacheEntry): number {
@@ -79,7 +79,7 @@ function setUsageCacheEntry(filePath: string, entry: SessionUsageCacheEntry): vo
 
 /** Clear in-memory usage cache (useful on session mutation or manual refresh). */
 export function invalidateUsageCache(): void {
-  globalThis.__ompUsageCache?.clear();
+  globalThis.__tauUsageCache?.clear();
   usageCacheApproxBytes = 0;
 }
 
@@ -322,9 +322,9 @@ export function parseSessionUsage(
           // report, see collectUncountedUsage in usage-db.ts). Background
           // subagents never report usage here at all.
           //
-          // omp writes a spawn's transcript into the artifacts directory of the
+          // A spawn's transcript lives in the artifacts directory of the
           // session that ran the `task` call — that session's own file minus
-          // `.jsonl` (leaseArtifacts in omp's task/structured-subagent.ts) — which
+          // `.jsonl` — which
           // is the file this result is in, not the top-level owning session. So a
           // nested spawn `Parent.Child` whose result is in `<session>/Parent.jsonl`
           // lives at `<session>/Parent/Parent.Child.jsonl`.

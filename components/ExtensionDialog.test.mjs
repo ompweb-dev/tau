@@ -64,7 +64,7 @@ test("question selection survives request replay but is cleared for the next que
 });
 
 test("confirm answers true, and cancel answers with no value", async () => {
-  const request = { type: "ui_request", id: "omp-web:abc", method: "confirm", args: ["Delete it?", "This cannot be undone."] };
+  const request = { type: "ui_request", id: "tau:abc", method: "confirm", args: ["Delete it?", "This cannot be undone."] };
   const responses = [];
   const onRespond = (current, value) => responses.push({ id: current.id, value });
   const view = render(React.createElement(ExtensionDialog, { request, onRespond, attached: true }));
@@ -72,7 +72,7 @@ test("confirm answers true, and cancel answers with no value", async () => {
     screen.getByText("This cannot be undone.");
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    assert.deepEqual(responses, [{ id: "omp-web:abc", value: true }, { id: "omp-web:abc", value: undefined }]);
+    assert.deepEqual(responses, [{ id: "tau:abc", value: true }, { id: "tau:abc", value: undefined }]);
   } finally {
     view.unmount();
   }
@@ -81,7 +81,7 @@ test("confirm answers true, and cancel answers with no value", async () => {
 test("server-owned send confirmation shows named endpoints and escaped message text", () => {
   const request = {
     type: "ui_request",
-    id: "omp-web:send",
+    id: "tau:send",
     method: "confirm",
     args: ["Allow this session to send a message?", ""],
     serverPayload: {
@@ -107,34 +107,6 @@ test("server-owned send confirmation shows named endpoints and escaped message t
     assert.deepEqual(responses, [true]);
     screen.getByRole("button", { name: "Deny" });
     assert.equal(view.container.querySelector("b"), null);
-  } finally {
-    view.unmount();
-  }
-});
-
-test("approve offers omp's choices and answers with the chosen ExtensionApprovalAnswer", async () => {
-  const request = {
-    type: "ui_request",
-    id: 7,
-    method: "approve",
-    args: [{
-      full: "Run bash?\nrm -rf build",
-      compact: "Run bash? rm -rf build",
-      session: "Approve for this session",
-      grants: [{ scope: "folder", label: "Approve Directory: ~/src", alwaysLabel: "Always Approve Directory: ~/src" }],
-    }],
-  };
-  const responses = [];
-  const onRespond = (_request, value) => responses.push(value);
-  const view = render(React.createElement(ExtensionDialog, { request, onRespond, attached: true }));
-  try {
-    screen.getByText("Run bash?");
-    screen.getByText("rm -rf build");
-    for (const name of ["Allow", "Approve for this session", "Approve Directory: ~/src", "Always Approve Directory: ~/src", "Deny"]) {
-      fireEvent.click(screen.getByRole("button", { name }));
-    }
-    assert.deepEqual(responses, ["once", "session", { grant: "folder", always: false }, { grant: "folder", always: true }, "deny"]);
-    assert.equal(screen.queryByRole("button", { name: "Submit" }), null);
   } finally {
     view.unmount();
   }

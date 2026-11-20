@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { createHmac, randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 
 /**
  * Signing material for the web session cookie (issue #239).
@@ -23,7 +23,7 @@ export interface WebAuthSecret {
 
 /** Absolute path of the secret file; `PI_CODING_AGENT_DIR` moves it with the rest of the agent state. */
 export function webAuthSecretPath(): string {
-  return resolve(getAgentDir(), "omp-web", "web-auth-secret.json");
+  return resolve(getAgentDir(), "tau", "web-auth-secret.json");
 }
 
 let cached: { path: string; mtimeMs: number; secret: WebAuthSecret } | null = null;
@@ -109,7 +109,7 @@ export function resolveWebAuthSecret(path = webAuthSecretPath()): WebAuthSecret 
  */
 export function deriveSessionSigningKey(passwordHash: string, secret = resolveWebAuthSecret()): string {
   return createHmac("sha256", Buffer.from(secret.key, "base64url"))
-    .update(`omp-web-session-v1\0${secret.salt}\0${passwordHash}`, "utf8")
+    .update(`tau-session-v1\0${secret.salt}\0${passwordHash}`, "utf8")
     .digest("base64url");
 }
 

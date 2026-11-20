@@ -81,10 +81,10 @@ export async function PATCH(
     if (typeof name !== "string" || !name.trim()) {
       return Response.json({ error: "name is required", code: "session_name_required" }, { status: 400 });
     }
-    // A running omp process owns its session file; route the rename through it
-    // so the in-memory title cannot clobber ours on the next flush. This runs
-    // before the path check because omp does not create the session file until
-    // the history holds an assistant message.
+    // A running pi holds its session: rename through it (`set_session_name`), so
+    // its in-memory leaf and name stay in step with the file. This runs before
+    // the path check because pi does not create the session file until the
+    // history holds an assistant message.
     let renamed = false;
     const rpc = getRpcSession(id);
     if (rpc?.isAlive?.() && typeof rpc.send === "function") {
@@ -93,7 +93,7 @@ export async function PATCH(
         renamed = true;
       } catch (error) {
         if (error instanceof WebRpcError && error.code === "session_busy") throw error;
-        // Fall back to the on-disk title slot below.
+        // Fall back to a session_info entry in the file below.
       }
     }
     if (!renamed) {
@@ -125,22 +125,22 @@ export async function DELETE(
   try {
     const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) return resolved.response;
-    // Await the child's exit before unlinking: omp flushes session state on
-    // shutdown and would recreate the file if it were still running.
+    // Await the child's exit before unlinking: a running pi would
+    // recreate the file on its next append.
     // Disposing a child behind a down link would wait for the link to return.
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
     const live = getRpcSession(id);
     if (!live?.hostOwnedLifecycle) await live?.destroyAndWait?.("delete", true);
-    // Live children are skipped by the re-parent rewrite: their omp process
-    // owns the file and would clobber it on its next flush.
+    // Live children are skipped by the re-parent rewrite: their pi process
+    // owns the file and would clobber it on its next write.
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds());
     if (!result.ok) return opErrorResponse(result);
     // Remove only this deleted session's content-free retry-lineage metadata.
     try {
       forgetSessionReplacementMappings(id);
     } catch (error) {
-      console.warn(`[omp-web] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
     }
     invalidateHostSessionList(resolved.host.id);
     clearExitedRpcSession(id);
@@ -148,7 +148,7 @@ export async function DELETE(
       removeSessionWatches(id);
     } catch (error) {
       // The delete succeeded; a watch left behind ends at the outbox's 404 for this session.
-      console.warn(`[omp-web] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
     }
     return Response.json({ ok: true, ...result.value });
   } catch (error) {

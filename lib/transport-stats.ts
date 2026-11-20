@@ -1,7 +1,7 @@
 // Durations derived from transport samples (lib/event-stream-worker.ts, lib/agent-client.ts), shared by
 // scripts/transport-metrics.ts and the worker's live diagnostics so both compute the same numbers. Browser-safe.
 
-import { NO_OMP_REPLY_COMMANDS } from "./event-stream-protocol";
+import { NO_PI_REPLY_COMMANDS } from "./event-stream-protocol";
 import { asNumber } from "./type-guards";
 
 type Sample = Record<string, unknown>;
@@ -26,7 +26,7 @@ export const diff = (a: unknown, b: unknown): number | undefined => {
 
 /** An action's whole round trip (tab clock). */
 export const totalMsOf = (s: Sample) => diff(s.gotAt, s.sentAt);
-/** An action's time on the server: received to replied (server clock), which includes omp's own work. */
+/** An action's time on the server: received to replied (server clock), which includes pi's own work. */
 export const serverMsOf = (s: Sample) => diff(s.repliedAt, s.recvAt);
 
 /** totalMs − serverMs: clock-free, and what the transport added to an action. */
@@ -75,8 +75,8 @@ export function summarizeDurations(values: number[]): DurationSummary {
   };
 }
 
-export type DiagnosticMetric = "upMs" | "transportMs" | "ompMs" | "serverMs" | "totalMs" | "eventMs";
-const METRIC_ORDER: DiagnosticMetric[] = ["upMs", "transportMs", "ompMs", "serverMs", "totalMs", "eventMs"];
+export type DiagnosticMetric = "upMs" | "transportMs" | "piMs" | "serverMs" | "totalMs" | "eventMs";
+const METRIC_ORDER: DiagnosticMetric[] = ["upMs", "transportMs", "piMs", "serverMs", "totalMs", "eventMs"];
 
 export interface DiagnosticStat extends DurationSummary {
   transport: string;
@@ -96,14 +96,14 @@ export function diagnosticStats(samples: Sample[]): DiagnosticStat[] {
   for (const s of samples) {
     const transport = typeof s.transport === "string" ? s.transport : "unknown";
     if (s.metric === "action") {
-      // A local timeout/proxy refusal never confirms an omp round trip; this panel measures successful commands only.
+      // A local timeout/proxy refusal never confirms a pi round trip; this panel measures successful commands only.
       if (s.outcome !== "ok" || serverMsOf(s) === undefined) continue;
       add(transport, "upMs", upMsOf(s));
       const totalMs = totalMsOf(s);
       // A backward clock step during the command makes its round trip (and so its transport share) meaningless.
       if (totalMs !== undefined && totalMs >= 0) add(transport, "transportMs", transportMsOf(s));
-      if (typeof s.type === "string" && NO_OMP_REPLY_COMMANDS.has(s.type)) continue;
-      if (s.type === "get_state") add(transport, "ompMs", serverMsOf(s));
+      if (typeof s.type === "string" && NO_PI_REPLY_COMMANDS.has(s.type)) continue;
+      if (s.type === "get_state") add(transport, "piMs", serverMsOf(s));
       add(transport, "serverMs", serverMsOf(s));
       if (totalMs !== undefined && totalMs >= 0) add(transport, "totalMs", totalMs);
     } else if (s.metric === "event") {

@@ -1,4 +1,4 @@
-import type { ModelsFileConfig } from "./omp/models-config";
+import type { ModelsFileConfig } from "./pi/models-config";
 import type { CostQualityTier, ModelRates } from "./usage-types";
 
 /**

@@ -1,13 +1,13 @@
-// The `OMP_WEB_PASSWORD_HASH` format lives in bin/omp-web-password-hash.js:
+// The `TAU_PASSWORD_HASH` format lives in bin/tau-password-hash.js:
 // the packaged launcher and the service installers must hash and validate a
 // password before the server (and this module) exists. This file is the typed
 // view of it for the server — never a second implementation.
-import * as passwordHash from "../bin/omp-web-password-hash.js";
+import * as passwordHash from "../bin/tau-password-hash.js";
 
 /**
- * Self-describing scrypt password hash. omp-web only ever stores and compares
+ * Self-describing scrypt password hash. tau only ever stores and compares
  * a hash of the web sign-in password (issue #239): the plaintext used to live
- * in `OMP_WEB_PASSWORD`, which every `omp` child process inherited, so an
+ * in `TAU_PASSWORD`, which every agent child process inherited, so an
  * agent that ran `env` could print it into a session file and off to a model
  * provider.
  *
@@ -49,7 +49,7 @@ export const PASSWORD_HASH_P: number = passwordHash.DEFAULT_P;
 /** Lowest cost accepted when verifying anything, including a stored hash. */
 export const PASSWORD_HASH_MIN_LOG_N: number = passwordHash.MIN_LOG_N;
 
-/** Hash a password for `OMP_WEB_PASSWORD_HASH`. */
+/** Hash a password for `TAU_PASSWORD_HASH`. */
 export const hashPassword = passwordHash.hashPassword as (password: string, options?: PasswordHashOptions) => string;
 
 /**

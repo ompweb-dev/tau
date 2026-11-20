@@ -19,12 +19,12 @@ test("an update toast shows a command with Copy, and the action when given", () 
   const html = renderToStaticMarkup(createElement(UpdateToastBody, {
     currentVersion: "0.6.0",
     availableVersion: "0.7.0",
-    target: "npm install -g @kahme247/ompweb",
+    target: "npm install -g @ompweb-dev/tau",
     link: false,
     action: { label: "Update and restart", onClick: () => {} },
   }));
   assert.match(html, /v0\.6\.0 → v0\.7\.0/);
-  assert.match(html, /<code[^>]*>npm install -g @kahme247\/ompweb<\/code>/);
+  assert.match(html, /<code[^>]*>npm install -g @ompweb-dev\/tau<\/code>/);
   assert.deepEqual([...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]), ["Copy", "Update and restart"]);
 });
 

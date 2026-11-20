@@ -7,19 +7,18 @@ import { HostUpdates } from "./HostUpdates";
 
 const endpoint = "/api/hosts/box/updates";
 const info = {
-  ompweb: { currentVersion: "0.7.0", availableVersion: "0.7.1", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @kahme247/ompweb", installMethod: "npm", protocolVersion: 12 },
-  omp: { currentVersion: "18.20.0" },
+  tau: { currentVersion: "0.7.0", availableVersion: "0.7.1", updateAvailable: true, canUpdate: true, blockedReason: null, updateCommand: "npm install -g @ompweb-dev/tau", installMethod: "npm", protocolVersion: 12 },
   operation: null,
 };
 
 /** Render the real host row and record every request it sends. */
-async function renderHost(t, host, ompweb = {}, operation = null) {
+async function renderHost(t, host, tau = {}, operation = null) {
   const requests = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     requests.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
-    if (init?.method === "POST") return Response.json({ accepted: true, operation: { state: "running", target: "ompweb", version: "0.7.1" } });
-    return Response.json({ ...info, operation, ompweb: { ...info.ompweb, ...ompweb } });
+    if (init?.method === "POST") return Response.json({ accepted: true, operation: { state: "running", target: "tau", version: "0.7.1" } });
+    return Response.json({ ...info, operation, tau: { ...info.tau, ...tau } });
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -38,8 +37,8 @@ async function renderHost(t, host, ompweb = {}, operation = null) {
 
 const button = (root, label) => [...root.querySelectorAll("button")].find((candidate) => candidate.textContent.trim() === label);
 
-test("an upgrade-only legacy host can check for and submit an ompweb update", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", upgradeOnly: true, ompVersion: "omp/18.20.0", ompwebVersion: "0.7.0" });
+test("an upgrade-only legacy host can check for and submit an tau update", async (t) => {
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", upgradeOnly: true, apiVersion: 1, piVersion: "omp/18.20.0", tauVersion: "0.7.0" });
   assert.equal(requests[0]?.url, endpoint, "the status is read on mount");
   assert.equal(button(container, "Check updates").disabled, false);
 
@@ -54,18 +53,18 @@ test("an upgrade-only legacy host can check for and submit an ompweb update", as
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   const post = requests.find((request) => request.method === "POST");
   assert.ok(post, "the update was not submitted");
-  assert.deepEqual(JSON.parse(post.body), { target: "ompweb", version: "0.7.1" });
+  assert.deepEqual(JSON.parse(post.body), { target: "tau", version: "0.7.1" });
 });
 
 test("a connected maintenance API can update a compatible host while its application connection is offline", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "offline", apiVersion: 1, hostVersion: 12, ompwebVersion: "0.7.0" });
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "offline", apiVersion: 1, hostVersion: 12, tauVersion: "0.7.0" });
   assert.equal(requests[0]?.url, endpoint);
   assert.equal(button(container, "Check updates").disabled, false);
   assert.ok(button(container, "Update"));
 });
 
 test("an ordinary incompatible host cannot be checked or updated", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", ompVersion: "omp/18.20.0", ompwebVersion: "0.6.0" });
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "needs-upgrade", piVersion: "omp/18.20.0", tauVersion: "0.6.0" });
   assert.deepEqual(requests, [], "an unavailable host must not be read");
   const check = button(container, "Check updates");
   assert.equal(check.disabled, true);
@@ -75,14 +74,22 @@ test("an ordinary incompatible host cannot be checked or updated", async (t) => 
   assert.deepEqual(requests, []);
 });
 
+test("an online host without its maintenance connection cannot be checked or updated, and says why", async (t) => {
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "online", piVersion: "18.20.0", tauVersion: "0.7.0" });
+  assert.deepEqual(requests, [], "updates never go over the application link");
+  assert.equal(button(container, "Check updates").disabled, true);
+  assert.ok(container.textContent.includes("Updates need this host's maintenance connection"), container.textContent);
+  assert.ok(container.textContent.includes("18.20.0"), "the pi version still shows");
+});
+
 test("an offline host stays unavailable", async (t) => {
-  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "offline", ompVersion: "omp/18.20.0", ompwebVersion: "0.7.0" });
+  const { container, requests } = await renderHost(t, { id: "box", label: "Box", status: "offline", piVersion: "omp/18.20.0", tauVersion: "0.7.0" });
   assert.deepEqual(requests, []);
   assert.equal(button(container, "Check updates").disabled, true);
   assert.ok(container.textContent.includes("Updates unavailable while this host is offline."), container.textContent);
 });
 
-const modern = { id: "box", label: "Box", status: "online", apiVersion: 1, hostVersion: 12, ompwebVersion: "0.7.0" };
+const modern = { id: "box", label: "Box", status: "online", apiVersion: 1, hostVersion: 12, tauVersion: "0.7.0" };
 const blocked = { canUpdate: false, canForceUpdate: true, blockedReason: "Sessions are running on this host" };
 const posts = (requests) => requests.filter((request) => request.method === "POST");
 // A closing dialog may linger briefly; the newest one is the one on screen.
@@ -105,7 +112,7 @@ test("a normally blocked host offers a distinct Force update that posts nothing 
   await act(async () => dialogButton("Terminate sessions and update").click());
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   assert.equal(posts(requests).length, 1);
-  assert.deepEqual(JSON.parse(posts(requests)[0].body), { target: "ompweb", version: "0.7.1", force: true });
+  assert.deepEqual(JSON.parse(posts(requests)[0].body), { target: "tau", version: "0.7.1", force: true });
 });
 
 test("force is never inferred from a blocker's wording", async (t) => {
@@ -120,7 +127,7 @@ test("a host that can be updated normally offers no force and the normal payload
   act(() => button(container, "Update").click());
   await act(async () => dialogButton("Update").click());
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-  assert.deepEqual(JSON.parse(posts(requests)[0].body), { target: "ompweb", version: "0.7.1" });
+  assert.deepEqual(JSON.parse(posts(requests)[0].body), { target: "tau", version: "0.7.1" });
 });
 
 test("a forced update outlives the old 5-minute wait, and giving up later only asks for a status check", async (t) => {
@@ -129,12 +136,12 @@ test("a forced update outlives the old 5-minute wait, and giving up later only a
   Date.now = () => realNow() + skewMs;
   const requests = [];
   let posted = false;
-  const running = { id: "op", target: "ompweb", version: "0.7.1", state: "running", force: true };
+  const running = { id: "op", target: "tau", version: "0.7.1", state: "running", force: true };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     requests.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
     if (init?.method === "POST") { posted = true; return Response.json({ accepted: true, operation: running }); }
-    return Response.json({ ...info, ompweb: { ...info.ompweb, ...blocked }, operation: posted ? running : null });
+    return Response.json({ ...info, tau: { ...info.tau, ...blocked }, operation: posted ? running : null });
   };
   const container = document.createElement("div");
   document.body.append(container);
@@ -156,7 +163,7 @@ test("a forced update outlives the old 5-minute wait, and giving up later only a
 
   skewMs = 6 * 60_000; // past the old 5-minute limit, inside the 15-minute lease
   await settle(1200);
-  assert.ok(container.textContent.includes("Updating ompweb host to 0.7.1"), container.textContent);
+  assert.ok(container.textContent.includes("Updating tau host to 0.7.1"), container.textContent);
   assert.ok(!container.textContent.includes("Stopped waiting"), "gave up inside the backend lease");
 
   skewMs = 21 * 60_000; // beyond the wait
@@ -169,7 +176,7 @@ test("a forced update outlives the old 5-minute wait, and giving up later only a
 });
 
 test("uncertain shutdown recovery shows its durable error instead of polling Updating forever", async (t) => {
-  const operation = { id: "pending-stop", target: "ompweb", version: "0.7.1", state: "running", committing: true, recoveryRequired: true, error: "Recovery required: the daemon's shutdown could not be reconciled" };
+  const operation = { id: "pending-stop", target: "tau", version: "0.7.1", state: "running", committing: true, recoveryRequired: true, error: "Recovery required: the daemon's shutdown could not be reconciled" };
   const { container, requests } = await renderHost(t, modern, blocked, operation);
   assert.ok(container.querySelector('[role="alert"]').textContent.includes(operation.error));
   assert.equal(button(container, "Check updates").disabled, false);

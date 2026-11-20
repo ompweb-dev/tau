@@ -1,10 +1,17 @@
 # Changelog
 
-All notable changes to **omp-web** (`@kahme247/ompweb`) are documented in this file.
+All notable changes to **tau** (`@ompweb-dev/tau`) are documented in this file. Entries before the pi port describe ompweb, the omp-based product tau was forked from.
 
 ---
 
 ## [Unreleased]
+
+### Changed
+
+- **tau runs sessions on pi.** Every session is a `pi --mode rpc` child (`@earendil-works/pi-coding-agent`, found on `PATH` or through `TAU_PI_BIN`) loaded with tau's companion extension (`lib/pi/tau-extension.ts`), which adds host tools, the `ask` dialog, message origins, `/btw`, history Edit and per-host provider logins. The ompweb omp runner, its pinned release and `fetch-omp` are gone. tau keeps pi's state in `~/.pi/agent` (sessions, `settings.json`, `models.json`), lists and installs pi packages and skills instead of omp plugins, and mirrors pi's configuration to cluster members. The host link starts again at protocol v1, and host software updates go through a separately versioned maintenance API. tau shares no state with ompweb: hosts, settings and sessions are set up anew. The routes `/api/omp-settings` and `/api/omp-version` are now `/api/pi-settings` and `/api/pi-version`, a host without pi reports `pi-missing`, and the unused `/api/omp-update` route is removed.
+- **Browsers connect over server-sent events only.** The browser WebSocket link (`/api/events/link`) and the Settings → Interface & Behavior → **Browser connection** choice are gone; chat commands and uploads go over HTTP. A stored `browserTransport` setting is ignored.
+- **pi trusts a project's files only inside a registered workspace.** Sessions in a workspace added in tau start with pi's `--approve`; elsewhere pi's own trust rules apply, and the Skills list leaves out the project skills pi would not load.
+- **Removed controls pi has no command for:** the Fast and Slow composer toggles, interrupt-and-reply, and the MCP panel's live status, switches and Reload (pi's `/mcp` is never sent as a chat message).
 
 ### Fixed
 

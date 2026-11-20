@@ -4,8 +4,8 @@ import { useEffect, useRef, type RefObject } from "react";
 import { compileSearchQuery, findSearchMatches, type CompiledSearchQuery } from "@/lib/session-search";
 import type { SearchMatchTarget } from "@/components/SessionSearchMatches";
 
-const ALL_HITS = "omp-search";
-const CURRENT_HIT = "omp-search-current";
+const ALL_HITS = "tau-search";
+const CURRENT_HIT = "tau-search-current";
 // Typing settles before the transcript is walked again.
 const PAINT_DELAY_MS = 150;
 // Rendered text the server's count (lib/session-match-listing.ts) does not see: code-block

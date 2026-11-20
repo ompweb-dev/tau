@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); per-host transcript search remains in tau over link protocol v1.
+
 # Host-aware Session Search Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

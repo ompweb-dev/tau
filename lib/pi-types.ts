@@ -1,21 +1,15 @@
 import type { AgentMessage } from "./types";
 import type { MessageOrigin } from "./message-origin";
 
-// Local mirrors of the omp shapes used by omp-web. omp's SDK packages are
-// Bun-only, so these types are hand-maintained against
-// oh-my-pi/packages/coding-agent/src/modes/rpc/rpc-types.ts (protocol v1).
+// Local mirrors of the pi RPC shapes used by tau, hand-maintained against
+// pi's modes/rpc/rpc-types.d.ts (tau never imports pi's SDK). tau's own
+// additions come from lib/pi/tau-extension.ts and lib/pi/rpc-process.ts.
 
 export interface ContextUsage {
   percent: number | null;
   contextWindow: number;
   tokens: number | null;
 }
-
-export type UsageLimitState =
-  | { stage: "low_priority"; resetsAtSec: number; allowanceLeftPercent?: number }
-  | { stage: "wrap_up"; resetsAtSec?: number; extraUsage: boolean };
-
-export type SlowModeScope = "session" | "global";
 
 export interface ModelLike {
   id: string;
@@ -27,8 +21,8 @@ export interface ToolInfo {
   description: string;
 }
 
-/** Subset of omp's Model (pi-ai) that the web UI reads; extra fields pass through. */
-export interface OmpModel {
+/** Subset of pi's Model (pi-ai) that the web UI reads; extra fields pass through. */
+export interface PiModel {
   id: string;
   provider: string;
   name?: string;
@@ -37,12 +31,7 @@ export interface OmpModel {
   contextWindow?: number;
   maxTokens?: number;
   input?: string[];
-  thinking?: {
-    mode?: string;
-    efforts?: string[];
-    requiresEffort?: boolean;
-    defaultLevel?: string;
-  };
+  thinkingLevelMap?: Record<string, string | null>;
   [key: string]: unknown;
 }
 
@@ -77,15 +66,14 @@ export interface ClientMessageStatus {
   unresolvedClientMessageIds: string[];
 }
 
-/** Mirror of omp's RpcSessionState (the raw `get_state` payload). */
+/** Mirror of pi's RpcSessionState (the raw `get_state` payload). */
 export interface RpcSessionState {
-  model?: OmpModel;
+  model?: PiModel;
   thinkingLevel: string | undefined;
   isStreaming: boolean;
   isCompacting: boolean;
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
-  interruptMode: "immediate" | "wait";
   sessionFile?: string;
   sessionId: string;
   sessionName?: string;
@@ -93,33 +81,20 @@ export interface RpcSessionState {
   autoRetryEnabled?: boolean;
   messageCount: number;
   queuedMessageCount: number;
-  /** Includes admitted submissions, scheduled turns and background deliveries; absent on older OMP. */
+  /** Includes admitted submissions, scheduled turns and background deliveries (RpcProcess derives it from pi's `agent_settled`). */
   isSettled?: boolean;
   hasPendingAsyncWork?: boolean;
-  /** Displayable queue-chip texts (omp ≥ 18.4.4); mirrored live by `queue_update`. */
+  /** Displayable queue-chip texts, from pi's last `queue_update` (RpcProcess fills them into `get_state`). */
   queuedMessages?: QueuedMessages;
   /** Native RPC/session metadata can correlate accepted input without matching its text. */
   supportsClientMessageIds?: boolean;
   todoPhases: TodoPhase[];
   systemPrompt?: string[];
   contextUsage?: { tokens: number; contextWindow: number; percent: number };
-  fastMode?: boolean;
-  fastModeEnabled?: boolean;
-  fastModeActive?: boolean;
-  /** `/slow` applies to the active model (omp ≥ slow-mode RPC). */
-  slowModeSupported?: boolean;
-  /** Slow setting for the active model; false whenever unsupported. */
-  slowModeEnabled?: boolean;
-  /** Present iff supported: `global` = persisted omp config shared by every session/terminal; `session` = this session's flex tier. */
-  slowModeScope?: SlowModeScope;
-  /** Structured provider usage-limit state; absent outside wrap-up and low priority. */
-  usageLimit?: UsageLimitState;
-  /** omp's reported output throughput; null/undefined when not generating. */
-  tokensPerSecond?: number | null;
 }
 
 /**
- * The state shape omp-web's own API returns to the browser
+ * The state shape tau's own API returns to the browser
  * (AgentSessionWrapper adapts RpcSessionState and adds process-side flags).
  */
 export interface WebSessionState {
@@ -133,10 +108,9 @@ export interface WebSessionState {
   /** Web-observed current-run response; not a persisted-history cursor. */
   responseObserved?: boolean;
   autoCompactionEnabled: boolean;
-  interruptMode: "immediate" | "wait";
   steeringMode: "all" | "one-at-a-time";
   followUpMode: "all" | "one-at-a-time";
-  model?: ModelLike & { name?: string; reasoning?: boolean; thinking?: { efforts?: string[] } };
+  model?: ModelLike & { name?: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> };
   messageCount: number;
   queuedMessageCount: number;
   queuedMessages: QueuedMessages;
@@ -144,14 +118,7 @@ export interface WebSessionState {
   contextUsage: ContextUsage | null;
   systemPrompt: string;
   thinkingLevel: string;
-  fastModeEnabled: boolean;
-  fastModeActive?: boolean;
-  slowModeSupported: boolean;
-  slowModeEnabled: boolean;
-  slowModeScope?: SlowModeScope;
-  usageLimit?: UsageLimitState;
   autoRetryEnabled?: boolean;
-  tokensPerSecond?: number | null;
   todoPhases: TodoPhase[];
   extensionStatuses: Array<{ key: string; text: string }>;
   extensionWidgets: Array<{ key: string; lines: string[]; placement: "aboveEditor" | "belowEditor" }>;
@@ -165,7 +132,7 @@ export type AvailableSlashCommandSource =
   | "mcp_prompt"
   | "file";
 
-/** Mirror of omp's RpcAvailableSlashCommand (`get_available_commands`). */
+/** One slash command as `get_available_commands` returns it (pi's `get_commands`, lib/pi/rpc-process.ts). */
 export interface RpcAvailableSlashCommand {
   name: string;
   aliases?: string[];
@@ -175,7 +142,7 @@ export interface RpcAvailableSlashCommand {
   source: AvailableSlashCommandSource;
 }
 
-/** Mirror of omp's BashResult (`bash` command response). */
+/** Mirror of pi's BashResult (`bash` command response). */
 export interface BashResultInfo {
   output: string;
   exitCode: number | undefined;
@@ -188,12 +155,11 @@ export interface BashResultInfo {
   outputBytes?: number;
   artifactId?: string;
   workingDir?: string;
-  /** omp-web: omp held the result back for the next prompt (a turn was running). */
+  /** tau: pi held the result back for the next prompt (a turn was running). */
   deferred?: boolean;
 }
 
 export interface GenerationSpeedInfo {
-  current: number | null;
   average: number | null;
 }
 
@@ -219,7 +185,7 @@ export interface SessionStatsInfo {
   contextUsage?: ContextUsage;
 }
 
-/** One question of omp's ask dialog (`method: "ask"`, omp's `askDialog`). */
+/** One question of an ask dialog (`method: "askDialog"`). */
 export interface RpcAskDialogQuestion {
   id: string;
   question: string;
@@ -238,17 +204,10 @@ export interface RpcAskDialogAnswer {
 }
 
 /**
- * A submitted whole-form ask (omp's `formDialog`), by control `name`: radios, single checkboxes and
- * single selects give their value (omitted when nothing is chosen), checkbox groups and multi-selects
- * an array, `number`/`range` inputs a number, other text fields their text. Mirrors pi-tui's html-form.
- */
-export type HtmlFormData = Record<string, string | number | string[]>;
-
-/**
- * omp's RPC host-tool bridge: omp-web registers host tools (set_host_tools)
- * that the agent can call; the server emits host_tool_call frames the UI
- * executes, and the UI answers with host_tool_result. Mirrors
- * oh-my-pi modes/rpc/rpc-types.ts.
+ * tau's host-tool bridge: tau registers host tools (set_host_tools, which the
+ * daemon hands to the extension's `/tau_host_tools`) that the agent can call;
+ * the server emits host_tool_call frames the UI executes, and the UI answers
+ * with host_tool_result.
  */
 export interface HostToolParameter {
   type?: string;
@@ -286,41 +245,3 @@ export interface HostToolResultFrame {
   isError?: boolean;
 }
 
-/**
- * omp's RPC host-URI bridge: the host registers URL schemes
- * (set_host_uri_schemes) that the agent's read/write tools resolve through
- * the UI; the server emits host_uri_request frames the UI satisfies with
- * host_uri_result. Mirrors oh-my-pi modes/rpc/rpc-types.ts.
- */
-export interface HostUriSchemeDefinition {
-  scheme: string;
-  description?: string;
-  writable?: boolean;
-  immutable?: boolean;
-}
-
-export type HostUriOperation = "read" | "write";
-
-export interface HostUriRequestFrame {
-  type: "host_uri_request";
-  id: string;
-  operation: HostUriOperation;
-  url: string;
-  /** Present for write operations. */
-  content?: string;
-}
-
-export interface HostUriCancelFrame {
-  type: "host_uri_cancel";
-  id: string;
-  targetId: string;
-}
-
-export interface HostUriResultFrame {
-  type: "host_uri_result";
-  id: string;
-  content?: string;
-  contentType?: "text/markdown" | "application/json" | "text/plain";
-  isError?: boolean;
-  error?: string;
-}

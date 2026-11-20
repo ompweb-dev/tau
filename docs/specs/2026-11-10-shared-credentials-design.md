@@ -1,3 +1,5 @@
+> Superseded: tau removed credential sharing and the omp auth broker (no `shareCredentials`, no `/api/hosts/broker`); every host's pi uses its own `auth.json`.
+
 # Shared provider credentials for linked hosts — design
 
 Date: 2026-11-10. Branch: `feat/shared-credentials` (started on `main` c72de444; `feat/transparent-host-pool`, which owns link protocol 8, is merged in).

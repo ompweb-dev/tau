@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau ships no agent build or runner; it runs the user's installed `pi --mode rpc`.
+
 # ompweb ships the omp integration build — implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

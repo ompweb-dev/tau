@@ -1,17 +1,16 @@
 import { statSync } from "fs";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, withSafeModelLoadFailure, type ModelsData } from "@/lib/models-cache";
-import { disposeUtilityRpc, runUtilityCommand, type OmpModel } from "@/lib/omp/rpc-utility";
-import { getModelsConfigPath } from "@/lib/omp/paths";
-import { readDisabledProviders } from "@/lib/omp/model-roles";
-import { readAnthropicSlowMode } from "@/lib/omp/settings-config";
+import { disposeUtilityRpc, runUtilityCommand, runUtilityExtension, type PiModel } from "@/lib/pi/rpc-utility";
+import { getModelsConfigPath } from "@/lib/pi/paths";
+import { thinkingLevelsForMeta } from "@/lib/thinking-levels";
 
-// The omp model registry (auth + models.yml) is global, not per-cwd, so one
+// The pi model registry (auth + models.json) is global, not per-cwd, so one
 // cache entry serves every request. The ?cwd= query parameter is still
 // accepted for client compatibility but no longer affects the result.
 const MODELS_CACHE_KEY = "global";
 
 declare global {
-  var __ompModelsConfigFingerprint: string | undefined;
+  var __tauModelsConfigFingerprint: string | undefined;
 }
 
 function refreshModelsIfConfigChanged(): void {
@@ -25,8 +24,8 @@ function refreshModelsIfConfigChanged(): void {
     // its later creation.
   }
 
-  const previous = globalThis.__ompModelsConfigFingerprint;
-  globalThis.__ompModelsConfigFingerprint = fingerprint;
+  const previous = globalThis.__tauModelsConfigFingerprint;
+  globalThis.__tauModelsConfigFingerprint = fingerprint;
   if (previous !== undefined && previous !== fingerprint) {
     // The utility process reads models.yml once at startup. External edits
     // therefore need the same invalidation as the web editor's PUT route.
@@ -46,25 +45,6 @@ function compareModelEntries(
     || modelNameCollator.compare(a.id, b.id);
 }
 
-// "off" is always a valid selector; the concrete efforts come from the model's
-// baked thinking metadata (omp: getSupportedEfforts = reasoning ? efforts : []).
-function thinkingLevelsFor(model: OmpModel): string[] {
-  if (!model.reasoning) return ["off"];
-  return ["off", ...(model.thinking?.efforts ?? [])];
-}
-
-// OMP's /fast maps to a priority service tier. These are the provider families
-// OMP currently resolves for that control (ModelControls.setFastMode).
-function supportsFastMode(model: OmpModel): boolean {
-  return model.provider === "anthropic" || model.provider === "openai" || model.provider === "google";
-}
-
-// Copy of omp's AgentSession#slowModeTarget for the composer's Slow toggle
-// before omp runs: Claude low priority on `anthropic`, else the flex tier of
-// the OpenAI/Google service-tier families. Live get_state wins once omp runs.
-// ponytail: provider-only; OpenRouter's openai/google ids need omp's model identity.
-const SLOW_MODE_PROVIDERS: Record<string, true> = { anthropic: true, openai: true, "openai-codex": true, google: true, "google-vertex": true };
-
 async function loadModels(): Promise<ModelsData> {
   const availableResponse = await runUtilityCommand<{ models?: unknown }>(
     { type: "get_available_models" },
@@ -72,10 +52,10 @@ async function loadModels(): Promise<ModelsData> {
   );
   const available = Array.isArray(availableResponse.models)
     ? availableResponse.models
-        .filter((model): model is OmpModel => (
+        .filter((model): model is PiModel => (
           typeof model === "object" && model !== null
-          && typeof (model as OmpModel).id === "string"
-          && typeof (model as OmpModel).provider === "string"
+          && typeof (model as PiModel).id === "string"
+          && typeof (model as PiModel).provider === "string"
         ))
         .map((model) => ({
           ...model,
@@ -85,32 +65,28 @@ async function loadModels(): Promise<ModelsData> {
 
   const nameMap = new Map<string, string>();
   const thinkingLevels: Record<string, string[]> = {};
+  const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
   const modelList = available
-    .map((m) => ({ id: m.id, name: m.name, provider: m.provider, thinkingLevels: thinkingLevelsFor(m), supportsFastMode: supportsFastMode(m), supportsSlowMode: SLOW_MODE_PROVIDERS[m.provider] === true, contextWindow: m.contextWindow ?? undefined, maxTokens: m.maxTokens ?? undefined }))
+    .map((m) => ({ id: m.id, name: m.name, provider: m.provider, thinkingLevels: thinkingLevelsForMeta(m), contextWindow: m.contextWindow ?? undefined, maxTokens: m.maxTokens ?? undefined }))
     .sort(compareModelEntries);
-  const loginResponse = await runUtilityCommand<{ providers?: unknown }>(
-    { type: "get_login_providers" },
-    30_000,
-  );
-  const loginProviders = Array.isArray(loginResponse.providers)
-    ? loginResponse.providers.filter((provider): provider is { id: string; name: string; authenticated: boolean } => (
+  // tau's companion extension reports pi's providers (lib/hosts/daemon-auth.ts reads the same list per host).
+  const loginResponse = await runUtilityExtension<{ providers?: unknown }>("tau_auth", { action: "providers" }, 30_000);
+  const connectedProviders = (Array.isArray(loginResponse.providers) ? loginResponse.providers : [])
+    .filter((provider): provider is { id: string; name: string; configured: boolean } => (
       typeof provider === "object" && provider !== null
       && typeof (provider as { id?: unknown }).id === "string"
       && typeof (provider as { name?: unknown }).name === "string"
-      && typeof (provider as { authenticated?: unknown }).authenticated === "boolean"
+      && (provider as { configured?: unknown }).configured === true
     ))
-    : [];
-  const disabledProviders = readDisabledProviders();
-  const connectedProviders = loginProviders
-    .filter((provider) => provider.authenticated)
-    .map((provider) => ({ id: provider.id, name: provider.name, disabled: disabledProviders.has(provider.id) }));
+    .map((provider) => ({ id: provider.id, name: provider.name }));
   for (const m of available) {
     const key = `${m.provider}:${m.id}`;
     nameMap.set(key, m.name);
-    thinkingLevels[key] = thinkingLevelsFor(m);
+    thinkingLevels[key] = thinkingLevelsForMeta(m);
+    if (m.thinkingLevelMap) thinkingLevelMaps[key] = m.thinkingLevelMap;
   }
 
-  // omp resolves the default model at session start; a --no-session utility
+  // pi resolves the default model at session start; a --no-session utility
   // process reports it via get_state.
   let defaultModel: { provider: string; modelId: string } | null = null;
   try {
@@ -128,7 +104,7 @@ async function loadModels(): Promise<ModelsData> {
   }
 
   return withModelRuntimeError(
-    { models: Object.fromEntries(nameMap), modelList, defaultModel, thinkingLevels, connectedProviders },
+    { models: Object.fromEntries(nameMap), modelList, defaultModel, thinkingLevels, thinkingLevelMaps, connectedProviders },
     undefined,
   );
 }
@@ -142,11 +118,9 @@ const EMPTY_MODELS: ModelsData = {
 
 export async function GET() {
   refreshModelsIfConfigChanged();
-  // Outside the cache: `/slow` on a Claude model rewrites config.yml.
-  const anthropicSlowMode = readAnthropicSlowMode();
   try {
-    return Response.json({ ...await loadModelsWithCache(MODELS_CACHE_KEY, () => loadModels()), anthropicSlowMode });
+    return Response.json(await loadModelsWithCache(MODELS_CACHE_KEY, () => loadModels()));
   } catch {
-    return Response.json({ ...withSafeModelLoadFailure(EMPTY_MODELS), anthropicSlowMode });
+    return Response.json(withSafeModelLoadFailure(EMPTY_MODELS));
   }
 }

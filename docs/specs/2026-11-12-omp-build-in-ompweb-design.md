@@ -1,3 +1,5 @@
+> Superseded: tau ships no agent build, runner or `omp-runner.json` pin; it runs the user's installed pi (`pi --mode rpc` plus `lib/pi/tau-extension.ts`), pinned for CI by `PI_VERSION` in the workflows.
+
 # ompweb ships the omp integration build — design
 
 Date: 2026-11-12, final 2026-11-13. ompweb side: PR #473 (`feat/omp-runner`).

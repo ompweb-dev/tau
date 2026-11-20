@@ -1,19 +1,16 @@
-// Types mirrored from oh-my-pi coding-agent session-entries (v3 format).
-import type { HtmlFormData, RpcAskDialogQuestion, TodoPhase } from "./pi-types";
+// Types mirrored from pi's session entries (core/session-manager, v3 format).
+import type { RpcAskDialogQuestion, TodoPhase } from "./pi-types";
 import type { MessageOrigin, SessionOriginRef } from "./message-origin";
 
-// omp-web cannot import the Bun-only @oh-my-pi packages, so the on-disk
+// tau never imports pi's SDK, so the on-disk
 // shapes are re-declared here. Legacy pi v1/v2 fields are kept optional.
-
-export type SessionTitleSource = "auto" | "user";
 
 export interface SessionHeader {
   type: "session";
   version?: number;
   id: string;
-  /** Current title, folded in from the fixed-width title slot (line 1) on load. */
+  /** The session name (latest session_info), set by loadSessionFile; never stored in the header. */
   title?: string;
-  titleSource?: SessionTitleSource;
   timestamp: string;
   cwd: string;
   /** Extra workspace roots beyond cwd (multi-root workspace). */
@@ -37,8 +34,7 @@ export interface TextContent {
 }
 
 /**
- * Image block. omp persists the flat {data, mimeType} shape (data may be a
- * `blob:sha256:` reference until resolved); legacy pi entries used the nested
+ * Image block. pi persists the flat {data, mimeType} shape; legacy entries used the nested
  * Anthropic-style `source` shape. The UI handles both. Tool-result images
  * reach the browser as `url` (`/api/media/<sha256>`, `?thumb=1` for a small
  * preview) instead of inline base64.
@@ -77,7 +73,7 @@ export interface UserMessage {
   content: string | (TextContent | ImageContent)[];
   timestamp?: number;
   clientMessageId?: string;
-  /** Rendered from a `branch_summary` entry, not a real prompt: omp cannot branch at it. */
+  /** Rendered from a `branch_summary` entry, not a real prompt: pi cannot fork at it. */
   branchSummary?: true;
   /** Server-authored provenance, stored outside the native message entry and never supplied by browser commands. */
   origin?: MessageOrigin;
@@ -115,11 +111,11 @@ export interface ToolResultMessage {
   isError?: boolean;
   details?: unknown;
   timestamp?: number;
-  /** Live snapshot of a tool that is still executing (omp's
+  /** Live snapshot of a tool that is still executing (pi's
    * `tool_execution_update`), not a committed result. Rendering treats it as
    * "running" and keeps it out of the session's toolResult list. */
   partial?: boolean;
-  /** Sanitized one-line passive context omp emitted after this result's tool
+  /** Sanitized one-line passive context emitted after this result's tool
    * batch (`collectToolResults`); display-only, never part of the result. */
   passiveContext?: string;
 }
@@ -153,7 +149,7 @@ export interface DeveloperMessage {
   timestamp?: number;
 }
 
-/** User-initiated Python execution via the $ command (omp-only). */
+/** User-initiated Python execution via the $ command (pi writes none). */
 export interface PythonExecutionMessage {
   role: "pythonExecution";
   code: string;
@@ -165,7 +161,7 @@ export interface PythonExecutionMessage {
   timestamp?: number;
 }
 
-/** Auto-read @filepath mentions packed into a single message (omp-only). */
+/** Auto-read @filepath mentions packed into a single message (pi writes none). */
 export interface FileMentionMessage {
   role: "fileMention";
   files: Array<{
@@ -189,12 +185,12 @@ export type AgentMessage =
   | PythonExecutionMessage
   | FileMentionMessage;
 
-/** omp's `ExtensionUIDialogOptions` as the runner sends them (no signal or callbacks). */
+/** Dialog options as a `ui_request` carries them (no signal or callbacks). */
 export interface UiDialogOptions {
   timeout?: number;
   /** `input`: mask the entered text. */
   secret?: boolean;
-  /** omp's checkbox list (ask multi-select): `checkedIndices` is the authoritative checked state. */
+  /** Checkbox list (ask multi-select): `checkedIndices` is the authoritative checked state. */
   selectionMarker?: "radio" | "checkbox";
   checkedIndices?: number[];
   /** Leading options that get a marker; the rest are actions such as Other and Done. */
@@ -206,17 +202,7 @@ type UiDialogOptionsArg = UiDialogOptions | null;
 
 export type UiSelectItem = string | { label: string; description?: string };
 
-/** omp's `ExtensionApprovalPrompt`: a title line then details. */
-export interface UiApprovalPrompt {
-  full: string;
-  compact: string;
-  session?: string;
-  grants?: { scope: "folder" | "target"; label: string; alwaysLabel: string }[];
-}
-
-export type UiApprovalAnswer = "once" | "session" | "deny" | { grant: "folder" | "target"; always: boolean };
-
-/** omp's `ExtensionAskDialogSubmitResult`. */
+/** An ask dialog's submit result. */
 export interface UiAskDialogResult {
   kind: "submit";
   results: {
@@ -227,11 +213,6 @@ export interface UiAskDialogResult {
     selectedOptions: string[];
     customInput?: string;
   }[];
-}
-
-/** omp's `ExtensionFormDialogResult`. */
-export interface UiFormDialogResult {
-  data: HtmlFormData;
 }
 
 export type AgentConfirmPayload =
@@ -251,12 +232,13 @@ export type AgentConfirmPayload =
       message: string | null;
     };
 
-/** What an omp dialog method returns; a cancel sends no value. */
-export type UiDialogValue = string | boolean | UiAskDialogResult | UiFormDialogResult | UiApprovalAnswer;
+/** What a dialog method returns; a cancel sends no value. */
+export type UiDialogValue = string | boolean | UiAskDialogResult;
 
 /**
- * A dialog the runner opened: `method` is omp's `ExtensionUIContext` method, `args` its positional
- * arguments. omp-web's own confirms carry string ids. `expiresAt` (epoch ms) is set when it times out.
+ * A dialog pi opened: `method` is its `ExtensionUIContext` method (or tau's own `askDialog`
+ * for its ask tool), `args` its positional
+ * arguments. tau's own confirms carry string ids. `expiresAt` (epoch ms) is set when it times out.
  */
 export type UiDialogRequest = { type: "ui_request"; id: number | string; expiresAt?: number } & (
   | { method: "select"; args: [title: string, options: UiSelectItem[], dialogOptions?: UiDialogOptionsArg] }
@@ -267,24 +249,15 @@ export type UiDialogRequest = { type: "ui_request"; id: number | string; expires
       args: [title: string, prefill?: string | null, dialogOptions?: UiDialogOptionsArg, editorOptions?: { promptStyle?: boolean } | null];
     }
   | { method: "askDialog"; args: [questions: RpcAskDialogQuestion[], dialogOptions?: UiDialogOptionsArg] }
-  /** omp's whole-form ask: the agent's `<form>` HTML, rendered as controls, never as markup. */
-  | { method: "formDialog"; args: [html: string, dialogOptions?: UiDialogOptionsArg] }
-  | { method: "approve"; args: [prompt: UiApprovalPrompt, dialogOptions?: UiDialogOptionsArg] }
 );
 
-/** A presentation call from the runner. */
+/** A presentation call from pi (`extension_ui_request`); `notify` arrives as a `notice` frame instead. */
 export type UiPresentationFrame = { type: "ui" } & (
-  | { method: "notify"; message: string; notifyType?: "info" | "warning" | "error" }
   | { method: "setStatus"; statusKey: string; statusText?: string }
   | { method: "setWidget"; widgetKey: string; widgetLines?: string[]; widgetPlacement?: "aboveEditor" | "belowEditor" }
   | { method: "setTitle"; title: string }
   | { method: "set_editor_text"; text: string }
-  | { method: "setWorkingMessage"; message?: string }
-  /** A custom component's rendered lines; keys go back as `ui_input`. */
-  | { method: "custom"; id: number; lines: string[]; closed?: boolean }
 );
-
-export type UiCustomFrame = Extract<UiPresentationFrame, { method: "custom" }>;
 
 export interface ExtensionStatusItem {
   key: string;
@@ -311,7 +284,7 @@ export interface ThinkingLevelChangeEntry extends SessionEntryBase {
 
 export interface ModelChangeEntry extends SessionEntryBase {
   type: "model_change";
-  /** omp format: "provider/modelId". */
+  /** Single-string form "provider/modelId" (pi writes `provider` and `modelId`). */
   model?: string;
   /** Model role ("default", "smol", ...); undefined means "default". */
   role?: string;
@@ -328,17 +301,10 @@ export interface ServiceTierChangeEntry extends SessionEntryBase {
 export interface CompactionEntry extends SessionEntryBase {
   type: "compaction";
   summary: string;
-  shortSummary?: string;
   firstKeptEntryId: string;
   tokensBefore: number;
-  /** omp ≥17.4: maintenance method that fired (e.g. "remote-compacted", "handoff"). */
-  method?: string;
-  tokensAfter?: number;
   details?: unknown;
-  preserveData?: Record<string, unknown>;
-  fromExtension?: boolean;
   fromHook?: boolean;
-  warning?: string;
 }
 
 export interface BranchSummaryEntry extends SessionEntryBase {
@@ -346,7 +312,6 @@ export interface BranchSummaryEntry extends SessionEntryBase {
   fromId: string;
   summary: string;
   details?: unknown;
-  fromExtension?: boolean;
   fromHook?: boolean;
 }
 
@@ -370,28 +335,19 @@ export interface LabelEntry extends SessionEntryBase {
   label: string | undefined;
 }
 
-/** Legacy pi rename entry; omp replaced it with the title slot + title_change. */
+/** pi's session name entry (appendSessionInfo); the latest one names the session, an empty name clears it. */
 export interface SessionInfoEntry extends SessionEntryBase {
   type: "session_info";
   name?: string;
 }
 
-/** Append-only audit entry recording a session title change (omp). */
-export interface TitleChangeEntry extends SessionEntryBase {
-  type: "title_change";
-  title: string;
-  previousTitle?: string;
-  source: SessionTitleSource;
-  trigger?: string;
-}
-
-/** Tracks which time-traveling rules have been injected this session (omp). */
+/** Tracks which time-traveling rules have been injected this session (pi writes none). */
 export interface TtsrInjectionEntry extends SessionEntryBase {
   type: "ttsr_injection";
   injectedRules: string[];
 }
 
-/** Initial context capture for subagent sessions (omp). */
+/** Initial context capture for subagent sessions (pi writes none). */
 export interface SessionInitEntry extends SessionEntryBase {
   type: "session_init";
   systemPrompt: string;
@@ -404,7 +360,7 @@ export interface SessionInitEntry extends SessionEntryBase {
   readSummarize?: boolean;
 }
 
-/** Agent mode transitions, e.g. plan mode (omp). */
+/** Agent mode transitions, e.g. plan mode (pi writes none). */
 export interface ModeChangeEntry extends SessionEntryBase {
   type: "mode_change";
   /** Current mode name, or "none" when exiting a mode. */
@@ -423,7 +379,6 @@ export type SessionEntry =
   | CustomMessageEntry
   | LabelEntry
   | SessionInfoEntry
-  | TitleChangeEntry
   | TtsrInjectionEntry
   | SessionInitEntry
   | ModeChangeEntry;
@@ -471,7 +426,7 @@ export interface SessionInfo {
   projectId?: string;
 }
 
-/** Metadata for a gzip-compressed session in OMP's archive tree. */
+/** Metadata for a gzip-compressed session in the archive tree. */
 export interface ArchivedSessionInfo {
   key: string;
   id: string;
@@ -489,13 +444,9 @@ export interface ArchivedSessionInfo {
   hostId?: string;
 }
 
-/** Workspace-level omp launch configuration; only affects omp children spawned for that workspace. */
+/** Workspace-level pi launch configuration; only affects pi children spawned for that workspace. */
 export interface ProjectLaunchConfig {
-  /** The OMP profile to use. */
-  profile?: string;
-  /** Whether to launch with advisor mode. */
-  advisor?: boolean;
-  /** Extra OMP CLI args, stored as an array. */
+  /** Extra pi CLI args, stored as an array. */
   extraArgs?: string[];
 }
 
@@ -513,7 +464,7 @@ export interface ManagedProject {
   /** Set when pinned: position among pinned workspaces (lower first). Pins
    *  only apply while the sidebar sorts by name or activity. */
   pinOrder?: number;
-  /** Workspace-level omp launch configuration. */
+  /** Workspace-level pi launch configuration. */
   launchConfig?: ProjectLaunchConfig;
   /** Host the project lives on ("local" for this machine). Set by GET /api/projects. */
   hostId?: string;
@@ -539,7 +490,6 @@ export interface SessionContext {
   resolvedClientMessageIds?: string[];
 }
 
-/** An omp child that exited unexpectedly; retained until that session starts again. */
 /** A host tool call for a session no tab is watching, sent to every open tab. */
 export interface CrossSessionHostToolCall {
   sessionId: string;
@@ -556,6 +506,7 @@ export type CrossSessionHostToolEvent = (CrossSessionHostToolCall & { type?: "ho
   targetId: string;
 };
 
+/** A pi child that exited unexpectedly; retained until that session starts again. */
 export interface ExitedRpcSession {
   id: string;
   cwd: string;
@@ -568,10 +519,10 @@ export interface ExitedRpcSession {
   detail: string;
 }
 
-/** How a held message goes to omp (docs/specs/2026-11-04-message-outbox-design.md O3). */
+/** How a held message goes to pi (docs/specs/2026-11-04-message-outbox-design.md O3). */
 export type OutboxMode = "prompt" | "followUp" | "steer";
 
-/** A message omp-web holds for a session until omp has it (the web server's outbox, lib/message-outbox.ts). */
+/** A message tau holds for a session until pi has it (the web server's outbox, lib/message-outbox.ts). */
 export interface OutboxEntry {
   id: string;
   sessionId: string;
@@ -582,7 +533,7 @@ export interface OutboxEntry {
   origin?: MessageOrigin;
   state: "held" | "waiting_host" | "delivering" | "failed" | "delivered";
   error?: string;
-  /** A lost reply: omp may have it; never resent by itself. */
+  /** A lost reply: pi may have it; never resent by itself. */
   mayHaveBeenSent?: boolean;
   /** Only while delivering: authoritative persisted history captured before dispatch, never retained in tombstones. */
   previousEntryIds?: string[];

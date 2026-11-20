@@ -65,107 +65,6 @@ test("does not render an empty model error", () => {
   assert.equal(renderToStaticMarkup(React.createElement(ModelErrorBanner, { error: null })), "");
 });
 
-test("formats structured Claude low-priority state in the browser locale", () => {
-  const resetsAtSec = Math.floor(Date.now() / 1000) + 3_600;
-  const time = new Date(resetsAtSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const html = renderToStaticMarkup(
-    React.createElement(ChatInput, {
-      async onSend() { return { status: "accepted" }; },
-      isStreaming: false,
-      usageLimit: { stage: "low_priority", resetsAtSec, allowanceLeftPercent: 62 },
-    }),
-  );
-  assert.match(html, new RegExp(`low priority until ${time.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")} · 62% left`));
-});
-
-test("formats every Claude usage-limit stage", () => {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const shortReset = nowSec + 3_600;
-  const longReset = nowSec + 86_400;
-  const shortTime = new Date(shortReset * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const longTime = new Date(longReset * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
-  const rows = [
-    [{ stage: "low_priority", resetsAtSec: shortReset }, `low priority until ${shortTime}`],
-    [{ stage: "wrap_up", extraUsage: false }, "limit reached · wrapping up"],
-    [{ stage: "wrap_up", resetsAtSec: shortReset, extraUsage: false }, `limit reached · wrapping up · resets ${shortTime}`],
-    [{ stage: "wrap_up", extraUsage: true }, "limit reached · wrap-up, then extra usage"],
-    [{ stage: "low_priority", resetsAtSec: longReset }, `low priority until ${longTime}`],
-  ];
-  for (const [usageLimit, label] of rows) {
-    const html = renderToStaticMarkup(
-      React.createElement(ChatInput, { async onSend() { return { status: "accepted" }; }, isStreaming: false, usageLimit }),
-    );
-    assert.ok(html.includes(label), `${JSON.stringify(usageLimit)} should render ${label}`);
-  }
-});
-
-test("never renders a null percentage, an invalid date, or a past reset clock", () => {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const pastSec = nowSec - 3_600;
-  const rows = [
-    { stage: "low_priority", resetsAtSec: nowSec + 3_600, allowanceLeftPercent: null },
-    { stage: "low_priority", resetsAtSec: nowSec + 3_600, allowanceLeftPercent: Number.NaN },
-    { stage: "low_priority", resetsAtSec: null, allowanceLeftPercent: 62 },
-    { stage: "low_priority", resetsAtSec: undefined, allowanceLeftPercent: 62 },
-    { stage: "low_priority", resetsAtSec: null },
-    { stage: "low_priority", resetsAtSec: pastSec, allowanceLeftPercent: 62 },
-    { stage: "wrap_up", resetsAtSec: null, extraUsage: false },
-    { stage: "wrap_up", resetsAtSec: pastSec, extraUsage: false },
-  ];
-  for (const usageLimit of rows) {
-    const html = renderToStaticMarkup(
-      React.createElement(ChatInput, { async onSend() { return { status: "accepted" }; }, isStreaming: false, usageLimit }),
-    );
-    const label = `${JSON.stringify(usageLimit)} -> ${html}`;
-    // "null" / "NaN" / "Invalid Date" reaching the label is the bug this pins:
-    // every one of them is a value the user would plan their session around.
-    assert.ok(!html.includes("Invalid Date"), `invalid date rendered: ${label}`);
-    assert.ok(!html.includes("null%"), `null percentage rendered: ${label}`);
-    assert.ok(!html.includes("NaN%"), `NaN percentage rendered: ${label}`);
-    // A reset already in the past must not render a plausible wrong clock.
-    if (usageLimit.resetsAtSec === pastSec) {
-      assert.ok(!html.includes(new Date(pastSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })),
-        `past reset clock rendered: ${label}`);
-    }
-  }
-  // The allowance is still worth showing when the reset time is unusable.
-  assert.match(
-    renderToStaticMarkup(
-      React.createElement(ChatInput, {
-        async onSend() { return { status: "accepted" }; },
-        isStreaming: false,
-        usageLimit: { stage: "low_priority", resetsAtSec: null, allowanceLeftPercent: 62 },
-      }),
-    ),
-    /low priority · 62% left/,
-  );
-  // ...and something is still shown when neither is usable.
-  assert.match(
-    renderToStaticMarkup(
-      React.createElement(ChatInput, {
-        async onSend() { return { status: "accepted" }; },
-        isStreaming: false,
-        usageLimit: { stage: "low_priority", resetsAtSec: null },
-      }),
-    ),
-    /class="composer-usage-limit-badge"[^>]*>low priority</,
-  );
-});
-
-test("shows the Slow toggle only when omp reports /slow applies, pressed when enabled", () => {
-  const render = (props) => renderToStaticMarkup(
-    React.createElement(ChatInput, { async onSend() { return { status: "accepted" }; }, isStreaming: false, onSlowModeChange() {}, ...props }),
-  );
-  // Older omp omits the field; an unsupported model reports false.
-  for (const props of [{}, { slowModeSupported: false, slowModeEnabled: true }]) {
-    assert.doesNotMatch(render(props), /composer-slow-control/);
-  }
-  assert.match(
-    render({ slowModeSupported: true, slowModeEnabled: true }),
-    /<button[^>]*class="composer-slow-control"[^>]*aria-pressed="true"/,
-  );
-});
-
 test("keeps the model selector visible when a model error leaves no options", () => {
   const html = renderToStaticMarkup(
     React.createElement(ChatInput, {
@@ -184,7 +83,7 @@ test("keeps the model selector visible when a model error leaves no options", ()
 });
 
 
-test("renders goal, planning, and advisor indicators at the composer", () => {
+test("renders goal and planning indicators at the composer", () => {
   const html = renderToStaticMarkup(
     React.createElement(ChatInput, {
       async onSend() { return { status: "accepted" }; },
@@ -196,31 +95,13 @@ test("renders goal, planning, and advisor indicators at the composer", () => {
       modelNames: {},
       activeGoal: { objective: "Ship the active goal bar", startedAt: 0 },
       activePlan: { objective: "Plan the implementation" },
-      advisorEnabled: true,
-      onAdvisorChange() {},
     }),
   );
 
   assert.match(html, /Ship the active goal bar/);
   assert.match(html, /(Planning in progress|chatInput\.planningInProgress)/);
-  // The advisor toggle moved into the plus menu: no pressed toggle inline,
-  // but the plus trigger renders for the same props.
   assert.doesNotMatch(html, /aria-pressed="true"/);
   assert.match(html, /aria-label="(More actions|chatInput\.plusMenu)"/);
-});
-
-test("shows the advisor thunder indicator with the reviewing model and reasoning", () => {
-  const html = renderToStaticMarkup(
-    React.createElement(ChatInput, {
-      async onSend() { return { status: "accepted" }; },
-      onAbort() {},
-      isStreaming: true,
-      advisorActive: true,
-      advisorModel: { name: "GPT-5.6 Luna", reasoning: "xhigh" },
-    }),
-  );
-
-  assert.match(html, /aria-label="[^"]*GPT-5\.6 Luna[^"]*xhigh[^"]*"/);
 });
 
 test("filters model options by display name, identifier, and provider", () => {
@@ -262,15 +143,14 @@ test("renders single queued prompt in compact bar", () => {
   assert.match(html, /\[From Build session\]/);
   assert.match(html, />(Edit|chatInput\.queuedEdit)</);
   assert.match(html, />(Delete|chatInput\.queuedDelete)</);
-  assert.match(html, />(Steer|chatInput\.queuedSteerAction)</);
+  assert.doesNotMatch(html, />Steer</, "pi has no promotion to steering");
 });
 
-test("keeps editing and deletion but hides Steer for a single queued steer", () => {
+test("keeps editing and deletion for a single queued steer", () => {
   const html = renderToStaticMarkup(
     React.createElement(ChatInput, {
       async onSend() { return { status: "accepted" }; },
       onAbort() {},
-      onPromoteQueuedToSteer() {},
       isStreaming: true,
       queuedMessages: {
         followUp: [],
@@ -282,7 +162,7 @@ test("keeps editing and deletion but hides Steer for a single queued steer", () 
   assert.match(html, /Already prioritized task/);
   assert.match(html, />(Edit|chatInput\.queuedEdit)</);
   assert.match(html, />(Delete|chatInput\.queuedDelete)</);
-  assert.doesNotMatch(html, />(Steer|chatInput\.queuedSteerAction)</);
+  assert.doesNotMatch(html, />Steer</);
 });
 
 test("renders multiple queued prompts with count and expand action", () => {
@@ -301,6 +181,9 @@ test("renders multiple queued prompts with count and expand action", () => {
   assert.match(html, /\(3\)/);
   assert.match(html, />(Show all queued prompts|Show all|chatInput\.expandQueued)</);
   assert.match(html, /First task/);
+  // pi takes its queue back only whole: one Edit and one Delete for the whole queue.
+  assert.equal(html.match(/>(Edit|chatInput\.queuedEdit)</g)?.length, 1);
+  assert.equal(html.match(/>(Delete|chatInput\.queuedDelete)</g)?.length, 1);
 });
 
 

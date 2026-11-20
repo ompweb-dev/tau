@@ -17,8 +17,8 @@ import { SubagentStatusIcon } from "./SubagentStatusIcon";
 import { BtwPanel, type BtwPanelProps } from "./BtwPanel";
 
 // Panels unmount when their inputs are empty and remount when they fill
-const TODO_COLLAPSED_STORAGE_KEY = "omp-web:composer-todo-collapsed";
-const SUBAGENTS_COLLAPSED_STORAGE_KEY = "omp-web:composer-subagents-collapsed";
+const TODO_COLLAPSED_STORAGE_KEY = "tau:composer-todo-collapsed";
+const SUBAGENTS_COLLAPSED_STORAGE_KEY = "tau:composer-subagents-collapsed";
 
 function loadCollapsed(key: string, defaultExpanded: boolean): boolean {
   if (typeof window === "undefined") return !defaultExpanded;
@@ -354,7 +354,7 @@ export function ComposerPanels({ todoPhases, subagents, onSelectSubagent, btw = 
  * frame owns the title and the Compact action. Renders nothing until the
  * session reports stats or usage.
  *
- * NOTE: omp reports context as a single total (tokens/window/percent) — there
+ * NOTE: pi reports context as a single total (tokens/window/percent) — there
  * is no per-category breakdown on the wire, so none is shown here. */
 export function ContextDetailPanel({ sessionStats, contextUsage, modelCapacity, generationSpeed }: {
   sessionStats?: SessionStatsInfo | null;
@@ -430,12 +430,8 @@ export function ContextDetailPanel({ sessionStats, contextUsage, modelCapacity, 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 5, fontSize: 10, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
                 <span>{t("composerContext.windowSize", { tokens: formatCompactNumber(ctx.contextWindow) })}</span>
                 {modelCapacity?.maxTokens ? <span>{t("composerContext.maxOutput", { tokens: formatCompactNumber(modelCapacity.maxTokens) })}</span> : null}
-                {generationSpeed?.current != null || generationSpeed?.average != null ? (
-                  <span>
-                    {generationSpeed?.current != null && generationSpeed?.average != null
-                      ? t("composerContext.speed", { current: generationSpeed.current.toFixed(1), average: generationSpeed.average.toFixed(1) })
-                      : t("composerContext.speedCurrent", { current: (generationSpeed?.current ?? generationSpeed?.average ?? 0).toFixed(1) })}
-                  </span>
+                {generationSpeed?.average != null ? (
+                  <span>{t("composerContext.speedCurrent", { current: generationSpeed.average.toFixed(1) })}</span>
                 ) : null}
               </div>
             </div>

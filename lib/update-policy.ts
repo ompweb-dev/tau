@@ -1,6 +1,6 @@
 const TRUTHY_ENV_VALUES = ["1", "true", "yes", "on"];
 
-export const DISABLE_AUTOUPDATE_ENV_VAR = "OMP_WEB_DISABLE_AUTOUPDATE";
+export const DISABLE_AUTOUPDATE_ENV_VAR = "TAU_DISABLE_AUTOUPDATE";
 
 /** Whether update checks and in-app self-update are disabled for this process. */
 export function isUpdateDisabled(env: NodeJS.ProcessEnv = process.env): boolean {

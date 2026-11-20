@@ -2,10 +2,10 @@ import { apiErrorResponse } from "@/lib/api-utils";
 import { mkdirSync, writeFileSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
-import { getSessionsDir, getSessionDirNameForCwd } from "@/lib/omp/paths";
+import { getSessionsDir, getSessionDirNameForCwd } from "@/lib/pi/paths";
 import { invalidateLocalSessionLists } from "@/lib/hosts/session-index";
 import { invalidateSessionListCache } from "@/lib/session-reader";
-import { invalidateSessionFileListCache } from "@/lib/omp/session-files";
+import { invalidateSessionFileListCache } from "@/lib/pi/session-files";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
@@ -14,12 +14,12 @@ const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 // separately while preserving the 10 MB limit for decoded session content.
 const MAX_IMPORT_REQUEST_BYTES = MAX_IMPORT_BYTES * 2 + 64 * 1024;
 
-/** omp session file timestamps: ISO-8601 with `:` and `.` replaced by `-`. */
+/** pi session file timestamps: ISO-8601 with `:` and `.` replaced by `-`. */
 function isoSessionTimestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
-// POST /api/sessions/import — import a native omp session .jsonl file.
+// POST /api/sessions/import — import a native pi session .jsonl file.
 // The session keeps its original entries but can only target a workspace the
 // user previously authorized through projects, sessions, or cwd selection.
 export async function POST(req: Request) {
@@ -75,10 +75,10 @@ export async function POST(req: Request) {
       return line;
     });
     if (rewritten.some((line) => line === null)) {
-      return Response.json({ error: "Not a valid omp session file (malformed JSON line)", code: "invalid_session_file" }, { status: 400 });
+      return Response.json({ error: "Not a valid pi session file (malformed JSON line)", code: "invalid_session_file" }, { status: 400 });
     }
     if (!cwd) {
-      return Response.json({ error: "Not a valid omp session file (missing session header with cwd)", code: "invalid_session_file" }, { status: 400 });
+      return Response.json({ error: "Not a valid pi session file (missing session header with cwd)", code: "invalid_session_file" }, { status: 400 });
     }
 
     const allowedRoots = await getAllowedFileRoots();

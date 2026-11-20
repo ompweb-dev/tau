@@ -5,9 +5,8 @@ import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useTransition, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { getSubmitDuringRunBehavior, setSubmitDuringRunBehavior, type SubmitDuringRunBehavior } from "@/lib/composer-prefs";
 import dynamic from "@/lib/dynamic";
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, RefreshCw, RotateCcw, Search, Monitor, Play, Square, Trash2, X } from "lucide-react";
-import { COMPACTION_METHODS, DEFAULT_COMPACTION_METHOD_ORDER, type CompactionMethod } from "@/lib/compaction-methods";
-import { formatAgentEnvText, parseAgentEnvText, type AgentEnvErrorLabels } from "@/lib/omp/agent-env-policy";
+import { ArrowLeft, Copy, Download, RefreshCw, RotateCcw, Search, Monitor, Play, Square, Trash2, X } from "lucide-react";
+import { formatAgentEnvText, parseAgentEnvText, type AgentEnvErrorLabels } from "@/lib/pi/agent-env-policy";
 import { isRecord } from "@/lib/type-guards";
 import { Alert } from "@/components/ui/field";
 import { ThemedSelect } from "@/components/ui/primitives";
@@ -33,7 +32,6 @@ import {
   updateNotificationPrefs,
   type NotificationSupport,
 } from "@/lib/notification-client";
-import { BROWSER_TRANSPORTS, type BrowserTransport } from "@/lib/event-stream-protocol";
 import { setConnectionDiagnosticsEnabled, useConnectionDiagnosticsEnabled } from "@/lib/connection-diagnostics-prefs";
 import type { GithubActionsOperation, GithubActionsPermission, GithubActionsPermissions } from "@/lib/web-settings";
 const SettingsTabLoading = () => {
@@ -44,7 +42,6 @@ const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => mod
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { loading: SettingsTabLoading });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { loading: SettingsTabLoading });
 const McpConfig = dynamic(() => import("./McpConfig").then((module) => module.McpConfig), { loading: SettingsTabLoading });
-const AgentsConfig = dynamic(() => import("./AgentsConfig").then((module) => module.AgentsConfig), { loading: SettingsTabLoading });
 const HostsConfig = dynamic(() => import("./HostsConfig").then((module) => module.HostsConfig), { loading: SettingsTabLoading });
 const UsageConfig = dynamic(() => import("./UsageConfig").then((module) => module.UsageConfig), { loading: SettingsTabLoading });
 
@@ -65,21 +62,12 @@ type WindowsServiceStatus = {
   version: string;
 };
 
+/** pi's settings.json keys Settings edits (lib/pi/settings-config.ts). */
 type NativeSettings = {
-  defaultThinkingLevel?: "auto" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-  providers?: { autoThinkingSource?: "classifier" | "vendor" };
+  defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   hideThinkingBlock?: boolean;
-  externalThinking?: boolean;
-  textVerbosity?: "low" | "medium" | "high";
-  personality?: "default" | "friendly" | "pragmatic" | "none";
-  advisor?: { enabled?: boolean; subagents?: boolean; syncBacklog?: "off" | "1" | "3" | "5"; immuneTurns?: number };
-  tools?: { approvalMode?: "always-ask" | "write" | "yolo"; approval?: { bash?: "allow" | "prompt" | "deny"; extension?: "allow" | "prompt" } };
-  compaction?: { enabled?: boolean; midTurnEnabled?: boolean; methodOrder?: CompactionMethod[]; autoContinue?: boolean; keepRecentTokens?: number };
-  memory?: { backend?: "off" | "local" | "mnemopi" | "hindsight" };
-  autolearn?: { enabled?: boolean; autoContinue?: boolean; minToolCalls?: number };
-  mnemopi?: { scoping?: "global" | "per-project" | "per-project-tagged"; autoRecall?: boolean; autoRetain?: boolean; noEmbeddings?: boolean };
-  mcp?: { enableProjectConfig?: boolean; renderMarkdownResults?: boolean; notifications?: boolean; notificationDebounceMs?: number };
-  retry?: { enabled?: boolean; maxRetries?: number; modelFallback?: boolean };
+  compaction?: { enabled?: boolean; keepRecentTokens?: number };
+  retry?: { enabled?: boolean; maxRetries?: number };
 };
 
 const nativeSelectStyle = {
@@ -139,7 +127,7 @@ type SettingIndexEntry = {
   fallbackSection: string;
   fallbackLabel: string;
   fallbackDesc: string;
-  scope?: "UI" | "Native OMP" | "Workspace";
+  scope?: "UI" | "Native pi" | "Workspace";
 };
 
 const SETTING_INDEX: SettingIndexEntry[] = [
@@ -154,71 +142,41 @@ const SETTING_INDEX: SettingIndexEntry[] = [
   { id: "scope-native-select-all", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.scopeNativeSelectAll", descKey: "settingsConfig.scopeNativeSelectAllDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Scope native Select All (experimental)", fallbackDesc: "Limit whole-page selections from browser or touch menus to the active message, chat, or file. May also narrow deliberate whole-page selections. Turn off if selection handles or menus misbehave. Keyboard shortcuts are unaffected.", scope: "UI" },
   { id: "tts-autoplay", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.ttsAutoplay", descKey: "settingsConfig.ttsAutoplayDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Auto-read assistant responses", fallbackDesc: "Automatically read aloud new assistant replies when completed.", scope: "UI" },
   { id: "tts-voice", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.ttsVoice", descKey: "settingsConfig.ttsVoiceDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Speech Voice", fallbackDesc: "Select the browser voice for text-to-speech reading.", scope: "UI" },
-  { id: "provider-usage", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.providerUsage", descKey: "settingsConfig.providerUsageDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Provider usage limits", fallbackDesc: "Show provider usage in the sidebar, above Settings.", scope: "UI" },
   { id: "chat-font-size", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.chatFontSize", descKey: "settingsConfig.chatFontSizeDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Chat Font Size", fallbackDesc: "Adjust text size for conversation messages, code blocks, and markdown output.", scope: "UI" },
   { id: "ui-scale", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.uiScale", descKey: "settingsConfig.uiScaleDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Interface Scale", fallbackDesc: "Adjust overall UI zoom and display density across sidebars, dialogs, buttons, and toolbars.", scope: "UI" },
   { id: "touch-targets", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.touchTargets", descKey: "settingsConfig.touchTargetsDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Touch Targets", fallbackDesc: "Adjust interactive target sizes for buttons and toolbar controls.", scope: "UI" },
   { id: "message-during-active-run", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.messageDuringActiveRun", descKey: "settingsConfig.messageDuringActiveRunDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Message during active run", fallbackDesc: "What composer does on submit while agent runs. Steer interrupts; Queue follow-up delivers after finish.", scope: "UI" },
-  { id: "browser-transport", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.browserTransport", descKey: "settingsConfig.browserTransportDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Browser connection", fallbackDesc: "How browsers receive live updates and send chat commands: one WebSocket that picks up where it left off after a dropped connection (the default), or server-sent events + HTTP. A browser whose proxy blocks WebSockets falls back to server-sent events on its own. Every open browser switches within a few seconds.", scope: "UI" },
   { id: "connection-diagnostics", tab: "general", sectionKey: "settingsConfig.interfaceBehavior", labelKey: "settingsConfig.connectionDiagnostics", descKey: "settingsConfig.connectionDiagnosticsDesc", fallbackSection: "Interface & Behavior", fallbackLabel: "Show connection diagnostics", fallbackDesc: "Adds a Connection tab to the right panel showing the connection this browser uses (WebSocket or server-sent events), its status and delivery latency statistics. Applies to this browser only.", scope: "UI" },
-  // Tool Safety & Approvals
-  { id: "approval-mode", tab: "safety", sectionKey: "settingsConfig.toolSafetyApprovals", labelKey: "settingsConfig.approvalMode", descKey: "settingsConfig.approvalModeDesc", fallbackSection: "Tool Safety & Approvals", fallbackLabel: "Approval Mode", fallbackDesc: "Choose when OMP asks before tool calls.", scope: "Native OMP" },
-  { id: "bash-override", tab: "safety", sectionKey: "settingsConfig.toolSafetyApprovals", labelKey: "settingsConfig.bashOverride", descKey: "settingsConfig.bashOverrideDesc", fallbackSection: "Tool Safety & Approvals", fallbackLabel: "Bash Override", fallbackDesc: "Override default approval policy specifically for terminal commands.", scope: "Native OMP" },
-  { id: "extension-tool-requests", tab: "safety", sectionKey: "settingsConfig.toolSafetyApprovals", labelKey: "settingsConfig.extensionToolRequests", descKey: "settingsConfig.extensionToolRequestsDesc", fallbackSection: "Tool Safety & Approvals", fallbackLabel: "Extension Tool Requests", fallbackDesc: "Automatically approve extension tool authorization requests.", scope: "Native OMP" },
   // AI Model Defaults
-  { id: "reasoning", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.reasoning", descKey: "settingsConfig.reasoningDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Reasoning", fallbackDesc: "Default effort level for thinking-capable models.", scope: "Native OMP" },
-  { id: "auto-thinking-source", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.autoThinkingSource", descKey: "settingsConfig.autoThinkingSourceDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Auto Thinking Source", fallbackDesc: "Choose prompt classification or the publisher default with omp fallback.", scope: "Native OMP" },
-  { id: "verbosity", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.verbosity", descKey: "settingsConfig.verbosityDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Verbosity", fallbackDesc: "Response detail level for supporting providers.", scope: "Native OMP" },
-  { id: "personality", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.personality", descKey: "settingsConfig.personalityDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Personality", fallbackDesc: "Style included in OMP's system prompt.", scope: "Native OMP" },
-  { id: "thinking-blocks", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.thinkingBlocks", descKey: "settingsConfig.thinkingBlocksDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Hide Thinking Blocks", fallbackDesc: "Hide model reasoning from output view.", scope: "Native OMP" },
-  { id: "external-thinking", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.externalThinking", descKey: "settingsConfig.externalThinkingDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "External Thinking", fallbackDesc: "Private scratchpad reasoning via think tool.", scope: "Native OMP" },
+  { id: "reasoning", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.reasoning", descKey: "settingsConfig.reasoningDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Reasoning", fallbackDesc: "Default effort level for thinking-capable models.", scope: "Native pi" },
+  { id: "thinking-blocks", tab: "models", sectionKey: "settingsConfig.modelDefaults", labelKey: "settingsConfig.thinkingBlocks", descKey: "settingsConfig.thinkingBlocksDesc", fallbackSection: "AI Model Defaults", fallbackLabel: "Hide Thinking Blocks", fallbackDesc: "Hide model reasoning from output view.", scope: "Native pi" },
   // Context Compaction
-  { id: "automatic-compaction", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.automaticCompaction", descKey: "settingsConfig.automaticCompactionDesc", fallbackSection: "Context Compaction", fallbackLabel: "Automatic Compaction", fallbackDesc: "Compact context before model context limit is hit.", scope: "Native OMP" },
-  { id: "continue-after-compaction", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.continueAfterCompaction", descKey: "settingsConfig.continueAfterCompactionDesc", fallbackSection: "Context Compaction", fallbackLabel: "Continue After Compaction", fallbackDesc: "Resume task execution after compaction completes.", scope: "Native OMP" },
-  { id: "compaction-method-order", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.compactionMethodOrder", descKey: "settingsConfig.compactionMethodOrderDesc", fallbackSection: "Context Compaction", fallbackLabel: "Compaction Method Order", fallbackDesc: "Preferred fallback order for automatic context maintenance; unavailable or failed methods advance to the next choice.", scope: "Native OMP" },
-  { id: "compact-mid-turn", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.compactMidTurn", descKey: "settingsConfig.compactMidTurnDesc", fallbackSection: "Context Compaction", fallbackLabel: "Compact Mid-Turn", fallbackDesc: "Check context limits between tool execution steps.", scope: "Native OMP" },
-  // Memory & Auto-Learn
-  { id: "memory-backend", tab: "intelligence", sectionKey: "settingsConfig.memoryAutoLearn", labelKey: "settingsConfig.memoryBackend", descKey: "settingsConfig.memoryBackendDesc", fallbackSection: "Memory & Auto-Learn", fallbackLabel: "Memory Backend", fallbackDesc: "Where durable knowledge is stored across sessions.", scope: "Native OMP" },
-  { id: "enable-auto-learn", tab: "intelligence", sectionKey: "settingsConfig.memoryAutoLearn", labelKey: "settingsConfig.enableAutoLearn", descKey: "settingsConfig.enableAutoLearnDesc", fallbackSection: "Memory & Auto-Learn", fallbackLabel: "Enable Auto-Learn", fallbackDesc: "Capture reusable lessons after completed runs.", scope: "Native OMP" },
-  { id: "private-capture-turn", tab: "intelligence", sectionKey: "settingsConfig.memoryAutoLearn", labelKey: "settingsConfig.privateCaptureTurn", descKey: "settingsConfig.privateCaptureTurnDesc", fallbackSection: "Memory & Auto-Learn", fallbackLabel: "Private Capture Turn", fallbackDesc: "Run private lesson-capture turn at completion.", scope: "Native OMP" },
-  { id: "memory-scope", tab: "intelligence", sectionKey: "settingsConfig.memoryAutoLearn", labelKey: "settingsConfig.memoryScope", descKey: "settingsConfig.memoryScopeDesc", fallbackSection: "Memory & Auto-Learn", fallbackLabel: "Memory Scope", fallbackDesc: "Scoping for Mnemopi knowledge storage.", scope: "Native OMP" },
-  { id: "recall-on-session-start", tab: "intelligence", sectionKey: "settingsConfig.memoryAutoLearn", labelKey: "settingsConfig.recallOnSessionStart", descKey: "settingsConfig.recallOnSessionStartDesc", fallbackSection: "Memory & Auto-Learn", fallbackLabel: "Recall on Session Start", fallbackDesc: "Load relevant memories into first turn.", scope: "Native OMP" },
-  { id: "retain-completed-turns", tab: "intelligence", sectionKey: "settingsConfig.memoryAutoLearn", labelKey: "settingsConfig.retainCompletedTurns", descKey: "settingsConfig.retainCompletedTurnsDesc", fallbackSection: "Memory & Auto-Learn", fallbackLabel: "Retain Completed Turns", fallbackDesc: "Store completed conversation turns in memory.", scope: "Native OMP" },
+  { id: "automatic-compaction", tab: "intelligence", sectionKey: "settingsConfig.contextCompaction", labelKey: "settingsConfig.automaticCompaction", descKey: "settingsConfig.automaticCompactionDesc", fallbackSection: "Context Compaction", fallbackLabel: "Automatic Compaction", fallbackDesc: "Compact context before model context limit is hit.", scope: "Native pi" },
   // Automatic Retry
-  { id: "automatic-retry", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.retryToggle", descKey: "settingsConfig.retryToggleDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Automatic Retry", fallbackDesc: "Retry failed turns automatically.", scope: "Native OMP" },
-  { id: "max-attempts", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.maxAttempts", descKey: "settingsConfig.maxAttemptsDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Max Attempts", fallbackDesc: "Retry limit before giving up.", scope: "Native OMP" },
-  { id: "model-fallback", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.modelFallback", descKey: "settingsConfig.modelFallbackDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Model Fallback", fallbackDesc: "Fall back to alternative model when retries exhaust.", scope: "Native OMP" },
-  // Agents
-  { id: "agent-roster", tab: "agents", sectionKey: "settingsConfig.agentsTitle", labelKey: "settingsTabs.agents.label", descKey: "settingsTabs.agents.description", fallbackSection: "Agents", fallbackLabel: "Agent roster", fallbackDesc: "Browse enabled agents filtered by name and source.", scope: "Native OMP" },
-  { id: "agent-model", tab: "agents", sectionKey: "settingsConfig.agentsTitle", labelKey: "agentsConfig.modelRoles", descKey: "modelsConfig.modelRolesDesc", fallbackSection: "Agents", fallbackLabel: "Agent model", fallbackDesc: "Model mapping and reasoning effort per agent role.", scope: "Native OMP" },
-  { id: "agent-tools", tab: "agents", sectionKey: "settingsConfig.agentsTitle", labelKey: "agentsConfig.tools", descKey: "settingsTabs.agents.description", fallbackSection: "Agents", fallbackLabel: "Agent tools", fallbackDesc: "Allowed tools and delegated task prompt per agent.", scope: "Native OMP" },
-  // Extensions & Tools
-  { id: "load-project-mcp-servers", tab: "mcp", sectionKey: "settingsConfig.extensionsTools", labelKey: "settingsConfig.loadProjectMcp", descKey: "settingsConfig.loadProjectMcpDesc", fallbackSection: "Extensions & Tools", fallbackLabel: "Load Project MCP Servers", fallbackDesc: "Allow project-root MCP configuration to be discovered.", scope: "Native OMP" },
-  { id: "render-mcp-markdown", tab: "mcp", sectionKey: "settingsConfig.extensionsTools", labelKey: "settingsConfig.renderMcpMarkdown", descKey: "settingsConfig.renderMcpMarkdownDesc", fallbackSection: "Extensions & Tools", fallbackLabel: "Render MCP Markdown", fallbackDesc: "Render non-JSON MCP results as Markdown in transcript.", scope: "Native OMP" },
-  { id: "mcp-resource-updates", tab: "mcp", sectionKey: "settingsConfig.extensionsTools", labelKey: "settingsConfig.mcpResourceUpdates", descKey: "settingsConfig.mcpResourceUpdatesDesc", fallbackSection: "Extensions & Tools", fallbackLabel: "MCP Resource Updates", fallbackDesc: "Inject server resource updates into conversation.", scope: "Native OMP" },
+  { id: "automatic-retry", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.retryToggle", descKey: "settingsConfig.retryToggleDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Automatic Retry", fallbackDesc: "Retry failed turns automatically.", scope: "Native pi" },
+  { id: "max-attempts", tab: "intelligence", sectionKey: "settingsConfig.automaticRetry", labelKey: "settingsConfig.maxAttempts", descKey: "settingsConfig.maxAttemptsDesc", fallbackSection: "Automatic Retry", fallbackLabel: "Max Attempts", fallbackDesc: "Retry limit before giving up.", scope: "Native pi" },
   // Usage & Analytics
   { id: "usage-summary", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.title", descKey: "settingsTabs.usage.description", fallbackSection: "Usage", fallbackLabel: "Usage & Analytics", fallbackDesc: "Tokens, costs, cache analytics, and model breakdown", scope: "UI" },
   { id: "token-cost", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.rawTokenCost", descKey: "usageConfig.billedAtFullRate", fallbackSection: "Usage", fallbackLabel: "Raw Token Cost", fallbackDesc: "Token expenditure across providers and models", scope: "UI" },
   { id: "cache-savings", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.cacheSavings", descKey: "usageConfig.costQuality", fallbackSection: "Usage", fallbackLabel: "Cache Savings", fallbackDesc: "Prompt caching savings and cost quality breakdown", scope: "UI" },
   { id: "model-breakdown", tab: "usage", sectionKey: "settingsTabs.usage.label", labelKey: "usageConfig.breakdown", descKey: "usageConfig.model", fallbackSection: "Usage", fallbackLabel: "Model Breakdown", fallbackDesc: "Historical token usage and cost per model, day, and project", scope: "UI" },
   // Windows Background Service & System Tray
-  { id: "auto-resume-sessions", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.autoResumeSessions", descKey: "settingsConfig.autoResumeSessionsDesc", fallbackSection: "System", fallbackLabel: "Resume running sessions after a restart", fallbackDesc: "When omp-web restarts while agents are working, restart those sessions and tell each agent: \"Session interrupted and resumed. Continue as you would have done without the interruption.\" Work in progress at the moment of the restart, such as a running command, is lost." },
+  { id: "auto-resume-sessions", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.autoResumeSessions", descKey: "settingsConfig.autoResumeSessionsDesc", fallbackSection: "System", fallbackLabel: "Resume running sessions after a restart", fallbackDesc: "When tau restarts while agents are working, restart those sessions and tell each agent: \"Session interrupted and resumed. Continue as you would have done without the interruption.\" Work in progress at the moment of the restart, such as a running command, is lost." },
   { id: "agent-tools-cross-session", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.agentTools", descKey: "settingsConfig.agentToolsDesc", fallbackSection: "System", fallbackLabel: "Agent tools (cross-session)", fallbackDesc: "Allow cross-session tools and GitHub tools for watching and reading issues and pull requests, writing comments and threads, and managing Actions workflow runs. Requires the GitHub CLI (gh) installed and logged in on this server." },
   { id: "github-writes-unasked", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.githubWritesUnasked", descKey: "settingsConfig.githubWritesUnaskedDesc", fallbackSection: "System", fallbackLabel: "Allow agent GitHub writes without asking", fallbackDesc: "Let agents post comments, reply in review threads and resolve threads through this server's gh login without a confirmation each time. Off: each of those comment and thread writes asks in the session first." },
   { id: "github-actions-dispatch", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.githubActionsDispatch", descKey: "settingsConfig.githubActionsDispatchDesc", fallbackSection: "System", fallbackLabel: "Dispatch workflows", fallbackDesc: "Choose whether agents may start GitHub Actions workflows." },
   { id: "github-actions-cancel", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.githubActionsCancel", descKey: "settingsConfig.githubActionsCancelDesc", fallbackSection: "System", fallbackLabel: "Cancel workflow runs", fallbackDesc: "Choose whether agents may cancel running GitHub Actions workflows." },
   { id: "github-actions-rerun", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.githubActionsRerun", descKey: "settingsConfig.githubActionsRerunDesc", fallbackSection: "System", fallbackLabel: "Rerun workflow runs", fallbackDesc: "Choose whether agents may rerun GitHub Actions workflow runs." },
-  { id: "upload-retention", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.uploadRetention", descKey: "settingsConfig.uploadRetentionDesc", fallbackSection: "System", fallbackLabel: "Delete sent uploads after", fallbackDesc: "Files attached As file are deleted from each session's local://uploads folder on every host, archived sessions included, once they are this old. Never keeps them for ever." },
-  { id: "agent-env", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.agentEnv", descKey: "settingsConfig.agentEnvDesc", fallbackSection: "System", fallbackLabel: "Agent environment variables", fallbackDesc: "Extra environment variables passed to the omp process, one KEY=VALUE per line. Applied to sessions started after saving.", scope: "UI" },
+  { id: "upload-retention", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.uploadRetention", descKey: "settingsConfig.uploadRetentionDesc", fallbackSection: "System", fallbackLabel: "Delete sent uploads after", fallbackDesc: "Files attached As file are deleted from each session's local/uploads folder on every host, archived sessions included, once they are this old. Never keeps them for ever." },
+  { id: "agent-env", tab: "system", sectionKey: "settingsConfig.systemUpdates", labelKey: "settingsConfig.agentEnv", descKey: "settingsConfig.agentEnvDesc", fallbackSection: "System", fallbackLabel: "Agent environment variables", fallbackDesc: "Extra environment variables passed to the pi process, one KEY=VALUE per line. Applied to sessions started after saving.", scope: "UI" },
   { id: "windows-service-autostart", tab: "system", sectionKey: "settingsConfig.windowsServiceTitle", labelKey: "settingsConfig.windowsServiceAutostart", descKey: "settingsConfig.windowsServiceAutostartDesc", fallbackSection: "Windows Background Service & System Tray", fallbackLabel: "Start with Windows", fallbackDesc: "Launch background service quietly in system tray when logging into Windows.", scope: "UI" },
   { id: "windows-service-shortcuts", tab: "system", sectionKey: "settingsConfig.windowsServiceTitle", labelKey: "settingsConfig.windowsServiceInstallBtn", descKey: "settingsConfig.windowsServiceDesc", fallbackSection: "Windows Background Service & System Tray", fallbackLabel: "Install Service & Shortcuts", fallbackDesc: "Manage background service execution, system tray monitor, Windows logon autostart, and Desktop shortcuts.", scope: "UI" },
   // Notifications
   { id: "notifications-enable", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.enable", descKey: "notifications.enableDesc", fallbackSection: "Notifications", fallbackLabel: "Enable notifications", fallbackDesc: "Asks the browser for permission to show notifications.", scope: "UI" },
   { id: "notifications-completed", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeCompleted", descKey: "notifications.typeCompletedDesc", fallbackSection: "Notifications", fallbackLabel: "Task finished", fallbackDesc: "A prompt and the background work it started are done. Subagents never notify.", scope: "UI" },
   { id: "notifications-input", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeInput", descKey: "notifications.typeInputDesc", fallbackSection: "Notifications", fallbackLabel: "Waiting for input", fallbackDesc: "The agent asks a question or needs an approval.", scope: "UI" },
-  { id: "notifications-error", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeError", descKey: "notifications.typeErrorDesc", fallbackSection: "Notifications", fallbackLabel: "Run failed", fallbackDesc: "A run stops with an error after retries and fallbacks, or the omp process exits.", scope: "UI" },
-  { id: "notifications-modelSwitch", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeModelSwitch", descKey: "notifications.typeModelSwitchDesc", fallbackSection: "Notifications", fallbackLabel: "Model switched automatically", fallbackDesc: "omp switches models on its own: a fallback after a refusal, rate limit, or usage limit, or a prewalk / plan hand-off.", scope: "UI" },
-  { id: "notifications-when-active", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.whenActive", descKey: "notifications.whenActiveDesc", fallbackSection: "Notifications", fallbackLabel: "When I'm using omp-web in another tab", fallbackDesc: "Nothing is shown for the session you are viewing.", scope: "UI" },
+  { id: "notifications-error", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.typeError", descKey: "notifications.typeErrorDesc", fallbackSection: "Notifications", fallbackLabel: "Run failed", fallbackDesc: "A run stops with an error after retries and fallbacks, or the pi process exits.", scope: "UI" },
+  { id: "notifications-when-active", tab: "notifications", sectionKey: "notifications.title", labelKey: "notifications.whenActive", descKey: "notifications.whenActiveDesc", fallbackSection: "Notifications", fallbackLabel: "When I'm using tau in another tab", fallbackDesc: "Nothing is shown for the session you are viewing.", scope: "UI" },
 ];
 
 function SearchResultsList({ results, query, onSelect }: { results: SearchResult[]; query: string; onSelect: (result: SearchResult) => void }) {
@@ -226,7 +184,7 @@ function SearchResultsList({ results, query, onSelect }: { results: SearchResult
   const isMobile = useIsMobile();
   const formatScope = (s?: string) => {
     if (s === "UI") return t("settingsConfig.chipUI");
-    if (s === "Native OMP") return t("settingsConfig.chipNativeOMP");
+    if (s === "Native pi") return t("settingsConfig.chipNativePi");
     if (s === "Workspace") return t("settingsConfig.chipWorkspace");
     return s;
   };
@@ -275,7 +233,7 @@ function SearchResultsList({ results, query, onSelect }: { results: SearchResult
   );
 }
 
-/** Server-side omp-web setting (lib/web-settings.ts), loaded on mount. */
+/** Server-side tau setting (lib/web-settings.ts), loaded on mount. */
 function AutoResumeSessionsSetting() {
   const { t } = useI18n();
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -309,7 +267,7 @@ function AutoResumeSessionsSetting() {
   );
 }
 
-/** Server-side omp-web setting (issue #275): cross-session agent tools.
+/** Server-side tau setting (issue #275): cross-session agent tools.
  * Off by default; mirrors AutoResumeSessionsSetting above. */
 function AgentToolsSetting() {
   const { t } = useI18n();
@@ -465,7 +423,7 @@ function GithubActionsPermissionsSetting() {
 
 const UPLOAD_RETENTION_CHOICES: readonly (number | null)[] = [null, 7, 30, 90];
 
-/** Server-side omp-web setting (lib/web-settings.ts): every host's daemon applies it to its own sessions' uploads. */
+/** Server-side tau setting (lib/web-settings.ts): every host's daemon applies it to its own sessions' uploads. */
 function UploadRetentionSetting() {
   const { t, tn } = useI18n();
   // undefined until loaded; null is "Never".
@@ -513,64 +471,8 @@ function UploadRetentionSetting() {
   );
 }
 
-const BROWSER_TRANSPORT_LABELS: Record<BrowserTransport, string> = {
-  sse: "settingsConfig.browserTransportSse",
-  ws: "settingsConfig.browserTransportWs",
-};
-
-/** Server-side omp-web setting (lib/web-settings.ts): every open browser follows a save within a few seconds. */
-function BrowserTransportSetting() {
-  const { t } = useI18n();
-  const [transport, setTransport] = useState<BrowserTransport | null>(null);
-  // Blocks a second change until the save lands: two PUTs in flight could finish out of order and leave the older one saved.
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    fetch("/api/web-settings")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { browserTransport?: BrowserTransport } | null) => {
-        if (alive) setTransport(data?.browserTransport ?? "ws");
-      })
-      .catch(() => { if (alive) setTransport("ws"); });
-    return () => { alive = false; };
-  }, []);
-  const change = async (next: BrowserTransport) => {
-    if (!transport) return;
-    const previous = transport;
-    setTransport(next);
-    setSaving(true);
-    try {
-      const res = await fetch("/api/web-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ browserTransport: next }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (error) {
-      setTransport(previous);
-      toast.error(t("settingsConfig.browserTransportSaveFailed"), error instanceof Error ? error.message : String(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <NativeSetting searchId="browser-transport" label={t("settingsConfig.browserTransport")} description={t("settingsConfig.browserTransportDesc")} scope="UI">
-      <ThemedSelect
-        style={nativeSelectStyle}
-        value={transport ?? "ws"}
-        disabled={transport === null || saving}
-        onChange={(nextValue) => {
-          const next = BROWSER_TRANSPORTS.find((mode) => mode === nextValue);
-          if (next) void change(next);
-        }}
-        options={BROWSER_TRANSPORTS.map((mode) => (({ value: mode, label: t(BROWSER_TRANSPORT_LABELS[mode]) })))}
-      />
-    </NativeSetting>
-  );
-}
-
-/** Server-side omp-web setting (issue #104): KEY=VALUE text injected into the
- * `omp` child process. Parsing/validation lives in lib/omp/agent-env.ts; this only
+/** Server-side tau setting (issue #104): KEY=VALUE text injected into the
+ * pi child process. Parsing/validation lives in lib/pi/agent-env.ts; this only
  * feeds it localized messages and renders the result. `cluster`: the members run it too (spec K1). */
 function AgentEnvSetting({ cluster }: { cluster: boolean }) {
   const { t } = useI18n();
@@ -700,7 +602,6 @@ const NOTIFICATION_TYPE_LABELS: Record<NotificationType, { label: string; desc: 
   completed: { label: "notifications.typeCompleted", desc: "notifications.typeCompletedDesc" },
   input: { label: "notifications.typeInput", desc: "notifications.typeInputDesc" },
   error: { label: "notifications.typeError", desc: "notifications.typeErrorDesc" },
-  modelSwitch: { label: "notifications.typeModelSwitch", desc: "notifications.typeModelSwitchDesc" },
 };
 
 const NOTIFICATION_STATUS_KEYS: Record<Exclude<NotificationSupport, "push" | "no-push">, string> = {
@@ -755,7 +656,7 @@ function NotificationSettingsPanel() {
 
   // With push, the server sends a real push; otherwise this tab shows one itself.
   const sendTest = async () => {
-    const testNotification = renderNotification({ type: "test", sessionId: "", sessionName: "omp web" }, t);
+    const testNotification = renderNotification({ type: "test", sessionId: "", sessionName: "tau" }, t);
     try {
       if (pushActive) {
         const res = await fetch("/api/notifications/test", {
@@ -836,7 +737,7 @@ function NotificationSettingsPanel() {
 }
 
 /** `disabled` only dims the row; the child control must be disabled itself. */
-function NativeSetting({ label, description, scope, searchId, disabled, children }: { label: string; description: string; scope?: "UI" | "Native OMP" | "Workspace"; searchId?: string; disabled?: boolean; children: ReactNode }) {
+function NativeSetting({ label, description, scope, searchId, disabled, children }: { label: string; description: string; scope?: "UI" | "Native pi" | "Workspace"; searchId?: string; disabled?: boolean; children: ReactNode }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const highlightId = useContext(SettingsHighlightContext);
@@ -848,7 +749,7 @@ function NativeSetting({ label, description, scope, searchId, disabled, children
 
   const formatScope = (s?: string) => {
     if (s === "UI") return t("settingsConfig.chipUI");
-    if (s === "Native OMP") return t("settingsConfig.chipNativeOMP");
+    if (s === "Native pi") return t("settingsConfig.chipNativePi");
     if (s === "Workspace") return t("settingsConfig.chipWorkspace");
     return s;
   };
@@ -901,72 +802,11 @@ function NativeSetting({ label, description, scope, searchId, disabled, children
   );
 }
 
-/** Mirrors omp's ordered multi-select (`compaction.methodOrder`): checked methods run in
- * their numbered order, unchecked ones are skipped; none checked disables automatic compaction. */
-function CompactionMethodOrder({ value, onChange, ...aria }: { value: readonly CompactionMethod[]; onChange: (next: CompactionMethod[]) => void } & EnhancedChildProps) {
-  const { t } = useI18n();
-  const groupRef = useRef<HTMLDivElement>(null);
-  // The moved row is re-inserted in the DOM once the save lands, which drops focus.
-  const refocusRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!refocusRef.current) return;
-    groupRef.current?.querySelector<HTMLButtonElement>(`[data-move="${refocusRef.current}"]`)?.focus();
-    refocusRef.current = null;
-  }, [value]);
-  const rows = [...value, ...COMPACTION_METHODS.filter((method) => !value.includes(method))];
-  const move = (method: CompactionMethod, delta: -1 | 1) => {
-    const index = value.indexOf(method);
-    if (index === -1 || !value[index + delta]) return;
-    const next = [...value];
-    [next[index], next[index + delta]] = [next[index + delta], next[index]];
-    refocusRef.current = `${method}:${delta}`;
-    onChange(next);
-  };
-  return (
-    <div ref={groupRef} role="group" className="compaction-method-order" {...aria}>
-      {rows.map((method) => {
-        const position = value.indexOf(method);
-        const label = t(`settingsConfig.compactionMethod.${method}`);
-        const description = t(`settingsConfig.compactionMethod.${method}Desc`);
-        const descId = `compaction-method-desc-${method}`;
-        const moveButton = (delta: -1 | 1) => {
-          const name = t(delta < 0 ? "settingsConfig.moveCompactionMethodUp" : "settingsConfig.moveCompactionMethodDown", { method: label });
-          const unavailable = position === -1 || !value[position + delta];
-          return (
-            <button type="button" data-move={`${method}:${delta}`} aria-disabled={unavailable} onClick={() => move(method, delta)} title={name} aria-label={name} className="ui-focus-ring">
-              {delta < 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-            </button>
-          );
-        };
-        return (
-          <div key={method} title={description} className="compaction-method-row" data-selected={position !== -1}>
-            <label>
-              <input
-                type="checkbox"
-                checked={position !== -1}
-                aria-label={position === -1 ? label : t("settingsConfig.compactionMethodPosition", { method: label, position: position + 1 })}
-                aria-describedby={descId}
-                onChange={(event) => onChange(event.target.checked ? [...value, method] : value.filter((item) => item !== method))}
-              />
-              <span aria-hidden="true" className="compaction-method-position">{position === -1 ? "" : `${position + 1}.`}</span>
-              <span>{label}</span>
-              <span id={descId} hidden>{description}</span>
-            </label>
-            {moveButton(-1)}
-            {moveButton(1)}
-          </div>
-        );
-      })}
-      <span role="status" className="settings-card-desc">{value.length === 0 ? t("settingsConfig.compactionMethodsNone") : ""}</span>
-    </div>
-  );
-}
+/** Tabs that edit the mirrored configuration (spec K1): `settings.json` (packages included), `models.json`, MCP servers,
+ * skills. Interface, System, usage, hosts and notifications belong to this browser or this server only. */
+const CLUSTER_CONFIG_TABS: readonly SettingsTab[] = ["models", "providers", "intelligence", "mcp", "skills", "plugins"];
 
-/** Tabs that edit the mirrored configuration (spec K1): `config.yml`, `models.yml`, MCP servers, skills, plugins and
- * agents. Interface, System, usage, hosts and notifications belong to this browser or this server only. */
-const CLUSTER_CONFIG_TABS: readonly SettingsTab[] = ["safety", "models", "providers", "intelligence", "agents", "mcp", "skills", "plugins"];
-
-export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCallsDefaultCollapsedChange, hideToolActivity, onHideToolActivityChange, neverFoldActivity, onNeverFoldActivityChange, showToolCallsUnfolded, onShowToolCallsUnfoldedChange, expandThinkingByDefault, onExpandThinkingByDefaultChange, onHideThinkingBlockChange, providerUsageVisible, onProviderUsageVisibleChange, scopeNativeSelectAll, onScopeNativeSelectAllChange, openUrlAutomatically, onOpenUrlAutomaticallyChange, cwd, remoteHost, cluster, sessionId, onModelsSaved, onPluginsReloaded, appUpdate, onRefreshAppUpdate, onRequestAppUpdate, onSelectTab, onClose }: {
+export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCallsDefaultCollapsedChange, hideToolActivity, onHideToolActivityChange, neverFoldActivity, onNeverFoldActivityChange, showToolCallsUnfolded, onShowToolCallsUnfoldedChange, expandThinkingByDefault, onExpandThinkingByDefaultChange, onHideThinkingBlockChange, scopeNativeSelectAll, onScopeNativeSelectAllChange, openUrlAutomatically, onOpenUrlAutomaticallyChange, cwd, remoteHost, cluster, sessionId, onModelsSaved, onPluginsReloaded, appUpdate, onRefreshAppUpdate, onRequestAppUpdate, onSelectTab, onClose }: {
   activeTab: SettingsTab;
   toolCallsDefaultCollapsed: boolean;
   onToolCallsDefaultCollapsedChange: (collapsed: boolean) => void;
@@ -979,8 +819,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
   expandThinkingByDefault: boolean;
   onExpandThinkingByDefaultChange: (expand: boolean) => void;
   onHideThinkingBlockChange?: (hide: boolean) => void;
-  providerUsageVisible: boolean;
-  onProviderUsageVisibleChange: (visible: boolean) => void;
   scopeNativeSelectAll: boolean;
   onScopeNativeSelectAllChange: (enabled: boolean) => void;
   openUrlAutomatically: boolean;
@@ -1034,7 +872,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     try {
-      const value = window.localStorage.getItem("omp-sound-enabled");
+      const value = window.localStorage.getItem("tau-sound-enabled");
       return value === null ? true : value === "true";
     } catch {
       return true;
@@ -1113,7 +951,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
     setNativeSettingsError(null);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 12000);
-    fetch("/api/omp-settings", { signal: controller.signal })
+    fetch("/api/pi-settings", { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`))))
       .then((data: { settings?: NativeSettings }) => {
         if (!nativeSettingsMutatedRef.current) setNativeSettings(data.settings ?? {});
@@ -1144,7 +982,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
           const snapshot = latestNativeSettingsRef.current;
           latestNativeSettingsRef.current = null;
           try {
-            const response = await fetch("/api/omp-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
+            const response = await fetch("/api/pi-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settings: snapshot }) });
             const data = (await response.json()) as { settings?: NativeSettings; error?: string };
             if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
             if (latestNativeSettingsRef.current === null) setNativeSettings(data.settings ?? snapshot);
@@ -1172,12 +1010,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
     void saveNativeSettings({ ...currentSettings(), [key]: { ...section, ...patch } });
   }, [currentSettings, nativeSettings, saveNativeSettings]);
 
-  const patchApproval = useCallback((patch: Partial<NonNullable<NonNullable<NativeSettings["tools"]>["approval"]>>) => {
-    const base = latestNativeSettingsRef.current ?? nativeSettings ?? {};
-    const tools = base.tools ?? {};
-    void saveNativeSettings({ ...base, tools: { ...tools, approval: { ...(tools.approval ?? {}), ...patch } } });
-  }, [nativeSettings, saveNativeSettings]);
-
   const checkForAppUpdate = useCallback(async (force = false) => {
     if (appUpdatesDisabled) return;
     setCheckingAppUpdate(true);
@@ -1192,7 +1024,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
   }, [appUpdatesDisabled, onRefreshAppUpdate]);
 
   const currentTab = activeTab === "skills" ? activeTab : getNormalizedActive(activeTab);
-  const nativeSettingsRequired = currentTab === "general" || currentTab === "safety" || currentTab === "models" || currentTab === "intelligence" || currentTab === "mcp";
+  const nativeSettingsRequired = currentTab === "general" || currentTab === "models" || currentTab === "intelligence";
   useEffect(() => {
     if (currentTab === "system") {
       void fetchWindowsServiceStatus();
@@ -1219,7 +1051,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
       }
     }
     for (const setting of SETTING_INDEX) {
-      if (setting.id === "auto-thinking-source" && nativeSettings?.defaultThinkingLevel !== "auto") continue;
       const trLabel = t(setting.labelKey);
       const trDesc = t(setting.descKey);
       const trSection = t(setting.sectionKey);
@@ -1232,7 +1063,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
       }
     }
     return results;
-  }, [trimmedQuery, t, nativeSettings?.defaultThinkingLevel]);
+  }, [trimmedQuery, t]);
 
   const openSearchResult = useCallback((result: SearchResult) => {
     startTransition(() => onSelectTab(result.tab));
@@ -1417,8 +1248,8 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                       checked={soundEnabled}
                       onChange={(next) => {
                         setSoundEnabled(next);
-                        try { localStorage.setItem("omp-sound-enabled", String(next)); } catch { /* storage fallback */ }
-                        window.dispatchEvent(new CustomEvent("omp-sound-pref-change", { detail: next }));
+                        try { localStorage.setItem("tau-sound-enabled", String(next)); } catch { /* storage fallback */ }
+                        window.dispatchEvent(new CustomEvent("tau-sound-pref-change", { detail: next }));
                       }}
                     />
                   </NativeSetting>
@@ -1450,9 +1281,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                         ...ttsVoices.map((v) => (({ value: v.voiceURI, label: <> {v.name} ({v.lang}) </> }))),
                       ]}
                     />
-                  </NativeSetting>
-                  <NativeSetting searchId="provider-usage" label={t("settingsConfig.providerUsage")} description={t("settingsConfig.providerUsageDesc")} scope="UI">
-                    <ToggleSwitch checked={providerUsageVisible} onChange={onProviderUsageVisibleChange} />
                   </NativeSetting>
                   <NativeSetting searchId="chat-font-size" label={t("settingsConfig.chatFontSize")} description={t("settingsConfig.chatFontSizeDesc")} scope="UI">
                     <ThemedSelect
@@ -1542,56 +1370,8 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                       ]}
                     />
                   </NativeSetting>
-                  <BrowserTransportSetting />
                   <NativeSetting searchId="connection-diagnostics" label={t("settingsConfig.connectionDiagnostics")} description={t("settingsConfig.connectionDiagnosticsDesc")} scope="UI">
                     <ToggleSwitch checked={connectionDiagnostics} onChange={setConnectionDiagnosticsEnabled} />
-                  </NativeSetting>
-                </div>
-              </div>
-            )}
-
-            {/* SAFETY & APPROVALS TAB */}
-            {currentTab === "safety" && (
-              <div role="tabpanel" id="settings-panel-safety" aria-labelledby="settings-tab-safety" className="settings-panel-inner" style={{ padding: isMobile ? "16px 14px 32px" : "32px 24px 64px", gap: 16 }}>
-                <div style={{ marginBottom: 4 }}>
-                  <h2 className="display-serif" style={{ fontSize: "var(--text-2xl)", fontWeight: 600, margin: 0, color: "var(--text)", letterSpacing: "-0.01em" }}>{t("settingsConfig.toolSafetyApprovals")}</h2>
-                  <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: "var(--text-md)", color: "var(--text-muted)", lineHeight: 1.45 }}>{t("settingsConfig.toolSafetyApprovalsDesc")}</p>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-                  <NativeSetting searchId="approval-mode" label={t("settingsConfig.approvalMode")} description={t("settingsConfig.approvalModeDesc")} scope="Native OMP">
-                    <ThemedSelect
-                      style={nativeSelectStyle}
-                      value={nativeSettings?.tools?.approvalMode ?? "yolo"}
-                      onChange={(nextValue) => patchSection("tools", { approvalMode: nextValue as "always-ask" | "write" | "yolo" })}
-                      options={[
-                        { value: "always-ask", label: t("settingsConfig.alwaysAsk") },
-                        { value: "write", label: t("settingsConfig.allowWrites") },
-                        { value: "yolo", label: t("settingsConfig.autoApproveYolo") },
-                      ]}
-                    />
-                  </NativeSetting>
-                  <NativeSetting searchId="bash-override" label={t("settingsConfig.bashOverride")} description={t("settingsConfig.bashOverrideDesc")} scope="Native OMP">
-                    <ThemedSelect
-                      style={nativeSelectStyle}
-                      value={nativeSettings?.tools?.approval?.bash ?? "prompt"}
-                      onChange={(nextValue) => patchApproval({ bash: nextValue as "allow" | "prompt" | "deny" })}
-                      options={[
-                        { value: "allow", label: t("settingsConfig.allow") },
-                        { value: "prompt", label: t("settingsConfig.alwaysAsk") },
-                        { value: "deny", label: t("settingsConfig.deny") },
-                      ]}
-                    />
-                  </NativeSetting>
-                  <NativeSetting searchId="extension-tool-requests" label={t("settingsConfig.extensionToolRequests")} description={t("settingsConfig.extensionToolRequestsDesc")} scope="Native OMP">
-                    <ThemedSelect
-                      style={nativeSelectStyle}
-                      value={nativeSettings?.tools?.approval?.extension ?? "prompt"}
-                      onChange={(nextValue) => patchApproval({ extension: nextValue as "allow" | "prompt" })}
-                      options={[
-                        { value: "prompt", label: t("settingsConfig.askEveryTime") },
-                        { value: "allow", label: t("settingsConfig.autoApprove") },
-                      ]}
-                    />
                   </NativeSetting>
                 </div>
               </div>
@@ -1605,64 +1385,18 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: "var(--text-md)", color: "var(--text-muted)", lineHeight: 1.45 }}>{t("settingsConfig.modelDefaultsDesc")}</p>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-                  <NativeSetting searchId="reasoning" label={t("settingsConfig.reasoning")} description={t("settingsConfig.reasoningDesc")} scope="Native OMP">
+                  <NativeSetting searchId="reasoning" label={t("settingsConfig.reasoning")} description={t("settingsConfig.reasoningDesc")} scope="Native pi">
                     <ThemedSelect
                       style={nativeSelectStyle}
-                      value={nativeSettings?.defaultThinkingLevel ?? "high"}
+                      value={nativeSettings?.defaultThinkingLevel ?? "medium"}
                       onChange={(nextValue) => patchSettings({ defaultThinkingLevel: nextValue as NativeSettings["defaultThinkingLevel"] })}
-                      options={["auto", "minimal", "low", "medium", "high", "xhigh", "max"].map((l) => (({ value: l, label: l })))}
+                      options={["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((l) => (({ value: l, label: l })))}
                     />
                   </NativeSetting>
-                  {nativeSettings?.defaultThinkingLevel === "auto" && (
-                    <NativeSetting searchId="auto-thinking-source" label={t("settingsConfig.autoThinkingSource")} description={t("settingsConfig.autoThinkingSourceDesc")} scope="Native OMP">
-                      <ThemedSelect
-                        style={nativeSelectStyle}
-                        value={nativeSettings.providers?.autoThinkingSource ?? "classifier"}
-                        onChange={(nextValue) => patchSection("providers", {
-                          autoThinkingSource: nextValue === "vendor" ? "vendor" : "classifier",
-                        })}
-                        options={[
-                          { value: "classifier", label: t("settingsConfig.autoThinkingClassifier") },
-                          { value: "vendor", label: t("settingsConfig.autoThinkingVendor") },
-                        ]}
-                      />
-                    </NativeSetting>
-                  )}
-                  <NativeSetting searchId="verbosity" label={t("settingsConfig.verbosity")} description={t("settingsConfig.verbosityDesc")} scope="Native OMP">
-                    <ThemedSelect
-                      style={nativeSelectStyle}
-                      value={nativeSettings?.textVerbosity ?? "medium"}
-                      onChange={(nextValue) => patchSettings({ textVerbosity: nextValue as NativeSettings["textVerbosity"] })}
-                      options={[
-                        { value: "low", label: t("settingsConfig.verbosityLow") },
-                        { value: "medium", label: t("settingsConfig.verbosityMedium") },
-                        { value: "high", label: t("settingsConfig.verbosityHigh") },
-                      ]}
-                    />
-                  </NativeSetting>
-                  <NativeSetting searchId="personality" label={t("settingsConfig.personality")} description={t("settingsConfig.personalityDesc")} scope="Native OMP">
-                    <ThemedSelect
-                      style={nativeSelectStyle}
-                      value={nativeSettings?.personality ?? "default"}
-                      onChange={(nextValue) => patchSettings({ personality: nextValue as NativeSettings["personality"] })}
-                      options={[
-                        { value: "default", label: t("settingsConfig.personalityDefault") },
-                        { value: "friendly", label: t("settingsConfig.personalityFriendly") },
-                        { value: "pragmatic", label: t("settingsConfig.personalityPragmatic") },
-                        { value: "none", label: t("settingsConfig.personalityNone") },
-                      ]}
-                    />
-                  </NativeSetting>
-                  <NativeSetting searchId="thinking-blocks" label={t("settingsConfig.thinkingBlocks")} description={t("settingsConfig.thinkingBlocksDesc")} scope="Native OMP">
+                  <NativeSetting searchId="thinking-blocks" label={t("settingsConfig.thinkingBlocks")} description={t("settingsConfig.thinkingBlocksDesc")} scope="Native pi">
                     <ToggleSwitch
                       checked={nativeSettings?.hideThinkingBlock ?? false}
                       onChange={(checked) => { patchSettings({ hideThinkingBlock: checked }); onHideThinkingBlockChange?.(checked); }}
-                    />
-                  </NativeSetting>
-                  <NativeSetting searchId="external-thinking" label={t("settingsConfig.externalThinking")} description={t("settingsConfig.externalThinkingDesc")} scope="Native OMP">
-                    <ToggleSwitch
-                      checked={nativeSettings?.externalThinking ?? false}
-                      onChange={(checked) => patchSettings({ externalThinking: checked })}
                     />
                   </NativeSetting>
                 </div>
@@ -1712,85 +1446,10 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <div className="settings-section-title" style={{ fontSize: 13.5, fontWeight: 600, margin: 0 }}>{t("settingsConfig.contextCompaction")}</div>
                   <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.45 }}>{t("settingsConfig.contextCompactionDesc")}</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4, width: "100%" }}>
-                    <NativeSetting searchId="automatic-compaction" label={t("settingsConfig.automaticCompaction")} description={t("settingsConfig.automaticCompactionDesc")} scope="Native OMP">
+                    <NativeSetting searchId="automatic-compaction" label={t("settingsConfig.automaticCompaction")} description={t("settingsConfig.automaticCompactionDesc")} scope="Native pi">
                       <ToggleSwitch
                         checked={nativeSettings?.compaction?.enabled ?? true}
                         onChange={(checked) => patchSection("compaction", { enabled: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="continue-after-compaction" label={t("settingsConfig.continueAfterCompaction")} description={t("settingsConfig.continueAfterCompactionDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.compaction?.autoContinue ?? true}
-                        onChange={(checked) => patchSection("compaction", { autoContinue: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="compaction-method-order" label={t("settingsConfig.compactionMethodOrder")} description={t("settingsConfig.compactionMethodOrderDesc")} scope="Native OMP">
-                      <CompactionMethodOrder
-                        value={nativeSettings?.compaction?.methodOrder ?? DEFAULT_COMPACTION_METHOD_ORDER}
-                        onChange={(methodOrder) => patchSection("compaction", { methodOrder })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="compact-mid-turn" label={t("settingsConfig.compactMidTurn")} description={t("settingsConfig.compactMidTurnDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.compaction?.midTurnEnabled ?? true}
-                        onChange={(checked) => patchSection("compaction", { midTurnEnabled: checked })}
-                      />
-                    </NativeSetting>
-                  </div>
-                </section>
-
-                {/* Memory & Auto-Learn Section */}
-                <section style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--border)", paddingTop: 18, width: "100%" }}>
-                  <div className="settings-section-title" style={{ fontSize: 13.5, fontWeight: 600, margin: 0 }}>{t("settingsConfig.memoryAutoLearn")}</div>
-                  <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.45 }}>{t("settingsConfig.memoryAutoLearnDesc")}</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4, width: "100%" }}>
-                    <NativeSetting searchId="memory-backend" label={t("settingsConfig.memoryBackend")} description={t("settingsConfig.memoryBackendDesc")} scope="Native OMP">
-                      <ThemedSelect
-                        style={nativeSelectStyle}
-                        value={nativeSettings?.memory?.backend ?? "mnemopi"}
-                        onChange={(nextValue) => patchSection("memory", { backend: nextValue as NonNullable<NativeSettings["memory"]>["backend"] })}
-                        options={[
-                          { value: "off", label: t("settingsConfig.memoryBackendOff") },
-                          { value: "local", label: t("settingsConfig.memoryBackendLocal") },
-                          { value: "mnemopi", label: t("settingsConfig.memoryBackendMnemopi") },
-                          { value: "hindsight", label: t("settingsConfig.memoryBackendHindsight") },
-                        ]}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="enable-auto-learn" label={t("settingsConfig.enableAutoLearn")} description={t("settingsConfig.enableAutoLearnDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.autolearn?.enabled ?? true}
-                        onChange={(checked) => patchSection("autolearn", { enabled: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="private-capture-turn" label={t("settingsConfig.privateCaptureTurn")} description={t("settingsConfig.privateCaptureTurnDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.autolearn?.autoContinue ?? true}
-                        onChange={(checked) => patchSection("autolearn", { autoContinue: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="memory-scope" label={t("settingsConfig.memoryScope")} description={t("settingsConfig.memoryScopeDesc")} scope="Native OMP">
-                      <ThemedSelect
-                        style={nativeSelectStyle}
-                        value={nativeSettings?.mnemopi?.scoping ?? "per-project"}
-                        onChange={(nextValue) => patchSection("mnemopi", { scoping: nextValue as NonNullable<NativeSettings["mnemopi"]>["scoping"] })}
-                        options={[
-                          { value: "per-project", label: t("settingsConfig.memoryScopePerProject") },
-                          { value: "per-project-tagged", label: t("settingsConfig.memoryScopePerProjectTagged") },
-                          { value: "global", label: t("settingsConfig.memoryScopeGlobal") },
-                        ]}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="recall-on-session-start" label={t("settingsConfig.recallOnSessionStart")} description={t("settingsConfig.recallOnSessionStartDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.mnemopi?.autoRecall ?? true}
-                        onChange={(checked) => patchSection("mnemopi", { autoRecall: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="retain-completed-turns" label={t("settingsConfig.retainCompletedTurns")} description={t("settingsConfig.retainCompletedTurnsDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.mnemopi?.autoRetain ?? true}
-                        onChange={(checked) => patchSection("mnemopi", { autoRetain: checked })}
                       />
                     </NativeSetting>
                   </div>
@@ -1801,24 +1460,18 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <div className="settings-section-title" style={{ fontSize: 13.5, fontWeight: 600, margin: 0 }}>{t("settingsConfig.automaticRetry")}</div>
                   <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12.5, lineHeight: 1.45 }}>{t("settingsConfig.automaticRetryDesc")}</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4, width: "100%" }}>
-                    <NativeSetting searchId="automatic-retry" label={t("settingsConfig.retryToggle")} description={t("settingsConfig.retryToggleDesc")} scope="Native OMP">
+                    <NativeSetting searchId="automatic-retry" label={t("settingsConfig.retryToggle")} description={t("settingsConfig.retryToggleDesc")} scope="Native pi">
                       <ToggleSwitch
                         checked={nativeSettings?.retry?.enabled ?? true}
                         onChange={(checked) => patchSection("retry", { enabled: checked })}
                       />
                     </NativeSetting>
-                    <NativeSetting searchId="max-attempts" label={t("settingsConfig.maxAttempts")} description={t("settingsConfig.maxAttemptsDesc")} scope="Native OMP">
+                    <NativeSetting searchId="max-attempts" label={t("settingsConfig.maxAttempts")} description={t("settingsConfig.maxAttemptsDesc")} scope="Native pi">
                       <ThemedSelect
                         style={nativeSelectStyle}
-                        value={String(nativeSettings?.retry?.maxRetries ?? 2)}
+                        value={String(nativeSettings?.retry?.maxRetries ?? 3)}
                         onChange={(nextValue) => patchSection("retry", { maxRetries: Number(nextValue) })}
                         options={[0, 1, 2, 3, 4, 5].map((n) => (({ value: n, label: n })))}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="model-fallback" label={t("settingsConfig.modelFallback")} description={t("settingsConfig.modelFallbackDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.retry?.modelFallback ?? false}
-                        onChange={(checked) => patchSection("retry", { modelFallback: checked })}
                       />
                     </NativeSetting>
                   </div>
@@ -1834,29 +1487,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                   <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45 }}>{t("settingsConfig.extensionsToolsDesc")}</p>
                   {cwd && (!remoteHost || cluster) && <button type="button" className="settings-back ui-focus-ring" onClick={() => handleSelectTab("skills")}>{t("skillsConfig.title")}</button>}
                 </div>
-                {cwd && (!remoteHost || cluster) && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%" }}>
-                    <NativeSetting searchId="load-project-mcp-servers" label={t("settingsConfig.loadProjectMcp")} description={t("settingsConfig.loadProjectMcpDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.mcp?.enableProjectConfig ?? true}
-                        onChange={(checked) => patchSection("mcp", { enableProjectConfig: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="render-mcp-markdown" label={t("settingsConfig.renderMcpMarkdown")} description={t("settingsConfig.renderMcpMarkdownDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.mcp?.renderMarkdownResults ?? true}
-                        onChange={(checked) => patchSection("mcp", { renderMarkdownResults: checked })}
-                      />
-                    </NativeSetting>
-                    <NativeSetting searchId="mcp-resource-updates" label={t("settingsConfig.mcpResourceUpdates")} description={t("settingsConfig.mcpResourceUpdatesDesc")} scope="Native OMP">
-                      <ToggleSwitch
-                        checked={nativeSettings?.mcp?.notifications ?? false}
-                        onChange={(checked) => patchSection("mcp", { notifications: checked })}
-                      />
-                    </NativeSetting>
-                  </div>
-                )}
-                {panelsUnavailable ? remoteUnavailable : <McpConfig cwd={panelCwd} sessionId={sessionId} liveOnly={remoteHost} />}
+                {panelsUnavailable ? remoteUnavailable : <McpConfig cwd={panelCwd} />}
                 {!cwd && <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 12 }}>{t("settingsConfig.selectWorkspaceForMcp")}</p>}
               </div>
             )}
@@ -1872,36 +1503,6 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
             {cwd && currentTab === "plugins" && (
               <div role="tabpanel" id="settings-panel-plugins" aria-labelledby="settings-tab-plugins" className="settings-panel-inner" style={{ display: currentTab === "plugins" ? "flex" : "none", width: "100%", maxWidth: 940, minHeight: isMobile ? undefined : 600, flexDirection: "column", padding: isMobile ? "16px 14px 32px" : "32px 24px 64px" }}>
                 {panelsUnavailable ? remoteUnavailable : <PluginsConfig embedded cwd={panelCwd} sessionId={panelSessionId} onClose={onClose} onReloaded={onPluginsReloaded} />}
-              </div>
-            )}
-
-            {/* AGENTS TAB */}
-            {currentTab === "agents" && (
-              <div
-                role="tabpanel"
-                id="settings-panel-agents"
-                aria-labelledby="settings-tab-agents"
-                className="settings-panel-inner"
-                style={{
-                  display: currentTab === "agents" ? "flex" : "none",
-                  width: "100%",
-                  maxWidth: 940,
-                  minHeight: 0,
-                  flexDirection: "column",
-                  padding: isMobile ? "16px 14px 32px" : "32px 24px 64px",
-                  gap: 16,
-                  ...(highlightId && ["agent-roster", "agent-model", "agent-tools"].includes(highlightId)
-                    ? { border: "1px solid var(--accent)", boxShadow: "0 0 0 2px var(--accent)" }
-                    : {}),
-                }}
-              >
-                <div style={{ marginBottom: 4 }}>
-                  <h2 className="display-serif" style={{ fontSize: 22, fontWeight: 600, margin: 0, color: "var(--text)", letterSpacing: "-0.01em" }}>{t("settingsConfig.agentsTitle")}</h2>
-                  <p className="settings-content-subtitle" style={{ margin: "4px 0 16px", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.45 }}>
-                    {t("settingsConfig.agentsDesc")}
-                  </p>
-                </div>
-                {panelsUnavailable ? remoteUnavailable : <AgentsConfig cwd={panelCwd} userOnly={remoteHost} />}
               </div>
             )}
 
@@ -1948,7 +1549,7 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
 
                 <AgentEnvSetting cluster={cluster} />
 
-                {/* ompweb app update card */}
+                {/* tau app update card */}
                 <section style={{ padding: 14, border: appUpdateIsAvailable ? "1px solid color-mix(in srgb, var(--accent) 45%, var(--border))" : "1px solid var(--border)", borderRadius: "var(--radius-card)", background: "var(--bg-panel)", display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                     <div>
@@ -1991,11 +1592,11 @@ export function SettingsConfig({ activeTab, toolCallsDefaultCollapsed, onToolCal
                             <a href={appUpdate.updateCommand} target="_blank" rel="noopener noreferrer" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", wordBreak: "break-all" }}>{appUpdate.updateCommand}</a>
                           ) : (
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <code style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", wordBreak: "break-all" }}>{appUpdate.updateCommand || "npm install -g @kahme247/ompweb"}</code>
+                              <code style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", wordBreak: "break-all" }}>{appUpdate.updateCommand || "npm install -g @ompweb-dev/tau"}</code>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void copyText(appUpdate.updateCommand || "npm install -g @kahme247/ompweb")
+                                  void copyText(appUpdate.updateCommand || "npm install -g @ompweb-dev/tau")
                                     .then(() => toast.success(t("appShell.commandCopied")))
                                     .catch(() => toast.error(t("appShell.commandCopyFailed")));
                                 }}

@@ -17,12 +17,12 @@ function alive(pid: number): boolean {
 }
 
 test("a SIGHUP to the dev parent also stops the server it re-ran", { skip: process.platform === "win32", timeout: 60_000 }, async (t) => {
-  const home = mkdtempSync(path.join(os.tmpdir(), "omp-web-dev-"));
-  // Without OMP_WEB_PUBLIC_* in its environment, dev.ts runs itself once more with them set.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("OMP_WEB_")));
+  const home = mkdtempSync(path.join(os.tmpdir(), "tau-dev-"));
+  // Without TAU_PUBLIC_* in its environment, dev.ts runs itself once more with them set.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("TAU_")));
   const parent = Bun.spawn([process.execPath, "server/dev.ts", "-H", "127.0.0.1", "-p", "0"], {
     cwd: repo,
-    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), OMP_WEB_OMP_BIN: "/nonexistent/omp", OMP_WEB_DISABLE_AUTOUPDATE: "1" },
+    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_PI_BIN: "/nonexistent/omp", TAU_DISABLE_AUTOUPDATE: "1" },
     stdout: "pipe",
     stderr: "ignore",
   });
@@ -52,7 +52,7 @@ test("a SIGHUP to the dev parent also stops the server it re-ran", { skip: proce
 });
 
 test("hot reload of a shared worker dependency keeps the dev server listening", { skip: process.platform === "win32", timeout: 60_000 }, async (t) => {
-  const home = mkdtempSync(path.join(os.tmpdir(), "omp-web-hot-"));
+  const home = mkdtempSync(path.join(os.tmpdir(), "tau-hot-"));
   const source = path.join(home, "source");
   for (const name of ["server", "app", "lib", "components", "hooks", "public", "scripts", "bin", "tsconfig.json", "bunfig.toml", "package.json", "instrumentation.node.ts", "proxy.ts"]) {
     cpSync(path.join(repo, name), path.join(source, name), { recursive: true });
@@ -61,11 +61,11 @@ test("hot reload of a shared worker dependency keeps the dev server listening", 
   const reservation = Bun.serve({ hostname: "127.0.0.1", port: 0, reusePort: false, fetch: () => new Response() });
   const port = reservation.port;
   reservation.stop(true);
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("OMP_WEB_")));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("TAU_")));
   const parent = Bun.spawn([process.execPath, "--hot", "server/dev.ts", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: source,
     detached: true,
-    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), OMP_WEB_OMP_BIN: "/nonexistent/omp", OMP_WEB_DISABLE_AUTOUPDATE: "1" },
+    env: { ...env, HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_PI_BIN: "/nonexistent/omp", TAU_DISABLE_AUTOUPDATE: "1" },
     stdout: "pipe",
     stderr: "inherit",
   });
@@ -99,7 +99,7 @@ test("hot reload of a shared worker dependency keeps the dev server listening", 
   await ready();
   const origin = `http://127.0.0.1:${port}`;
   assert.equal((await fetch(origin)).status, 200);
-  appendFileSync(path.join(source, "lib", "hosts", "link-protocol.ts"), '\nconsole.info("hot-reload-worker-probe");\n');
+  appendFileSync(path.join(source, "lib", "event-stream-protocol.ts"), '\nconsole.info("hot-reload-worker-probe");\n');
   await ready();
   assert.equal((await fetch(origin)).status, 200);
   assert.match(await (await fetch(`${origin}/event-stream-worker.js`)).text(), /hot-reload-worker-probe/);

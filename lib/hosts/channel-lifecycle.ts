@@ -42,7 +42,7 @@ export class ChannelLifecycle {
     this.clock = options.now ?? Date.now;
     this.later = options.setTimeout ?? ((fn, ms) => { const t = setTimeout(fn, ms); t.unref?.(); return t; });
     this.cancel = options.clearTimeout ?? clearTimeout;
-    const configured = Number(process.env.OMP_WEB_DISCONNECT_DESTROY_MS ?? 120000);
+    const configured = Number(process.env.TAU_DISCONNECT_DESTROY_MS ?? 120000);
     this.abandonedMs = options.abandonedMs ?? (Number.isFinite(configured) && configured >= 0 ? configured : 120000);
     this.idleMs = options.idleMs ?? 600000;
     this.graceMs = options.graceMs ?? 120000;
@@ -90,13 +90,13 @@ export class ChannelLifecycle {
     if (id !== null) {
       this.commands.add(id);
       const op = frame.type;
-      if (op === "prompt" || op === "abort_and_prompt" || op === "steer" || op === "follow_up" || op === "followUp") {
+      if (op === "prompt" || op === "steer" || op === "follow_up" || op === "followUp") {
         const queued = op === "steer" || op === "follow_up" || op === "followUp"
           || frame.streamingBehavior === "steer" || frame.streamingBehavior === "followUp";
         if (queued) this.awaitingQueue.set(id, false);
         else this.awaitingStart.add(id);
       }
-      if (op === "remove_queued_message" || op === "abort_and_restore_queue" || op === "clear_queue") this.queueWithdrawals.set(id, this.queueRevision);
+      if (op === "clear_queue") this.queueWithdrawals.set(id, this.queueRevision);
     }
     this.changed();
   }
@@ -132,7 +132,8 @@ export class ChannelLifecycle {
     const id = frame.type === "response" ? idOf(frame.id) : null;
     if (id !== null) {
       this.commands.delete(id);
-      if (frame.success === false || (isRecord(frame.data) && frame.data.agentInvoked === false)) {
+      // pi (0.99+) reports `disposition: "handled"` for a prompt an extension command or input handler consumed: no run.
+      if (frame.success === false || (isRecord(frame.data) && (frame.data.agentInvoked === false || frame.data.disposition === "handled"))) {
         this.awaitingStart.delete(id); this.awaitingQueue.delete(id);
       } else if (this.awaitingQueue.has(id) && (this.queuePresent || (isRecord(frame.data) && frame.data.queued === true))) {
         this.awaitingQueue.set(id, true);

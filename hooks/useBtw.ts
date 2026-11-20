@@ -4,25 +4,14 @@ import { sendAgentCommand } from "@/lib/agent-client";
 import { translate } from "@/lib/i18n";
 import { applyBtwEvent, isBtwRecord, latestBtwTurn, mergeBtwHistory, upsertBtwRecord, type BtwRecord } from "@/lib/btw";
 import { scheduleAtDisplayRate } from "@/lib/message-update-coalescer";
-const UNSUPPORTED_RETRY_MS = 60_000;
 
-/** omp's `btw` failure when a Cancel (or session change) beat its first checkpoint. */
-const CANCELLED_BEFORE_START = "cancelled before it started";
-
-// An omp without the btw commands answers "Unknown command": background
-// history refreshes pause instead of failing on every SSE connect.
-let unsupportedUntil = 0;
-
-/** An omp without the btw RPC commands gets an upgrade hint, not its raw error. */
 export function toastBtwError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("Unknown command")) toast.error(translate("btw.unsupported"));
-  else toast.error(translate("btw.failed"), message);
+  toast.error(translate("btw.failed"), error instanceof Error ? error.message : String(error));
 }
 
 type BtwFrame = { type: string; [key: string]: unknown };
 
-/** Side questions (omp `/btw`) for one chat: the session's BTW history fed by
+/** Side questions (`/btw`, answered by tau's pi extension) for one chat: the session's BTW history fed by
  * `btw_record`/`btw_delta` frames, the record shown in the composer panel, and
  * the history dialog. Never touches the main transcript. */
 export function useBtw(sessionIdRef: RefObject<string | null>) {
@@ -64,15 +53,12 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     cancelFlushRef.current ??= scheduleAtDisplayRate(flushFrames);
   }, [flushFrames]);
 
-  /** Merge omp's history. Background refreshes (SSE open, reconcile, a no-op
-   * cancel) stay silent: the route never starts omp for them, and an omp
-   * without the commands is not asked again for a while. */
+  /** Merge the session's side-question history. Background refreshes (SSE open, reconcile, a no-op
+   * cancel) stay silent: the route never starts pi for them. */
   const refreshHistory = useCallback(async (sid: string, explicit = false) => {
-    if (!explicit && Date.now() < unsupportedUntil) return;
     const knownBefore = new Set(recordsRef.current.map((record) => record.id));
     try {
       const data = await sendAgentCommand<{ records?: unknown[] } | null>(sid, { type: "get_btw_history" });
-      unsupportedUntil = 0;
       if (sessionIdRef.current !== sid) return;
       const snapshot = (data?.records ?? []).filter(isBtwRecord);
       // Frames already received go first: the staleness rules then keep
@@ -84,7 +70,6 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
       const running = snapshot.find((record) => latestBtwTurn(record).status === "running" && !known.has(record.id));
       if (running) setActiveId((id) => id ?? running.id);
     } catch (error) {
-      if (error instanceof Error && error.message.includes("Unknown command")) unsupportedUntil = Date.now() + UNSUPPORTED_RETRY_MS;
       if (explicit) toastBtwError(error);
     }
   }, [commit, flushFrames, sessionIdRef]);
@@ -94,7 +79,7 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     if (recordsRef.current.some((record) => latestBtwTurn(record).status === "running")) void refreshHistory(sid);
   }, [refreshHistory]);
 
-  /** `/btw` alone: the history dialog. Unlike background reads, this starts omp. */
+  /** `/btw` alone: the history dialog. Unlike background reads, this starts pi. */
   const openHistory = useCallback(async (sid: string) => {
     setHistoryOpen(true);
     try {
@@ -106,23 +91,14 @@ export function useBtw(sessionIdRef: RefObject<string | null>) {
     await refreshHistory(sid, true);
   }, [refreshHistory]);
 
-  /** Resolves once omp accepted the question (true), or it was cancelled
-   * before it started (false: the user's own Cancel, which its `btw_record`
-   * already shows). The answer streams via frames. Throws on refusal. */
-  const ask = useCallback(async (sid: string, question: string, recordId?: string): Promise<boolean> => {
-    let data: { record?: unknown } | null;
-    try {
-      data = await sendAgentCommand<{ record?: unknown } | null>(sid, { type: "btw", question, ...(recordId ? { recordId } : {}) });
-    } catch (error) {
-      if (error instanceof Error && error.message.includes(CANCELLED_BEFORE_START)) return false;
-      throw error;
-    }
+  /** Resolves once tau's extension accepted the question; the answer streams via frames. Throws on refusal. */
+  const ask = useCallback(async (sid: string, question: string, recordId?: string): Promise<void> => {
+    const data = await sendAgentCommand<{ record?: unknown } | null>(sid, { type: "btw", question, ...(recordId ? { recordId } : {}) });
     const record = data?.record;
-    if (sessionIdRef.current !== sid || !isBtwRecord(record)) return true;
+    if (sessionIdRef.current !== sid || !isBtwRecord(record)) return;
     // The start state: never newer than frames, so upsert keeps streamed text.
     commit((prev) => upsertBtwRecord(prev, record));
     setActiveId(record.id);
-    return true;
   }, [commit, sessionIdRef]);
 
   const cancel = useCallback(async (recordId: string) => {

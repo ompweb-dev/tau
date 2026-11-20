@@ -3,19 +3,19 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require("./node-version").exitIfUnsupportedNode();
 
-// Linux system tray for ompweb (KDE Plasma and any StatusNotifierItem host).
+// Linux system tray for tau (KDE Plasma and any StatusNotifierItem host).
 //
 // Registers a StatusNotifierItem on the session bus with a DBusMenu context
 // menu mirroring the Windows tray: open, copy URL, start/stop/restart the
 // systemd user service, view logs, autostart toggle, quit.
 //
 // CLI:
-//   ompweb-tray --install [--no-autostart]   install icons/autostart, start tray
-//   ompweb-tray --uninstall                  remove autostart and stop the tray
-//   ompweb-tray --start                      run the tray (foreground)
-//   ompweb-tray --stop | --restart           stop/restart a running tray
-//   ompweb-tray --status [--json]            tray + service status
-//   ompweb-tray --open                       open the web UI in the browser
+//   tau-tray --install [--no-autostart]   install icons/autostart, start tray
+//   tau-tray --uninstall                  remove autostart and stop the tray
+//   tau-tray --start                      run the tray (foreground)
+//   tau-tray --stop | --restart           stop/restart a running tray
+//   tau-tray --status [--json]            tray + service status
+//   tau-tray --open                       open the web UI in the browser
 //   -p, --port / -H, --hostname              override status endpoint
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -36,9 +36,9 @@ const path = require("node:path");
 const { readServiceEnv, writeServiceEnv } = require("./service-env");// eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getAccessibleAddresses, isLoopbackHost } = require("./network-addresses");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { hashPassword } = require("./omp-web-password-hash");
+const { hashPassword } = require("./tau-password-hash");
 
-// dbus-next is intentionally NOT a dependency of ompweb (see #268): it
+// dbus-next is intentionally NOT a dependency of tau (see #268): it
 // pulled in usocket/node-gyp@7 and ten deprecated packages on every
 // install, while only the Linux tray uses it. It is loaded on demand
 // below, and the tray installs it (or tells the user how to) at setup
@@ -46,9 +46,9 @@ const { hashPassword } = require("./omp-web-password-hash");
 // via FallbackVariant, which only needs the .value the tests and the
 // menu code read; the real D-Bus path always uses the real Variant.
 const DBUS_MISSING_MESSAGE =
-  "The Linux tray requires dbus-next, which is not bundled with ompweb. " +
+  "The Linux tray requires dbus-next, which is not bundled with tau. " +
   "Install it with: npm install dbus-next@^0.10.2 " +
-  "(in the ompweb install directory, or globally with npm install -g dbus-next@^0.10.2), " +
+  "(in the tau install directory, or globally with npm install -g dbus-next@^0.10.2), " +
   "then run the tray command again.";
 
 class FallbackVariant {
@@ -111,7 +111,7 @@ function getDbusClasses() {
       return [
         "",
         this.state.running ? buildIconPixmap(true) : buildIconPixmap(false),
-        "ompweb",
+        "tau",
         this.state.running ? `Running — ${this.state.serviceUrl}` : "Service stopped",
       ];
     }
@@ -169,8 +169,8 @@ function getDbusClasses() {
   });
 
   StatusNotifierItem.prototype.Category = "ApplicationStatus";
-  StatusNotifierItem.prototype.Id = "ompweb";
-  StatusNotifierItem.prototype.Title = "ompweb";
+  StatusNotifierItem.prototype.Id = "tau";
+  StatusNotifierItem.prototype.Title = "tau";
   // Status, IconName, IconPixmap, and ToolTip stay as class getters (dynamic).
   StatusNotifierItem.prototype.WindowId = 0;
   StatusNotifierItem.prototype.AttentionIconName = "";
@@ -247,7 +247,7 @@ function getDbusClasses() {
 
   class TrayControl extends Interface {
     constructor(state) {
-      super("org.kde.ompweb.Tray");
+      super("org.kde.tau.Tray");
       this.state = state;
     }
 
@@ -267,13 +267,13 @@ function getDbusClasses() {
 
 const execFileAsync = promisify(execFile);
 
-const BUS_NAME = "org.kde.ompweb.tray";
+const BUS_NAME = "org.kde.tau.tray";
 const ITEM_PATH = "/StatusNotifierItem";
 const MENU_PATH = "/MenuBar";
-const TRAY_PATH = "/ompweb/tray";
-const SERVICE_UNIT = "ompweb.service";
-const DAEMON_UNIT = "ompweb-host.service";
-const AUTOSTART_FILE = path.join(os.homedir(), ".config", "autostart", "ompweb-tray.desktop");
+const TRAY_PATH = "/tau/tray";
+const SERVICE_UNIT = "tau.service";
+const DAEMON_UNIT = "tau-host.service";
+const AUTOSTART_FILE = path.join(os.homedir(), ".config", "autostart", "tau-tray.desktop");
 const ICON_DIR = path.join(os.homedir(), ".local", "share", "icons", "hicolor", "scalable", "apps");
 const POLL_INTERVAL_MS = 5000;
 
@@ -385,9 +385,9 @@ function buildIconPixmap(running) {
 }
 
 function printHelp() {
-  console.log(`Usage: ompweb-tray [command] [options]
+  console.log(`Usage: tau-tray [command] [options]
 
-Linux system tray icon (StatusNotifierItem) for the ompweb web service.
+Linux system tray icon (StatusNotifierItem) for the tau web service.
 
 Commands:
   --install, install     Install icons + autostart entry, then start the tray
@@ -421,7 +421,7 @@ function readPackageVersion() {
 // Pure helpers (unit-tested)
 // ---------------------------------------------------------------------------
 
-function sanitizePort(val, fallback = 30177) {
+function sanitizePort(val, fallback = 30187) {
   const port = parseInt(val, 10);
   return Number.isInteger(port) && port >= 0 && port <= 65535 ? port : fallback;
 }
@@ -435,7 +435,7 @@ function sanitizeHostname(val, fallback = "127.0.0.1") {
 // (the source the tray edits), then the Windows-style JSON config, then
 // defaults.
 function readTrayConfig(overrides = {}, env = process.env, home = os.homedir()) {
-  const agentDir = (env.PI_CODING_AGENT_DIR ?? path.join(home, ".omp", "agent")).replace(/^~(?=\/|$)/, home);
+  const agentDir = (env.PI_CODING_AGENT_DIR ?? path.join(home, ".pi", "agent")).replace(/^~(?=\/|$)/, home);
   const configFile = path.join(agentDir, "web-service.json");
   const serviceEnv = readServiceEnv(path.join(agentDir, "web-service.env"));
   let jsonConfig = {};
@@ -445,23 +445,23 @@ function readTrayConfig(overrides = {}, env = process.env, home = os.homedir()) 
     jsonConfig = {};
   }
   const port = overrides.port ?? sanitizePort(serviceEnv.PORT ?? jsonConfig.port);
-  const hostname = overrides.hostname ?? sanitizeHostname(serviceEnv.OMP_WEB_HOSTNAME ?? jsonConfig.hostname);
+  const hostname = overrides.hostname ?? sanitizeHostname(serviceEnv.TAU_HOSTNAME ?? jsonConfig.hostname);
   return { port, hostname, configFile, serviceUrl: `http://${hostname}:${port}` };
 }
 
 // Menu item table. `separator` items render as dividers; `checkmark` items
 // carry a toggle state; `disabled` items are inert status rows.
-// `daemon` is "running", "stopped" or "not installed" (the ompweb-host unit).
+// `daemon` is "running", "stopped" or "not installed" (the tau-host unit).
 function buildMenuItems({ running, version, autostart, hasService, exposed, hasDialogTool, daemon = "not installed" }) {
   return [
-    { id: 1, label: `ompweb (v${version})`, enabled: false },
+    { id: 1, label: `tau (v${version})`, enabled: false },
     { id: 2, label: running ? "  Status: Running" : "  Status: Stopped", enabled: false },
     { id: 19, label: `  Daemon: ${daemon[0].toUpperCase()}${daemon.slice(1)}`, enabled: false },
     { id: 3, separator: true },
     { id: 4, label: "Open in Browser", action: "open" },
     { id: 5, label: "Copy Web URL", action: "copy" },
     { id: 6, separator: true },
-    { id: 7, label: running ? "Stop Server (omp runs keep going)" : "Start Server", action: "toggle", enabled: hasService },
+    { id: 7, label: running ? "Stop Server (pi runs keep going)" : "Start Server", action: "toggle", enabled: hasService },
     { id: 8, label: "Restart Server", action: "restart", enabled: hasService },
     { id: 9, separator: true },
     { id: 10, label: "View Logs", action: "logs" },
@@ -528,11 +528,11 @@ function buildAutostartDesktop(execLine) {
   return [
     "[Desktop Entry]",
     "Type=Application",
-    "Name=ompweb Tray",
-    "GenericName=ompweb tray icon",
-    "Comment=ompweb web service tray icon and controls",
+    "Name=tau Tray",
+    "GenericName=tau tray icon",
+    "Comment=tau web service tray icon and controls",
     `Exec=${execLine}`,
-    "Icon=ompweb",
+    "Icon=tau",
     "Terminal=false",
     "Categories=Network;",
     "X-GNOME-Autostart-enabled=true",
@@ -552,7 +552,7 @@ function buildAutostartExec() {
 // Terminal used to open logs; ordered candidates, first hit wins.
 function terminalCandidates(env = process.env) {
   return [
-    ...(env.OMP_WEB_TERMINAL ? [env.OMP_WEB_TERMINAL] : []),
+    ...(env.TAU_TERMINAL ? [env.TAU_TERMINAL] : []),
     ...(env.TERMINAL ? [env.TERMINAL] : []),
     "konsole",
     "alacritty",
@@ -603,7 +603,7 @@ function dialogCandidates() {
 }
 
 function resolveDialogTool(env = process.env) {
-  const override = env.OMP_WEB_DIALOG;
+  const override = env.TAU_DIALOG;
   if (override) {
     return override.includes(path.sep) ? (isExecutable(override) ? override : null) : which(override);
   }
@@ -704,7 +704,7 @@ function viewLogs() {
   const resolved = candidateBinPath(terminal);
   if (!resolved) return false;
   const prefix = terminalPrefix(terminal).slice(1);
-  const child = spawn(resolved, [...prefix, `journalctl --user -u ompweb -u ompweb-host -f`], {
+  const child = spawn(resolved, [...prefix, `journalctl --user -u tau -u tau-host -f`], {
     stdio: "ignore",
     detached: true,
     env: process.env,
@@ -779,12 +779,12 @@ function createTrayState(config, { log = console.log } = {}) {
     try {
       writeServiceEnv(merged);
     } catch (err) {
-      state.notify("ompweb", `Config write failed: ${err.message}`);
+      state.notify("tau", `Config write failed: ${err.message}`);
       return false;
     }
     const result = systemctlUser(["restart", SERVICE_UNIT]);
     if (!result.ok) {
-      state.notify("ompweb", `Service restart failed: ${result.stderr || result.stdout || "unknown error"}`);
+      state.notify("tau", `Service restart failed: ${result.stderr || result.stdout || "unknown error"}`);
       return false;
     }
     state.reloadConfig();
@@ -801,7 +801,7 @@ function createTrayState(config, { log = console.log } = {}) {
     getDbusClasses().Interface.emitPropertiesChanged(state.sni, {
       IconName: "",
       IconPixmap: buildIconPixmap(state.running),
-      ToolTip: ["", buildIconPixmap(state.running), "ompweb", state.running ? `Running — ${state.serviceUrl}` : "Service stopped"],
+      ToolTip: ["", buildIconPixmap(state.running), "tau", state.running ? `Running — ${state.serviceUrl}` : "Service stopped"],
     });
     state.sni.NewIcon();
     state.sni.NewToolTip();
@@ -816,7 +816,7 @@ function createTrayState(config, { log = console.log } = {}) {
         openUrl(state.serviceUrl);
         break;
       case "copy":
-        if (!copyToClipboard(state.serviceUrl)) state.notify("ompweb", "No clipboard tool found (install wl-clipboard)");
+        if (!copyToClipboard(state.serviceUrl)) state.notify("tau", "No clipboard tool found (install wl-clipboard)");
         break;
       case "toggle":
         systemctlUser([state.running ? "stop" : "start", SERVICE_UNIT]);
@@ -825,33 +825,33 @@ function createTrayState(config, { log = console.log } = {}) {
         systemctlUser(["restart", SERVICE_UNIT]);
         break;
       case "logs":
-        if (!viewLogs()) state.notify("ompweb", "No terminal emulator found for logs");
+        if (!viewLogs()) state.notify("tau", "No terminal emulator found for logs");
         break;
       case "autostart":
         state.setAutostart(!state.autostart);
         break;
       case "expose": {
         const exposing = !state.exposed;
-        const updates = { OMP_WEB_HOSTNAME: exposing ? "0.0.0.0" : "127.0.0.1" };
-        if (exposing && !readServiceEnv().OMP_WEB_PASSWORD_HASH) {
+        const updates = { TAU_HOSTNAME: exposing ? "0.0.0.0" : "127.0.0.1" };
+        if (exposing && !readServiceEnv().TAU_PASSWORD_HASH) {
           const password = await dialogPrompt({
             tool: state.dialogTool,
-            title: "ompweb",
+            title: "tau",
             text: "A password is required to expose the web UI.\nWeb sign-in password:",
             password: true,
           });
           if (!password) {
-            state.notify("ompweb", "Expose cancelled: a password is required to leave loopback");
+            state.notify("tau", "Expose cancelled: a password is required to leave loopback");
             break;
           }
-          updates.OMP_WEB_PASSWORD_HASH = hashPassword(password);
+          updates.TAU_PASSWORD_HASH = hashPassword(password);
         }
         if (state.applyServiceEnv(updates)) {
           const urls = getAccessibleAddresses({ hostname: state.hostname, port: state.port }).entries
             .filter((entry) => entry.label !== "Local")
             .map((entry) => entry.url);
           state.notify(
-            "ompweb",
+            "tau",
             exposing
               ? `Exposed to the network: ${urls[0] ?? `http://0.0.0.0:${state.port}`}`
               : `Restricted to loopback (${state.serviceUrl})`,
@@ -862,38 +862,38 @@ function createTrayState(config, { log = console.log } = {}) {
       case "port": {
         const input = await dialogPrompt({
           tool: state.dialogTool,
-          title: "ompweb",
+          title: "tau",
           text: `Server port (current: ${state.port}):`,
           value: String(state.port),
         });
         if (input === null) break;
         const port = parseInt(input.trim(), 10);
         if (!Number.isInteger(port) || port < 1 || port > 65535) {
-          state.notify("ompweb", `Invalid port: ${input.trim()}`);
+          state.notify("tau", `Invalid port: ${input.trim()}`);
           break;
         }
         if (state.applyServiceEnv({ PORT: String(port) })) {
-          state.notify("ompweb", `Port updated: ${state.serviceUrl}`);
+          state.notify("tau", `Port updated: ${state.serviceUrl}`);
         }
         break;
       }
       case "password": {
         const password = await dialogPrompt({
           tool: state.dialogTool,
-          title: "ompweb",
+          title: "tau",
           text: "Web sign-in password (empty disables auth):",
           password: true,
         });
         if (password === null) break;
         const updates = {};
         if (password) {
-          updates.OMP_WEB_PASSWORD_HASH = hashPassword(password);
+          updates.TAU_PASSWORD_HASH = hashPassword(password);
         } else {
-          updates.OMP_WEB_PASSWORD_HASH = null;
-          if (!isLoopbackHost(state.hostname)) updates.OMP_WEB_HOSTNAME = "127.0.0.1";
+          updates.TAU_PASSWORD_HASH = null;
+          if (!isLoopbackHost(state.hostname)) updates.TAU_HOSTNAME = "127.0.0.1";
         }
         if (state.applyServiceEnv(updates)) {
-          state.notify("ompweb", password ? "Password updated" : "Password disabled (loopback only)");
+          state.notify("tau", password ? "Password updated" : "Password disabled (loopback only)");
         }
         break;
       }
@@ -916,7 +916,7 @@ function createTrayState(config, { log = console.log } = {}) {
       state.autostart = enable;
       state.refreshMenu();
     } catch (err) {
-      state.notify("ompweb", `Autostart update failed: ${err.message}`);
+      state.notify("tau", `Autostart update failed: ${err.message}`);
     }
   };
 
@@ -925,7 +925,7 @@ function createTrayState(config, { log = console.log } = {}) {
     try {
       const obj = await state.bus.getProxyObject("org.freedesktop.Notifications", "/org/freedesktop/Notifications");
       const iface = obj.getInterface("org.freedesktop.Notifications");
-      await iface.Notify("ompweb", 0, "ompweb", summary, body, [], {}, 5000);
+      await iface.Notify("tau", 0, "tau", summary, body, [], {}, 5000);
     } catch {
       // Notifications are best-effort.
     }
@@ -1005,7 +1005,7 @@ async function startTray(config, { log = console.log, error = console.error } = 
   }
   // 1 = primary owner, 4 = already ours; anything else means another tray runs.
   if (nameReply !== 1 && nameReply !== 4) {
-    log("ompweb tray is already running");
+    log("tau tray is already running");
     return state;
   }
 
@@ -1025,15 +1025,15 @@ async function startTray(config, { log = console.log, error = console.error } = 
   await state.registerWithWatcher();
   state.registerTimer = setInterval(() => state.registerWithWatcher(), 60000);
   state.pollTimer = setInterval(() => state.poll(), POLL_INTERVAL_MS);
-  log(`ompweb tray started (${state.serviceUrl})`);
+  log(`tau tray started (${state.serviceUrl})`);
   return state;
 }
 
 function installIcons({ log = console.log } = {}) {
   try {
     fs.mkdirSync(ICON_DIR, { recursive: true });
-    fs.writeFileSync(path.join(ICON_DIR, "ompweb.svg"), ICON_RUNNING, { mode: 0o644 });
-    fs.writeFileSync(path.join(ICON_DIR, "ompweb-off.svg"), ICON_STOPPED, { mode: 0o644 });
+    fs.writeFileSync(path.join(ICON_DIR, "tau.svg"), ICON_RUNNING, { mode: 0o644 });
+    fs.writeFileSync(path.join(ICON_DIR, "tau-off.svg"), ICON_STOPPED, { mode: 0o644 });
   } catch (err) {
     log(`warning: could not install tray icons: ${err.message}`);
   }
@@ -1079,7 +1079,7 @@ async function quitRunningTray() {
   }
   try {
     const obj = await bus.getProxyObject(BUS_NAME, TRAY_PATH);
-    const iface = obj.getInterface("org.kde.ompweb.Tray");
+    const iface = obj.getInterface("org.kde.tau.Tray");
     await iface.Quit();
     return true;
   } catch {
@@ -1124,7 +1124,7 @@ async function readStatus(overrides) {
 
 // Best-effort on-demand install of dbus-next, used only by --install:
 // the user explicitly opted into tray setup, so installing the tray's
-// own dependency into the ompweb install directory is in scope there.
+// own dependency into the tau install directory is in scope there.
 // --start/--restart never auto-install (they can run unattended from
 // autostart); they fail with DBUS_MISSING_MESSAGE instead.
 function defaultNpmInstallDbus() {
@@ -1192,7 +1192,7 @@ async function runCli(argv = process.argv.slice(2)) {
   });
 
   if (process.platform !== "linux") {
-    console.error("error: the Linux tray is only supported on Linux (see omp-web-tray for Windows)");
+    console.error("error: the Linux tray is only supported on Linux (see tau-tray for Windows)");
     return { exitCode: 1 };
   }
 
@@ -1283,7 +1283,7 @@ async function runCli(argv = process.argv.slice(2)) {
   if (cliArgs.json) {
     console.log(JSON.stringify(status, null, 2));
   } else {
-    console.log(`=== ompweb Linux tray status ===`);
+    console.log(`=== tau Linux tray status ===`);
     console.log(`  Tray running    : ${status.trayRunning ? "Yes" : "No"}`);
     console.log(`  Service unit    : ${status.serviceInstalled ? "installed" : "not installed"} (${status.serviceRunning ? "active" : "inactive"})`);
     console.log(`  Host daemon     : ${status.daemon}`);

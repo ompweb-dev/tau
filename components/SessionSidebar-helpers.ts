@@ -50,11 +50,11 @@ function normalizeProjectKey(value: string): string {
   return isWindowsPath ? normalized.toLowerCase() : normalized;
 }
 // Bounded retry window for restoring a brand-new session from its URL before
-// omp flushes the JSONL (typically appears within a second or two of the
+// pi writes the JSONL (typically appears within a second or two of the
 // first prompt, so 8 × 1s covers it without hanging a dead link forever).
 const INITIAL_RESTORE_RETRY_MS = 1000;
 const INITIAL_RESTORE_MAX_ATTEMPTS = 8;
-const UNREAD_SESSIONS_STORAGE_KEY = "omp-web:unread-session-ids";
+const UNREAD_SESSIONS_STORAGE_KEY = "tau:unread-session-ids";
 
 function loadUnreadSessionIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -78,7 +78,7 @@ function saveUnreadSessionIds(ids: Set<string>): void {
     // ignore storage quota / privacy-mode errors
   }
 }
-const EXPANDED_PROJECTS_STORAGE_KEY = "omp-web:expanded-projects";
+const EXPANDED_PROJECTS_STORAGE_KEY = "tau:expanded-projects";
 
 /** Shared empty set for the no-stored-expansion default (never mutated). */
 const EMPTY_PROJECT_SET: ReadonlySet<string> = new Set();
@@ -108,7 +108,7 @@ function saveExpandedProjects(paths: Set<string>): void {
     // ignore storage quota / privacy-mode errors
   }
 }
-const PROJECT_SORT_STORAGE_KEY = "omp-web:project-sort";
+const PROJECT_SORT_STORAGE_KEY = "tau:project-sort";
 
 function loadProjectSortMode(): ProjectSortMode {
   if (typeof window === "undefined") return "none";

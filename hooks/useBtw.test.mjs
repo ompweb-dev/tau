@@ -107,7 +107,7 @@ test("asking opens the panel and a follow-up answers in its own turn", async () 
     return { ok: true, json: async () => ({ success: true, data: { records: [] } }) };
   };
   await act(async () => {
-    assert.equal(await view.current.ask("s1", "2+2?", undefined), true);
+    await view.current.ask("s1", "2+2?", undefined);
   });
   assert.equal(view.current.activeId, "r1", "asking a new topic opens its panel");
   assert.equal(view.current.records[0].answer, "4");
@@ -122,21 +122,4 @@ test("asking opens the panel and a follow-up answers in its own turn", async () 
   const latest = view.current.records[0].followUps.at(-1);
   assert.equal(latest.answer, "6", "a follow-up answers in its own turn");
   assert.equal(view.current.records[0].answer, "4", "the first answer stays intact");
-});
-
-// LAST: `unsupportedUntil` is module-global by design (one old omp must not be
-// re-asked by every other session in the tab), so this test poisons the rest.
-test("a background history refresh pauses on an omp without btw", async () => {
-  const view = mount();
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls += 1;
-    return { ok: false, status: 400, json: async () => ({ error: "Unknown command: get_btw_history" }) };
-  };
-  await act(async () => {
-    await view.current.refreshHistory("s1");
-    await view.current.refreshHistory("s1");
-  });
-  // Once, then the UNSUPPORTED_RETRY_MS pause: every SSE connect fires this.
-  assert.equal(calls, 1, "an old omp must not be re-asked on every reconnect");
 });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { hasUnsentDrafts, subscribeDrafts } from "@/lib/draft-store";
 
-const HISTORY_KEY = "__ompSidebarHistory";
+const HISTORY_KEY = "__tauSidebarHistory";
 type SidebarEntry = {
   id: string;
   entry: "base" | "top";
@@ -124,10 +124,10 @@ export function useSidebarHistory({ active, ready, sidebarOpen, setSidebarOpen, 
       setRestoreVersion((version) => version + 1);
     };
     const onSidebarPopState = (event: Event) => onPopState((event as CustomEvent<PopStateEvent>).detail);
-    window.addEventListener("omp:sidebar-popstate", onSidebarPopState);
+    window.addEventListener("tau:sidebar-popstate", onSidebarPopState);
     window.addEventListener("pageshow", onPageShow);
     return () => {
-      window.removeEventListener("omp:sidebar-popstate", onSidebarPopState);
+      window.removeEventListener("tau:sidebar-popstate", onSidebarPopState);
       window.removeEventListener("pageshow", onPageShow);
     };
   }, [leaveFromBase, writeEntry]);
@@ -143,7 +143,7 @@ export function useSidebarHistory({ active, ready, sidebarOpen, setSidebarOpen, 
     // commits; a real reload recovers it from history.state instead.
     const marker: SidebarEntry = state[HISTORY_KEY] ?? snapshot.current?.marker ?? {
       // `crypto.randomUUID` is secure-context only, so plain-HTTP LAN origins
-      // (e.g. http://<lan-ip>:30177) need a fallback.
+      // (e.g. http://<lan-ip>:30187) need a fallback.
       id: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`,

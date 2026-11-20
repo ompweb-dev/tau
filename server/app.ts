@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { browserLink, type BrowserLinkData } from "@/lib/browser-link";
 import { hostLinkSocket, type LinkSocketData } from "@/lib/hosts/hub";
 import { maintenanceSocket, type MaintenanceSocketData } from "@/lib/hosts/maintenance-hub";
 import { proxy } from "@/proxy";
@@ -23,14 +22,11 @@ const text = (body: string, status: number) => new Response(body, { status, head
 const IDLE_TIMEOUT = 10;
 
 type ServerSocket = Bun.ServerWebSocket<ServerSocketData>;
-/** Browser links and host links share Bun's one `websocket` handler; `ws.data` tells them apart. */
-function isBrowserSocket(ws: ServerSocket): ws is Bun.ServerWebSocket<BrowserLinkData> {
-  return "kind" in ws.data && ws.data.kind === "browser";
-}
+/** Maintenance sockets and host links share Bun's one `websocket` handler; `ws.data` tells them apart. */
 function isMaintenanceSocket(ws: ServerSocket): ws is Bun.ServerWebSocket<MaintenanceSocketData> {
   return "kind" in ws.data && ws.data.kind === "maintenance";
 }
-// Not a browser link: a host link (the only other upgrade).
+// Not a maintenance socket: a host link (the only other upgrade).
 const asLink = (ws: ServerSocket) => ws as Bun.ServerWebSocket<LinkSocketData>;
 
 function decodable(pathname: string): boolean {
@@ -111,7 +107,7 @@ function untilEnd(body: ReadableStream<Uint8Array>, end: () => void): ReadableSt
 
 // Dev mounts the HTML import here, and pages fetch it so they pass the gate and renderIndex as in prod.
 // It is the same public shell that /login serves without a session.
-const DEV_INDEX = "/__omp_dev_index";
+const DEV_INDEX = "/__tau_dev_index";
 
 async function devIndex(server: Bun.Server<ServerSocketData>): Promise<string> {
   const url = new URL(DEV_INDEX, server.url);
@@ -152,29 +148,24 @@ export function startServer(options: { port: number; hostname: string; dev: bool
     port: options.port,
     hostname: options.hostname,
     development: dev ? { hmr: true, console: true } : false,
-    // Bun turns SO_REUSEPORT on when development is false: a second omp-web would share the port instead of failing.
+    // Bun turns SO_REUSEPORT on when development is false: a second tau would share the port instead of failing.
     reusePort: false,
     idleTimeout: IDLE_TIMEOUT,
     routes,
-    // Bun's limits are per server: browser links inherit the host link's (lib/browser-link.ts caps its own frames).
     websocket: {
       ...hostLinkSocket,
       open: (ws: ServerSocket) => {
-        if (isBrowserSocket(ws)) browserLink.open(ws);
-        else if (isMaintenanceSocket(ws)) maintenanceSocket.open(ws);
+        if (isMaintenanceSocket(ws)) maintenanceSocket.open(ws);
       },
       message: (ws: ServerSocket, data: string | Uint8Array) => {
-        if (isBrowserSocket(ws)) browserLink.message(ws, data);
-        else if (isMaintenanceSocket(ws)) maintenanceSocket.message(ws, data);
+        if (isMaintenanceSocket(ws)) maintenanceSocket.message(ws, data);
         else hostLinkSocket.message(asLink(ws), data);
       },
       drain: (ws: ServerSocket) => {
-        if (isBrowserSocket(ws)) browserLink.drain(ws);
-        else if (!isMaintenanceSocket(ws)) hostLinkSocket.drain(asLink(ws));
+        if (!isMaintenanceSocket(ws)) hostLinkSocket.drain(asLink(ws));
       },
-      close: (ws: ServerSocket, code: number) => {
-        if (isBrowserSocket(ws)) browserLink.close(ws, code);
-        else if (isMaintenanceSocket(ws)) maintenanceSocket.close(ws);
+      close: (ws: ServerSocket) => {
+        if (isMaintenanceSocket(ws)) maintenanceSocket.close(ws);
         else hostLinkSocket.close(asLink(ws));
       },
     },
@@ -220,19 +211,19 @@ export function startServer(options: { port: number; hostname: string; dev: bool
 export async function startProduction(listen: { port: number; hostname: string }): Promise<Bun.Server<ServerSocketData>> {
   let server: Bun.Server<ServerSocketData>;
   try {
-    server = startServer({ ...listen, dev: false, root: process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd() });
+    server = startServer({ ...listen, dev: false, root: process.env.TAU_PACKAGE_DIR ?? process.cwd() });
   } catch (error) {
     // The npm launcher checks the port first, but another process can take it before this bind.
     if (!(error instanceof Error && "code" in error && error.code === "EADDRINUSE")) throw error;
-    console.error(`Port ${listen.port} on ${listen.hostname} is already in use: is ompweb already running? Otherwise stop the process using it or start ompweb with --port ${listen.port + 1}.`);
+    console.error(`Port ${listen.port} on ${listen.hostname} is already in use: is tau already running? Otherwise stop the process using it or start tau with --port ${listen.port + 1}.`);
     process.exit(1);
   }
   // The local daemon link (local-bootstrap.ts, run by register) and the update worker dial this address; set it here
   // so `npm start` (server/main.ts) links the daemon like the launcher and the binary do.
-  Object.assign(process.env, { OMP_WEB_PORT: String(server.port), OMP_WEB_HOSTNAME: listen.hostname });
+  Object.assign(process.env, { TAU_PORT: String(server.port), TAU_HOSTNAME: listen.hostname });
   await register();
   acknowledgeSelfUpdateBoot();
-  void resumeCoordinatedSelfUpdate().catch((error: unknown) => console.error(`[omp-web] Could not resume the approved upgrade: ${error instanceof Error ? error.message : String(error)}`));
-  console.log(`[omp-web] Ready on ${server.url.origin}`);
+  void resumeCoordinatedSelfUpdate().catch((error: unknown) => console.error(`[tau] Could not resume the approved upgrade: ${error instanceof Error ? error.message : String(error)}`));
+  console.log(`[tau] Ready on ${server.url.origin}`);
   return server;
 }

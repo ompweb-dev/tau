@@ -2,17 +2,17 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { Database } from "bun:sqlite";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import type { MessageOrigin } from "../message-origin";
 import { isRecord } from "../type-guards";
 import type { ItemKind } from "./api";
 import type { WatchCursor } from "./events";
 
 /**
- * Server-only persistent GitHub watch state in omp-web's data directory: which
+ * Server-only persistent GitHub watch state in tau's data directory: which
  * session watches which item, the cursor each watch has reported up to, the
  * update a watch is about to post (so a crash re-adds the same outbox entry),
- * the comments the agent posted, and the read grants. Every omp-web instance
+ * the comments the agent posted, and the read grants. Every tau instance
  * sharing the agent directory shares it; SQLite serializes their writes.
  */
 
@@ -52,7 +52,7 @@ export function itemKeyOf(target: { owner: string; repo: string; number: number;
 }
 
 declare global {
-  var __ompGithubWatchStore: { path: string; db: Database } | undefined;
+  var __tauGithubWatchStore: { path: string; db: Database } | undefined;
 }
 
 const SCHEMA = `
@@ -81,19 +81,19 @@ function transaction<T>(db: Database, run: () => T): T {
   }
 }
 
-const storeDir = (): string => join(getAgentDir(), "omp-web");
+const storeDir = (): string => join(getAgentDir(), "tau");
 const storePath = (): string => join(storeDir(), "github-watches.sqlite");
 
 /** The store for the current agent directory; reopened when PI_CODING_AGENT_DIR changes. */
 function db(): Database {
   const dir = storeDir();
   const path = storePath();
-  const cached = globalThis.__ompGithubWatchStore;
+  const cached = globalThis.__tauGithubWatchStore;
   if (cached?.path === path) return cached.db;
   const database = open(dir, path);
   // Only a working store replaces the cached one; a failed open leaves it usable.
   closeWatchStore();
-  globalThis.__ompGithubWatchStore = { path, db: database };
+  globalThis.__tauGithubWatchStore = { path, db: database };
   return database;
 }
 
@@ -103,13 +103,13 @@ function db(): Database {
  */
 function existingDb(): Database | undefined {
   const path = storePath();
-  return globalThis.__ompGithubWatchStore?.path === path || existsSync(path) ? db() : undefined;
+  return globalThis.__tauGithubWatchStore?.path === path || existsSync(path) ? db() : undefined;
 }
 
 /** Closes the cached store. `close(true)` finalizes the statements still alive: without it the file stays open until GC, and Windows keeps it locked. */
 export function closeWatchStore(): void {
-  globalThis.__ompGithubWatchStore?.db.close(true);
-  globalThis.__ompGithubWatchStore = undefined;
+  globalThis.__tauGithubWatchStore?.db.close(true);
+  globalThis.__tauGithubWatchStore = undefined;
 }
 
 function open(dir: string, path: string): Database {
@@ -117,7 +117,7 @@ function open(dir: string, path: string): Database {
   const database = new Database(path);
   try {
     database.exec("PRAGMA busy_timeout = 5000");
-    // Switching a new database to WAL takes an exclusive lock that ignores busy_timeout; another omp-web may hold it.
+    // Switching a new database to WAL takes an exclusive lock that ignores busy_timeout; another tau may hold it.
     for (let attempt = 0; ; attempt++) {
       try {
         database.exec("PRAGMA journal_mode = WAL");
@@ -385,7 +385,7 @@ export async function whilePosting<T>(itemKey: string, post: () => Promise<T>): 
     try {
       d.prepare("UPDATE active_posts SET lease_until = ? WHERE item_key = ? AND token = ?").run(Date.now() + POST_LEASE_MS, itemKey, token);
     } catch (error) {
-      console.warn(`[omp-web] github watcher: post lease renewal failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[tau] github watcher: post lease renewal failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }, POST_RENEW_MS);
   renew.unref?.();
@@ -401,7 +401,7 @@ export async function whilePosting<T>(itemKey: string, post: () => Promise<T>): 
       try {
         d.prepare("DELETE FROM active_posts WHERE item_key = ? AND token = ?").run(itemKey, token);
       } catch (error) {
-        console.warn(`[omp-web] github watcher: post lease release failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`[tau] github watcher: post lease release failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   }
@@ -435,25 +435,3 @@ export function grantRead(sessionId: string, repoKey: string): void {
   db().prepare("INSERT OR IGNORE INTO read_grants (session_id, repo_key) VALUES (?, ?)").run(sessionId, repoKey);
 }
 
-/**
- * A session move: the moved session's watches replace any the new id already
- * holds for the same items, and keep their pending updates; read grants the
- * new id already has are kept. Pending rows whose watch is not moving stay behind.
- */
-export function renameSession(oldId: string, newId: string): void {
-  if (oldId === newId) return;
-  const d = existingDb();
-  if (!d) return;
-  transaction(d, () => {
-    d.prepare("UPDATE watch_intents SET session_id = ? WHERE session_id = ?").run(newId, oldId);
-    const movedItems = "SELECT item_key FROM watches WHERE session_id = ?";
-    d.prepare(`DELETE FROM pending WHERE session_id = ? AND item_key IN (${movedItems})`).run(newId, oldId);
-    d.prepare(`DELETE FROM watches WHERE session_id = ? AND item_key IN (${movedItems})`).run(newId, oldId);
-    // Runs while the moved watches still sit under oldId; OR REPLACE keeps one stray row from aborting the move.
-    d.prepare(`UPDATE OR REPLACE pending SET session_id = ? WHERE session_id = ? AND item_key IN (${movedItems})`).run(newId, oldId, oldId);
-    d.prepare("DELETE FROM pending WHERE session_id = ?").run(oldId);
-    d.prepare("UPDATE watches SET session_id = ? WHERE session_id = ?").run(newId, oldId);
-    d.prepare("UPDATE OR IGNORE read_grants SET session_id = ? WHERE session_id = ?").run(newId, oldId);
-    d.prepare("DELETE FROM read_grants WHERE session_id = ?").run(oldId);
-  });
-}

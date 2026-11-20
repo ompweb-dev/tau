@@ -1,9 +1,11 @@
 export interface ModelsData {
   models: Record<string, string>;
-  modelList: { id: string; name: string; provider: string; supportsFastMode?: boolean; supportsSlowMode?: boolean }[];
+  modelList: { id: string; name: string; provider: string }[];
   defaultModel: { provider: string; modelId: string } | null;
   thinkingLevels: Record<string, string[]>;
-  connectedProviders?: { id: string; name: string; disabled: boolean }[];
+  /** pi's per-model `thinkingLevelMap`, for models that carry one. */
+  thinkingLevelMaps?: Record<string, Record<string, string | null>>;
+  connectedProviders?: { id: string; name: string }[];
   modelError?: string;
 }
 

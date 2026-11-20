@@ -11,7 +11,7 @@ function send(hostId: string, days: number | null, delay = 1_000): void {
   setHostUploadRetention(hostId, days).catch((error: unknown) => {
     // 501: a daemon from before the op keeps what it has. 503: offline, the next hello tells it.
     if (error instanceof HostOpError && (error.status === 501 || error.status === 503)) return;
-    console.warn(`[omp-web] could not set the upload retention on host ${hostId}: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] could not set the upload retention on host ${hostId}: ${error instanceof Error ? error.message : String(error)}`);
     const timer = setTimeout(() => {
       const host = getHost(hostId);
       // A pending retry must never restore an older, potentially more destructive setting.

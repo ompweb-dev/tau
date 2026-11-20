@@ -1,10 +1,9 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync, statSync, type Stats } from "fs";
 import { normalize as normalizePath } from "path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { isClientMessageId } from "./client-message-ids";
 import {
-  containsBlobRef,
   invalidateAllSessionScanCaches,
   invalidateSessionFileListCache,
   invalidateSessionScanCache,
@@ -12,10 +11,8 @@ import {
   loadSessionFile,
   MAX_SESSION_LOAD_BYTES,
   readSessionHeaderSync,
-  resolveBlobRefsInEntries,
-  type OmpSessionInfo,
-  type ResolveBlobOptions,
-} from "./omp/session-files";
+  type PiSessionInfo,
+} from "./pi/session-files";
 import type {
   AgentMessage,
   CompactionEntry,
@@ -38,11 +35,9 @@ import { PASSIVE_TOOL_CONTEXT } from "./chat-transcript-plan";
 export { getAgentDir };
 
 /**
- * `header.parentSession` has two forms in omp: a session FILE PATH (branch /
- * createBranchedSession, the RPC path omp-web drives) and a bare SESSION ID
- * (SessionManager.fork, reached from the TUI /fork, `omp --fork` and /tan).
- * Resolve the path form first, then fall back to an id match, so TUI-forked
- * sessions are not rendered as unrelated roots.
+ * `header.parentSession` is the parent's session FILE PATH when pi writes it;
+ * a bare SESSION ID is accepted too. Resolve the path form first, then fall
+ * back to an id match, so forked sessions are not rendered as unrelated roots.
  */
 function matchParentSessionId(
   parentSession: string,
@@ -55,10 +50,10 @@ function matchParentSessionId(
 }
 
 async function loadAllSessions(): Promise<SessionInfo[]> {
-  const ompSessions: OmpSessionInfo[] = await listAllSessionInfos();
+  const piSessions: PiSessionInfo[] = await listAllSessionInfos();
   const pathToId = new Map<string, string>();
   const knownIds = new Set<string>();
-  for (const s of ompSessions) {
+  for (const s of piSessions) {
     pathToId.set(sessionPathKey(s.path), s.id);
     knownIds.add(s.id);
   }
@@ -66,7 +61,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
   // Resolve each unique cwd to its project root (main repo shared by all
   // worktrees). resolveProject caches per-cwd, so this is cheap after warmup.
   // Bound concurrency so 100+ unique cwds don't spawn 100 parallel git processes.
-  const uniqueCwds = [...new Set(ompSessions.map((s) => s.cwd).filter(Boolean))];
+  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter(Boolean))];
   const projectByCwd = new Map<string, ProjectInfo>();
   const CONCURRENCY = 6;
   for (let i = 0; i < uniqueCwds.length; i += CONCURRENCY) {
@@ -76,14 +71,14 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
     }));
   }
 
-  return ompSessions.map((s) => {
+  return piSessions.map((s) => {
     cacheSessionPath(s.id, s.path);
     const project = s.cwd ? projectByCwd.get(s.cwd) : undefined;
     return {
       path: s.path,
       id: s.id,
       cwd: s.cwd,
-      // omp renamed the display field to `title`; the internal shape keeps `name`.
+      // The listing names the display field `title`; the internal shape keeps `name`.
       name: s.title,
       created: s.created instanceof Date && !Number.isNaN(s.created.getTime())
         ? s.created.toISOString()
@@ -192,12 +187,12 @@ export function invalidateSessionListCache(): void {
   // Drop cached entry parses so a mutation preserving size+mtime (rare) can
   // never serve stale entries; the (size, mtimeMs) key already invalidates
   // the common case, this closes the remaining window.
-  globalThis.__ompSessionEntriesCache?.clear();
-  globalThis.__ompSessionHistoryIndexes?.clear();
+  globalThis.__tauSessionEntriesCache?.clear();
+  globalThis.__tauSessionHistoryIndexes?.clear();
   // Unknown-source changes (full-flush fallback) have no known path to target
   // with invalidateSessionEntriesCache: clear every per-file SCAN memo too, or
   // an unknown same-size + same-mtime rewrite would keep serving the OLD list
-  // summary (stale title/parent) from __ompSessionScanCache.
+  // summary (stale title/parent) from __tauSessionScanCache.
   invalidateAllSessionScanCaches();
 }
 
@@ -224,9 +219,9 @@ export function invalidateSessionCaches(filePath?: string): void {
  * The key is normalized with sessionPathKey so Windows case/spacing variants
  * still hit the same entry. */
 export function invalidateSessionEntriesCache(filePath: string): void {
-  globalThis.__ompSessionEntriesCache?.delete(sessionPathKey(filePath));
-  for (const [key, index] of globalThis.__ompSessionHistoryIndexes ?? []) {
-    if (index.pathKey === sessionPathKey(filePath)) globalThis.__ompSessionHistoryIndexes?.delete(key);
+  globalThis.__tauSessionEntriesCache?.delete(sessionPathKey(filePath));
+  for (const [key, index] of globalThis.__tauSessionHistoryIndexes ?? []) {
+    if (index.pathKey === sessionPathKey(filePath)) globalThis.__tauSessionHistoryIndexes?.delete(key);
   }
   invalidateSessionScanCache(filePath);
 }
@@ -245,9 +240,8 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
   const cached = getPathCache().get(sessionId);
   if (cached) {
     if (existsSync(cached)) return cached;
-    // A deleted session must never resolve: callers spawn omp with --resume
-    // against the path, and omp silently creates a NEW session when the file
-    // is gone. Drop the dead entry directly; the list cache stays valid, so
+    // A deleted session must never resolve: callers spawn pi with --session
+    // against the path, and a missing file must not become a NEW session. Drop the dead entry directly; the list cache stays valid, so
     // repeated 404 polls for the same id do not force a full rescan each time.
     // (listAllSessions would drop it anyway on the next real list mutation.)
     invalidateSessionPathCache(sessionId);
@@ -320,7 +314,7 @@ export function invalidateSessionPathCache(sessionId: string): void {
   }
 }
 
-/** Bounded, title-slot-aware header read (never loads message bodies). */
+/** Bounded header read (never loads message bodies); the header carries no name. */
 export function readSessionHeader(filePath: string): SessionHeader | null {
   return readSessionHeaderSync(filePath);
 }
@@ -339,7 +333,7 @@ interface SessionEntriesCacheEntry {
 }
 
 declare global {
-  var __ompSessionEntriesCache: Map<string, SessionEntriesCacheEntry> | undefined;
+  var __tauSessionEntriesCache: Map<string, SessionEntriesCacheEntry> | undefined;
 }
 
 const MAX_SESSION_ENTRIES_CACHE_ENTRIES = 32;
@@ -348,8 +342,8 @@ const MAX_SESSION_ENTRIES_CACHE_ENTRIES = 32;
 const MAX_SESSION_ENTRIES_CACHE_BYTES = 256 * 1024 * 1024;
 
 function getSessionEntriesCache(): Map<string, SessionEntriesCacheEntry> {
-  if (!globalThis.__ompSessionEntriesCache) globalThis.__ompSessionEntriesCache = new Map();
-  return globalThis.__ompSessionEntriesCache;
+  if (!globalThis.__tauSessionEntriesCache) globalThis.__tauSessionEntriesCache = new Map();
+  return globalThis.__tauSessionEntriesCache;
 }
 
 function loadSessionEntriesCached(filePath: string): SessionEntry[] {
@@ -437,57 +431,16 @@ function loadEntriesOrThrowTooLarge(filePath: string): SessionEntry[] {
 export class SessionFileTooLargeError extends Error {
   readonly code = "session_file_too_large" as const;
   constructor(filePath: string) {
-    super(`Session file is too large to open in omp-web: ${filePath}`);
+    super(`Session file is too large to open in tau: ${filePath}`);
     this.name = "SessionFileTooLargeError";
   }
 }
 
-/**
- * Display-path entry read for the session/context routes: reuses the memoized
- * (size, mtimeMs) parse cache WITHOUT blob resolution for entries that don't
- * reference blobs, and deep-copies ONLY the entries that do before resolving
- * their blob refs. The cache stays clean (shared objects are never mutated),
- * and the expensive deep copy is paid only for blob-bearing entries — the
- * common image-free session clones nothing (the array is shallow-copied).
- * Throws SessionFileTooLargeError when the file exceeds the load ceiling.
- */
-export function getSessionEntriesForDisplay(filePath: string, options: ResolveBlobOptions = {}): SessionEntry[] {
-  const entries = loadEntriesOrThrowTooLarge(filePath);
-  return toDisplayEntries(entries, options);
-}
-
-/** Blob-resolution transform shared by the sync and deduplicated display
- * reads. */
-function toDisplayEntries(entries: SessionEntry[], options: ResolveBlobOptions): SessionEntry[] {
-  if (entries.length === 0) return entries;
-  // Blob-bearing entries are deep-copied so resolution never mutates the
-  // shared cache object; blob-free entries are shared as-is.
-  const out: SessionEntry[] = new Array(entries.length);
-  let copiedAny = false;
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    if (
-      options.skipToolResultImages &&
-      entry.type === "message" &&
-      ((entry.message as { role?: string } | null | undefined)?.role === "toolResult")
-    ) {
-      // Caller turns these images into media URLs — share the entry without blob work.
-      out[i] = entry;
-      continue;
-    }
-    if (!containsBlobRef(entry)) {
-      out[i] = entry;
-      continue;
-    }
-    // Blob-bearing entries are deep-copied so resolution never mutates the
-    // shared cache object.
-    out[i] = structuredClone(entry) as SessionEntry;
-    copiedAny = true;
-  }
-  if (copiedAny) {
-    resolveBlobRefsInEntries(out, options);
-  }
-  return out;
+/** Display-path entry read for the session/context routes: the memoized
+ * (size, mtimeMs) parse, shared (callers must not mutate it). Throws
+ * SessionFileTooLargeError when the file exceeds the load ceiling. */
+export function getSessionEntriesForDisplay(filePath: string): SessionEntry[] {
+  return loadEntriesOrThrowTooLarge(filePath);
 }
 
 // In-flight parse dedup, keyed like the entries cache. Concurrent display
@@ -499,12 +452,12 @@ function toDisplayEntries(entries: SessionEntry[], options: ResolveBlobOptions):
 // hot-reload safety; bounded by the number of distinct files being read
 // concurrently, and entries are removed as soon as their parse settles.
 declare global {
-  var __ompEntriesInFlight: Map<string, Promise<SessionEntry[]>> | undefined;
+  var __tauEntriesInFlight: Map<string, Promise<SessionEntry[]>> | undefined;
 }
 
 function getInFlightEntries(): Map<string, Promise<SessionEntry[]>> {
-  if (!globalThis.__ompEntriesInFlight) globalThis.__ompEntriesInFlight = new Map();
-  return globalThis.__ompEntriesInFlight;
+  if (!globalThis.__tauEntriesInFlight) globalThis.__tauEntriesInFlight = new Map();
+  return globalThis.__tauEntriesInFlight;
 }
 
 /** Deduplicated display-path entry read. Semantically identical to
@@ -512,10 +465,7 @@ function getInFlightEntries(): Map<string, Promise<SessionEntry[]>> {
  * parse and resolve to the SAME entry array (callers must treat it as
  * immutable, like all cached entry reads). Rejections are never memoized: a
  * transient failure must not poison later reads. */
-export async function getSessionEntriesForDisplayAsync(
-  filePath: string,
-  options: ResolveBlobOptions = {},
-): Promise<SessionEntry[]> {
+export async function getSessionEntriesForDisplayAsync(filePath: string): Promise<SessionEntry[]> {
   const key = sessionPathKey(filePath);
   const cache = getSessionEntriesCache();
   // Same too-large gate as the sync display read: past the load ceiling the
@@ -538,20 +488,19 @@ export async function getSessionEntriesForDisplayAsync(
     if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
       cache.delete(key);
       cache.set(key, cached);
-      return toDisplayEntries(cached.entries, options);
+      return cached.entries;
     }
   }
 
   const inFlight = getInFlightEntries().get(key);
-  if (inFlight) return inFlight.then((entries) => toDisplayEntries(entries, options));
+  if (inFlight) return inFlight;
 
   // Defer the synchronous parse by one microtask so same-tick callers land
   // on the in-flight map instead of each starting their own parse.
   const parse = Promise.resolve().then(() => loadSessionEntriesCached(filePath));
   getInFlightEntries().set(key, parse);
   try {
-    const entries = await parse;
-    return toDisplayEntries(entries, options);
+    return await parse;
   } finally {
     const map = getInFlightEntries();
     if (map.get(key) === parse) map.delete(key);
@@ -582,7 +531,7 @@ interface SessionHistoryIndex {
 }
 
 declare global {
-  var __ompSessionHistoryIndexes: Map<string, SessionHistoryIndex> | undefined;
+  var __tauSessionHistoryIndexes: Map<string, SessionHistoryIndex> | undefined;
 }
 
 // Independent of the 256 MiB RAW parse cache: only offsets, IDs and selected
@@ -595,7 +544,7 @@ function historyFileVersion(stat: Stats): string {
   return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
 }
 
-/** The shared loader still owns title slots, lenient parsing and migrations.
+/** The shared loader still owns lenient parsing and migrations.
  * Discard bodies before retaining each entry; keep only selection inputs. */
 function historyEntryMetadata(entry: SessionEntry): SessionEntry {
   const compact: Record<string, unknown> = {
@@ -680,7 +629,7 @@ function buildHistoryIndex(
 /** Rebuild on any file-version change: growth alone cannot prove that old
  * offsets survived a prefix rewrite. Both readers share the same bounded LRU. */
 function getSessionHistoryIndex(filePath: string, leafId?: string, includePreCompaction = false) {
-  const cache = globalThis.__ompSessionHistoryIndexes ??= new Map();
+  const cache = globalThis.__tauSessionHistoryIndexes ??= new Map();
   const pathKey = sessionPathKey(filePath);
   const key = JSON.stringify([pathKey, leafId ?? null, includePreCompaction]);
   let stat: Stats | undefined;
@@ -770,7 +719,7 @@ export function getSessionHistoryPage(
       closeSync(fd);
     }
   }
-  const entries = toDisplayEntries(rawEntries, { skipToolResultImages: options.deferToolResultImages });
+  const entries = rawEntries;
   const history: SessionHistoryPage = {
     ...page,
     context: {
@@ -837,8 +786,8 @@ export function getTodoPhasesFromEntries(entries: SessionEntry[], leafId?: strin
 const SUPERSEDED_COMPACTION_SUMMARY = "[Superseded compaction summary elided after a newer compaction]";
 
 /**
- * Build the display context for a leaf. Port of oh-my-pi's buildSessionContext
- * (session/session-context.ts) path-walk semantics — leaf→root walk with a
+ * Build the display context for a leaf. Port of pi's buildSessionContext
+ * (core/session-manager) path-walk semantics — leaf→root walk with a
  * cycle guard, firstKeptEntryId compaction collapsing, role-based model
  * tracking with legacy assistant-message inference — combined with pi-web's
  * UI message conversion: messages/entryIds stay parallel so fork/navigation
@@ -1190,8 +1139,6 @@ function compactionUiMessage(entry: CompactionEntry, active: boolean): CustomMes
     display: true,
     details: {
       tokensBefore: entry.tokensBefore,
-      ...(entry.tokensAfter !== undefined ? { tokensAfter: entry.tokensAfter } : {}),
-      ...(entry.method !== undefined ? { method: entry.method } : {}),
       firstKeptEntryId: entry.firstKeptEntryId,
     },
     timestamp: parseEntryTimestamp(entry.timestamp),
@@ -1213,7 +1160,7 @@ export function entryToUiMessage(
       const nativeMessage = { ...entry.message };
       delete (nativeMessage as Record<string, unknown>).origin;
       const raw = isClientMessageId(entry.clientMessageId) ? { ...nativeMessage, clientMessageId: entry.clientMessageId } : nativeMessage;
-      // omp-only roles are folded into displayable custom messages so the
+      // Roles outside pi's message set are folded into displayable custom messages so the
       // existing role-keyed UI renders them without new components.
       if (raw.role === "developer") {
         // Passive tool context is display-only: it rides on its tool card
@@ -1296,7 +1243,7 @@ export function entryToUiMessage(
       };
     default:
       // model_change, thinking_level_change, service_tier_change, label,
-      // title_change, session_init, ttsr_injection, mode_change, custom,
+      // session_init, ttsr_injection, mode_change, custom,
       // session_info: metadata entries with no chat rendering.
       return null;
   }

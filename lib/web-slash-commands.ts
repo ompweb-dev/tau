@@ -1,9 +1,8 @@
 /**
  * Web-native slash commands (prompt-composing).
  *
- * omp's own `/goal`, `/plan`, `/vibe`, ... are TUI-only builtins (`handleTui`);
- * the RPC prompt path (which omp-web uses) forwards them as literal user text
- * instead of executing them. These client-side commands fill that gap: the
+ * pi has no `/goal`, `/plan`, `/vibe`, ... over RPC: the prompt path (which
+ * tau uses) forwards an unknown slash command as literal user text. These client-side commands fill that gap: the
  * palette advertises them and the client built-in dispatcher expands them into
  * effective prompts sent through the normal prompt pipeline, so the agent
  * actually receives a clear instruction rather than a stray "/goal ..." line.
@@ -49,11 +48,6 @@ const COMMIT_PROMPT = (args: string) =>
   args
     ? `Stage the relevant files and commit the current changes with this message: ${JSON.stringify(args)}. Run the project's checks first so the commit is green.`
     : `Stage the relevant files and commit the current changes with a clear conventional commit message. Run the project's checks first so the commit is green.`;
-
-const ADVISOR_PROMPT = (args: string) =>
-  args
-    ? `Act as an independent advisor reviewing this work: ${args}. Assess the approach, point out risks, gaps, and better alternatives, and give concrete recommendations without changing any code.`
-    : `Act as an independent advisor reviewing the current work. Assess the recent changes and overall direction, point out risks, gaps, and better alternatives, and give concrete recommendations without changing any code.`;
 
 const LOOP_MAX_ATTEMPTS = 10;
 const LOOP_DEFAULT_ATTEMPTS = 3;
@@ -123,13 +117,6 @@ export const WEB_SLASH_COMMANDS: readonly WebSlashCommandDef[] = [
     buildPrompt: COMMIT_PROMPT,
   },
   {
-    name: "advisor",
-    descriptionKey: "chatInput.cmdAdvisor",
-    argumentHintKey: "chatInput.cmdAdvisorArg",
-    requiresArgs: false,
-    buildPrompt: ADVISOR_PROMPT,
-  },
-  {
     name: "loop",
     descriptionKey: "chatInput.cmdLoop",
     argumentHintKey: "chatInput.cmdLoopArg",
@@ -153,7 +140,7 @@ export type WebSlashCommandExpansion =
  * expanded prompt to send, a usage error for a required-arg command with no
  * args, or "not-web" for commands the client does not own. Single source of
  * truth for both the idle dispatcher and the streaming queue path, so a web
- * command is never forwarded to omp as literal slash text.
+ * command is never forwarded to pi as literal slash text.
  */
 export function expandWebSlashCommand(text: string): WebSlashCommandExpansion {
   if (!text.startsWith("/")) return { kind: "not-web" };

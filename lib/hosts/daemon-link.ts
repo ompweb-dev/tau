@@ -68,7 +68,7 @@ export class DaemonLink {
   version = LINK_PROTOCOL_VERSION;
   private readonly runtime;
   constructor(readonly login: HostLink, readonly id: string, deps: LinkDeps) {
-    if (!dialable(login.url, deps.allowHttp)) throw new Error("ompweb host needs an https:// server URL (http:// only for loopback, or with --allow-http)");
+    if (!dialable(login.url, deps.allowHttp)) throw new Error("tau host needs an https:// server URL (http:// only for loopback, or with --allow-http)");
     this.runtime = linkRuntime(this, deps);
   }
   get ackedDown(): number { return this.runtime.ackedDown(); }
@@ -423,7 +423,7 @@ function linkRuntime(owner: DaemonLink, deps: LinkDeps) {
       if (socket !== ws) return;
       alive();
       try {
-        // A binary frame carries upload bytes (v6), written in order. One message per text frame; an applied one is
+        // A binary frame carries upload bytes, written in order. One message per text frame; an applied one is
         // acked soon, at once past a piece, so main's unacked window moves (spec D7).
         if (typeof data !== "string") {
           const { id, bytes } = decodeBlobFrame(new Uint8Array(data as ArrayBuffer));
@@ -465,20 +465,20 @@ function linkRuntime(owner: DaemonLink, deps: LinkDeps) {
             owner.version = newest; continue;
           }
           log(typeof newest === "number" && newest < LINK_PROTOCOL_VERSION
-            ? "this host's ompweb is newer than the server's: update ompweb on the server"
-            : "the server speaks a different link protocol: update ompweb on this host");
+            ? "this host's tau is newer than the server's: update tau on the server"
+            : "the server speaks a different link protocol: update tau on this host");
           if (!deps.keepOnVersionMismatch) { endLink("version"); return; }
           // Rejected application replies cannot be delivered, but remain queued if compatibility returns.
           mismatched = true;
         }
-        if (typeof closed !== "string" && closed.code === LINK_CLOSE.replaced) { log("another ompweb host linked with this token; exiting this link"); endLink("replaced"); return; }
+        if (typeof closed !== "string" && closed.code === LINK_CLOSE.replaced) { log("another tau host linked with this token; exiting this link"); endLink("replaced"); return; }
         if (typeof closed !== "string" && closed.code === 1000) { endLink("revoked"); return; }
         if (typeof closed !== "string" && !closed.opened) {
           const { status, body } = await fetch(linkUrl, { headers: { authorization: sent }, signal: AbortSignal.any([stopSignal.signal, AbortSignal.timeout(LINK_LIMITS.offlineMs)]) });
           void body?.cancel().catch(() => {});
           if (sent !== authorization) continue;
           if (status === 401) { if (deps.reload?.(owner, true)) continue; endLink("revoked"); return; }
-          log(status === 503 ? "the server is unavailable (503); redialing" : "the server did not accept the WebSocket upgrade (HTTP " + status + "): check that a reverse proxy forwards Upgrade and Connection, and that the server runs an ompweb at least as new as this host's");
+          log(status === 503 ? "the server is unavailable (503); redialing" : "the server did not accept the WebSocket upgrade (HTTP " + status + "): check that a reverse proxy forwards Upgrade and Connection, and that the server runs an tau at least as new as this host's");
         } else log(typeof closed === "string" ? "link lost (" + closed + "); redialing" : "link lost (code " + closed.code + "); redialing");
       } catch (error) { if (stopped) return; log("link lost (" + reason(error) + "); redialing"); }
       deps.reload?.(owner);

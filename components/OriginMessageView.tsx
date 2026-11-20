@@ -90,7 +90,7 @@ export function OriginMessageView({
   const Icon = session ? MessagesSquare : github ? GitPullRequest : Bot;
   const label = session
     ? `Message from session ${session.name?.trim() || "Untitled session"} on ${session.hostLabel}`
-    : github ? `Automated GitHub update for ${github.repo}#${github.number}` : "Automated message from omp-web";
+    : github ? `Automated GitHub update for ${github.repo}#${github.number}` : "Automated message from tau";
   return (
     <article aria-label={label} style={{ marginBottom: 18, paddingRight: 6 }}>
       <div className="chat-message-card" style={{ width: "100%", minWidth: 0, border: "1px solid var(--border)", borderLeft: "3px solid var(--accent)", borderRadius: "var(--radius-card)", background: "var(--bg)", overflow: "hidden" }}>

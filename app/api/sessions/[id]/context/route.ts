@@ -55,8 +55,8 @@ export async function GET(
       sync: sync === "1" ? { cursor, limit } : null,
     });
     if ("response" in result || !result.ok) {
-      // OMP may not create the file until the first assistant message is
-      // committed. A live wrapper can still recover that first partial reply,
+      // pi does not create the file until the first user or assistant
+      // message is committed. A live wrapper can still recover that first partial reply,
       // and its persisted boundary is empty (the next prompt must not 404).
       // Never replace previously confirmed history when its file is missing.
       const notFound = "response" in result ? result.response.status === 404 : result.status === 404;

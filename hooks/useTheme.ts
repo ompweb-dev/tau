@@ -6,7 +6,7 @@ import { manifestHref, THEME_COLOR_COOKIE } from "@/lib/manifest-theme";
 export type LightTheme = "light" | "one-light" | "catppuccin-latte" | "rose-pine-dawn";
 export type DarkTheme =
   | "dark"
-  | "omp"
+  | "midnight"
   | "dracula"
   | "harbor"
   | "one-dark-pro"
@@ -37,7 +37,7 @@ export const LIGHT_THEMES: ReadonlyArray<ThemeDefinition> = [
 ];
 
 export const DARK_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "omp", name: "OMP Midnight", mode: "dark", bg: "#000000", panel: "#0A0A0C", accent: "#EC5BAB" },
+  { id: "midnight", name: "Midnight", mode: "dark", bg: "#000000", panel: "#0A0A0C", accent: "#EC5BAB" },
   { id: "dark", name: "Dark", mode: "dark", bg: "#1B1916", panel: "#231F1B", accent: "#E07B54" },
   { id: "dracula", name: "Dracula", mode: "dark", bg: "#282A36", panel: "#21222C", accent: "#FF79C6" },
   { id: "harbor", name: "Harbor", mode: "dark", bg: "#1B1B1B", panel: "#242424", accent: "#E75A50" },
@@ -61,7 +61,7 @@ const VALID_PREFERENCES: Record<string, true> = {
   "catppuccin-latte": true,
   "rose-pine-dawn": true,
   dark: true,
-  omp: true,
+  midnight: true,
   dracula: true,
   harbor: true,
   "one-dark-pro": true,
@@ -73,7 +73,7 @@ const VALID_PREFERENCES: Record<string, true> = {
   system: true,
 };
 
-const STORAGE_KEY = "omp-theme";
+const STORAGE_KEY = "tau-theme";
 const listeners = new Set<() => void>();
 
 function subscribe(cb: () => void): () => void {
@@ -82,28 +82,28 @@ function subscribe(cb: () => void): () => void {
 }
 
 function storedPreference(): ThemePreference {
-  if (typeof window === "undefined") return "omp";
+  if (typeof window === "undefined") return "midnight";
   try {
     const value = localStorage.getItem(STORAGE_KEY);
     if (value && VALID_PREFERENCES[value]) {
       return value as ThemePreference;
     }
-    return "omp";
+    return "midnight";
   } catch {
-    return "omp";
+    return "midnight";
   }
 }
 
 export function resolveTheme(preference: ThemePreference, prefersDark = false): Theme {
-  if (preference === "omp") return "omp";
+  if (preference === "midnight") return "midnight";
   if (preference === "system") return prefersDark ? "dark" : "light";
   return preference;
 }
 
 export function nextThemePreference(preference: ThemePreference): ThemePreference {
   if (preference === "light") return "dark";
-  if (preference === "dark") return "omp";
-  if (preference === "omp") return "system";
+  if (preference === "dark") return "midnight";
+  if (preference === "midnight") return "system";
   if (preference === "system") return "light";
   return isDarkTheme(preference as Theme) ? "light" : "dark";
 }
@@ -118,9 +118,9 @@ export function applyDomTheme(theme: Theme): void {
   });
   toRemove.forEach((cls) => cl.remove(cls));
 
-  cl.toggle("dark", dark && theme !== "omp");
-  cl.toggle("omp", theme === "omp");
-  if (theme !== "omp") {
+  cl.toggle("dark", dark && theme !== "midnight");
+  cl.toggle("midnight", theme === "midnight");
+  if (theme !== "midnight") {
     cl.add(`theme-${theme}`);
   }
   document.documentElement.setAttribute("data-theme", theme);
@@ -149,7 +149,7 @@ function applyTheme(preference: ThemePreference): void {
 }
 
 function getServerSnapshot(): ThemePreference {
-  return "omp";
+  return "midnight";
 }
 
 type ToggleOrigin = { x: number; y: number };
@@ -170,7 +170,7 @@ function motionDurationMs(variable: string, fallback: number): number {
 export function useTheme() {
   const preference = useSyncExternalStore(subscribe, storedPreference, getServerSnapshot);
   // The OS preference is browser-only. Deferring it until after hydration keeps
-  // the initial client tree identical to the server's omp snapshot.
+  // the initial client tree identical to the server's `"midnight"` (Midnight) snapshot.
   const [hydrated, setHydrated] = useState(false);
   const [osDark, setOsDark] = useState(false);
   useEffect(() => { setHydrated(true); }, []);

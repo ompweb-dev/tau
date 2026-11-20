@@ -1,11 +1,11 @@
-// omp-web service worker: shows notifications and opens their session on click, and sends the message outbox a closed
+// tau service worker: shows notifications and opens their session on click, and sends the message outbox a closed
 // tab left (Background Sync). It does not cache anything; the app stays online-only.
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "omp-outbox-capability") event.ports[0]?.postMessage({ type: "omp-outbox-capability", version: 2 });
+  if (event.data?.type === "tau-outbox-capability") event.ports[0]?.postMessage({ type: "tau-outbox-capability", version: 2 });
 });
 
 self.addEventListener("push", (event) => {
@@ -17,7 +17,7 @@ self.addEventListener("push", (event) => {
   }
   const shown = {
     type: data.type === "error" ? "error" : "info",
-    title: data.title || "omp web",
+    title: data.title || "tau",
     body: data.body || "",
     tag: data.tag || "",
     sessionId: data.sessionId || "",
@@ -34,7 +34,7 @@ self.addEventListener("push", (event) => {
       });
       // Open tabs list it in their Notifications tab, like a notification the page showed itself.
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const client of windows) client.postMessage({ type: "omp-notification-shown", notification: shown });
+      for (const client of windows) client.postMessage({ type: "tau-notification-shown", notification: shown });
     })(),
   );
 });
@@ -53,7 +53,7 @@ self.addEventListener("notificationclick", (event) => {
           // other page (the sign-in screen after the cookie expired) loads the
           // session URL, which the sign-in screen carries through as `next`.
           if (new URL(client.url).pathname === "/") {
-            if (sessionId) client.postMessage({ type: "omp-open-session", sessionId });
+            if (sessionId) client.postMessage({ type: "tau-open-session", sessionId });
           } else {
             await client.navigate(url);
           }
@@ -70,7 +70,7 @@ self.addEventListener("notificationclick", (event) => {
 // Background Sync (docs/specs/2026-11-04-message-outbox-design.md O2): the browser fires it once online, even with no
 // tab open. The event-stream worker's IndexedDB outbox (lib/event-stream-worker.ts) is sent like the worker sends it.
 self.addEventListener("sync", (event) => {
-  if (event.tag === "omp-outbox") event.waitUntil(flushOutbox());
+  if (event.tag === "tau-outbox") event.waitUntil(flushOutbox());
 });
 
 const done = (request) =>
@@ -219,7 +219,7 @@ function acceptedOutboxEntry(reply, id) {
 
 
 async function flushOutbox() {
-  const open = indexedDB.open("omp-web-outbox", 1);
+  const open = indexedDB.open("tau-outbox", 1);
   open.onupgradeneeded = () => open.result.createObjectStore("entries", { keyPath: "id" });
   const db = await done(open);
   try {
@@ -234,7 +234,7 @@ async function flushOutbox() {
       const current = await readOutboxForSync(db);
       const head = current.filter((entry) => entry.sessionId === sessionId && entry.state === "sending").sort(compareOutbox)[0];
       if (!head || head.id !== id) continue;
-      const { scope, advisor, mode, message, images, uploads, uploadProofs, replaces, createdAt } = head;
+      const { scope, mode, message, images, uploads, uploadProofs, replaces, createdAt } = head;
       // Expired or unscoped rows are never rebound: they are not sent, so they stop blocking that session's later entries.
       const stale = Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000 ? "Not sent within 7 days."
         : typeof scope !== "string" || !scope ? "This message has no saved installation or sign-in scope and cannot be sent." : null;
@@ -251,7 +251,7 @@ async function flushOutbox() {
         const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
         const controller = new AbortController();
         timer = setTimeout(() => controller.abort(), 40_000 + Math.ceil(body.length / 2));
-        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}${advisor === true ? "?advisor=1" : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
+        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
         const reply = await response.json().catch((error) => {
           if (controller.signal.aborted) throw error;
         });
@@ -269,7 +269,7 @@ async function flushOutbox() {
       } else if (status === 0 || status === 401 || status === 408 || status === 429 || status >= 500) waiting.add(sessionId);
       else await markOutboxFailed(db, id, error || `HTTP ${status}`);
     }
-    if (waiting.size > 0) throw new Error("omp-outbox: entries left to send");
+    if (waiting.size > 0) throw new Error("tau-outbox: entries left to send");
   } finally {
     db.close();
   }

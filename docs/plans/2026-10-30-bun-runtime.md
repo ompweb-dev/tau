@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); the Bun server it built is still tau's runtime; names (ompweb, `OMP_WEB_*`, port 30177) are now tau's (`tau`, `TAU_*`, 30187).
+
 # Bun Runtime Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

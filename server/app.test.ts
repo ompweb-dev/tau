@@ -9,23 +9,21 @@ import { hashPassword } from "@/lib/web-password-hash";
 import { LINK_PROTOCOL_VERSION } from "@/lib/hosts/link-protocol";
 
 const repo = path.join(import.meta.dir, "..");
-const root = mkdtempSync(path.join(os.tmpdir(), "omp-web-app-"));
+const root = mkdtempSync(path.join(os.tmpdir(), "tau-app-"));
 const home = path.join(root, "home");
 mkdirSync(path.join(root, "dist"));
 mkdirSync(home);
-writeFileSync(path.join(root, "dist", "index.html"), "<!doctype html><html><head><title>omp web</title></head><body></body></html>");
+writeFileSync(path.join(root, "dist", "index.html"), "<!doctype html><html><head><title>tau</title></head><body></body></html>");
 // "junction" needs no admin rights on Windows and is ignored elsewhere.
 for (const dir of ["public", "node_modules"]) symlinkSync(path.join(repo, dir), path.join(root, dir), "junction");
 
-const ENV = { HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), OMP_WEB_OMP_BIN: "/nonexistent/omp" };
-// XDG_DATA_HOME could move the blobs dir out of the temp home (lib/omp/paths.ts).
-const UNSET = ["OMP_WEB_PASSWORD_HASH", "OMP_WEB_PASSWORD", "OMP_WEB_TRUSTED_HEADER_SHA256", "XDG_DATA_HOME"];
+const ENV = { HOME: home, PI_CODING_AGENT_DIR: path.join(home, ".omp", "agent"), TAU_PI_BIN: "/nonexistent/omp" };
+const UNSET = ["TAU_PASSWORD_HASH", "TAU_PASSWORD", "TAU_TRUSTED_HEADER_SHA256"];
 const saved = Object.fromEntries([...UNSET, ...Object.keys(ENV)].map((name) => [name, process.env[name]]));
 for (const name of UNSET) delete process.env[name];
 Object.assign(process.env, ENV);
 // Imported after the environment is set, so no module sees the real home or agent dir.
 const { startServer } = await import("./app");
-const { browserLinkTimings } = await import("@/lib/browser-link");
 const server = startServer({ port: 0, hostname: "127.0.0.1", dev: false, root });
 const { linkLocalDaemon } = await import("../lib/hosts/link-driver.test-helper.mjs");
 const { flushLinkSamples } = await import("../lib/hosts/hub");
@@ -87,7 +85,7 @@ test("API routes answer through the gate", async () => {
   assert.equal((await fetch(url("/api"))).status, 404);
 });
 
-// Bun.serve sets SO_REUSEPORT when `development` is false unless `reusePort: false` says otherwise; a second omp-web
+// Bun.serve sets SO_REUSEPORT when `development` is false unless `reusePort: false` says otherwise; a second tau
 // on the same agent dir must fail to start, as it did under Next, instead of sharing the port.
 test("a second server on a port this one holds fails with EADDRINUSE", () => {
   assert.throws(() => startServer({ port: server.port!, hostname: "127.0.0.1", dev: false, root }), { code: "EADDRINUSE" });
@@ -95,12 +93,12 @@ test("a second server on a port this one holds fails with EADDRINUSE", () => {
 
 test("server/main.ts on a taken port says so in one line and exits 1", () => {
   const result = spawnSync(process.execPath, [path.join(repo, "server", "main.ts"), "-p", String(server.port), "-H", "127.0.0.1"], {
-    env: { ...process.env, OMP_WEB_PACKAGE_DIR: root },
+    env: { ...process.env, TAU_PACKAGE_DIR: root },
     encoding: "utf8",
     timeout: 20_000,
   });
   assert.equal(result.status, 1, result.stderr);
-  assert.equal(result.stderr.trim(), `Port ${server.port} on 127.0.0.1 is already in use: is ompweb already running? Otherwise stop the process using it or start ompweb with --port ${server.port! + 1}.`);
+  assert.equal(result.stderr.trim(), `Port ${server.port} on 127.0.0.1 is already in use: is tau already running? Otherwise stop the process using it or start tau with --port ${server.port! + 1}.`);
 });
 
 test("a malformed or missing Host answers 400, not a 500", async () => {
@@ -115,9 +113,9 @@ test("a path that leaves its route after `..` resolution never reaches that rout
   mkdirSync(ENV.PI_CODING_AGENT_DIR, { recursive: true });
   writeFileSync(secret, "TOP-SECRET");
   const file = secret.split(path.sep).join("/").replace(/^\/?/, "/");
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
+    delete process.env.TAU_PASSWORD_HASH;
   });
 
   assert.equal((await rawRequest("GET", `/api/files${file}?type=read`)).status, 401);
@@ -140,33 +138,10 @@ test("a path that leaves its route after `..` resolution never reaches that rout
   assert.equal((await rawRequest("POST", "/api/files/../hosts", evil)).status, 403);
 });
 
-test("only /api/hosts/broker/v1/ passes the gate to the broker route", async (t) => {
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
-  t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
-  });
-  // The route's own refusal: no bearer token.
-  const healthz = await rawRequest("GET", "/api/hosts/broker/v1/healthz");
-  assert.equal(healthz.status, 401);
-  assert.match(healthz.body, /"error":"Unknown host token"/);
-  for (const target of [
-    "/api/hosts/broker/updates",
-    "/api/hosts/broker/",
-    "/api/hosts/broker/v2/x",
-    "/api/hosts/broker/v1/../../sessions",
-    "/api/hosts/broker/%2e%2e/sessions",
-  ]) {
-    const { status, body } = await rawRequest("GET", target);
-    // The gate's 401 or the fallback 404: never a 200, a redirect or another route's answer.
-    if (status === 401) assert.match(body, /"code":"password_required"/, target);
-    else assert.equal(status, 404, target);
-  }
-});
-
 test("only the two cluster-config routes pass the gate, not hosts/[id]/cluster or hosts/[id]/updates", async (t) => {
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
+    delete process.env.TAU_PASSWORD_HASH;
   });
   // The routes' own refusal: no bearer token.
   for (const target of ["/api/hosts/cluster-config/manifest", `/api/hosts/cluster-config/file/${"a".repeat(64)}`]) {
@@ -190,9 +165,9 @@ test("only the two cluster-config routes pass the gate, not hosts/[id]/cluster o
 });
 
 test("an ungated path is the file itself, and an ungated miss never gets the app shell", async (t) => {
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
+    delete process.env.TAU_PASSWORD_HASH;
   });
   assert.equal((await fetch(url("/icon.svg"))).status, 200);
   for (const pathname of ["/icon.svg/foo", "/sw.js/not-a-file"]) {
@@ -211,7 +186,7 @@ test("pages get the index, files their content, and anything else 404", async ()
   const page = await fetch(url("/some/page"));
   assert.equal(page.status, 200);
   assert.equal(page.headers.get("cache-control"), "private, no-cache, max-age=0, must-revalidate");
-  assert.match(await page.text(), /<title>omp web<\/title>/);
+  assert.match(await page.text(), /<title>tau<\/title>/);
   assert.equal((await fetch(url("/missing.js"))).status, 404);
   assert.equal((await fetch(url("/sw.js"))).headers.get("cache-control"), "no-cache");
   assert.equal((await fetch(url("/icon.svg"))).status, 200);
@@ -236,9 +211,9 @@ test("a trailing slash 308-redirects to the path without it, behind the gate", a
   }
   assert.equal((await rawRequest("GET", "/")).status, 200);
 
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
+    delete process.env.TAU_PASSWORD_HASH;
   });
   assert.equal((await rawRequest("GET", "/api/hosts/")).status, 401);
   assert.equal(location((await rawRequest("GET", "/some/page/")).head), "/login");
@@ -246,7 +221,7 @@ test("a trailing slash 308-redirects to the path without it, behind the gate", a
 
 test("each route answers under its own path with decoded params, and the manifest stays gated", async (t) => {
   // A space and a non-ASCII name pin the decoded `[...path]` segments, taken from the right index.
-  mkdirSync(path.join(ENV.PI_CODING_AGENT_DIR, "blobs"), { recursive: true });
+  mkdirSync(path.join(ENV.PI_CODING_AGENT_DIR, "tau", "media"), { recursive: true });
   const file = path.join(ENV.PI_CODING_AGENT_DIR, "my file é.txt");
   writeFileSync(file, "HELLO");
   const read = await fetch(url(`/api/files${file.split(path.sep).join("/").replace(/^\/?/, "/")}?type=read`));
@@ -255,7 +230,7 @@ test("each route answers under its own path with decoded params, and the manifes
 
   // A `:param` is decoded too: only the decoded hash (`%61` is `a`) names this PNG-signed blob.
   const hash = "a".repeat(64);
-  writeFileSync(path.join(ENV.PI_CODING_AGENT_DIR, "blobs", hash), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  writeFileSync(path.join(ENV.PI_CODING_AGENT_DIR, "tau", "media", hash), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   assert.equal((await fetch(url(`/api/media/%61${hash.slice(1)}`))).status, 200);
 
   // Static segments win over `:id`: agent/new has no GET, and the search streams NDJSON.
@@ -263,9 +238,9 @@ test("each route answers under its own path with decoded params, and the manifes
   assert.match((await fetch(url("/api/sessions/search?q=x"))).headers.get("content-type") ?? "", /^application\/x-ndjson/);
 
   // Its link carries credentials (spec invariant 4).
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
+    delete process.env.TAU_PASSWORD_HASH;
   });
   assert.equal((await fetch(url("/api/manifest"))).status, 401);
 });
@@ -276,7 +251,7 @@ test("dev pages put the stylesheet before the pre-paint scripts, even when HTTP_
   writeFileSync(path.join(root, "dev.css"), "body { color: red; }");
   writeFileSync(
     path.join(root, "dev.html"),
-    '<!doctype html><html><head><title>omp web</title><script>void 0</script><link rel="stylesheet" href="./dev.css" /></head><body></body></html>',
+    '<!doctype html><html><head><title>tau</title><script>void 0</script><link rel="stylesheet" href="./dev.css" /></head><body></body></html>',
   );
   // A file written at run time, so no static import; Bun turns it into an HTML bundle as dev.ts's import does.
   const { default: html } = await import(path.join(root, "dev.html"));
@@ -314,14 +289,14 @@ function stall(head: string): Promise<void> {
   return promise;
 }
 
-test("Bun's idle timeout spares the event stream, the browser link and the host link, and only them", { timeout: 30_000 }, async (t) => {
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
-  process.env.OMP_WEB_TRUSTED_HEADER_SHA256 = new Bun.CryptoHasher("sha256").update("trusted").digest("hex");
+test("Bun's idle timeout spares the event stream and the host link, and only them", { timeout: 30_000 }, async (t) => {
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_TRUSTED_HEADER_SHA256 = new Bun.CryptoHasher("sha256").update("trusted").digest("hex");
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
-    delete process.env.OMP_WEB_TRUSTED_HEADER_SHA256;
+    delete process.env.TAU_PASSWORD_HASH;
+    delete process.env.TAU_TRUSTED_HEADER_SHA256;
   });
-  const signedIn = { "x-omp-web-auth": "trusted" };
+  const signedIn = { "x-tau-auth": "trusted" };
   const controller = new AbortController();
   const stream = await fetch(url("/api/events"), { headers: signedIn, signal: controller.signal });
   assert.equal(stream.headers.get("content-type"), "text/event-stream");
@@ -335,7 +310,7 @@ test("Bun's idle timeout spares the event stream, the browser link and the host 
     // A host daemon's link: a WebSocket whose hello gets a welcome, and which the hub pings 15 s after it opens.
     const created = await fetch(url("/api/hosts"), { method: "POST", headers: signedIn, body: JSON.stringify({ label: "box" }) });
     const bearer = { authorization: `Bearer ${(await created.json()).token}` };
-    const hostHello = { type: "hello", v: LINK_PROTOCOL_VERSION, ompVersion: "14.0.0", platform: "linux", home: "/home/u", autoApproveExtension: false, ack: 0, channels: [] };
+    const hostHello = { type: "hello", v: LINK_PROTOCOL_VERSION, piVersion: "14.0.0", tauVersion: "0.0.0", platform: "linux", ack: 0, channels: [] };
     // This repo's DOM typing has no init argument; Bun's WebSocket takes `{ headers }`.
     const link = new WebSocket(url("/api/hosts/link").href.replace(/^http/, "ws"), { headers: bearer } as unknown as string[]);
     t.after(() => link.close());
@@ -347,24 +322,6 @@ test("Bun's idle timeout spares the event stream, the browser link and the host 
     link.addEventListener("message", ({ data }) => String(data).includes('"type":"ping"') && ping.resolve());
     link.addEventListener("close", ({ code }) => ping.reject(new Error(`the host link was closed while idle (${code})`)));
 
-    // The browser link: its hello gets a welcome, and the server pings it every 15 s, like the host link.
-    const browser = new WebSocket(url("/api/events/link").href.replace(/^http/, "ws"), { headers: signedIn } as unknown as string[]);
-    browser.onopen = () => browser.send(JSON.stringify({ type: "hello", v: 1, token: null, ack: 0 }));
-    t.after(() => browser.close());
-    const browserFrames: string[] = [];
-    let browserFrame = Promise.withResolvers<void>();
-    browser.addEventListener("message", ({ data }) => {
-      browserFrames.push(String(data));
-      browserFrame.resolve();
-    });
-    const browserFrameMatching = async (pattern: RegExp) => {
-      while (!browserFrames.some((frame) => pattern.test(frame))) {
-        browserFrame = Promise.withResolvers<void>();
-        await browserFrame.promise;
-      }
-    };
-    await browserFrameMatching(/^\{"type":"welcome","v":1,/);
-
     // No caller without a session or a host token holds a socket open, wherever it stalls, and a signed-in
     // keep-alive socket is closed once its JSON answer, or a stream that lifted the timeout, went out.
     const stalled = {
@@ -372,8 +329,8 @@ test("Bun's idle timeout spares the event stream, the browser link and the host 
       signIn: stall("POST /api/web-auth/session HTTP/1.1\r\nContent-Length: 100"),
       link: stall("POST /api/hosts/link HTTP/1.1\r\nAuthorization: Bearer nope\r\nContent-Length: 100"),
       page: stall("GET /login HTTP/1.1"),
-      keptAlive: stall("GET /api/hosts HTTP/1.1\r\nx-omp-web-auth: trusted"),
-      keptAliveStream: stall("GET /api/sessions/search?q=x HTTP/1.1\r\nx-omp-web-auth: trusted"),
+      keptAlive: stall("GET /api/hosts HTTP/1.1\r\nx-tau-auth: trusted"),
+      keptAliveStream: stall("GET /api/sessions/search?q=x HTTP/1.1\r\nx-tau-auth: trusted"),
     };
     // Real waits: Bun.serve's native idle timer (10 s, checked every 4 s) cannot be faked. The 20 s deadline only
     // names a socket that never closes.
@@ -384,14 +341,9 @@ test("Bun's idle timeout spares the event stream, the browser link and the host 
     ]);
     assert.deepEqual([...open], []);
 
-    // The ping proves the socket outlived the idle timeout; so has the event stream, opened before it. The browser
-    // link's comes 15 s after it opened too, just after the host link's.
+    // The ping proves the socket outlived the idle timeout; so has the event stream, opened before it.
     await ping.promise;
-    await browserFrameMatching(/^\{"type":"ping","at":\d+\}$/);
     assert.equal(link.readyState, WebSocket.OPEN);
-    assert.equal(browser.readyState, WebSocket.OPEN, "the browser link was closed while idle");
-    browser.send(JSON.stringify({ type: "sub", id: "s1", channel: { kind: "hosts" }, seq: 1 }));
-    await browserFrameMatching(/^\{"type":"e","name":"mux","at":\d+,"data":\{"type":"open","sub":"s1"\},"seq":\d+\}\n$/);
     const subscribe = await fetch(url("/api/events"), {
       method: "POST",
       headers: { ...signedIn, "content-type": "application/json" },
@@ -406,40 +358,15 @@ test("Bun's idle timeout spares the event stream, the browser link and the host 
   }
 });
 
-test("the real server closes a browser link socket without a hello within helloMs (1008) and welcomes one in time", async (t) => {
-  const saved = browserLinkTimings.helloMs;
-  browserLinkTimings.helloMs = 300;
-  t.after(() => (browserLinkTimings.helloMs = saved));
-  const dial = () => new WebSocket(url("/api/events/link").href.replace(/^http/, "ws"));
-  const silent = dial();
-  const closed = Promise.withResolvers<{ code: number; reason: string }>();
-  silent.onclose = ({ code, reason }) => closed.resolve({ code, reason });
-  const greeted = dial();
-  t.after(() => greeted.close());
-  const welcome = Promise.withResolvers<string>();
-  greeted.onopen = () => greeted.send(JSON.stringify({ type: "hello", v: 1, token: null, ack: 0 }));
-  greeted.onmessage = ({ data }) => welcome.resolve(String(data));
-  assert.deepEqual(await closed.promise, { code: 1008, reason: "No hello" });
-  assert.match(await welcome.promise, /^\{"type":"welcome","v":1,/);
-  await Bun.sleep(400);
-  assert.equal(greeted.readyState, WebSocket.OPEN, "a socket that said hello is not closed by the deadline");
-});
-
-test("the host link and the browser link refuse an unauthenticated upgrade with 401 and answer 426 to a request that does not upgrade", async (t) => {
+test("the host link refuses an unauthenticated upgrade with 401 and answers 426 to a request that does not upgrade", async (t) => {
   const created = await fetch(url("/api/hosts"), { method: "POST", body: JSON.stringify({ label: "refusing" }) });
   const bearer = { authorization: `Bearer ${(await created.json()).token}` };
-  process.env.OMP_WEB_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
-  process.env.OMP_WEB_TRUSTED_HEADER_SHA256 = new Bun.CryptoHasher("sha256").update("trusted").digest("hex");
+  process.env.TAU_PASSWORD_HASH = hashPassword("pw", { logN: 12 });
+  process.env.TAU_TRUSTED_HEADER_SHA256 = new Bun.CryptoHasher("sha256").update("trusted").digest("hex");
   t.after(() => {
-    delete process.env.OMP_WEB_PASSWORD_HASH;
-    delete process.env.OMP_WEB_TRUSTED_HEADER_SHA256;
+    delete process.env.TAU_PASSWORD_HASH;
+    delete process.env.TAU_TRUSTED_HEADER_SHA256;
   });
-
-  // The gate runs before the upgrade route: no session, or a foreign origin, never reaches the 426.
-  const signedIn = { "x-omp-web-auth": "trusted" };
-  assert.equal((await fetch(url("/api/events/link"))).status, 401);
-  assert.equal((await fetch(url("/api/events/link"), { headers: { ...signedIn, origin: "http://evil.example" } })).status, 403);
-  assert.equal((await fetch(url("/api/events/link"), { headers: signedIn })).status, 426);
 
   const refused = new WebSocket(url("/api/hosts/link").href.replace(/^http/, "ws"));
   const events: string[] = [];
@@ -452,8 +379,4 @@ test("the host link and the browser link refuse an unauthenticated upgrade with 
   assert.match(events[0], /^error .*\b401\b/);
 
   assert.equal((await fetch(url("/api/hosts/link"), { headers: bearer })).status, 426);
-  const hostHello = { type: "hello", v: 3, ompVersion: "14.0.0", platform: "linux", home: "/home/u", autoApproveExtension: false, ack: 0, channels: [] };
-  const outdated = await fetch(url("/api/hosts/link"), { method: "POST", headers: bearer, body: JSON.stringify(hostHello) });
-  assert.equal(outdated.status, 426);
-  assert.equal((await outdated.json()).hostVersion, 3);
 });

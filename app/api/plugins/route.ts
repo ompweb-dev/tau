@@ -1,9 +1,9 @@
 import { execFile } from "child_process";
 import { existsSync, promises as fs } from "fs";
-import { basename, extname, join } from "path";
-import { ANSI_RE, parseJsonLoose, parsePiListOutput } from "@/lib/omp/plugins-cli";
-import { OMP_NOT_FOUND, resolveOmpBin } from "@/lib/omp/omp-cli";
-import { ensureAgentDir } from "@/lib/omp/paths";
+import { basename, join } from "path";
+import { ANSI_RE, parsePiListOutput } from "@/lib/pi/plugins-cli";
+import { PI_NOT_FOUND, resolvePiBin } from "@/lib/pi/pi-cli";
+import { ensureAgentDir } from "@/lib/pi/paths";
 import { createChildProcessEnvironment } from "@/lib/project-command-env";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import type {
@@ -15,62 +15,22 @@ import type {
   PluginsResponse,
 } from "@/lib/api-types";
 
-// Plugin management is delegated to the user's omp binary (`omp plugin ...`);
-// omp-web never embeds the Bun-only SDK. `--json` output shapes are mirrored
-// from oh-my-pi coding-agent src/cli/plugin-cli.ts + extensibility/plugins.
+// Package management is delegated to the user's pi binary (`pi install/remove/update/list`); tau never embeds its SDK.
+// `pi list` prints text only (parsePiListOutput) and has no enable/disable command.
 
-type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
-
-interface OmpPluginManifest {
-  name?: string;
-  version?: string;
-  description?: string;
-  tools?: string;
-  hooks?: string;
-  extensions?: string[];
-  commands?: string[];
-  features?: Record<string, unknown>;
-}
-
-interface OmpNpmPlugin {
-  name: string;
-  version: string;
-  path: string;
-  manifest?: OmpPluginManifest;
-  enabledFeatures?: string[] | null;
-  enabled: boolean;
-}
-
-interface OmpMarketplaceEntry {
-  scope?: "user" | "project";
-  installPath?: string;
-  version?: string;
-  enabled?: boolean;
-}
-
-interface OmpMarketplacePlugin {
-  id: string;
-  scope?: "user" | "project";
-  entries?: OmpMarketplaceEntry[];
-  shadowedBy?: string;
-}
-
-interface OmpPluginList {
-  npm?: OmpNpmPlugin[];
-  marketplace?: OmpMarketplacePlugin[];
-}
+type PluginAction = "install" | "remove" | "update";
 
 function emptyCounts(): PluginResourceCounts {
   return { extensions: 0, skills: 0, prompts: 0, themes: 0 };
 }
 
-function runOmp(
+function runPi(
   args: string[],
   opts: { cwd?: string; timeout?: number } = {},
 ): Promise<{ stdout: string; stderr: string }> {
-  const bin = resolveOmpBin();
+  const bin = resolvePiBin();
   if (!bin) {
-    return Promise.reject(new Error(OMP_NOT_FOUND));
+    return Promise.reject(new Error(PI_NOT_FOUND));
   }
   return new Promise((resolve, reject) => {
     execFile(
@@ -86,7 +46,7 @@ function runOmp(
       (error, stdout, stderr) => {
         if (error) {
           const detail = (stderr || stdout || error.message).replace(ANSI_RE, "").trim();
-          reject(new Error(detail.slice(-600) || `omp ${args.join(" ")} failed`));
+          reject(new Error(detail.slice(-600) || `pi ${args.join(" ")} failed`));
         } else {
           resolve({ stdout, stderr });
         }
@@ -95,8 +55,7 @@ function runOmp(
   });
 }
 
-/** Best-effort scan of a plugin's skills/ directory (omp discovers plugin-root
- * skills the same way) so the UI can show a resource count. */
+/** Best-effort scan of a package's skills/ directory so the UI can show a resource count. */
 async function scanPluginSkills(pluginPath: string): Promise<PluginResourceInfo[]> {
   const skillsDir = join(pluginPath, "skills");
   let entries;
@@ -122,85 +81,7 @@ async function scanPluginSkills(pluginPath: string): Promise<PluginResourceInfo[
   return resources;
 }
 
-function manifestResources(pluginPath: string, manifest: OmpPluginManifest | undefined): PluginResourceInfo[] {
-  const resources: PluginResourceInfo[] = [];
-  const push = (kind: PluginResourceInfo["kind"], rel: string) => {
-    const file = basename(rel);
-    const ext = extname(file);
-    resources.push({
-      kind,
-      name: ext ? file.slice(0, -ext.length) : file,
-      path: join(pluginPath, rel),
-      relativePath: rel,
-    });
-  };
-  for (const rel of manifest?.extensions ?? []) push("extension", rel);
-  if (manifest?.tools) push("extension", manifest.tools);
-  if (manifest?.hooks) push("extension", manifest.hooks);
-  // omp "commands" (slash commands) are the closest analog of pi prompts.
-  for (const rel of manifest?.commands ?? []) push("prompt", rel);
-  return resources;
-}
-
-async function toNpmPackageInfo(plugin: OmpNpmPlugin): Promise<PluginPackageInfo> {
-  const resources = [
-    ...manifestResources(plugin.path, plugin.manifest),
-    ...(await scanPluginSkills(plugin.path)),
-  ];
-  const counts = emptyCounts();
-  for (const resource of resources) {
-    if (resource.kind === "extension") counts.extensions += 1;
-    else if (resource.kind === "skill") counts.skills += 1;
-    else if (resource.kind === "prompt") counts.prompts += 1;
-    else counts.themes += 1;
-  }
-  const installed = Boolean(plugin.path && existsSync(plugin.path));
-  const resourceCount = counts.extensions + counts.skills + counts.prompts + counts.themes;
-  return {
-    source: plugin.name,
-    scope: "global",
-    filtered: Array.isArray(plugin.enabledFeatures),
-    disabled: plugin.enabled === false,
-    installedPath: plugin.path || undefined,
-    packageName: plugin.name,
-    version: plugin.version || plugin.manifest?.version,
-    configuredVersion: undefined,
-    counts,
-    resources,
-    status: plugin.enabled === false
-      ? "disabled"
-      : resourceCount > 0
-        ? "loaded"
-        : installed
-          ? "installed"
-          : "missing",
-  };
-}
-
-async function toMarketplacePackageInfo(plugin: OmpMarketplacePlugin): Promise<PluginPackageInfo> {
-  const entry = plugin.entries?.[0];
-  const installedPath = entry?.installPath;
-  const installed = Boolean(installedPath && existsSync(installedPath));
-  const resources = installedPath ? await scanPluginSkills(installedPath) : [];
-  const counts = emptyCounts();
-  counts.skills = resources.length;
-  const disabled = entry?.enabled === false;
-  return {
-    source: plugin.id,
-    scope: plugin.scope === "project" ? "project" : "global",
-    filtered: false,
-    disabled,
-    installedPath: installedPath || undefined,
-    packageName: plugin.id,
-    version: entry?.version,
-    configuredVersion: undefined,
-    counts,
-    resources,
-    status: disabled ? "disabled" : resources.length > 0 ? "loaded" : installed ? "installed" : "missing",
-  };
-}
-
-/** Without a cwd, the user level only (a cluster member's settings act on this machine's, spec K7): omp runs in its
+/** Without a cwd, the user level only (a cluster member's settings act on this machine's, spec K7): pi runs in its
  * agent directory, where no project lies, and a project-scope entry is left out all the same. */
 async function readPlugins(cwd: string | null): Promise<PluginsResponse> {
   const diagnostics: PluginDiagnostic[] = [];
@@ -208,46 +89,27 @@ async function readPlugins(cwd: string | null): Promise<PluginsResponse> {
   const totals = emptyCounts();
 
   try {
-    const { stdout } = await runOmp(["list"], { cwd: cwd ?? ensureAgentDir(), timeout: 60_000 });
-    const list = parseJsonLoose<OmpPluginList>(stdout);
-    if (list) {
-      for (const plugin of list.npm ?? []) {
-        packages.push(await toNpmPackageInfo(plugin));
-      }
-      for (const plugin of list.marketplace ?? []) {
-        if (!cwd && plugin.scope === "project") continue;
-        const info = await toMarketplacePackageInfo(plugin);
-        if (plugin.shadowedBy) {
-          diagnostics.push({
-            type: "warning",
-            source: plugin.id,
-            message: `Shadowed by a ${plugin.shadowedBy}-scoped install of the same plugin.`,
-          });
-        }
-        packages.push(info);
-      }
-    } else {
-      const piPackages = parsePiListOutput(stdout);
-      for (const pkg of piPackages) {
-        if (!cwd && pkg.scope === "project") continue;
-        const installed = Boolean(pkg.path && existsSync(pkg.path));
-        const resources = pkg.path ? await scanPluginSkills(pkg.path) : [];
-        const counts = emptyCounts();
-        counts.skills = resources.length;
-        packages.push({
-          source: pkg.source,
-          scope: pkg.scope,
-          filtered: false,
-          disabled: false,
-          installedPath: pkg.path || undefined,
-          packageName: basename(pkg.path) || pkg.source,
-          version: undefined,
-          configuredVersion: undefined,
-          counts,
-          resources,
-          status: resources.length > 0 ? "loaded" : installed ? "installed" : "missing",
-        });
-      }
+    const { stdout } = await runPi(["list"], { cwd: cwd ?? ensureAgentDir(), timeout: 60_000 });
+    const piPackages = parsePiListOutput(stdout);
+    for (const pkg of piPackages) {
+      if (!cwd && pkg.scope === "project") continue;
+      const installed = Boolean(pkg.path && existsSync(pkg.path));
+      const resources = pkg.path ? await scanPluginSkills(pkg.path) : [];
+      const counts = emptyCounts();
+      counts.skills = resources.length;
+      packages.push({
+        source: pkg.source,
+        scope: pkg.scope,
+        filtered: false,
+        disabled: false,
+        installedPath: pkg.path || undefined,
+        packageName: basename(pkg.path) || pkg.source,
+        version: undefined,
+        configuredVersion: undefined,
+        counts,
+        resources,
+        status: resources.length > 0 ? "loaded" : installed ? "installed" : "missing",
+      });
     }
     for (const pkg of packages) {
       totals.extensions += pkg.counts.extensions;
@@ -269,12 +131,12 @@ function readScope(scope: unknown): PluginScope {
   return scope === "project" ? "project" : "global";
 }
 
-/** Dynamic CLI failures keep their message; a missing omp binary is the one
+/** Dynamic CLI failures keep their message; a missing pi binary is the one
  * known cause worth a stable code for client-side localization. */
 function pluginErrorResponse(error: unknown): Response {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes(OMP_NOT_FOUND)) {
-    return Response.json({ error: message, code: "omp_not_found" }, { status: 500 });
+  if (message.includes(PI_NOT_FOUND)) {
+    return Response.json({ error: message, code: "pi_not_found" }, { status: 500 });
   }
   return Response.json({ error: message }, { status: 500 });
 }
@@ -316,14 +178,13 @@ export async function POST(req: Request) {
 
     if (body.action === "install") {
       if (!source) return Response.json({ error: "source required", code: "source_required" }, { status: 400 });
-      await runOmp(["install", source, ...scopeArgs], { cwd: dir, timeout: 300_000 });
+      await runPi(["install", source, ...scopeArgs], { cwd: dir, timeout: 300_000 });
     } else if (body.action === "remove") {
       if (!source) return Response.json({ error: "source required", code: "source_required" }, { status: 400 });
-      await runOmp(["remove", source, ...scopeArgs], { cwd: dir, timeout: 120_000 });
+      await runPi(["remove", source, ...scopeArgs], { cwd: dir, timeout: 120_000 });
     } else if (body.action === "update") {
-      await runOmp(["update", ...(source ? [source] : [])], { cwd: dir, timeout: 300_000 });
-    } else if (body.action === "disable" || body.action === "enable") {
-      return Response.json({ error: `pi packages do not support ${body.action} via CLI; use remove/install instead.`, code: "plugin_unsupported_action" }, { status: 400 });
+      // A bare `pi update` updates pi itself: without a source, the packages only.
+      await runPi(["update", ...(source ? [source] : ["--extensions"])], { cwd: dir, timeout: 300_000 });
     } else {
       return Response.json({ error: `Unsupported action: ${body.action}`, code: "plugin_unsupported_action" }, { status: 400 });
     }

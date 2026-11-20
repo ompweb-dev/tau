@@ -4,7 +4,7 @@ Status: approved design, 2026-10-06; updated to match the implementation.
 
 ## Goal
 
-omp-web notifies the user about session events on desktop browsers and on the
+tau notifies the user about session events on desktop browsers and on the
 installed PWA (Android, and iOS 16.4+ when added to the Home Screen). A
 Notifications tab in Settings lets each device choose which events notify and
 how. Tapping a notification opens the session that produced it. No
@@ -12,12 +12,11 @@ notification is shown for a session the user is currently viewing.
 
 ## Notification types
 
-| Type | Trigger frame (rpc-ui) | Body |
+| Type | Trigger frame (as tau's `RpcProcess` delivers it) | Body |
 |---|---|---|
-| `completed` | `session_settled`, unless the last `prompt_result` of that stretch had `status` `error` or `aborted` | "Task finished." |
-| `input` | `extension_ui_request` with `method` `select`, `confirm`, `input`, `editor`, `ask` or `open_url` that omp-web does not auto-answer | "Waiting for your answer: <title or first question>" |
-| `error` | `prompt_result` with `agentInvoked: true` and `status: "error"`, an asynchronous prompt failure (`response` with `success: false`), or omp child exit while a run or its background work is in progress; one notification per run | "Run failed: <error.message>" |
-| `modelSwitch` | `retry_fallback_applied {from, to, reason?}`, or `notice` with `source` `prewalk` or `plan-yolo` | "Switched <from> → <to>: <reason>", or the notice text |
+| `completed` | `session_settled` (tau's name for pi's `agent_settled`, `lib/pi/rpc-process.ts`), unless the last `prompt_result` of that stretch had `status` `error` or `aborted` | "Task finished." |
+| `input` | `extension_ui_request` with `method` `select`, `confirm`, `input`, `editor`, `ask` or `open_url` that tau does not auto-answer | "Waiting for your answer: <title or first question>" |
+| `error` | `prompt_result` with `agentInvoked: true` and `status: "error"`, an asynchronous prompt failure (`response` with `success: false`), or pi child exit while a run or its background work is in progress; one notification per run | "Run failed: <error.message>" |
 
 The title is the session name, falling back to the cwd's last path segment.
 
@@ -31,12 +30,6 @@ Rules:
   too. A run woken by background work with no prompt also completes this way.
 - Local slash commands (`prompt_result` with `agentInvoked: false`), aborted
   runs, `auto_retry_start` and `auto_retry_end {success: true}` never notify.
-- The `modelSwitch` reason is `retry_fallback_applied.reason` when present
-  (usage-aware fallback). omp sends a reason-less fallback before the
-  `auto_retry_start` of the same failure, so the detector holds it and takes
-  that frame's `errorMessage` (classifier refusals such as Fable falling back
-  to Opus, rate limits, provider failures). A fallback still held at
-  `auto_retry_end`, `prompt_result` or `session_settled` is sent without one.
 - Every notification has tag `<sessionId>:<type>`, so a repeat replaces the
   previous one instead of stacking. Notifications are not retracted when they
   stop applying.
@@ -44,7 +37,7 @@ Rules:
 ## Architecture
 
 ```
-omp child ──frames──▶ AgentSessionWrapper.handleFrame (lib/rpc-manager.ts)
+pi child ──frames──▶ AgentSessionWrapper.handleFrame (lib/rpc-manager.ts)
                           │  createNotificationDetector() (lib/notification-events.ts)
                           ▼
                  publishNotification() (lib/notification-hub.ts: presence-aware routing)
@@ -63,12 +56,10 @@ six HTTP/1.1 connections per host, so a tab must not open another stream.
 
 ```ts
 interface NotificationEvent {
-  type: "completed" | "input" | "error" | "modelSwitch" | "test";
+  type: "completed" | "input" | "error" | "test";
   sessionId: string;
   sessionName: string | null;
-  detail?: string; // question, error text, or model-switch reason
-  from?: string;
-  to?: string;
+  detail?: string; // question or error text
 }
 ```
 
@@ -101,7 +92,7 @@ For each event:
 
 1. If a visible tab is showing `event.sessionId`, drop the event for every
    device, in every mode. This uses presence only, so a reconnecting stream
-   cannot leak a notification for the viewed session. A session omp moved to a
+   cannot leak a notification for the viewed session. A session pi moved to a
    new file carries its earlier ids as `aliases`, and tabs showing any of them
    count as viewing it.
 2. For each device whose prefs enable notifications and the event's type:
@@ -120,14 +111,14 @@ push: iOS Safari revokes push permission for pushes that show nothing.
 
 - Dependency: `web-push`.
 - The VAPID key pair, generated on first use, and up to 50 devices
-  `{deviceId, prefs, subscription?, updatedAt}` live in omp-web's SQLite
+  `{deviceId, prefs, subscription?, updatedAt}` live in tau's SQLite
   notification store (see
   `2026-10-12-persistent-notifications-design.md`, which replaced the original
   `notifications.json`). A push endpoint belongs to one device; saving it
   removes it from any other. Over the cap, devices that are neither enabled nor
-  subscribed are dropped first. omp-web instances sharing the agent directory
+  subscribed are dropped first. tau instances sharing the agent directory
   see each other's devices and keys.
-- VAPID subject: `https://github.com/ompweb-dev/ompweb` (Apple rejects subjects it
+- VAPID subject: `https://github.com/ompweb-dev/tau` (Apple rejects subjects it
   cannot resolve, such as `mailto:…@localhost`).
 - Only HTTPS push endpoints are accepted.
 - A push failing with HTTP 404 or 410 drops that subscription and keeps the
@@ -143,7 +134,7 @@ push: iOS Safari revokes push permission for pushes that show nothing.
 - `push`: `showNotification(title, {body, icon: "/icon-192.png", badge:
   "/badge-96.png", tag, renotify, data: {url, sessionId}})`.
 - `notificationclick`: focus an existing window. An app window (`/`) gets
-  `postMessage({type: "omp-open-session", sessionId})` and selects the session
+  `postMessage({type: "tau-open-session", sessionId})` and selects the session
   in place; any other window (the sign-in page) navigates to the session URL;
   with no window, `clients.openWindow(url)`.
 - `/sw.js` and `/badge-96.png` are exempt from the password gate in
@@ -176,8 +167,8 @@ A `SettingsTabs` category `notifications` (icon `Bell`). Contents:
   needs HTTPS; add to Home Screen first (iOS browser tab); blocked by the
   browser; unsupported.
 - **Toggles**, one per type: Task finished (on), Waiting for input (on), Run
-  failed (on), Model switched automatically (off).
-- **When I'm using omp-web in another tab**: "Show an in-app toast" (default)
+  failed (on).
+- **When I'm using tau in another tab**: "Show an in-app toast" (default)
   or "Always send a system notification".
 - **Send test notification**: a real push for subscribed devices, else a
   local notification from the page.
@@ -185,7 +176,7 @@ A `SettingsTabs` category `notifications` (icon `Bell`). Contents:
 ```ts
 interface NotificationPrefs {
   enabled: boolean; // default false
-  types: Record<"completed" | "input" | "error" | "modelSwitch", boolean>;
+  types: Record<"completed" | "input" | "error", boolean>;
   whenActive: "toast" | "system";
   locale: string; // UI locale, for server-rendered pushes
 }

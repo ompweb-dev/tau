@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { dirname, join, posix, win32 } from "node:path";
 import { comparableProjectPath } from "../comparable-path";
 import { cloneDirectoryName } from "../git-clone";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import { isReservedLaunchArg, type ProjectRegistryEntry } from "../project-registry";
 import { isRecord } from "../type-guards";
 import type { ManagedProject } from "../types";
@@ -11,10 +11,11 @@ import type { CapacitySnapshot } from "./hub";
 
 export interface PoolHostSnapshot {
   status: HostStatus;
-  linkProtocol: number;
   /** False for a cluster member that is not on the master's configuration (`isHostConfigCurrent`); it is never chosen. */
   configCurrent: boolean;
   capacity: CapacitySnapshot | null;
+  /** False when the start asks for a provider this member has no login for; it is never chosen. */
+  canAuthenticate?: boolean;
 }
 
 export interface PoolMember {
@@ -63,9 +64,7 @@ export function isValidPoolOrigin(value: unknown): value is string {
 function validLaunchConfig(value: unknown): boolean {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
-  return (value.profile === undefined || (typeof value.profile === "string" && value.profile.trim().length > 0 && !value.profile.trim().startsWith("-")))
-    && (value.advisor === undefined || typeof value.advisor === "boolean")
-    && (value.extraArgs === undefined || (Array.isArray(value.extraArgs) && value.extraArgs.length <= 32
+  return (value.extraArgs === undefined || (Array.isArray(value.extraArgs) && value.extraArgs.length <= 32
       && value.extraArgs.every((arg) => typeof arg === "string" && arg.length > 0 && arg.length <= 256 && !isReservedLaunchArg(arg))));
 }
 
@@ -108,7 +107,7 @@ export function validatePools(value: unknown): asserts value is HostPool[] {
 export function loadPools(): HostPool[] {
   let text: string;
   try {
-    text = readFileSync(join(getAgentDir(), "omp-web", "pools.json"), "utf8");
+    text = readFileSync(join(getAgentDir(), "tau", "pools.json"), "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -126,7 +125,7 @@ export function loadPools(): HostPool[] {
 
 export function savePools(pools: HostPool[]): void {
   validatePools(pools);
-  const file = join(getAgentDir(), "omp-web", "pools.json");
+  const file = join(getAgentDir(), "tau", "pools.json");
   mkdirSync(dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
   try {
@@ -182,7 +181,7 @@ export function selectPoolHost(
   for (const member of pool.members) {
     if (!member.provisioned || member.draining) continue;
     const report = snapshots.get(member.hostId);
-    if (!report || report.status !== "online" || !report.capacity || !report.configCurrent) continue;
+    if (!report || report.status !== "online" || !report.capacity || !report.configCurrent || report.canAuthenticate === false) continue;
     const { sample, receivedAt } = report.capacity;
     if (!nonnegative(receivedAt) || receivedAt > now || now - receivedAt > 15_000) continue;
     const { effectiveCpus, load1, busyFraction, stealFraction, availableMemoryBytes, activeSessions } = sample;

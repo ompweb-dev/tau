@@ -16,13 +16,13 @@ const {
 } = await import("./useRecentRunsLimit.ts");
 
 test("has expected constants", () => {
-  assert.equal(STORAGE_KEY, "omp-recent-runs-limit");
-  assert.equal(CUSTOM_STORAGE_KEY, "omp-recent-runs-custom-limit");
+  assert.equal(STORAGE_KEY, "tau-recent-runs-limit");
+  assert.equal(CUSTOM_STORAGE_KEY, "tau-recent-runs-custom-limit");
   assert.equal(DEFAULT_PRESET, "10");
   assert.equal(DEFAULT_LIMIT, 10);
   assert.equal(MIN_LIMIT, 1);
   assert.equal(MAX_LIMIT, 100);
-  assert.equal(RECENT_RUNS_LIMIT_CHANGE_EVENT, "omp-recent-runs-limit-change");
+  assert.equal(RECENT_RUNS_LIMIT_CHANGE_EVENT, "tau-recent-runs-limit-change");
 });
 
 test("resolves presets 10, 15, 20 and custom limits", () => {

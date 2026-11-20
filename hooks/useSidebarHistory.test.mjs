@@ -71,7 +71,7 @@ function browserHistory({ prior = true, standalone = false } = {}) {
   stub(win, "matchMedia", { value: () => ({ matches: standalone }) });
   stub(win, "close", { value: () => { result.closeAttempts += 1; } });
   // The root layout installs this bridge before Next's popstate listener.
-  const bridge = (event) => win.dispatchEvent(new win.CustomEvent("omp:sidebar-popstate", { detail: event }));
+  const bridge = (event) => win.dispatchEvent(new win.CustomEvent("tau:sidebar-popstate", { detail: event }));
   win.addEventListener("popstate", bridge);
   restoreHistory = () => {
     win.removeEventListener("popstate", bridge);

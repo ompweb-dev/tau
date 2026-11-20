@@ -10,7 +10,7 @@ afterEach(cleanup);
 
 const noop = () => {};
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-const MEMBER_CWD = "/srv/h1/ompweb-cluster/app";
+const MEMBER_CWD = "/srv/h1/tau-cluster/app";
 const MEMBER_SESSION = "member-session-1";
 const NOTICE = "Cluster configuration: changes here apply to every member.";
 const REMOTE = "Not available on remote hosts yet";
@@ -20,7 +20,6 @@ const settingsProps = {
   toolCallsDefaultCollapsed: false, onToolCallsDefaultCollapsedChange: noop,
   hideToolActivity: false, onHideToolActivityChange: noop,
   expandThinkingByDefault: false, onExpandThinkingByDefaultChange: noop, onHideThinkingBlockChange: noop,
-  providerUsageVisible: false, onProviderUsageVisibleChange: noop,
   scopeNativeSelectAll: false, onScopeNativeSelectAllChange: noop,
   openUrlAutomatically: false, onOpenUrlAutomaticallyChange: noop,
   cwd: MEMBER_CWD, remoteHost: false, cluster: false, sessionId: MEMBER_SESSION,
@@ -29,19 +28,18 @@ const settingsProps = {
   onRequestAppUpdate: noop, onSelectTab: noop, onClose: noop,
 };
 
-/** Every request, answered with an empty panel; MCP's live read says its one server is connected. */
+/** Every request, answered with an empty panel; MCP lists one configured server. */
 function recordRequests(t) {
   const requests = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
     requests.push({ url: String(url), method: init?.method ?? "GET", body: init?.body });
     const path = String(url).split("?")[0];
-    if (path === "/api/omp-settings") return Response.json({ settings: {} });
+    if (path === "/api/pi-settings") return Response.json({ settings: {} });
     if (path === "/api/mcp") {
       const inventory = [{ name: "demo", source: "User level", status: "configured", type: "stdio" }];
-      return Response.json(String(url).includes("live=1") ? { servers: [], inventory, liveServers: [{ ...inventory[0], status: "connected" }] } : { servers: [], inventory });
+      return Response.json({ servers: [], inventory });
     }
     if (path === "/api/skills") return Response.json({ skills: [] });
-    if (path === "/api/agents") return Response.json({ agents: [] });
     if (path === "/api/plugins") return Response.json({ packages: [], totals: { extensions: 0, skills: 0, prompts: 0, themes: 0 }, diagnostics: [] });
     return Response.json({});
   });
@@ -49,10 +47,8 @@ function recordRequests(t) {
 }
 const mentions = (request, text) => [request.url, request.body ?? ""].some((part) => part.includes(text));
 
-// What each panel asks on another member: never the member's workspace; only MCP names its session, to read the
-// live status of the process running there, never to start one (`attach=1`).
-const memberMcp = (live) => `/api/mcp?${new URLSearchParams({ sessionId: MEMBER_SESSION, attach: "1", live })}`;
-const PANELS = { mcp: ["/api/mcp", [memberMcp("0"), memberMcp("1")]], skills: ["/api/skills", ["/api/skills"]], agents: ["/api/agents", ["/api/agents?"]] };
+// What each panel asks on another member: never the member's workspace or session.
+const PANELS = { mcp: ["/api/mcp", ["/api/mcp?"]], skills: ["/api/skills", ["/api/skills"]] };
 
 for (const [tab, [path, urls]] of Object.entries(PANELS)) {
   test(`a cluster session on another member shows the ${tab} panel at this machine's user level, under the notice`, async (t) => {
@@ -64,33 +60,17 @@ for (const [tab, [path, urls]] of Object.entries(PANELS)) {
     assert.equal(screen.queryByText(REMOTE), null);
     assert.deepEqual(requests.filter((request) => request.url.split("?")[0] === path).map((request) => request.url), urls);
     assert.deepEqual(requests.filter((request) => mentions(request, MEMBER_CWD)), []);
-    assert.deepEqual(requests.filter((request) => mentions(request, MEMBER_SESSION)).map((request) => request.url), tab === "mcp" ? urls : []);
+    assert.deepEqual(requests.filter((request) => mentions(request, MEMBER_SESSION)), []);
   });
 }
 
-test("on another member MCP shows the session's live status read-only, the user-level MCP settings and no project editor", async (t) => {
+test("on another member MCP shows this machine's configured servers and no project editor", async (t) => {
   const requests = recordRequests(t);
   render(createElement(SettingsConfig, { ...settingsProps, activeTab: "mcp", remoteHost: true, cluster: true }));
-  assert.ok(await screen.findByText("connected"));
-  assert.ok(screen.getByText("MCP servers are changed in the master's configuration; this shows the session's live status."));
-  assert.equal(screen.queryByText("Open a conversation to enable, disable, or reload MCP servers."), null);
-  assert.equal(screen.getByRole("switch", { name: "Enable demo" }).disabled, true);
-  assert.equal(screen.getByRole("button", { name: "Reload MCP" }).disabled, true);
-  assert.ok(screen.getByText("Load Project MCP Servers"));
+  assert.ok(await screen.findByText("demo"));
+  assert.equal(screen.queryByRole("switch"), null);
   assert.equal(screen.queryByText("Project MCP Servers"), null);
   assert.deepEqual(requests.filter((request) => request.method !== "GET" && request.url.startsWith("/api/mcp")), []);
-});
-
-test("on another member a new agent can only be the user's", async (t) => {
-  recordRequests(t);
-  render(createElement(SettingsConfig, { ...settingsProps, activeTab: "agents", remoteHost: true, cluster: true }));
-  const [create] = await screen.findAllByRole("button", { name: "New agent" });
-  await waitFor(() => assert.equal(create.disabled, false));
-  const user = userEvent.setup();
-  await user.click(create);
-  await user.click(await screen.findByRole("combobox", { name: "scope" }));
-  assert.ok(await screen.findByRole("option", { name: "user" }));
-  assert.equal(screen.queryByRole("option", { name: "project" }), null);
 });
 
 test("on another member the Skills panel installs only for the user", async (t) => {
@@ -127,10 +107,10 @@ test("a cluster session on this machine changes nothing but the notice", async (
     t.mock.restoreAll();
   }
   assert.equal(asked.true, asked.false);
-  assert.equal(asked.true, `/api/mcp?${new URLSearchParams({ cwd: MEMBER_CWD, sessionId: MEMBER_SESSION, live: "0" })}`);
+  assert.equal(asked.true, `/api/mcp?${new URLSearchParams({ cwd: MEMBER_CWD })}`);
 });
 
-for (const tab of ["models", "safety"]) {
+for (const tab of ["models"]) {
   test(`the ${tab} tab, which edits the mirrored configuration, shows the notice for a cluster session only`, async (t) => {
     recordRequests(t);
     render(createElement(SettingsConfig, { ...settingsProps, activeTab: tab, remoteHost: true, cluster: true }));
@@ -166,7 +146,7 @@ test("without a workspace the Plugins panel works at the user level: no cwd, glo
   render(createElement(PluginsConfig, { embedded: true, cwd: null, sessionId: null, onClose: noop }));
   const source = await screen.findByRole("textbox", { name: "Source" });
   assert.deepEqual(requests.map((request) => request.url), ["/api/plugins"]);
-  assert.ok(screen.getByText("~/.omp/plugins"));
+  assert.ok(screen.getByText("~/.pi/agent"));
   assert.equal(screen.queryByRole("button", { name: "project" }), null);
   const user = userEvent.setup();
   await user.type(source, "npm:demo");

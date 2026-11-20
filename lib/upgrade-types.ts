@@ -7,7 +7,7 @@ export interface UpgradeParticipant {
   protocolVersion: number | null;
   targetVersion: string | null;
   needsUpgrade: boolean;
-  recovery: "maintenance" | "legacy" | "local" | "shared-local" | "none";
+  recovery: "maintenance" | "local" | "shared-local" | "none";
   sessionProcesses: number | null;
   activeTurns: number | null;
   blockedReason: string | null;

@@ -15,7 +15,7 @@ export async function withProjectReservation<T>(
   let handle: FileHandle;
   let path: string;
   try {
-    path = join(await realpath(dirname(target)), `.${basename(target)}.ompweb-project.lock`);
+    path = join(await realpath(dirname(target)), `.${basename(target)}.tau-project.lock`);
     handle = await open(path, "wx", 0o600);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "EEXIST") {

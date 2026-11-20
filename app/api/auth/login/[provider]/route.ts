@@ -1,48 +1,43 @@
-import { homedir } from "os";
-import { invalidateModelsCache } from "@/lib/models-cache";
-import { enableProvider } from "@/lib/omp/model-roles";
-import { RpcProcess, type RpcFrame } from "@/lib/omp/rpc-process";
-import { disposeUtilityRpc } from "@/lib/omp/rpc-utility";
+import { afterAuthChange, hostIdOf, providerIdOr400 } from "@/lib/host-auth";
+import { authOp } from "@/lib/hosts/hub";
+import { isRecord } from "@/lib/type-guards";
 
 /**
- * Interactive login over a dedicated headless runner. The runner drives the
- * flow with login frames (runner/src/commands/agents.ts): `login_open_url`
- * carries the OAuth URL, `login_input` asks for the pasted code/redirect URL,
- * `login_progress` reports progress. The SSE stream keeps pi-web's event names
- * (auth, prompt_request, progress, success, error, cancelled) so the client
- * flow is unchanged; the POST handler feeds the user's pasted value back as a
- * `login_input_response` frame.
+ * Interactive account login on `?hostId=` (default this machine), run by that host's daemon in a pi of its own
+ * (lib/hosts/daemon-auth.ts). The SSE stream keeps pi-web's event names (auth, device_code, prompt_request,
+ * select_request, progress, success, error, cancelled) so the client flow is unchanged; the POST handler feeds the
+ * user's pasted code or chosen option back to the daemon.
  */
 
-const LOGIN_EXTRA_ARGS = ["--no-session", "--no-extensions", "--no-skills", "--no-lsp"];
-const READY_TIMEOUT_MS = 60_000;
-const LOGIN_TIMEOUT_MS = 15 * 60_000;
 const HEARTBEAT_MS = 30_000;
+/** A long poll waits up to 15 s on the daemon; this leaves room for the link. */
+const POLL_TIMEOUT_MS = 25_000;
 
 interface PendingLogin {
   provider: string;
-  submit: (value: string) => void;
+  hostId: string;
+  loginId: string;
 }
 
-// Registry survives dev-server hot reload; the SSE stream registers its token,
-// the POST handler resolves it.
+// Registry survives dev-server hot reload; the SSE stream registers its token, the POST handler resolves it.
 declare global {
-  var __ompLoginRegistry: Map<string, PendingLogin> | undefined;
+  var __tauLoginRegistry: Map<string, PendingLogin> | undefined;
 }
 
 function getLoginRegistry(): Map<string, PendingLogin> {
-  if (!globalThis.__ompLoginRegistry) globalThis.__ompLoginRegistry = new Map();
-  return globalThis.__ompLoginRegistry;
+  if (!globalThis.__tauLoginRegistry) globalThis.__tauLoginRegistry = new Map();
+  return globalThis.__tauLoginRegistry;
 }
 
-// POST /api/auth/login/[provider] — frontend sends redirect URL or auth code
+// POST /api/auth/login/[provider] — frontend sends redirect URL, auth code or chosen option
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await params;
-  const { token, code } = (await req.json()) as { token?: string; code?: string };
-
+  const body: unknown = await req.json().catch(() => null);
+  const token = isRecord(body) && typeof body.token === "string" ? body.token : "";
+  const code = isRecord(body) && typeof body.code === "string" ? body.code : "";
   if (!token || !code) {
     return Response.json({ error: "token and code required", code: "login_token_code_required" }, { status: 400 });
   }
@@ -50,25 +45,28 @@ export async function POST(
   if (!pending) {
     return Response.json({ error: "No pending login for token", code: "login_no_pending" }, { status: 404 });
   }
-  // Exact provider association: the registry records the provider a token was
-  // created for. A prefix check on the token alone is unsafe because provider
-  // ids may share prefixes (e.g. "openai" vs "openai-codex"), which would let
-  // a token for one provider be submitted against another provider's route.
+  // Exact provider association: provider ids may share prefixes ("openai" vs "openai-codex").
   if (pending.provider !== provider) {
     return Response.json({ error: "Token does not match provider", code: "login_token_mismatch" }, { status: 400 });
   }
-
-  pending.submit(code);
+  try {
+    await authOp(pending.hostId, { action: "loginInput", loginId: pending.loginId, value: code });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+  }
   return Response.json({ ok: true, provider });
 }
 
-// GET /api/auth/login/[provider] — SSE stream for the login flow
+// GET /api/auth/login/[provider]?hostId= — SSE stream for the login flow
 export async function GET(
   req: Request,
   { params, disableIdleTimeout }: { params: Promise<{ provider: string }>; disableIdleTimeout: () => void }
 ) {
-  disableIdleTimeout();
   const { provider } = await params;
+  const invalid = providerIdOr400(provider);
+  if (invalid) return invalid;
+  disableIdleTimeout();
+  const hostId = hostIdOf(req);
   const token = `${provider}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const registry = getLoginRegistry();
   const encoder = new TextEncoder();
@@ -84,8 +82,7 @@ export async function GET(
           closed = true;
         }
       };
-      // OAuth flows sit idle while the user is in the browser; keep the SSE
-      // connection alive past reverse-proxy idle timeouts.
+      // OAuth flows sit idle while the user is in the browser; keep the SSE connection alive past proxy idle timeouts.
       const heartbeat = setInterval(() => {
         if (closed) return;
         try {
@@ -95,85 +92,39 @@ export async function GET(
         }
       }, HEARTBEAT_MS);
 
-      // The user may paste the code before the runner's input request arrives
-      // (the auth event shows the paste box immediately) — buffer one value.
-      let pendingInputId: number | null = null;
-      let bufferedValue: string | null = null;
-
-      let proc: RpcProcess | null = null;
-      const handleFrame = (frame: RpcFrame) => {
-        if (frame.type === "login_open_url") {
-          send({
-            type: "auth",
-            url: String(frame.url ?? ""),
-            instructions: typeof frame.instructions === "string" ? frame.instructions : null,
-            token,
-          });
-        } else if (frame.type === "login_input" && typeof frame.id === "number") {
-          if (bufferedValue !== null) {
-            const value = bufferedValue;
-            bufferedValue = null;
-            proc?.sendFrame({ type: "login_input_response", id: frame.id, value });
-          } else {
-            pendingInputId = frame.id;
-            send({
-              type: "prompt_request",
-              message: typeof frame.prompt === "string" ? frame.prompt : "Enter the authorization code",
-              placeholder: typeof frame.placeholder === "string" ? frame.placeholder : null,
-              token,
-            });
-          }
-        } else if (frame.type === "login_progress") {
-          if (typeof frame.message === "string") send({ type: "progress", message: frame.message });
-        }
+      let loginId: string | null = null;
+      const cancel = () => {
+        if (loginId) void authOp(hostId, { action: "loginCancel", loginId }).catch(() => {});
       };
-
+      req.signal.addEventListener("abort", cancel);
       try {
-        proc = new RpcProcess({ cwd: homedir(), extraArgs: LOGIN_EXTRA_ARGS, onFrame: handleFrame });
-      } catch (error) {
-        send({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        clearInterval(heartbeat);
-        closed = true;
-        try { controller.close(); } catch {}
-        return;
-      }
-      const child = proc;
-
-      registry.set(token, {
-        provider,
-        submit: (value: string) => {
-          if (pendingInputId !== null) {
-            const id = pendingInputId;
-            pendingInputId = null;
-            child.sendFrame({ type: "login_input_response", id, value });
-          } else {
-            bufferedValue = value;
+        const started = await authOp(hostId, { action: "loginStart", provider });
+        if (!isRecord(started) || typeof started.loginId !== "string") throw new Error("The host sent an invalid login");
+        loginId = started.loginId;
+        if (req.signal.aborted) cancel();
+        registry.set(token, { provider, hostId, loginId });
+        let after = 0;
+        let outcome: string | null = null;
+        while (!outcome && !req.signal.aborted) {
+          const polled = await authOp(hostId, { action: "loginPoll", loginId, after }, POLL_TIMEOUT_MS);
+          if (!isRecord(polled) || !Array.isArray(polled.events)) throw new Error("The host sent an invalid login step");
+          after += polled.events.length;
+          for (const event of polled.events) {
+            if (!isRecord(event) || typeof event.type !== "string") continue;
+            if (event.type === "success" || event.type === "error" || event.type === "cancelled") outcome = event.type;
+            // The browser answers a prompt with this stream's token.
+            send(event.type === "auth" || event.type === "prompt_request" || event.type === "select_request" ? { ...event, token } : event);
           }
-        },
-      });
-
-      const cleanup = () => {
+        }
+        if (outcome === "success") afterAuthChange(hostId);
+        if (!outcome) send({ type: "cancelled" });
+      } catch (error) {
+        if (req.signal.aborted) send({ type: "cancelled" });
+        else send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      } finally {
+        req.signal.removeEventListener("abort", cancel);
         registry.delete(token);
         clearInterval(heartbeat);
-        void child.dispose();
-      };
-      req.signal.addEventListener("abort", cleanup);
-
-      try {
-        await child.waitReady(READY_TIMEOUT_MS);
-        await child.sendCommand({ type: "login", providerId: provider }, LOGIN_TIMEOUT_MS);
-        enableProvider(provider);
-        invalidateModelsCache();
-        disposeUtilityRpc();
-        send({ type: "success" });
-      } catch (error) {
-        if (req.signal.aborted) {
-          send({ type: "cancelled" });
-        } else {
-          send({ type: "error", message: error instanceof Error ? error.message : String(error) });
-        }
-      } finally {
-        cleanup();
         closed = true;
         try { controller.close(); } catch {}
       }

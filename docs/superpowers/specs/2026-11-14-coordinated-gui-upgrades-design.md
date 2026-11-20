@@ -1,5 +1,7 @@
 # Coordinated GUI upgrades and legacy-host recovery
 
+> tau keeps the coordinated server-and-host upgrade plan, local host start and native forced host updates (`forceMethod: "native"`, maintenance API v1, update target `tau` only). It dropped the ompweb-era legacy recovery ("Legacy recovery", "Initial feasibility result" and the 0.6.0/0.7.x requirements below): no ompweb daemon can link to tau.
+
 ## Intent and accepted requirements
 Restore application updates from the GUI for binary and npm/bun installations. Include this machine's host in the initial migration. Start a local host automatically when none exists. Upgrade incompatible hosts and the server together after explicit user approval. Keep Settings → Hosts capable of forcing an upgrade even when terminating sessions is necessary. Existing 0.6.0 daemons must be recoverable without an operator logging into each machine.
 

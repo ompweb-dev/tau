@@ -45,9 +45,9 @@ export function clientEnv(root: string, worker: string) {
   // instance instead of tabs attaching to a stale copy still running.
   const eventStreamWorkerVersion = createHash("sha256").update(worker).digest("hex").slice(0, 12);
   return {
-    OMP_WEB_PUBLIC_APP_VERSION: version,
-    OMP_WEB_PUBLIC_COMMIT_HASH: commitHash,
-    OMP_WEB_PUBLIC_COMMIT_DATE: commitDate,
-    OMP_WEB_PUBLIC_EVENT_STREAM_WORKER_VERSION: eventStreamWorkerVersion,
+    TAU_PUBLIC_APP_VERSION: version,
+    TAU_PUBLIC_COMMIT_HASH: commitHash,
+    TAU_PUBLIC_COMMIT_DATE: commitDate,
+    TAU_PUBLIC_EVENT_STREAM_WORKER_VERSION: eventStreamWorkerVersion,
   };
 }

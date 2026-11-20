@@ -27,7 +27,7 @@ export function isApiRequestOriginAllowed(request: Request): boolean {
   if (requestOrigin === null) return false;
   if (canonicalOrigin(origin) === requestOrigin) return true;
   // Some local HTTP proxies strip the port from the forwarded Origin header
-  // (e.g. `http://127.0.0.1:30177` arrives as `http://127.0.0.1`), which
+  // (e.g. `http://127.0.0.1:30187` arrives as `http://127.0.0.1`), which
   // would otherwise 403 every API request (issue #114). Accept that shape
   // only when protocol + hostname match exactly and the received Origin
   // carries the scheme's default port (i.e. no explicit port — browsers

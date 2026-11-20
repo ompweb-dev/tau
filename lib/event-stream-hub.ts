@@ -12,11 +12,9 @@ import { subscribeSessionFileChanges } from "./session-watcher";
 import {
   MUX_CONTROL_EVENT,
   UNKNOWN_CONNECTION_CODE,
-  type BrowserTransportState,
   type EventStreamChannel,
   type MuxControlFrame,
 } from "./event-stream-protocol";
-import { browserTransportState } from "./web-settings";
 import { isDeltaUpdate, mergeDeltaUpdates } from "./message-delta";
 import { isRecord } from "./type-guards";
 
@@ -58,21 +56,16 @@ interface SubscriptionHandle {
 }
 
 declare global {
-  var __ompEventStreamConnections: Map<string, EventStreamConnection> | undefined;
-  var __ompServerId: string | undefined;
+  var __tauEventStreamConnections: Map<string, EventStreamConnection> | undefined;
+  var __tauServerId: string | undefined;
 }
 
 /** Random per process: a reconnecting client compares it to learn whether the server restarted. */
 export function serverId(): string {
-  return (globalThis.__ompServerId ??= randomUUID());
+  return (globalThis.__tauServerId ??= randomUUID());
 }
 
-/** Tell every open connection the browser transport setting changed. */
-export function broadcastBrowserTransport(state: BrowserTransportState): void {
-  for (const connection of connections().values()) connection.control({ type: "transport", ...state });
-}
-
-/** Where a connection's frames go: an SSE response body or a WebSocket. */
+/** Where a connection's frames go: an SSE response body (tests supply their own). */
 export interface FrameSink {
   /** Send one frame; false means the peer is gone and the connection closes. */
   write(name: string, at: number, data: string): boolean;
@@ -127,7 +120,7 @@ class SseSink implements FrameSink {
 }
 
 function connections(): Map<string, EventStreamConnection> {
-  return (globalThis.__ompEventStreamConnections ??= new Map());
+  return (globalThis.__tauEventStreamConnections ??= new Map());
 }
 
 export function getEventStreamConnection(connectionId: string): EventStreamConnection | undefined {
@@ -160,7 +153,7 @@ export class EventStreamConnection {
       this.stream = sse.stream;
     }
     connections().set(this.id, this);
-    this.control({ type: "hello", connectionId: this.id, serverId: serverId(), ...browserTransportState() });
+    this.control({ type: "hello", connectionId: this.id, serverId: serverId() });
     if (!this.closed) {
       this.heartbeat = setInterval(() => {
         if (this.flushAll() && !this.sink.heartbeat()) this.close();
@@ -427,16 +420,16 @@ function openHostsChannel(handle: SubscriptionHandle): SubscribeResult {
   return SUBSCRIBED;
 }
 
-// Agent events of one live omp wrapper, and the session's held messages (`outbox_update`, lib/message-outbox.ts).
+// Agent events of one live pi wrapper, and the session's held messages (`outbox_update`, lib/message-outbox.ts).
 function openSessionChannel(sessionId: string, handle: SubscriptionHandle): SubscribeResult {
-  // Observer-only: opening a saved session must not create another omp
+  // Observer-only: opening a saved session must not create another pi
   // process for a terminal-owned session. Explicit commands use
   // POST /api/agent/[id], which starts the wrapper before this attaches.
   const existing = getRpcSession(sessionId);
   let session = existing?.isAlive() ? existing : undefined;
-  // Held messages show before omp runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
+  // Held messages show before pi runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
   if (!session && outboxEntries(sessionId).length === 0) {
-    return { ok: false, status: 409, error: "Session is not managed by omp-web", code: "session_not_managed" };
+    return { ok: false, status: 409, error: "Session is not managed by tau", code: "session_not_managed" };
   }
 
   handle.open();

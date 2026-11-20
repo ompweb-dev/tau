@@ -1,6 +1,6 @@
 /**
  * Pure helpers for the chat input's slash and skill autocomplete.
- * Mirrors the OMP TUI's behavior (@oh-my-pi/pi-tui/src/autocomplete.ts):
+ * Mirrors the pi TUI's behavior (@earendil-works/pi-tui autocomplete):
  * - Leading slash (/ at start of line/draft): full slash command lookup
  *   (built-in commands, extension commands, skills, prompts).
  * - Mid-prompt slash (/ preceded by whitespace after non-empty prompt text):

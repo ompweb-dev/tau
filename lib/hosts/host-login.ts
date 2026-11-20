@@ -1,14 +1,14 @@
-// The daemon's saved links, shared by `ompweb host` and local-bootstrap.
+// The daemon's saved links, shared by `tau host` and local-bootstrap.
 // Pure Node: no daemon/spawn code, `next/*` or `@/` imports.
 import { randomUUID } from "node:crypto";
 import { linkSync, lstatSync, readFileSync, type Stats, unlinkSync, writeFileSync } from "node:fs";
 import { type FileHandle, mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 import { isRecord } from "../type-guards";
 
-const loginFile = () => join(getAgentDir(), "omp-web", "host.json");
+const loginFile = () => join(getAgentDir(), "tau", "host.json");
 const trimUrl = (url: string) => url.replace(/\/+$/, "");
 
 export type HostLink = { url: string; token: string };
@@ -175,7 +175,7 @@ async function mutateConfig(update: (saved: HostConfig) => void): Promise<void> 
   if (failure) throw failure.error;
 }
 
-/** Upsert one URL, preserving the legacy primary and all other links.
+/** Upsert one URL, preserving the daemon's primary link (the top-level pair) and all other links.
  * Local bootstrap selects/validates its shared token inside the same lock. */
 export async function addHostLink(input: HostLink | (() => HostLink)): Promise<void> {
   await mutateConfig((saved) => {
@@ -184,12 +184,12 @@ export async function addHostLink(input: HostLink | (() => HostLink)): Promise<v
     const index = links.findIndex(({ url }) => trimUrl(url) === link.url);
     if (index === -1) links.push(link);
     else links[index] = { ...links[index], ...link };
-    if (saved.url === undefined || trimUrl(saved.url) === link.url) Object.assign(saved, link); // v6 daemons only read the top-level pair.
+    if (saved.url === undefined || trimUrl(saved.url) === link.url) Object.assign(saved, link); // Without a primary this link becomes it; the primary's own update keeps the pair current.
     saved.links = links;
   });
 }
 
-/** Remove membership only; the legacy primary remains for v6 readers. */
+/** Remove membership only; the primary link (the top-level pair) stays. */
 export async function removeHostLink(url: string): Promise<void> {
   await mutateConfig((saved) => {
     saved.links = configLinks(saved).filter((link) => trimUrl(link.url) !== trimUrl(url));
@@ -208,13 +208,13 @@ export async function loginHost(input: HostLink): Promise<void> {
   });
 }
 
-/** The legacy primary, or null before login or when it cannot be read. */
+/** The daemon's primary link (the top-level pair: `tau host login`'s server), or null before login or when it cannot be read. */
 export function readHostLogin(): HostLink | null {
   try {
     const saved: unknown = JSON.parse(readFileSync(loginFile(), "utf8"));
     if (isRecord(saved) && typeof saved.url === "string" && typeof saved.token === "string") return { url: saved.url, token: saved.token };
   } catch {
-    // Retain the legacy reader's tolerant behaviour.
+    // Missing or unreadable: no primary link.
   }
   return null;
 }

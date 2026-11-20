@@ -5,7 +5,7 @@ import { readAgentToolsEnabledFromDisk } from "../web-settings";
 import { fetchSnapshot } from "./api";
 import { diffSnapshot, formatUpdate, githubMessageOrigin, splitUpdateEvents, updateEntryId } from "./events";
 import { checkGh, defaultGhRunner, formatTarget, GhUnavailableError, parseGithubTarget, type GhRunner } from "./gh";
-import { advanceCursor, advancePendingBatch, claimPending, closeWatchStore, commitUpdate, getPending, isPosting, listWatches, pendingBatchEntryIds, postedIds, removeSessionWatches, renameSession, type PendingUpdate, type Watch } from "./watch-store";
+import { advanceCursor, advancePendingBatch, claimPending, closeWatchStore, commitUpdate, getPending, isPosting, listWatches, pendingBatchEntryIds, postedIds, removeSessionWatches, type PendingUpdate, type Watch } from "./watch-store";
 
 /**
  * Server-only poller: every watched item is fetched once per interval (items
@@ -60,19 +60,18 @@ interface WatcherState {
   /** Epoch ms of the GraphQL budget reset polling waits for. */
   budgetResetAt?: number;
   outage?: Outage;
-  detachMove?: () => void;
   stopped: boolean;
 }
 
 declare global {
-  var __ompGithubWatcher: WatcherState | undefined;
+  var __tauGithubWatcher: WatcherState | undefined;
 }
 
 async function defaultDeliver(sessionId: string, id: string, message: string, origin?: MessageOrigin): Promise<Delivery> {
   try {
     // Lazy: message-outbox pulls in rpc-manager, which will load the agent tools that load this module.
     const { runOutboxCommand, outboxScope, GITHUB_WATCH_OUTBOX_OWNER } = await import("../message-outbox");
-    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, false, GITHUB_WATCH_OUTBOX_OWNER, origin));
+    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, GITHUB_WATCH_OUTBOX_OWNER, origin));
   } catch {
     return "retry";
   }
@@ -110,7 +109,7 @@ const defaultSchedule: Required<WatcherDeps>["schedule"] = (fn, ms) => {
   return () => clearTimeout(timer);
 };
 
-const warn = (what: string, error: unknown) => console.warn(`[omp-web] github watcher: ${what}: ${error instanceof Error ? error.message : String(error)}`);
+const warn = (what: string, error: unknown) => console.warn(`[tau] github watcher: ${what}: ${error instanceof Error ? error.message : String(error)}`);
 
 /**
  * Delivers persisted batches in order; only the final accepted batch commits the cursor or removes a final watch.
@@ -140,13 +139,13 @@ async function deliverPending(state: WatcherState, watch: Watch, pending: Pendin
         const sizeKey = `${watchKey}\0size`;
         if (!state.refused.has(sizeKey)) {
           state.refused.add(sizeKey);
-          console.warn(`[omp-web] github watcher: the outbox of ${sessionId} rejected an oversized update batch for ${itemKey} (${outcome.rejected}); batch retained`);
+          console.warn(`[tau] github watcher: the outbox of ${sessionId} rejected an oversized update batch for ${itemKey} (${outcome.rejected}); batch retained`);
         }
         return;
       }
       if (!state.refused.has(watchKey)) {
         state.refused.add(watchKey);
-        console.warn(`[omp-web] github watcher: the outbox of ${sessionId} refused an update for ${itemKey} (${outcome.rejected}); dropped it`);
+        console.warn(`[tau] github watcher: the outbox of ${sessionId} refused an update for ${itemKey} (${outcome.rejected}); dropped it`);
       }
     }
     if (state.stopped) return;
@@ -201,7 +200,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
     const budget = snapshot.rateLimit;
     if (budget && budget.remaining < BUDGET_FLOOR && state.deps.now() >= (state.budgetResetAt ?? 0)) {
       state.budgetResetAt = Date.parse(budget.resetAt) || state.deps.now() + INTERVAL_MS;
-      console.warn(`[omp-web] github watcher: GraphQL budget low (${budget.remaining} points left); polling paused until ${budget.resetAt}`);
+      console.warn(`[tau] github watcher: GraphQL budget low (${budget.remaining} points left); polling paused until ${budget.resetAt}`);
     }
 
     for (const watch of fresh) {
@@ -268,7 +267,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
 async function notify(state: WatcherState, sessionId: string, kind: "paused" | "resumed", minute: number, text: string): Promise<boolean> {
   if (state.stopped || !readAgentToolsEnabledFromDisk()) return false;
   const id = `gh-${createHash("sha256").update(`${sessionId}\0${kind}\0${minute}`).digest("base64url").slice(0, 40)}`;
-  const outcome = await state.deps.deliver(sessionId, id, `GitHub update (omp-web): ${text}`);
+  const outcome = await state.deps.deliver(sessionId, id, `GitHub update (tau): ${text}`);
   if (state.stopped || !readAgentToolsEnabledFromDisk()) return false;
   if (outcome === "gone") removeSessionWatches(sessionId);
   return outcome !== "retry";
@@ -317,7 +316,7 @@ async function preparePoll(state: WatcherState): Promise<boolean> {
 
 /** One pass over every watched item, now. Does nothing while Agent tools is off. */
 export async function pollOnce(): Promise<void> {
-  const state = globalThis.__ompGithubWatcher;
+  const state = globalThis.__tauGithubWatcher;
   if (!state || !(await preparePoll(state))) return;
   for (const itemKey of itemsOf()) await pollItem(state, itemKey);
 }
@@ -352,7 +351,7 @@ function cycle(state: WatcherState): void {
 }
 
 export function startGithubWatcher(deps: WatcherDeps = {}): void {
-  if (globalThis.__ompGithubWatcher) return;
+  if (globalThis.__tauGithubWatcher) return;
   const state: WatcherState = {
     deps: { run: deps.run ?? defaultGhRunner, deliver: deps.deliver ?? defaultDeliver, now: deps.now ?? Date.now, schedule: deps.schedule ?? defaultSchedule },
     cancels: new Set(),
@@ -361,32 +360,18 @@ export function startGithubWatcher(deps: WatcherDeps = {}): void {
     refused: new Set(),
     stopped: false,
   };
-  globalThis.__ompGithubWatcher = state;
+  globalThis.__tauGithubWatcher = state;
   process.once("exit", stopGithubWatcher);
-  // Lazy for the same reason as the default deliver: rpc-manager loads the agent tools that load this module.
-  void import("../rpc-manager")
-    .then(({ onSessionMove }) => {
-      if (state.stopped) return;
-      state.detachMove = onSessionMove((from, to) => {
-        try {
-          renameSession(from, to);
-        } catch (error) {
-          warn(`watches of ${from} did not follow the move`, error); // rpc-manager calls listeners unguarded
-        }
-      });
-    })
-    .catch((error) => warn("session moves are not followed", error));
   cycle(state);
 }
 
 export function stopGithubWatcher(): void {
-  const state = globalThis.__ompGithubWatcher;
+  const state = globalThis.__tauGithubWatcher;
   if (!state) return;
   state.stopped = true;
   for (const cancel of state.cancels) cancel();
   state.cancels.clear();
-  state.detachMove?.();
   process.off("exit", stopGithubWatcher);
-  globalThis.__ompGithubWatcher = undefined;
+  globalThis.__tauGithubWatcher = undefined;
   closeWatchStore();
 }

@@ -1,7 +1,7 @@
 // useRouter and useSearchParams (the two hooks AppShell uses), over the History API.
 import { useMemo, useSyncExternalStore } from "react";
 
-const EVENT = "omp:navigate";
+const EVENT = "tau:navigate";
 const subscribe = (notify: () => void) => {
   window.addEventListener("popstate", notify);
   window.addEventListener(EVENT, notify);

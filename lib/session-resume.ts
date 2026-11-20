@@ -3,21 +3,19 @@ import { uptime } from "os";
 import { resolve } from "path";
 import { isLinkUp } from "./hosts/host";
 import { adoptedChild, getHost, hostOwnsLifecycle, onHostHello } from "./hosts/hub";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import { isValidSessionId } from "./session-file-references-core";
 import { isRecord } from "./type-guards";
 import { loadWebServerSettings } from "./web-settings";
 
-/** How long a session whose omp process died stays recorded. A stop signal
+/** How long a session whose pi process died stays recorded. A stop signal
  *  reaches every process in the service at once, so a child can die just
- *  before omp-web's own shutdown handler runs; a crash while omp-web keeps
+ *  before tau's own shutdown handler runs; a crash while tau keeps
  *  running is dropped after this window instead of resumed on the next start. */
 export const EXIT_GRACE_MS = 2_000;
 
 export interface InterruptibleSession {
   id: string;
-  /** The child's spawn-time --advisor flag, restored on resume. */
-  advisor: boolean;
   /** Host the child ran on; lists written before hosts existed read back as "local". */
   hostId: string;
 }
@@ -31,23 +29,23 @@ interface TrackerState {
 }
 
 declare global {
-  var __ompResumeTracker: TrackerState | undefined;
+  var __tauResumeTracker: TrackerState | undefined;
 }
 
 // On globalThis so it survives a `bun --hot` re-evaluation. Created on first
 // use, which claims the previous runs' lists before anything in this run can
 // overwrite them.
 function tracker(): TrackerState {
-  globalThis.__ompResumeTracker ??= { leftover: readLeftover(), sessions: new Map(), drops: new Map(), shuttingDown: false };
-  return globalThis.__ompResumeTracker;
+  globalThis.__tauResumeTracker ??= { leftover: readLeftover(), sessions: new Map(), drops: new Map(), shuttingDown: false };
+  return globalThis.__tauResumeTracker;
 }
 
-// Each omp-web instance keeps its own list, named by pid, so two instances
+// Each tau instance keeps its own list, named by pid, so two instances
 // sharing an agent dir never overwrite or resume each other's running sessions.
 // The unsuffixed name is the list written before per-instance lists existed.
-const LIST_NAME = /^omp-web-interrupted-sessions(?:-(\d+))?\.json$/;
+const LIST_NAME = /^tau-interrupted-sessions(?:-(\d+))?\.json$/;
 
-/** True when the list at `path`, written by `pid`, belongs to a running omp-web. */
+/** True when the list at `path`, written by `pid`, belongs to a running tau. */
 // ponytail: pid liveness only; same-boot pid reuse (or an unreaped zombie
 // writer) leaves that list unresumed, and hosts sharing an agent dir are not detected.
 function ownedByLiveInstance(path: string, pid: number): boolean {
@@ -97,7 +95,7 @@ function readLeftover(): InterruptibleSession[] {
       const list = isRecord(raw) && Array.isArray(raw.sessions) ? raw.sessions : [];
       for (const entry of list) {
         if (isRecord(entry) && typeof entry.id === "string" && isValidSessionId(entry.id)) {
-          sessions.set(entry.id, { id: entry.id, advisor: entry.advisor === true, hostId: typeof entry.hostId === "string" ? entry.hostId : "local" });
+          sessions.set(entry.id, { id: entry.id, hostId: typeof entry.hostId === "string" ? entry.hostId : "local" });
         }
       }
     } catch {
@@ -109,7 +107,7 @@ function readLeftover(): InterruptibleSession[] {
 }
 
 function interruptedPath(): string {
-  return resolve(getAgentDir(), `omp-web-interrupted-sessions-${process.pid}.json`);
+  return resolve(getAgentDir(), `tau-interrupted-sessions-${process.pid}.json`);
 }
 
 function writeInterrupted(sessions: InterruptibleSession[]): void {
@@ -124,14 +122,14 @@ function writeInterrupted(sessions: InterruptibleSession[]): void {
     writeFileSync(temp, `${JSON.stringify({ sessions }, null, 2)}\n`, "utf8");
     renameSync(temp, path);
   } catch (error) {
-    console.warn(`[omp-web] could not record running sessions for resume: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[tau] could not record running sessions for resume: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /**
  * Keep the on-disk list of running sessions current. A session leaves the list
  * when its run ends normally (its process is still alive), or EXIT_GRACE_MS
- * after its process died unless omp-web is shutting down by then.
+ * after its process died unless tau is shutting down by then.
  */
 export function recordRunningSessions(running: InterruptibleSession[], isAlive: (id: string) => boolean): void {
   const state = tracker();
@@ -154,8 +152,7 @@ export function recordRunningSessions(running: InterruptibleSession[], isAlive: 
       clearTimeout(drop);
       state.drops.delete(session.id);
     }
-    const previous = state.sessions.get(session.id);
-    if (previous?.advisor !== session.advisor) {
+    if (!state.sessions.has(session.id)) {
       state.sessions.set(session.id, session);
       changed = true;
     }

@@ -4,7 +4,7 @@ import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { clearExitedRpcSession, getRpcSession } from "@/lib/rpc-manager";
 
 /** POST /api/sessions/[id]/archive — stop the live child, then archive the
- * native OMP JSONL and its sibling artifacts using OMP's gc layout. */
+ * native pi JSONL and its sibling artifacts (lib/pi/archive.ts). */
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -25,7 +25,7 @@ export async function POST(
       );
     }
 
-    // OMP owns writes while a child is live; wait for its final flush before
+    // pi owns writes while a child is live; wait for its exit before
     // moving the file so the archive contains the complete native transcript.
     // Disposing a child behind a down link would wait for the link to return.
     const offline = hostOfflineResponse(resolved.host);

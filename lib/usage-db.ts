@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, statSync } from "fs";
 import { Database } from "bun:sqlite";
 import { basename, dirname, join } from "path";
-import { readModelsConfig, type ModelsFileConfig } from "./omp/models-config";
-import { getAgentDir, getSessionsDir } from "./omp/paths";
-import { listSessionArtifactTranscripts, listSessionFiles } from "./omp/session-files";
+import { readModelsConfig, type ModelsFileConfig } from "./pi/models-config";
+import { getAgentDir, getSessionsDir } from "./pi/paths";
+import { listSessionArtifactTranscripts, listSessionFiles } from "./pi/session-files";
 import {
   formatChartDateLabel,
   formatFullDateLabel,
@@ -27,8 +27,8 @@ import type {
 } from "./usage-types";
 
 declare global {
-  var __ompUsageDatabase: Database | undefined;
-  var __ompUsageDatabasePath: string | undefined;
+  var __tauUsageDatabase: Database | undefined;
+  var __tauUsageDatabasePath: string | undefined;
 }
 
 /**
@@ -40,7 +40,7 @@ declare global {
  */
 const USAGE_DB_SCHEMA_VERSION = 3;
 
-/** Get the path to the usage SQLite database file (~/.omp/agent/usage.db). */
+/** Get the path to the usage SQLite database file (`usage.db` in the agent directory). */
 export function getUsageDbPath(): string {
   const dir = getAgentDir();
   if (!existsSync(dir)) {
@@ -122,8 +122,8 @@ function migrateUsageDatabase(db: Database): void {
 export function getUsageDatabase(customPath?: string): Database {
   const targetPath = customPath || getUsageDbPath();
 
-  const cached = globalThis.__ompUsageDatabase;
-  if (cached && globalThis.__ompUsageDatabasePath === targetPath) {
+  const cached = globalThis.__tauUsageDatabase;
+  if (cached && globalThis.__tauUsageDatabasePath === targetPath) {
     // The connection lives on globalThis and outlives a dev hot reload, so the
     // database may still have the layout of the code that opened it.
     try {
@@ -158,21 +158,21 @@ export function getUsageDatabase(customPath?: string): Database {
     throw err;
   }
 
-  globalThis.__ompUsageDatabase = db;
-  globalThis.__ompUsageDatabasePath = targetPath;
+  globalThis.__tauUsageDatabase = db;
+  globalThis.__tauUsageDatabasePath = targetPath;
   return db;
 }
 
 /** Close the usage database instance. `close(true)` finalizes the statements still alive: without it the file stays open until GC, and Windows keeps it locked. */
 export function closeUsageDatabase(): void {
-  if (globalThis.__ompUsageDatabase) {
+  if (globalThis.__tauUsageDatabase) {
     try {
-      globalThis.__ompUsageDatabase.close(true);
+      globalThis.__tauUsageDatabase.close(true);
     } catch {
       // Ignore
     }
-    globalThis.__ompUsageDatabase = undefined;
-    globalThis.__ompUsageDatabasePath = undefined;
+    globalThis.__tauUsageDatabase = undefined;
+    globalThis.__tauUsageDatabasePath = undefined;
   }
 }
 
@@ -331,7 +331,7 @@ export function syncSessionFilesToDb(
 
 /**
  * Rebuild `temp.uncounted_usage`: ids of stored rows the report must skip.
- * - Copies. omp copies transcript entries, `task` summaries included, with
+ * - Copies. pi copies transcript entries, `task` summaries included, with
  *   their ids and timestamps (`/tan` clones, `/fork` and branch copies, even
  *   into another project folder), so the same (entry_id, timestamp) in several
  *   files is one request. The row from the earliest-started owning session

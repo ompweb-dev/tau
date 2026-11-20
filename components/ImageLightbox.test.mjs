@@ -34,7 +34,7 @@ test("custom message images render as click-to-preview thumbnails", () => {
   const html = renderToStaticMarkup(React.createElement(MessageView, {
     message: {
       role: "custom",
-      customType: "advisor",
+      customType: "note",
       content: [{ type: "image", data: "QUJD", mimeType: "image/png" }],
     },
   }));

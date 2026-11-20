@@ -1,6 +1,6 @@
-// On-disk subagent history + transcript reading for omp-web.
+// On-disk subagent history + transcript reading for tau.
 //
-// omp writes each subagent's session transcript to the PARENT session's
+// Each subagent's session transcript lives in the PARENT session's
 // sibling artifacts directory: `<session-dir>/<subagent-id>.jsonl` (plus
 // `<id>.md` outputs and `<id>.<tool>.log` artifact spills). The parent's task
 // toolResult `details` persist `progress: AgentProgress[]` and
@@ -9,14 +9,15 @@
 // registry-gated and rejects unknown session files).
 
 import { closeSync, existsSync, openSync, readSync, realpathSync, statSync } from "fs";
-import { basename, dirname, join } from "path";
+import { basename, dirname, join, sep } from "path";
 import { getSessionEntries, entryToUiMessage } from "./session-reader";
-import { parseJsonlLenient } from "./omp/session-files";
+import { parseJsonlLenient } from "./pi/session-files";
 import { asAgentSource, parseSubagentProgress, SUBAGENT_ID_RE } from "./subagent-types";
 import type { SubagentHistoryEntry, SubagentHistoryResult } from "./subagent-types";
 import type { AgentMessage, SessionEntry } from "./types";
 import { asNumber, asString, isRecord } from "./type-guards";
 import { taskResultStructuredOutput, taskResultUsageCost } from "./task-result-details";
+import { foregroundSubagentId } from "./pi/subagent-bridge";
 
 /** Sibling artifacts directory for a parent session file. */
 export function siblingDirForSession(sessionFilePath: string): string {
@@ -59,6 +60,22 @@ export function resolveSubagentArtifact(
     return null;
   }
   return realCandidate;
+}
+
+/**
+ * A pi-subagents child session file (`<artifacts dir>/<run id>/run-<n>/<file>.jsonl`, named by its `subagent` call's
+ * progress), confined like resolveSubagentArtifact but at any depth below the parent's artifacts dir. Returns the
+ * real path or null.
+ */
+export function resolveSubagentSessionFile(sessionFilePath: string, file: string): string | null {
+  try {
+    const realDir = realpathSync(siblingDirForSession(sessionFilePath));
+    const real = realpathSync(file);
+    if (!real.startsWith(realDir + sep) || !real.endsWith(".jsonl") || !statSync(real).isFile()) return null;
+    return real;
+  } catch {
+    return null;
+  }
 }
 
 function progressStatusToRoster(status: string | undefined): SubagentHistoryEntry["status"] {
@@ -111,7 +128,7 @@ export function extractSubagentHistory(sessionFilePath: string): SubagentHistory
     const content = entry.message.content;
     if (!Array.isArray(content)) continue;
     for (const block of content) {
-      if (!isRecord(block) || block.type !== "toolCall" || block.name !== "task") continue;
+      if (!isRecord(block) || block.type !== "toolCall" || (block.name !== "task" && block.name !== "subagent")) continue;
       const callId = asString(block.id);
       if (callId !== undefined && !callOrder.has(callId)) callOrder.set(callId, callOrder.size);
     }
@@ -152,13 +169,17 @@ export function extractSubagentHistory(sessionFilePath: string): SubagentHistory
   for (const entry of entries) {
     if (entry.type !== "message" || !isRecord(entry.message) || entry.message.role !== "toolResult") continue;
     const message = entry.message;
-    if (message.toolName !== "task") continue;
+    if (message.toolName !== "task" && message.toolName !== "subagent") continue;
     const toolCallId = asString(message.toolCallId);
     // A result whose call block never made it into the file (truncated or
     // imported session) keeps arrival order, placed after every announced call.
     const announced = toolCallId !== undefined ? callOrder.get(toolCallId) : undefined;
     batchSeq = announced ?? callOrder.size + unannouncedCalls++;
     const details = isRecord(message.details) ? message.details : {};
+    if (message.toolName === "subagent") {
+      if (toolCallId !== undefined) for (const entry of piSubagentRows(toolCallId, details)) upsert(entry, { ignoreTerminal: entry.result !== undefined });
+      continue;
+    }
     const progressArr = Array.isArray(details.progress) ? details.progress : [];
     const resultsArr = Array.isArray(details.results) ? details.results : [];
     const asyncInfo = isRecord(details.async) ? details.async : undefined;
@@ -280,12 +301,15 @@ export function extractSubagentHistory(sessionFilePath: string): SubagentHistory
     entry.batchSeq = batchSeqById.get(entry.id) ?? 0;
     if (detachedIds.has(entry.id)) entry.detached = true;
     if (!SUBAGENT_ID_RE.test(entry.id)) continue;
-    const candidate = join(dir, `${entry.id}.jsonl`);
+    // A pi-subagents child names its own file; it counts only inside the artifacts dir.
+    const candidate = entry.sessionFile !== undefined
+      ? resolveSubagentSessionFile(sessionFilePath, entry.sessionFile)
+      : join(dir, `${entry.id}.jsonl`);
+    delete entry.sessionFile;
     // Guard against crafted ids probing outside sibling dir (e.g. "../../");
     // route already validates via SUBAGENT_ID_RE + realpath, but roster path is
     // derived from untrusted session content.
-    const available = existsSync(candidate);
-    if (available) {
+    if (candidate !== null && existsSync(candidate)) {
       entry.sessionFile = candidate;
       entry.transcriptAvailable = true;
       // Async task results never carry the model; the transcript always does.
@@ -299,6 +323,43 @@ export function extractSubagentHistory(sessionFilePath: string): SubagentHistory
   );
 }
 
+const PI_ROW_STATUS: Record<string, SubagentHistoryEntry["status"]> = { completed: "completed", failed: "failed" };
+
+/** The roster entries one pi-subagents `subagent` toolResult records: its progress rows, then its settled results. */
+function piSubagentRows(toolCallId: string, details: Record<string, unknown>): SubagentHistoryEntry[] {
+  const rows: SubagentHistoryEntry[] = [];
+  // Unset fields stay out, so a result row never blanks what its progress row recorded.
+  const push = (entry: SubagentHistoryEntry) => rows.push(Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined)) as unknown as SubagentHistoryEntry);
+  const base = (raw: Record<string, unknown>, position: number) => {
+    const index = asNumber(raw.index) ?? position;
+    return {
+      id: foregroundSubagentId(toolCallId, index), index, parentToolCallId: toolCallId, agent: asString(raw.agent) ?? "subagent",
+      task: asString(raw.task), description: asString(raw.sessionName), resolvedModel: asString(raw.model), transcriptAvailable: false,
+      sessionFile: asString(raw.sessionFile),
+    };
+  };
+  (Array.isArray(details.progress) ? details.progress : []).forEach((raw, position) => {
+    if (!isRecord(raw)) return;
+    push({
+      ...base(raw, position), status: PI_ROW_STATUS[String(raw.status)] ?? "started", detached: raw.status === "detached" || undefined,
+      toolCount: asNumber(raw.toolCount), tokens: asNumber(raw.tokens), contextTokens: asNumber(raw.window), durationMs: asNumber(raw.durationMs),
+    });
+  });
+  (Array.isArray(details.results) ? details.results : []).forEach((raw, position) => {
+    if (!isRecord(raw)) return;
+    const error = asString(raw.error);
+    const exitCode = asNumber(raw.exitCode);
+    const stopped = raw.stopped === true || raw.interrupted === true;
+    const status = raw.detached === true ? "started" : stopped ? "aborted" : exitCode === 0 && !error ? "completed" : "failed";
+    const cost = taskResultUsageCost(raw.usage);
+    push({
+      ...base(raw, position), status, detached: raw.detached === true || undefined, cost,
+      result: { ...(exitCode !== undefined ? { exitCode } : {}), ...(error ? { error } : {}), ...(stopped ? { aborted: true } : {}), ...(cost !== undefined ? { cost } : {}) },
+    });
+  });
+  return rows;
+}
+
 /** Bytes read from a transcript's head to find its model entries. */
 const TRANSCRIPT_HEAD_BYTES = 8 * 1024;
 const MAX_TRANSCRIPT_MODEL_CACHE = 500;
@@ -306,7 +367,7 @@ const transcriptModelCache = new Map<string, { mtimeMs: number; size: number; mo
 
 /**
  * `provider/model:thinking` from the `model_change` / `thinking_level_change`
- * entries omp writes at the head of a subagent transcript, before its
+ * entries at the head of a subagent transcript, before its
  * (large) `session_init` line.
  * ponytail: head only, so a mid-run model switch is not reflected; scan the
  * whole file if subagents start switching models.
@@ -368,7 +429,7 @@ export interface SubagentTranscriptPage {
 }
 
 /**
- * Byte-window transcript paging mirroring omp's readRpcSubagentTranscript:
+ * Byte-window transcript paging:
  * parse complete lines from `fromByte`, return UI messages + nextByte.
  */
 export function readSubagentTranscriptPage(sessionFilePath: string, fromByte = 0): SubagentTranscriptPage {
@@ -442,7 +503,7 @@ export function readSubagentTranscriptPage(sessionFilePath: string, fromByte = 0
 export const MAX_SUBAGENT_COMPLETION_BYTES = 1024 * 1024;
 
 /**
- * Read a subagent's final output — the `<id>.md` sibling artifact omp writes
+ * Read a subagent's final output — the `<id>.md` sibling artifact written
  * when the task settles. Returns null when no output file exists yet (still
  * running, aborted before producing output, or the session predates it).
  * Output files can exceed the transcript cap, so the read is bounded.
@@ -490,5 +551,35 @@ export function readCompletionArtifact(
     return { completion: slice.subarray(0, end).toString("utf8"), truncated };
   } finally {
     closeSync(fd);
+  }
+}
+
+/**
+ * A pi-subagents child's final output: the text of the last assistant message in its (already resolved) session
+ * file, from its last MAX_SUBAGENT_COMPLETION_BYTES. Null while the child has written no answer yet.
+ */
+export function readTranscriptCompletion(sessionFile: string): string | null {
+  let fd: number | undefined;
+  try {
+    const size = statSync(sessionFile).size;
+    const length = Math.min(size, MAX_SUBAGENT_COMPLETION_BYTES);
+    const buffer = Buffer.alloc(length);
+    fd = openSync(sessionFile, "r");
+    const lines = buffer.subarray(0, readSync(fd, buffer, 0, length, size - length)).toString("utf8").split("\n");
+    if (length < size) lines.shift(); // starts mid-line
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const entry = parseJsonlLenient<SessionEntry>(lines[i])[0];
+      if (entry?.type !== "message" || !isRecord(entry.message) || entry.message.role !== "assistant") continue;
+      const content = entry.message.content;
+      const text = Array.isArray(content)
+        ? content.filter((block) => isRecord(block) && block.type === "text" && typeof block.text === "string").map((block) => (block as { text: string }).text).join("\n")
+        : typeof content === "string" ? content : "";
+      if (text.trim()) return text;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }

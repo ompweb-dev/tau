@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); the host link is still this WebSocket, but tau restarted its protocol at v1 and the daemon forwards pi's RPC frames.
+
 # WebSocket Host Link Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

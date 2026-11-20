@@ -3,32 +3,19 @@
 import { comparableProjectPath } from "../comparable-path";
 import { cloneDirectoryName, repositoryKey } from "../git-clone";
 import { LOCAL_HOST_ID } from "../project-ordering";
-import { isNewerVersion } from "../version-compare";
 import type { ManagedProject } from "../types";
 import type { HostStatus } from "./host";
 import type { HostPool, PoolProject } from "./pools";
 
 export const CLUSTER_ID = "cluster";
 export const CLUSTER_LABEL = "Cluster";
-export const CLUSTER_PROJECTS_DIR = "ompweb-cluster";
-/** The first omp that honours the broker variables; an older one could start with the host's own logins. */
-export const MIN_SHARED_CREDENTIALS_OMP = "15.13.1";
-
-/** Whether an omp (`omp --version` prints "omp/<version>") can run on shared credentials; unknown or unparsable cannot. */
-export function ompSharesCredentials(version: string | null): boolean {
-  const bare = version?.replace(/^omp\//, "") ?? null;
-  return bare !== null && isNewerVersion(bare, "0.0.0") && !isNewerVersion(MIN_SHARED_CREDENTIALS_OMP, bare);
-}
-
+export const CLUSTER_PROJECTS_DIR = "tau-cluster";
 /**
  * Why a host cannot join the cluster now, or null: the one rule behind the join route and the Settings switch.
- * Non-online hosts retain their status as the reason; online ones (older link protocols are refused at link time) need the
- * operation below ("upgrade"), then an omp that takes shared credentials, which members always use ("omp-old").
+ * A host that is not online cannot join; its status is the reason.
  */
-export function clusterJoinBlock(host: { status: HostStatus; ompVersion: string | null; supports: (operation: "gitOrigins") => boolean }): Exclude<HostStatus, "online"> | "upgrade" | "omp-old" | null {
-  if (host.status !== "online") return host.status;
-  if (!host.supports("gitOrigins")) return "upgrade";
-  return ompSharesCredentials(host.ompVersion) ? null : "omp-old";
+export function clusterJoinBlock(host: { status: HostStatus }): Exclude<HostStatus, "online"> | null {
+  return host.status === "online" ? null : host.status;
 }
 
 export class ClusterError extends Error {
@@ -60,11 +47,6 @@ export function isClusterTarget(target: { poolId?: string; hostId?: string } | n
   if (!target || !cluster) return false;
   const ofCluster = target.poolId ? target.poolId === cluster.id : isClusterMember(pools, target.hostId ?? LOCAL_HOST_ID);
   return ofCluster && (hostId === undefined || isClusterMember(pools, hostId));
-}
-
-/** Whether sessions on this host run on the server's provider logins: members always, other hosts by their own flag, `local` never. */
-export function sharesCredentials(record: { id: string; shareCredentials: boolean }, pools: readonly HostPool[]): boolean {
-  return record.id !== LOCAL_HOST_ID && (record.shareCredentials || isClusterMember(pools, record.id));
 }
 
 /** A path under a host's root, in the separator that root uses (hosts may run another OS than the server). */

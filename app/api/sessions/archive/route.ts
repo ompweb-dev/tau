@@ -1,5 +1,5 @@
 import { apiErrorResponse, opErrorResponse, resolveHostOrError } from "@/lib/api-utils";
-import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "@/lib/omp/archive";
+import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "@/lib/pi/archive";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { getHost, listHosts } from "@/lib/hosts/hub";
 import { isLinkUp } from "@/lib/hosts/host";

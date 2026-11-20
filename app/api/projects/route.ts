@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { apiErrorResponse, opErrorResponse, resolveHostOrError } from "@/lib/api-utils";
-import { isValidOmpProfile } from "@/lib/omp-profile";
 import { allowFileRoot } from "@/lib/file-access";
 import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 import { isValidPoolOrigin, loadPools, pathApi, poolManagedProject, savePools } from "@/lib/hosts/pools";
@@ -13,23 +12,17 @@ import type { ProjectLaunchConfig } from "@/lib/types";
 const MAX_EXTRA_ARGS = 32;
 const MAX_EXTRA_ARG_LENGTH = 256;
 
-/** Validate the workspace-level omp launch config; reject overrides of web-managed session-boundary args. */
+/** Validate the workspace-level pi launch config; reject overrides of web-managed session-boundary args. */
 function parseLaunchConfig(value: unknown): ProjectLaunchConfig | undefined {
   if (value === undefined || value === null) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ProjectPathError("invalid_launch_config", "Launch config must be an object");
   const raw = value as Record<string, unknown>;
-  const profile = raw.profile === undefined ? undefined : typeof raw.profile === "string" && raw.profile.trim() ? raw.profile.trim() : undefined;
-  if (raw.profile !== undefined && !profile) throw new ProjectPathError("invalid_profile", "Profile must be a non-empty string");
-  if (profile !== undefined && !isValidOmpProfile(profile)) throw new ProjectPathError("invalid_profile", "Profile names must match ^[a-z0-9][a-z0-9._-]{0,63}$, cannot end with '.', and cannot be a Windows reserved device name (CON, PRN, AUX, NUL, COM0-9, LPT0-9, or any of those with an extension)");
-  const advisor = raw.advisor === undefined ? undefined : raw.advisor;
-  if (advisor !== undefined && typeof advisor !== "boolean") throw new ProjectPathError("invalid_advisor", "Advisor must be a boolean");
   if (raw.extraArgs !== undefined && (!Array.isArray(raw.extraArgs) || raw.extraArgs.length > MAX_EXTRA_ARGS)) throw new ProjectPathError("invalid_extra_args", "Extra args must contain at most 32 arguments");
   const extraArgs = raw.extraArgs === undefined ? undefined : (raw.extraArgs as unknown[]).map((arg) => {
     if (typeof arg !== "string" || !arg || arg.length > MAX_EXTRA_ARG_LENGTH || isReservedLaunchArg(arg)) throw new ProjectPathError("invalid_extra_args", "Extra args contain an invalid or reserved argument");
     return arg;
   });
-  if (!profile && advisor === undefined && (!extraArgs || extraArgs.length === 0)) return undefined;
-  return { profile, advisor, extraArgs };
+  return extraArgs && extraArgs.length > 0 ? { extraArgs } : undefined;
 }
 
 function parsePresentation(entry: Record<string, unknown>): ProjectPresentationUpdate {

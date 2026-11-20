@@ -42,17 +42,6 @@ export interface DraftRecovery {
   promptOnly?: boolean;
 }
 
-/** The `{ data, mimeType }` images in an omp RPC payload; anything else is dropped. */
-export function toDraftImages(value: unknown): ChatDraftImage[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((image: unknown) => (
-    image && typeof image === "object" && "data" in image && "mimeType" in image
-      && typeof image.data === "string" && typeof image.mimeType === "string"
-      ? [{ data: image.data, mimeType: image.mimeType }]
-      : []
-  ));
-}
-
 export function mergeRecoveredText(current: string, { text, replace }: DraftRecovery): string {
   if (!text) return current;
   if (replace && current.startsWith(replace.lead)) return text + current.slice(replace.lead.length);
@@ -62,18 +51,18 @@ export function mergeRecoveredText(current: string, { text, replace }: DraftReco
 
 // globalThis so dev Fast Refresh doesn't wipe drafts mid-typing.
 declare global {
-  var __ompChatDrafts: Map<string, ChatDraft> | undefined;
-  var __ompChatDraftListeners: Set<() => void> | undefined;
-  var __ompChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
-  var __ompChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
-  var __ompChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
-  var __ompChatDraftSubmissions: Set<DraftSubmission> | undefined;
+  var __tauChatDrafts: Map<string, ChatDraft> | undefined;
+  var __tauChatDraftListeners: Set<() => void> | undefined;
+  var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
+  var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
+  var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
+  var __tauChatDraftSubmissions: Set<DraftSubmission> | undefined;
 }
 
 const MAX_DRAFTS = 50;
-const STORAGE_PREFIX = "omp-draft-";
-const UPLOADS_STORAGE_PREFIX = "omp-uploads-draft-";
-const PROMPT_STORAGE_PREFIX = "omp-prompt-draft-";
+const STORAGE_PREFIX = "tau-draft-";
+const UPLOADS_STORAGE_PREFIX = "tau-uploads-draft-";
+const PROMPT_STORAGE_PREFIX = "tau-prompt-draft-";
 
 function isDraftUpload(value: unknown): value is ChatDraftUpload {
   if (!value || typeof value !== "object") return false;
@@ -83,7 +72,7 @@ function isDraftUpload(value: unknown): value is ChatDraftUpload {
     && (upload.proof === undefined || typeof upload.proof === "string");
 }
 
-const drafts: Map<string, ChatDraft> = (globalThis.__ompChatDrafts ??= readStoredDrafts());
+const drafts: Map<string, ChatDraft> = (globalThis.__tauChatDrafts ??= readStoredDrafts());
 
 function readStoredDrafts(): Map<string, ChatDraft> {
   const stored = new Map<string, ChatDraft>();
@@ -128,11 +117,11 @@ function readStoredDrafts(): Map<string, ChatDraft> {
   return stored;
 }
 
-const listeners = (globalThis.__ompChatDraftListeners ??= new Set<() => void>());
-const recoveryListeners = (globalThis.__ompChatDraftRecoveryListeners ??= new Set<(key: string, recovery: DraftRecovery) => void>());
-const consumptionListeners = (globalThis.__ompChatDraftConsumptionListeners ??= new Set<(key: string, snapshot: ChatDraft) => void>());
-const revisions = (globalThis.__ompChatDraftRevisions ??= { byKey: new Map<string, number>(), last: 0 });
-const submissions = (globalThis.__ompChatDraftSubmissions ??= new Set<DraftSubmission>());
+const listeners = (globalThis.__tauChatDraftListeners ??= new Set<() => void>());
+const recoveryListeners = (globalThis.__tauChatDraftRecoveryListeners ??= new Set<(key: string, recovery: DraftRecovery) => void>());
+const consumptionListeners = (globalThis.__tauChatDraftConsumptionListeners ??= new Set<(key: string, snapshot: ChatDraft) => void>());
+const revisions = (globalThis.__tauChatDraftRevisions ??= { byKey: new Map<string, number>(), last: 0 });
+const submissions = (globalThis.__tauChatDraftSubmissions ??= new Set<DraftSubmission>());
 
 export function hasUnsentDrafts(): boolean {
   return drafts.size > 0;
@@ -161,8 +150,7 @@ export function markDraftEdited(key: string): void {
 }
 
 /** A submission waiting for its durable commit, owned by this store (not by the composer mount that sent it, which may
- *  be gone by the time the commit lands). `key` follows a confirmed identity move of the unchanged draft and is
- *  cleared when the draft merged into another or was edited first; `edited` records any edit since it was sent. */
+ *  be gone by the time the commit lands). `edited` records any edit since it was sent. */
 export interface DraftSubmission { key: string | undefined; snapshot: ChatDraft | null; revision: number; edited: boolean }
 
 /** Starts tracking the draft at `key`. Every submission MUST be ended (`endDraftSubmission`) once its commit settles,
@@ -179,20 +167,6 @@ export function endDraftSubmission(submission: DraftSubmission): void {
 
 function markSubmissionsEdited(key: string): void {
   for (const submission of submissions) if (submission.key === key) submission.edited = true;
-}
-
-/** The hook moved `from`'s draft to `to` for a confirmed identity change (not navigation). Pending submissions follow
- *  it only while its content is still exactly what they sent and nothing edited it; otherwise they let go of it. */
-export function moveDraftSubmissions(from: string, to: string): void {
-  const moved = drafts.get(to);
-  for (const submission of submissions) {
-    if (submission.key !== from) continue;
-    if (submission.edited || !submission.snapshot || !moved || !isSameDraft(moved, submission.snapshot)) submission.key = undefined;
-    else {
-      submission.key = to;
-      submission.revision = getDraftRevision(to);
-    }
-  }
 }
 
 /** Edit generation of a key's draft: bumps on every content change (not on a same-content rewrite such as hydration or

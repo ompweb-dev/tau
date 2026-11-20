@@ -1,14 +1,14 @@
 /**
  * Client-side connection diagnostics preference (localStorage). Per browser,
- * like the other ompweb UI preferences in composer-prefs.ts.
+ * like the other tau UI preferences in composer-prefs.ts.
  */
 
 import { useSyncExternalStore } from "react";
 
-const CONNECTION_DIAGNOSTICS_KEY = "omp-web:connection-diagnostics";
+const CONNECTION_DIAGNOSTICS_KEY = "tau:connection-diagnostics";
 
 /** Dispatched on `window` by the setter so mounted readers update without a reload. */
-export const CONNECTION_DIAGNOSTICS_EVENT = "omp-web:connection-diagnostics";
+export const CONNECTION_DIAGNOSTICS_EVENT = "tau:connection-diagnostics";
 /** The choice of this page load when storage refused to keep it; null once storage holds the choice. */
 let unsaved: boolean | null = null;
 

@@ -141,12 +141,12 @@ export function parseMessageOrigin(value: unknown): MessageOrigin | null {
 export function formatSessionOriginHeader(origin: MessageOrigin): string {
   if (origin.kind !== "session" || !origin.session) throw new Error("A session origin is required");
   const { id, name, hostLabel, delivery } = origin.session;
-  const source = name ? `omp-web session ${JSON.stringify(name)}` : "an unnamed omp-web session";
+  const source = name ? `tau session ${JSON.stringify(name)}` : "an unnamed tau session";
   const host = hostLabel.replace(/[\r\n,\]]+/g, " ").trim();
   return `[Message from ${source} (session id ${id}, host ${host}, delivery ${DELIVERY_LABELS[delivery]}).\nIt was sent by another agent session, not by the user. Reply with send_to_session to that session id.]`;
 }
 
-const SESSION_HEADER_RE = /^\[Message from (?:omp-web session "(?:[^"\\]|\\.)*"|an unnamed omp-web session) \(session id [^,\r\n]+, host [^,\r\n]+, delivery (?:new turn|steer|follow-up)\)\.\nIt was sent by another agent session, not by the user\. Reply with send_to_session to that session id\.\]/;
+const SESSION_HEADER_RE = /^\[Message from (?:tau session "(?:[^"\\]|\\.)*"|an unnamed tau session) \(session id [^,\r\n]+, host [^,\r\n]+, delivery (?:new turn|steer|follow-up)\)\.\nIt was sent by another agent session, not by the user\. Reply with send_to_session to that session id\.\]/;
 
 export function splitOriginHeader(text: string): { header: string; body: string } | null {
   const match = SESSION_HEADER_RE.exec(text);

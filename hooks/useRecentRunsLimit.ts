@@ -10,13 +10,13 @@ export interface RecentRunsLimitState {
   customValue: number;
 }
 
-export const STORAGE_KEY = "omp-recent-runs-limit";
-export const CUSTOM_STORAGE_KEY = "omp-recent-runs-custom-limit";
+export const STORAGE_KEY = "tau-recent-runs-limit";
+export const CUSTOM_STORAGE_KEY = "tau-recent-runs-custom-limit";
 export const DEFAULT_PRESET: RecentRunsLimitPreset = "10";
 export const DEFAULT_LIMIT = 10;
 export const MIN_LIMIT = 1;
 export const MAX_LIMIT = 100;
-export const RECENT_RUNS_LIMIT_CHANGE_EVENT = "omp-recent-runs-limit-change";
+export const RECENT_RUNS_LIMIT_CHANGE_EVENT = "tau-recent-runs-limit-change";
 
 const listeners = new Set<() => void>();
 

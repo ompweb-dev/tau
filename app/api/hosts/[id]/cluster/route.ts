@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { comparableProjectPath } from "@/lib/comparable-path";
-import { CLUSTER_ID, CLUSTER_LABEL, CLUSTER_PROJECTS_DIR, ClusterError, clusterJoinBlock, isClusterMember, joinCluster, leaveCluster, MIN_SHARED_CREDENTIALS_OMP, type HostProjectFacts } from "@/lib/hosts/cluster";
+import { CLUSTER_ID, CLUSTER_LABEL, CLUSTER_PROJECTS_DIR, ClusterError, clusterJoinBlock, isClusterMember, joinCluster, leaveCluster, type HostProjectFacts } from "@/lib/hosts/cluster";
 import type { Host } from "@/lib/hosts/host";
-import { clusterConfigOp, getHost, getHostOmpVersion, listHosts, masterConfigVersion, notifyHostsChange } from "@/lib/hosts/hub";
+import { clusterConfigOp, getHost, listHosts, masterConfigVersion, notifyHostsChange } from "@/lib/hosts/hub";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { loadPools, poolProjectBindings, savePools, validatePools, type HostPool, type PoolMember, type PoolProject } from "@/lib/hosts/pools";
-import { LOCAL_HOST_ID, loadHosts } from "@/lib/hosts/registry";
+import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 import type { OpResult } from "@/lib/hosts/session-ops";
 import { hostSessions } from "@/lib/hosts/session-index";
-import { abortBrokerRequests } from "@/lib/omp/auth-broker";
 import { mergeProjects } from "@/lib/project-registry";
 import { isApiRequestOriginAllowed, shouldCheckApiRequestOrigin } from "@/lib/request-security";
 import { isRecord } from "@/lib/type-guards";
@@ -21,7 +20,7 @@ const MAX_ORIGIN_PATHS = 500;
 const MAX_ORIGIN_PATH_LENGTH = 4096;
 const noStore = { "cache-control": "no-store" };
 const fail = (error: string, code: string, status: number) => Response.json({ error, code }, { status, headers: noStore });
-const storageFailure = () => fail("The pool registry (omp-web/pools.json) cannot be read or written; fix it before changing the cluster", "pool_storage_unavailable", 503);
+const storageFailure = () => fail("The pool registry (tau/pools.json) cannot be read or written; fix it before changing the cluster", "pool_storage_unavailable", 503);
 function errorResponse(error: unknown): Response {
   if (error instanceof HostOpError) return fail(error.message, error.code, error.status);
   if (error instanceof ClusterError) return fail(error.message, error.code, 409);
@@ -48,13 +47,7 @@ function valueOf<T>(result: OpResult<T>): T {
 }
 
 function requireReady(host: Host): void {
-  const block = clusterJoinBlock({ status: host.status(), ompVersion: getHostOmpVersion(host.id), supports: (operation) => host.supportsWorkspaceOp(operation) });
-  if (block === null) return;
-  if (block === "omp-old") throw new HostOpError(409, "host_omp_too_old", `Update omp on ${host.label} to ${MIN_SHARED_CREDENTIALS_OMP} or newer first`);
-  if (block !== "upgrade") throw new HostOpError(409, "host_offline", `${host.label} is offline`);
-  throw host.id === LOCAL_HOST_ID
-    ? new HostOpError(409, "host_restart_required", "Restart this machine's ompweb host daemon to join the cluster")
-    : new HostOpError(409, "host_upgrade_required", `Update ompweb on ${host.label} to join the cluster`);
+  if (clusterJoinBlock({ status: host.status() }) !== null) throw new HostOpError(409, "host_offline", `${host.label} is offline`);
 }
 
 /** The host's projects in its own order (mergeProjects: the order the user sees), then its hidden registry entries, which move too. */
@@ -161,7 +154,6 @@ export async function DELETE(request: Request, { params }: Context) {
     }
     pools = leaveCluster(pools, id);
     savePools(pools);
-    if (loadHosts().find((record) => record.id === id)?.shareCredentials !== true) abortBrokerRequests(id);
     notifyHostsChange();
     // After the save, so no apply follows it (spec K6). A host that cannot take it now (offline or timed out) gets it
     // from the sync once it reports holding this server's configuration.

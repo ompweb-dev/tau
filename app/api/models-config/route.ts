@@ -1,13 +1,13 @@
 import { apiErrorResponse } from "@/lib/api-utils";
 import { invalidateModelsCache } from "@/lib/models-cache";
-import { disposeUtilityRpc } from "@/lib/omp/rpc-utility";
+import { disposeUtilityRpc } from "@/lib/pi/rpc-utility";
 import {
   ModelsConfigParseError,
   readModelsConfigFile,
   validateModelsConfig,
   writeModelsConfig,
   type ModelsFileConfig,
-} from "@/lib/omp/models-config";
+} from "@/lib/pi/models-config";
 
 export async function GET() {
   const file = readModelsConfigFile();
@@ -40,7 +40,7 @@ export async function PUT(req: Request) {
     } catch (error) {
       if (error instanceof ModelsConfigParseError) {
         return Response.json(
-          { error: `${error.message} — fix it by hand; omp-web will not overwrite it`, code: "models_config_unparseable" },
+          { error: `${error.message} — fix it by hand; tau will not overwrite it`, code: "models_config_unparseable" },
           { status: 409 },
         );
       }

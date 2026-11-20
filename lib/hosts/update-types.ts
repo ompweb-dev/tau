@@ -1,6 +1,6 @@
 import type { NpmUpdateStatus } from "../npm-update";
 
-export type HostUpdateTarget = "ompweb" | "omp";
+export type HostUpdateTarget = "tau";
 
 /** The running web server's supported daemon protocol range. Supplied by the hub, never by the browser. */
 export interface HostUpdateCompatibility {
@@ -43,8 +43,8 @@ export interface HostSoftwareUpdate {
   blockers?: HostUpdateBlocker[];
   /** An available update is blocked only by forceable blockers: an update request with `force` would be accepted, ending this host's sessions. Absent from a daemon that predates force; never infer it. */
   canForceUpdate?: boolean;
-  /** How a force would be carried out. A native daemon sets "native" whenever `canForceUpdate`; the web server adds "recovery" for an older daemon it can recover through its recovery path instead. */
-  forceMethod?: "native" | "recovery";
+  /** How a force would be carried out: "native" whenever `canForceUpdate`. */
+  forceMethod?: "native";
   /** The first blocker's message, human-readable. Never infer compatibility or permission from it or from a version number. */
   blockedReason: string | null;
   updateCommand: string;
@@ -53,8 +53,7 @@ export interface HostSoftwareUpdate {
 export interface HostUpdateOperation {
   /** The operation id the caller supplied (HostUpdateRequest.operationId), else a generated one; the same id names the attempt, its worker and every acknowledgement. */
   id: string;
-  /** "omp": an `omp update` a host recorded before omp updated with ompweb. */
-  target: HostUpdateTarget | "omp";
+  target: HostUpdateTarget;
   version: string;
   state: "running" | "succeeded" | "failed";
   /** All candidate artifacts passed preflight; the worker is waiting for an explicit coordinated commit. */
@@ -87,7 +86,6 @@ export interface HostUpdateRequest {
 }
 
 export interface HostUpdateInfo {
-  ompweb: HostSoftwareUpdate & Pick<NpmUpdateStatus, "installMethod"> & { protocolVersion: number | null; activeSessions?: number };
-  omp: HostSoftwareUpdate;
+  tau: HostSoftwareUpdate & Pick<NpmUpdateStatus, "installMethod"> & { protocolVersion: number | null; activeSessions?: number };
   operation: HostUpdateOperation | null;
 }

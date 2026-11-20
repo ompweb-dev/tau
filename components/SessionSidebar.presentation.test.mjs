@@ -31,7 +31,7 @@ test("failed workspace rename is reported without an unhandled rejection; failed
         writes.push(JSON.parse(init.body));
         return Response.json({ error: "Workspace update refused", code: "workspace_write_refused" }, { status: 400 });
       }
-      return Response.json({ projects: [{ path: "/workspace", launchConfig: { profile: "work" } }] });
+      return Response.json({ projects: [{ path: "/workspace", launchConfig: { extraArgs: ["--verbose"] } }] });
     }
     if (url.pathname === "/api/sessions") return Response.json({ sessions: [] });
     return Response.json({});
@@ -55,7 +55,7 @@ test("failed workspace rename is reported without an unhandled rejection; failed
     fireEvent.click(screen.getByRole("menuitem", { name: translate("sessionSidebar.editLaunchConfig") }));
     fireEvent.click(screen.getByRole("button", { name: translate("projectLaunchConfig.save") }));
     await waitFor(() => assert.equal(errors.length, 2));
-    assert.equal(writes[1].launchConfig.profile, "work");
+    assert.deepEqual(writes[1].launchConfig.extraArgs, ["--verbose"]);
     await waitFor(() => assert.equal(screen.getByRole("alert").textContent, "Workspace update refused"));
     assert.ok(screen.getByRole("button", { name: translate("projectLaunchConfig.save") }), "the dialog remains open for correction or retry");
   } finally {

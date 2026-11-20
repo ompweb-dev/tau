@@ -6,7 +6,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, linkSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { createConnection, createServer, type Server } from "node:net";
 import { basename, dirname, join, resolve } from "node:path";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 
 export type HostControlCommand = "status" | "drain" | "resume";
 export interface HostControlStatus {
@@ -24,13 +24,13 @@ const MAX_MESSAGE = 4096;
 const errno = (error: unknown) => (error as NodeJS.ErrnoException)?.code;
 const unix = () => { if (process.platform === "win32") throw new Error("Local host control is Unix-only; it is not supported on Windows"); };
 const command = (value: unknown): value is HostControlCommand => value === "status" || value === "drain" || value === "resume";
-const PIPE_RE = /^\\\\\.\\pipe\\ompweb-host-[0-9a-f]{32}$/;
+const PIPE_RE = /^\\\\\.\\pipe\\tau-host-[0-9a-f]{32}$/;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
 /** The Windows endpoint descriptor: the current pipe name and token, in this user's agent directory. */
 export function hostControlDescriptorPath(agentDir = getAgentDir()): string {
-  return join(agentDir, "omp-web", "host-control.json");
+  return join(agentDir, "tau", "host-control.json");
 }
 
 function readDescriptor(file: string): { pipe: string; token: string } | null {
@@ -78,7 +78,7 @@ export function hostControlPath(agentDir = getAgentDir()): string {
   unix();
   const hash = createHash("sha256").update(canonical(agentDir)).digest("hex").slice(0, 24);
   // os.tmpdir() can itself exceed Darwin's sockaddr_un limit.
-  return join(realpathSync("/tmp"), `ompweb-host-${process.getuid!()}-${hash}`, "control.sock");
+  return join(realpathSync("/tmp"), `tau-host-${process.getuid!()}-${hash}`, "control.sock");
 }
 
 function owned(path: string, kind: "directory" | "socket", mode: number): Stats {
@@ -142,7 +142,7 @@ async function createWindowsHostControlServer(control: (command: HostControlComm
     // Remove only the stale descriptor just inspected; another starter's replacement is never touched.
     if (readDescriptor(file)?.token === previous.token) unlinkSync(file);
   }
-  const pipe = `\\\\.\\pipe\\ompweb-host-${randomBytes(16).toString("hex")}`;
+  const pipe = `\\\\.\\pipe\\tau-host-${randomBytes(16).toString("hex")}`;
   const token = randomBytes(32).toString("base64url");
   const server = controlServer(control, token);
   const listened = Promise.withResolvers<void>();

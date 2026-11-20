@@ -1,4 +1,4 @@
-// omp owns the steering/follow-up queue: the panel renders its snapshots
+// pi owns the steering/follow-up queue: the panel renders its snapshots
 // (`get_state.queuedMessages` and live `queue_update` events), so every
 // client viewing the session shows the same queue.
 import type { QueuedMessages } from "@/lib/pi-types";
@@ -11,20 +11,8 @@ export type { QueuedMessages };
 export const EMPTY_QUEUE: QueuedMessages = { steering: [], followUp: [] };
 
 
-/**
- * `lib/rpc-manager.ts` answers a prompt/steer with this when a `!!` shell
- * command owned the session: it forwarded the message into omp's follow-up
- * queue instead of rejecting the frame. It reports what happened — it is not
- * queue state, so the chip still comes from omp's own snapshot.
- */
-export function isQueuedWhileShellRunning(reply: unknown): boolean {
-  if (!reply || typeof reply !== "object") return false;
-  const value = reply as { queued?: unknown; queue?: unknown; reason?: unknown };
-  return value.queued === true && value.queue === "followUp" && value.reason === "shellRunning";
-}
-
-/** A message omp-web holds until omp has it (docs/specs/2026-11-04-message-outbox-design.md O1): this browser's
- * (`local`, still on its first leg) or the web server's. The one exception to omp-owned queue state: omp does not
+/** A message tau holds until pi has it (docs/specs/2026-11-04-message-outbox-design.md O1): this browser's
+ * (`local`, still on its first leg) or the web server's. The one exception to pi-owned queue state: pi does not
  * have these yet. */
 export interface HeldMessage {
   id: string;
@@ -48,7 +36,7 @@ export interface ServerOutbox {
   seen: ReadonlySet<string>;
   known: ReadonlyMap<string, HeldMessage & { sessionId: string }>;
   nativeSettled: ReadonlySet<string>;
-  /** Native-settled bridges omp reports no trace of (its child ended, /new): shown as Not sent, may have been sent. */
+  /** Native-settled bridges pi reports no trace of (its child ended, /new): shown as Not sent, may have been sent. */
   uncertain: ReadonlySet<string>;
   represented: ReadonlySet<string>;
 }
@@ -58,7 +46,7 @@ export const EMPTY_SERVER_OUTBOX: ServerOutbox = {
 };
 
 /** Remember payloads independently of the server's pending list: its settlement can beat this peer's echo. A receipt
- * without native correlation (an OMP without client message IDs) retires at once, as before correlation existed. */
+ * without native correlation (a session that reports no client message IDs) retires at once, as before correlation existed. */
 export function rememberOutboxEntries(current: ServerOutbox, entries: (OutboxEntry | LocalOutboxEntry)[], local = false): ServerOutbox {
   if (entries.length === 0) return current;
   const known = new Map(current.known);

@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau keeps coordinated upgrades with the `tau` target only (no omp runner update) and a separate maintenance API v1 for hosts.
+
 # Coordinated GUI Upgrades Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

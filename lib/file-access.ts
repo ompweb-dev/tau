@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSyn
 import { homedir } from "os";
 import path from "path";
 import { isUtf8 } from "node:buffer";
-import { getAgentDir, getConfigRoot } from "./omp/paths";
+import { getAgentDir, getConfigRoot } from "./pi/paths";
 import { isWindowsAbsolutePath } from "./paths";
 import { hostSessions } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
@@ -47,15 +47,14 @@ export function allowFileRoot(root: string): void {
 const ALLOWED_ROOTS_TTL_MS = 5_000;
 
 /**
- * omp's own config/agent roots: the config root (`~/.omp`, or whatever
- * `PI_CONFIG_DIR` renamed it to), the agent state dir (`~/.omp/agent`, or
+ * pi's own config/agent roots: the config root (`~/.pi`), the agent state dir (`~/.pi/agent`, or
  * `PI_CODING_AGENT_DIR`), and the ecosystem-standard agent rule/skill provider
- * dirs `~/.agents` and `~/.agent`. Global instruction files omp loads itself
- * (`~/.agents/AGENTS.md`, `~/.omp/agent/...`) used to 403 in the file viewer
+ * dirs `~/.agents` and `~/.agent`. Global instruction files pi loads itself
+ * (`~/.agents/AGENTS.md`, `~/.pi/agent/...`) used to 403 in the file viewer
  * because only workspaces were allowed roots (#135).
  *
- * Derived from lib/omp/paths.ts rather than re-implemented, so the
- * PI_CONFIG_DIR / PI_CODING_AGENT_DIR / XDG rules stay in one place.
+ * Derived from lib/pi/paths.ts rather than re-implemented, so the
+ * PI_CODING_AGENT_DIR rule stays in one place.
  * A directory that does not exist is harmless: isPathWithinRoots is a pure
  * string-prefix check and existingPathWithinRootsChecker() already swallows
  * realpathSync failures for stale roots.
@@ -70,28 +69,35 @@ export function getConfigAgentRoots(): string[] {
 }
 
 /**
- * omp's own secret files, which must stay unreadable through the generic file
+ * Secret files, which must stay unreadable through the generic file
  * API even though their directory is an allowed root (#135).
  *
- * `agent.db` is omp's credential store (API keys; its SQLite sidecars and
- * backups hold the same) and `models.yml` can carry an `apiKey` for custom
- * models (`models.yaml` / `models.json` are its other names). Both are already
- * reachable through their purpose-built routes (`app/api/auth/api-key/*`,
- * `app/api/models-config/route.ts`), which redact or scope what they return.
+ * pi's credential and secret files in an agent dir: `auth.json` (API keys and
+ * OAuth tokens), `mcp-auth.json` (MCP OAuth tokens), the legacy `oauth.json`
+ * (and the `oauth.json.migrated` pi leaves after moving it into `auth.json`),
+ * `models.json` (a custom provider's `apiKey`/`headers`) and `mcp.json` (MCP
+ * server `headers` and `env`). tau's `tau-settings.json` holds the agent
+ * environment variables. They are reachable through their purpose-built routes
+ * (`app/api/auth/api-key/*`, `app/api/models-config/route.ts`, `/api/mcp`,
+ * `/api/web-settings`), which redact or scope what they return.
  *
  * Only direct files in an agent dir are denied, including credential copies
- * and editor swaps. `.env` files are also protected at the config root: omp's
- * packages/utils/src/env.ts loads that root and getAgentDir(), including profiles.
+ * and editor swaps. tau's own state, `<agent dir>/tau/` (the session-signing
+ * key, host tokens and their hashes, the VAPID private key, the outbox, cluster
+ * copies of `models.json`), is denied as a whole tree.
  * Independent session uploads and package assets remain readable. Resolve both
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
-const OMP_ENV_NAME = /^\.env(?:\.|$)/i;
-const OMP_SECRET_NAME = /^(?:\.?agent\.db(?:[-.~].*)?|\.?models\.(?:yml|yaml|json)(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?|\.env(?:\..*)?)$/i;
+const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
+const PI_SECRET_FILES = ["auth.json", "mcp-auth.json", "oauth.json", "models.json", "mcp.json", "tau-settings.json"];
+/** tau's key files, checked by identity too: a hard link of one outside `tau/` is still that secret. */
+const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "host-control.json",
+  ...["notifications.db", "outbox.db"].flatMap((db) => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`])];
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
 
 /** Request metadata failures retain a 404; incomplete credential ownership metadata throws a 503. */
-export function isOmpSecretFile(filePath: string): boolean {
+export function isPiSecretFile(filePath: string): boolean {
   let requestUnavailable = false;
   const markRequestUnavailable = () => { requestUnavailable = true; };
   // Follow the original path before any lexical normalization: link/.. is
@@ -102,19 +108,24 @@ export function isOmpSecretFile(filePath: string): boolean {
   const parents = new Set([path.dirname(requested), resolvedOrSelf(path.dirname(filePath), markRequestUnavailable)].map(comparablePath));
   let metadataUnavailable = false;
   const markUnavailable = () => { metadataUnavailable = true; };
-  const configDirs = ompConfigDirs([filePath, requested], markUnavailable, markRequestUnavailable);
-  const agentDirs = [getAgentDir(), ...configDirs.map((dir) => path.join(dir, "agent"))];
+  const agentDirs = new Set([getAgentDir(), path.join(getConfigRoot(), "agent")]);
+  // Deny-first: either reading of the path inside tau's state tree is enough.
+  const candidates = [target, comparablePath(path.resolve(filePath))];
+  for (const dir of agentDirs) {
+    const tau = path.join(dir, "tau");
+    for (const root of new Set([comparablePath(tau), comparablePath(resolvedOrSelf(tau, markUnavailable))])) {
+      if (candidates.some((candidate) => candidate === root || candidate.startsWith(`${root}/`))) return true;
+    }
+  }
   const requestedIdentity = fileIdentity(filePath, markRequestUnavailable);
   const identity = requestedIdentity && requestedIdentity.nlink > 1 && requestedIdentity.ino > 0 ? requestedIdentity : null;
-  for (const dir of new Set([...agentDirs, ...configDirs])) {
-    const agentDir = agentDirs.includes(dir);
-    const namePattern = agentDir ? OMP_SECRET_NAME : OMP_ENV_NAME;
-    if (namePattern.test(name) && (parents.has(comparablePath(dir)) || parents.has(comparablePath(resolvedOrSelf(dir, markUnavailable))))) return true;
-    const names = new Set(agentDir ? ["agent.db", "models.yml", "models.yaml", "models.json", ".env"] : [".env"]);
+  for (const dir of agentDirs) {
+    if (PI_SECRET_NAME.test(name) && (parents.has(comparablePath(dir)) || parents.has(comparablePath(resolvedOrSelf(dir, markUnavailable))))) return true;
+    const names = new Set(PI_SECRET_FILES);
     try {
       for (const entry of readdirSync(dir, { encoding: "buffer" })) {
         const name = entry.toString("utf8");
-        if (namePattern.test(name)) {
+        if (PI_SECRET_NAME.test(name)) {
           if (isUtf8(entry)) names.add(name);
           else metadataUnavailable = true;
         }
@@ -122,32 +133,7 @@ export function isOmpSecretFile(filePath: string): boolean {
     } catch (error) {
       if (!isMissingPathError(error)) metadataUnavailable = true;
     }
-    const files = [...names].map((name) => path.join(dir, name));
-    if (agentDir) {
-      // SQLite sidecars/backups may live beside the canonical database and may
-      // themselves be symlinks. Compare exact resolved files, never a path prefix.
-      const database = resolvedOrSelf(path.join(dir, "agent.db"), markUnavailable);
-      const databaseDir = path.dirname(database);
-      const databaseName = path.basename(database);
-      const sidecars = new Set(["-wal", "-shm", "-journal"].map((suffix) => `${databaseName}${suffix}`));
-      const basename = process.platform === "win32" ? databaseName.toLowerCase() : databaseName;
-      try {
-        for (const entry of readdirSync(databaseDir, { encoding: "buffer" })) {
-          const name = entry.toString("utf8");
-          const candidate = process.platform === "win32" ? name.toLowerCase() : name;
-          const suffix = candidate.startsWith(basename) ? candidate.slice(basename.length)
-            : candidate.startsWith(`.${basename}`) ? candidate.slice(basename.length + 1) : null;
-          // Apply the same agent.db copy/editor rule to a renamed canonical database.
-          if (suffix !== null && OMP_SECRET_NAME.test(`agent.db${suffix}`)) {
-            if (isUtf8(entry)) sidecars.add(name);
-            else metadataUnavailable = true;
-          }
-        }
-      } catch (error) {
-        if (!isMissingPathError(error)) metadataUnavailable = true;
-      }
-      for (const name of sidecars) files.push(path.join(databaseDir, name));
-    }
+    const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name))];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;
@@ -164,29 +150,6 @@ export function isOmpSecretFile(filePath: string): boolean {
   if (requestUnavailable) throw new HostOpError(404, "file_not_found", "Not found");
   if (metadataUnavailable) throw credentialPolicyUnavailable();
   return false;
-}
-
-/** Default and genuine named-profile config roots, both loaded by omp's env.ts. */
-function ompConfigDirs(filePaths: string[], onUnavailable: () => void, onRequestUnavailable: () => void): string[] {
-  const configRoot = getConfigRoot();
-  const profiles = path.join(configRoot, "profiles");
-  const dirs = new Set([configRoot]);
-  try {
-    for (const profile of readdirSync(profiles, { encoding: "buffer" })) {
-      if (isUtf8(profile)) dirs.add(path.join(profiles, profile.toString("utf8")));
-      else onUnavailable();
-    }
-  } catch (error) {
-    if (!isMissingPathError(error)) onUnavailable();
-  }
-  const profileParent = comparablePath(resolvedOrSelf(profiles, onUnavailable));
-  for (const file of filePaths) {
-    const parent = path.dirname(file);
-    if (comparablePath(resolvedOrSelf(path.dirname(parent), onRequestUnavailable)) === profileParent) dirs.add(parent);
-    if (path.posix.basename(comparablePath(parent)) === "agent"
-      && comparablePath(resolvedOrSelf(path.dirname(path.dirname(parent)), onRequestUnavailable)) === profileParent) dirs.add(path.dirname(parent));
-  }
-  return [...dirs];
 }
 
 function fileIdentity(filePath: string, onUnavailable?: () => void) {
@@ -303,7 +266,7 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   for (const root of getAdditionalAllowedRoots()) roots.add(root);
   // Config roots are appended LAST: a relative request must fan out over real
   // workspaces (session cwds, project roots, allowFileRoot() roots) before it
-  // can land in ~/.omp or ~/.agents.
+  // can land in ~/.pi or ~/.agents.
   for (const root of getConfigAgentRoots()) roots.add(root);
   globalThis.__piAllowedRootsCache = { roots, expiresAt: now + ALLOWED_ROOTS_TTL_MS };
   return roots;

@@ -1,167 +1,334 @@
 <div align="center">
 
-<img src="public/icon.svg" alt="ompweb logo" width="150">
+<img src="public/icon.svg" alt="tau logo" width="150">
 
-<h1>ompweb</h1>
-
-<p>
-  <a href="https://www.npmjs.com/package/@kahme247/ompweb"><img src="https://img.shields.io/npm/v/@kahme247/ompweb.svg?logo=npm&amp;color=e05d44" alt="npm version"></a>
-  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/@kahme247/ompweb.svg?logo=node.js&amp;color=44cc11" alt="node version"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/ompweb-dev/ompweb.svg?color=44cc11" alt="license"></a>
-  <a href="https://www.npmjs.com/package/@kahme247/ompweb"><img src="https://img.shields.io/npm/dm/@kahme247/ompweb.svg?color=44cc11" alt="npm downloads"></a>
-  <a href="https://github.com/ompweb-dev/ompweb/stargazers"><img src="https://img.shields.io/github/stars/ompweb-dev/ompweb.svg?logo=github" alt="GitHub stars"></a>
-  <a href="https://github.com/ompweb-dev/ompweb/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
-</p>
+<h1>tau</h1>
 
 </div>
 
 [English](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md) | [日本語](./README.ja.md)
 
-社区：[加入 OMPWEB Discord](https://discord.gg/evqgGzRfM5)
+tau 是 [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 的浏览器工作区。
+它读取你的 pi 会话，通过 `pi --mode rpc` 加上配套的 pi 扩展运行实时会话，让你在任何浏览器中与智能体对话、浏览项目和文件、管理 pi 设置。一台 tau 服务器还可以在你链接给它的其他机器上运行会话。
 
-[oh-my-pi (omp)](https://github.com/can1357/oh-my-pi) 编程智能体的现代 Web UI。它读取本地的 omp 会话，在浏览器中提供实时对话、项目会话浏览、配置管理和文件预览等功能。
+## 功能
 
-![ompweb — 演示](docs/demo.gif)
-
-<details>
-<summary>截图（浅色 / 深色主题）</summary>
-
-![ompweb — 浅色主题](docs/screenshot-light.png)
-
-![ompweb — 深色主题](docs/screenshot-dark.png)
-
-</details>
+- **对话**：流式回复、带实时输出的工具调用、思考块、排队的后续消息与引导（steer）、停止，以及以对话框显示的 `ask` 工具问题。
+- **会话**：按项目浏览历史会话、分叉会话、在会话内切换分支、编辑之前的消息、归档与恢复、搜索标题和对话记录。
+- **消息不怕中断**：发给已有会话的消息会保存在浏览器和服务器上，直到 pi 接收为止，可跨越重连和重启。
+- **文件与 Git**：对话旁的文件浏览器与预览、上传文件到会话、Git worktree。
+- **子智能体**：如果 pi 中安装了 `pi-subagents` 包，显示其运行进度和对话记录。
+- **远程主机与集群**：在已链接的机器上运行会话；把机器组成集群，共享项目和本服务器的 pi 配置。
+- **通知**：运行完成、等待回答的问题和失败时，通过页内、桌面和 Web Push（需 HTTPS）通知。
+- **智能体工具**（默认关闭）：跨会话工具，以及使用服务器 `gh` 登录的 GitHub 工具。
+- **语音输入**：可选，通过你配置的端点转写。
 
 ## 环境要求
 
-- 无需另行安装 omp：ompweb 使用自己的 [omp](https://github.com/can1357/oh-my-pi) 构建 `ompweb-omp`，直接使用 `~/.omp` 中的设置、认证和会话。每种安装方式（npm、npx 或单一可执行文件）都会在首次启动时从该版本的 [GitHub 发布](https://github.com/ompweb-dev/ompweb/releases)下载同一版本的 `ompweb-omp`，校验 SHA-256 后保存（单一可执行文件放在同一目录，其他方式放在 `~/.omp/agent/omp-web/omp/<version>/`）；也可用 `ompweb fetch-omp` 手动获取。支持的平台为 linux-x64、linux-arm64、darwin-x64、darwin-arm64 和 windows-x64；在其他平台（musl 的 Linux、Arm 版 Windows、FreeBSD）上无法启动会话。无法访问 GitHub 的机器请将 `OMP_WEB_OMP_BIN` 指向该发布的 `ompweb-omp-<os>-<arch>` 副本
-- Node.js `>= 24`。服务器运行在 [Bun](https://bun.sh) 上，Bun 会作为 npm 包的依赖自动安装（找不到随包安装的 Bun 时使用 `PATH` 中的 Bun）
+- npm 包需要 **Node.js 24 或更高版本**。启动器（`tau`）运行在 Node 上；服务器运行在 [Bun](https://bun.sh) 1.4.4 或更高版本上，Bun 作为包的依赖自动安装（若内置的 Bun 不存在，则使用 `PATH` 上不低于该版本的 `bun`）。[单一可执行文件](#单一可执行文件)两者都不需要。
+- 每台运行会话的机器都要安装 **pi**：
 
-排队消息的 **Steer**、**Delete** 和 **Edit** 操作是 `ompweb-omp` 通道的命令（`promote_queued_message`、`remove_queued_message`）。只有 omp 确认取消后才会移除消息；编辑时也必须先取消成功，再将文本恢复到输入框。消息已不在队列中时，界面保留队列并显示提示；ompweb 不会重复发送一条引导消息。
+  ```bash
+  npm install -g @earendil-works/pi-coding-agent
+  ```
 
-队列面板显示 omp 自身的队列（`get_state` 中的 `queuedMessages` 和 `queue_update` 事件），因此查看同一会话的所有设备都会看到相同的排队消息。**Stop** 会将仍在队列中等待的消息文本放回输入框，而不是让智能体运行它们；但模型已通过实时引导接收的引导消息仍会运行。
+  tau 运行 `PATH` 上的 `pi`。要使用其他 pi，把 `TAU_PI_BIN` 设为它的路径。tau 基于 pi 1.5.2 开发。没有 pi 时仍可浏览历史会话，但无法启动会话。
 
-## 快速开始
+## 安装
 
-**免安装直接运行：**
+### npm 或 Bun
 
 ```bash
-npx @kahme247/ompweb@latest
+npm install -g @ompweb-dev/tau
+tau
 ```
 
-**或全局安装：**
+`bun add -g @ompweb-dev/tau` 安装的是同一个包；`tau` 启动器仍需要 `PATH` 上的 Node.js 24。`npx @ompweb-dev/tau@latest` 无需全局安装即可运行。
+
+tau 会在浏览器中打开 `http://127.0.0.1:30187`。在 **Settings → API Keys & Providers** 中登录你的模型提供商（见[配置](#配置)），选择工作区并开始会话。
+
+### 单一可执行文件
+
+每个版本还提供编译成单个程序的 tau，它要提供的文件放在旁边：
+`tau-linux-x64.tar.gz`、`tau-linux-arm64.tar.gz`、`tau-darwin-x64.tar.gz`、`tau-darwin-arm64.tar.gz` 和 `tau-windows-x64.zip`。它自身不需要 Node.js、npm 或 Bun。它不包含 pi：它运行 `PATH` 上的 `pi`（或 `TAU_PI_BIN`）。`main` 上每个通过 CI 的提交也会发布为带有相同压缩包的预发布版本。
 
 ```bash
-npm install -g @kahme247/ompweb
-ompweb
+tar -xzf tau-linux-x64.tar.gz -C ~/.local/share   # unpacks tau-linux-x64/
+~/.local/share/tau-linux-x64/tau                   # same options and environment variables as the npm launcher
 ```
 
-每个版本也提供**无需 Node 或 npm 的单一可执行文件**，用法见英文 README 的 [Single binary](README.md#single-binary)。
+- 把 `tau` 留在它的目录中：它从那里提供 `dist/`、`public/` 和它的 pi 扩展（可以在 `PATH` 上放一个符号链接），设置了 `TAU_PACKAGE_DIR` 时则从该目录提供。
+- 该程序有 `tau host` 和 `tau hash-password`，但没有托盘和服务安装器。服务单元需要自己编写，见[服务](#服务)中的示例。
+- macOS 会隔离下载的文件：首次启动前运行一次 `xattr -dr com.apple.quarantine tau-darwin-arm64`。
+- macOS 15 及以后版本会在应用访问本地网络前询问。如果 `curl` 能访问局域网中的服务器，而 `tau host` 报告 `ECONNREFUSED`，请在“系统设置 → 隐私与安全性 → 本地网络”中允许你的终端（或 `tau`）。
 
-在浏览器中打开 [http://127.0.0.1:30177](http://127.0.0.1:30177)。
-
-### CLI 选项
-
-```bash
-ompweb --port 8080                         # 自定义端口
-ompweb --hostname 0.0.0.0                  # 监听网络地址
-ompweb hash-password                      # 输出 OMP_WEB_PASSWORD_HASH 的值
-ompweb fetch-omp                          # 从 GitHub 发布下载本版本的 ompweb-omp（校验 SHA-256，仅在缺失时）
-ompweb preflight                          # 像新会话一样启动一次 omp 并等待其 hello；失败时说明原因并以 1 退出
-ompweb --no-open                           # 不自动打开浏览器
-```
-
-### 密码保护
-
-omp-web **绝不把明文密码交给服务器**：每个 `omp` 会话都会继承服务器的环境变量，
-智能体只要运行 `env` 就会把密码写入会话文件并发送给模型提供商。使用
-`--password` 会导致启动被拒绝。`OMP_WEB_PASSWORD` 暂时仍可使用：`ompweb`
-会在启动时将其哈希、使其不进入服务器的环境变量，并在日志中输出警告，附上应设置为
-`OMP_WEB_PASSWORD_HASH` 的哈希值。请尽快切换：智能体仍能从 `ompweb` 启动器进程中
-读取明文，而且每次启动都会生成新的哈希，每次重启都会让所有浏览器退出登录。
-同时设置两个变量会导致启动被拒绝，请删除 `OMP_WEB_PASSWORD`。
-
-请改用哈希：
+### 从源码运行
 
 ```bash
-ompweb hash-password                       # 输入两次，内容不回显
-echo "a-long-random-password" | ompweb hash-password   # 也可通过管道输入
-
-OMP_WEB_PASSWORD_HASH='scrypt$15$8$1$…' ompweb
-```
-
-`ompweb hash-password` 从标准输入读取密码（绝不作为命令行参数），因此不会
-留在 shell 历史或 `ps` 输出中。哈希使用 scrypt（N = 2^15、r = 8、p = 1）
-与 16 字节随机盐，输出格式为 `scrypt$<ln>$<r>$<p>$<salt>$<digest>`。
-即使读到哈希也无法用它登录，更无法还原出密码。
-
-会话签名不使用密码哈希。首次启动时会生成随机签名密钥并保存到
-`~/.omp/agent/omp-web/web-auth-secret.json`（权限 `0600`），再与哈希混合得到
-签名密钥：修改密码会让已有会话失效，而仅凭保存的哈希无法伪造会话。
-
-服务安装脚本（`ompweb systemd install`、`ompweb-launchd install`、Linux 托盘、
-Windows 服务）仍在安装时接受 `OMP_WEB_PASSWORD`，但在写入配置前会先做哈希，
-最终只保存哈希。
-
-## 功能特性
-
-- **实时对话**：与本地 `omp` 智能体进行低延迟流式交互。
-- **队列删除确认**：取消 OMP 中排队的后续消息或引导消息前，先预览内容并确认。需要原生支持 `remove_queued_message`；已发送的消息无法撤回。
-- **会话管理**：按项目浏览历史会话，支持会话分叉与分支回溯。
-- **草稿恢复**：未发送的文本按会话或新会话的工作区分别保存；浏览器存储可用时，在同一标签页后退、前进或重新加载后可恢复（最多 50 份草稿）。图片和文件附件仅保留在内存中。
-- **实时任务与子智能体**：可折叠面板实时展示任务清单（todo）与子智能体进度，并支持查看完整转录。
-- **文件管理与预览**：与对话并排浏览文件，支持代码、Markdown、图片、音频及 PDF 预览。
-- **各主机的文件**：文件浏览、搜索、预览、下载和实时更新都通过文件所属主机的守护进程执行。上传每个文件最多 2 GiB，不再限制批次总大小为 100 MiB。预览限制仍为文本 256 KiB、图片及 DOCX 10 MiB。切换对话不会改变文件标签页所属的主机。
-- **各主机的工作区**：Git 差异、工作树操作、目录浏览以及 HTTPS/SSH 仓库克隆均在所属主机执行。取消克隆会等待进程退出和安全清理；连接中断时会明确提示结果未知。
-- 若清理克隆时目标目录被替换，捕获的数据会保存在私有隔离目录中，错误信息会显示其位置。删除或恢复前请先检查内容。
-- **Git Worktree 支持**：直接在侧边栏切换与管理 Git 工作树。
-- **可视化设置**：在 Web 界面中直接配置模型、API 密钥、MCP 服务器、技能、插件及 OMP 原生设置。
-- **快捷指令与命令面板**：内置常用指令（`/plan`、`/review`、`/fix`、`/test` 等）及 `⌘K` / `Ctrl+K` 全局面板。
-- **主题与多语言**：温暖纸感深浅主题，完整支持英语、简体中文及日本語。
-
-## 环境变量
-
-| 变量 | 说明 | 默认值 |
-| --- | --- | --- |
-| `PORT` | 服务端口 | `30177` |
-| `OMP_WEB_HOSTNAME` | 绑定主机名 | `127.0.0.1` |
-| `OMP_WEB_PASSWORD_HASH` | Web 登录密码的 scrypt 哈希（由 `ompweb hash-password` 生成）。绑定非回环地址时必须设置 | _无（未启用验证）_ |
-| `OMP_WEB_TRUSTED_HEADER_SHA256` | 受信任的反向代理在 `X-Omp-Web-Auth` 请求头中发送的密钥的 SHA-256 摘要（十六进制）；请求头哈希匹配的请求无需密码。omp-web 不保存密钥本身。生成方法和 nginx 配置示例见英文 README 的 “Skipping the password on trusted networks” 一节 | _无（未启用）_ |
-| `OMP_WEB_NO_OPEN` | 设为 `1` 时禁止自动打开浏览器 | `0` |
-| `OMP_WEB_DISABLE_AUTOUPDATE` | 设为 `1` 时禁用更新检查和应用内更新；修改后需重启 | `0` |
-| `OMP_WEB_NAME` | 浏览器标签页和已安装应用中显示的名称。设为 `url`、`host` 或 `domain`（不区分大小写）时使用浏览器所连接的主机名（不含端口），localhost 和 IP 地址仍显示 `omp web`；其他值按原样使用。修改后需重启 | `omp web` |
-| `OMP_WEB_OMP_BIN` | 用于替代下载版本的 `ompweb-omp` 构建路径（无法访问 GitHub 的机器上为发布中 `ompweb-omp-<os>-<arch>` 的副本，源码检出中为 `runner/release/ompweb-omp-<os>-<arch>`）。普通的 `omp` 不支持 ompweb 的通道，无法使用。服务安装程序仅在你设置了它时才写入服务环境 | _下载的 `ompweb-omp`_ |
-| `PI_CODING_AGENT_DIR` | 自定义 omp agent 目录 | `~/.omp/agent` |
-| `OMP_WEB_STT_ENDPOINT` | OpenAI 兼容的语音转文字接口 URL。不设置时使用 `OMP_WEB_STT_MODEL` 通过 omp 自身的凭据转录 | _无_ |
-| `OMP_WEB_STT_KEY` | STT 接口对应的 API Key | _无_ |
-| `OMP_WEB_STT_MODEL` | STT 接口的模型名称。未设置接口时：使用 omp 登录凭据运行的 omp 语音转文字模型，例如 `openai-codex/codex-transcribe`（ChatGPT 订阅；需要包含该模型的 omp 版本） | _无（未设置接口时禁用）_ |
-
-**`OMP_WEB_NAME` 与已安装应用。** 已安装应用（PWA）通常以安装时所在页面的名称命名。如果之后修改了 `OMP_WEB_NAME`，或在 `OMP_WEB_NAME` 为 `url`、`host` 或 `domain` 时通过其他地址访问 omp-web，操作系统可能也会重命名已安装的应用。建议将 `OMP_WEB_NAME` 留空，或设置一个无论通过哪个域名或地址访问都能识别这台 omp-web 服务器的名称。
-
-## 本地开发
-
-```bash
-git clone https://github.com/ompweb-dev/ompweb.git
-cd ompweb
+git clone https://github.com/ompweb-dev/tau.git
+cd tau
 npm install
-npx bun runner/scripts/use-omp-build.ts && (cd runner && npx bun install --frozen-lockfile)
-npx bun runner/scripts/build-binary.ts   # 为本机构建 ompweb 的 omp：runner/release/ompweb-omp-<os>-<arch>
-npm run dev
+npm run build
+node bin/tau.js
 ```
 
-本地开发服务器运行在 [http://127.0.0.1:30178](http://127.0.0.1:30178)。它会自动找到 `runner/release/` 中的 runner；`npm test` 和 `npm run build:binary` 也需要先准备好 runner。
+## 运行
 
-`npm run dev` 以 Bun 热重载方式运行服务器。`npm run build` 将浏览器端应用打包到 `dist/`，`npm start` 在 30177 端口提供该产物（可用 `npm run smoke` 检查结果）。`npm run dev:lan` 会将开发服务器绑定到所有网络接口。
+```text
+tau [options]
 
-### 代码检查
+  -p, --port <port>        Server port (default 30187, env PORT)
+  -H, --hostname <host>    Bind hostname (default 127.0.0.1, env TAU_HOSTNAME)
+      --no-open            Do not open the browser automatically
+      --install-tray       Install the tray, background service and shortcuts (Windows; Linux SNI tray)
+      --uninstall-tray     Uninstall them
+      --tray               Start the background tray manager
+  -h, --help               Show help
+      --version            Show the version
+
+tau hash-password          Read a password from stdin and print the value for TAU_PASSWORD_HASH
+tau host ...               The host daemon (see "Hosts and cluster")
+tau systemd ... | tau launchd ...   Forward to tau-systemd / tau-launchd
+```
+
+生产服务器在本机的主机守护进程（`tau host`）未运行时会启动它：所有会话（包括本地会话）都在这个守护进程下运行，因此重启 Web 服务器不会停止正在运行的会话。
+
+### 环境变量
+
+| 变量 | 含义 |
+| --- | --- |
+| `PORT` | 服务器端口（默认 `30187`）。 |
+| `TAU_HOSTNAME` | 绑定地址（默认 `127.0.0.1`）。 |
+| `TAU_NO_OPEN` | `1`、`true`、`yes` 或 `on`：不打开浏览器。 |
+| `TAU_PASSWORD_HASH` | `tau hash-password` 输出的密码哈希。启用登录页。 |
+| `TAU_TRUSTED_HEADER_SHA256` | 受信任的反向代理在 `X-Tau-Auth` 中发送的密钥的 SHA-256 摘要（十六进制），见[下文](#在受信任的代理后跳过密码)。 |
+| `TAU_PI_BIN` | 用来代替 `PATH` 上那个 `pi` 的可执行文件路径。 |
+| `PI_CODING_AGENT_DIR` | pi 的 agent 目录（默认 `~/.pi/agent`）；tau 读写同一个目录。 |
+| `TAU_NAME` | 浏览器标题中的显示名称。`url`、`host` 或 `domain` 表示取自请求的主机名。 |
+| `TAU_DISABLE_AUTOUPDATE` | `1`、`true`、`yes` 或 `on`：拒绝服务器和主机的应用内更新。 |
+| `TAU_STT_ENDPOINT`、`TAU_STT_KEY`、`TAU_STT_MODEL` | 语音转写：端点接收 multipart 的 `file`（和 `model`），`TAU_STT_KEY` 作为 Bearer 令牌发送。未设置端点时语音输入关闭。 |
+| `TAU_DISCONNECT_DESTROY_MS` | 无人查看的会话进程在多久后停止（默认 2 分钟，`0` 表示禁用）。 |
+
+### 密码
+
+绑定到 `127.0.0.1` 时，tau 不需要密码。要监听其他地址，tau 必须有密码哈希，否则拒绝启动：
 
 ```bash
-npm run typecheck   # TypeScript 类型检查
-npm run lint        # ESLint 检查
-npm test            # 运行测试套件 (bun test)
+tau hash-password                         # prompts, input hidden
+echo "a-long-random-password" | tau hash-password
+TAU_PASSWORD_HASH='scrypt$15$8$1$...' tau --hostname 0.0.0.0
 ```
 
-## 致谢与许可证
+tau 只接受哈希。`--password` 参数会被拒绝。明文的 `TAU_PASSWORD` 仍会被检测到：tau 在启动时对它做哈希，从自己的环境中删除它，并在警告中打印应改用的哈希（与 `TAU_PASSWORD_HASH` 同时设置则会被拒绝）。原因是每个 pi 会话都继承 tau 的环境，智能体可能把明文密码打印到对话记录中。浏览器登录有效期为 30 天。
 
-- 分叉自 [agegr/pi-web](https://github.com/agegr/pi-web)（MIT），针对 [can1357/oh-my-pi](https://github.com/can1357/oh-my-pi) 进行适配。
-- 采用 [MIT 许可证](./LICENSE) 开源。
+### 在反向代理之后
+
+在非回环地址上无 TLS 监听时，tau 会发出警告。请通过反向代理或 VPN 以 HTTPS 提供服务，并让 tau 本身绑定到 `127.0.0.1`。代理必须转发 WebSocket 升级（主机使用 `/api/hosts/link` 和 `/api/hosts/maintenance`）。对于主机用令牌认证的路径（`/api/hosts/link`、`/api/hosts/maintenance` 和 `/api/hosts/cluster-config/…`），代理不得再加自己的认证。
+
+#### 在受信任的代理后跳过密码
+
+tau 自己看不到客户端地址，因此可以由反向代理为请求担保。代理在 `X-Tau-Auth` 请求头中发送一个密钥，tau 只在 `TAU_TRUSTED_HEADER_SHA256` 中保存该密钥的 SHA-256 摘要。请求头哈希与摘要一致的请求视为已登录。没有密码哈希时，就没有可跳过的东西。
+
+生成一个长的随机密钥，且不要把它写在命令行上。下面的命令把它写入 nginx 的 include 文件，只打印摘要：
+
+```bash
+secret=$(openssl rand -hex 32)
+printf 'map $tau_trusted $tau_auth {\n    1        "%s";\n    default  "";\n}\n' "$secret" \
+  | sudo install -m 0640 -o root -g www-data /dev/stdin /etc/nginx/tau-auth.conf
+printf %s "$secret" | sha256sum | cut -d' ' -f1
+unset secret
+```
+
+```nginx
+# http {} context
+geo $tau_trusted {
+    default       0;
+    10.0.0.0/16   1;
+}
+include /etc/nginx/tau-auth.conf;
+
+# the location that proxies to tau
+proxy_set_header X-Tau-Auth $tau_auth;
+```
+
+始终设置该请求头，这样客户端自己发送的 `X-Tau-Auth` 会被空值替换。给 tau 的 `server` 块设置明确的 `server_name`，并在 `default_server` 块中对其他主机名 `return 444;`，以免 DNS 重绑定让 nginx 把密钥加到其他站点的请求上。tau 只保存快速的 SHA-256 摘要，这只对长的随机密钥安全：不要在这里复用密码。
+
+## 服务
+
+每个安装器都运行两个服务：Web 服务器和主机守护进程（`tau host`）。
+
+### Linux（systemd 用户服务）
+
+```bash
+TAU_PASSWORD_HASH='scrypt$...' tau-systemd install   # or: npx --yes --package=@ompweb-dev/tau@latest tau-systemd install
+tau-systemd status
+```
+
+`install` 把单元 `tau.service` 和 `tau-host.service` 写入 `~/.config/systemd/user/`，创建 `~/.pi/agent/web-service.env`（端口、主机名、密码哈希；修改后无需重新安装），并启用两者。其他命令：`uninstall`（`--clean-config` 同时删除 env 文件）、`start`、`stop`、`restart`（仅 Web 服务）、`open`。选项：`--port`、`--hostname`、`--no-autostart`、`--json`。日志：`journalctl --user -u tau -u tau-host -f`。
+
+在 KDE Plasma 等支持 StatusNotifierItem 的桌面上，`tau --install-tray` 会添加一个控制这些 systemd 服务的托盘图标。
+
+### macOS（launchd）
+
+```bash
+TAU_PASSWORD_HASH='scrypt$...' tau-launchd install   # or: npx -p @ompweb-dev/tau@latest tau-launchd install
+tau-launchd status
+tau-launchd uninstall
+```
+
+`install` 创建 LaunchAgent `dev.ompweb.tau` 和 `dev.ompweb.tau-host`，它们在登录时启动，崩溃后重启。它从运行时的环境中读取 `PORT`、`TAU_HOSTNAME`、`TAU_PASSWORD_HASH`、`TAU_TRUSTED_HEADER_SHA256`、`TAU_PI_BIN`、`TAU_NAME`、`TAU_DISABLE_AUTOUPDATE` 和 `PI_CODING_AGENT_DIR`。日志写入 `~/Library/Logs/tau`。
+
+### Windows（托盘和后台服务）
+
+```powershell
+tau --install-tray
+```
+
+这会安装后台服务、主机守护进程（计划任务 `tau-host`）、托盘图标、登录时自启动以及桌面和开始菜单快捷方式。用 `tau-tray status|start|stop|restart|open|uninstall` 管理。服务从 `%USERPROFILE%\.pi\agent\web-service.json` 读取设置，从用户或系统环境变量读取 `TAU_PASSWORD_HASH`。
+
+### 把单一可执行文件作为服务
+
+自己编写两个单元。以 systemd 为例（按需调整路径）：
+
+```ini
+# ~/.config/systemd/user/tau.service
+[Unit]
+Description=tau web service
+
+[Service]
+WorkingDirectory=%h
+ExecStart=%h/.local/share/tau-linux-x64/tau --no-open
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# TAU_PASSWORD_HASH, PORT and TAU_HOSTNAME go here.
+EnvironmentFile=-%h/.pi/agent/web-service.env
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+
+```ini
+# ~/.config/systemd/user/tau-host.service
+[Unit]
+Description=tau host daemon
+# It exits until the web server has written its link: keep restarting.
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=%h
+ExecStart=%h/.local/share/tau-linux-x64/tau host
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-%h/.pi/agent/web-service.env
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now tau tau-host
+```
+
+`PATH` 必须包含 `pi` 所在目录（以及 pi 所用 Node.js 的目录）。在 macOS 上，两个以 `RunAtLoad` 和 `KeepAlive` 运行 `…/tau --no-open` 与 `…/tau host` 的 launchd agent 可以实现同样效果；在 Windows 上，则是两个在登录时运行 `tau.exe --no-open` 与 `tau.exe host` 的任务计划程序任务。
+
+## 主机与集群
+
+### 主机守护进程
+
+`tau host` 是在一台机器上运行 pi 会话并读取其会话文件的进程。它通过 WebSocket 主动连接一个或多个 tau 服务器，因此可以位于 NAT 之后。链接或 Web 服务器断开时会话继续运行，链接恢复后服务器重新加入这些会话。在服务器自己的机器上，守护进程会自动链接（**Settings → Hosts** 中的“This machine”）。
+
+```text
+tau host login [--add] --url <server url>   save a link; the host token is read from stdin
+tau host logout --url <server url>          remove a link
+tau host [--allow-http]                     run the daemon
+tau host status|drain|resume                control the running daemon
+```
+
+守护进程只接受 `https://` 服务器地址，`http://` 仅限回环地址。`--allow-http` 允许对其他地址使用明文 HTTP；此时主机令牌以未加密方式传输，只应在受信任的网络中使用。
+
+### 链接另一台机器
+
+另一台机器需要 pi，以及 npm 版 tau（Node.js 24）或单一可执行文件。
+
+1. 在 tau 服务器上打开 **Settings → Hosts → Add host**，输入名称并复制令牌。令牌只显示一次；服务器只保存其哈希。
+2. 在另一台机器上保存链接。按提示粘贴令牌，或通过管道传入；它不会出现在 `ps` 中：
+
+   ```bash
+   npx @ompweb-dev/tau@latest host login --url https://tau.example.com
+   ```
+
+   链接以 `600` 权限保存到 `~/.pi/agent/tau/host.json`。`--add` 会添加到另一台服务器的链接，而不是替换第一个。
+3. 运行守护进程并保持运行（作为服务运行，见[服务](#服务)）：
+
+   ```bash
+   npx @ompweb-dev/tau@latest host
+   ```
+
+之后该主机显示为在线，侧边栏为它的工作区分组，新建会话界面也可以选择它。每台主机保留自己的 `~/.pi/agent`、会话和提供商登录。**Settings → Hosts** 还可以重命名和撤销主机、显示每台主机的 tau 版本并提供更新，以及设置智能体能否无需询问就在该主机上启动会话。被撤销主机的守护进程会停止它的会话。
+
+### 集群
+
+在 **Settings → Hosts** 中可以把已链接的主机加入集群；本机是主节点（master），随第一台主机一起加入。加入的主机必须在线，并提供一个用于集群检出的项目文件夹。它的 Git 项目按仓库 origin 绑定到集群项目。之后集群会话可以在任一成员上启动。
+
+成员使用主节点的 pi 配置运行会话。主节点构建一个带版本的清单，包括：
+
+- 来自其 pi agent 目录：`settings.json`、`models.json`、`mcp.json`、`AGENTS.override.md`、`AGENTS.md`、`CLAUDE.md`、`SYSTEM.md`、`APPEND_SYSTEM.md`，以及目录 `skills/`、`prompts/`、`themes/` 和 `extensions/`；
+- `~/.agents/skills/`；
+- **Settings → System** 中的智能体环境变量。
+
+每个成员的守护进程下载缺少的文件，校验其哈希，并整体应用该版本，要么全部应用，要么完全不应用。主节点每 30 秒检查一次，在成员上启动会话时会先应用当前版本。被镜像的目录会变得与主节点的完全相同（排除 `node_modules` 和 `.git`）。限制：单个文件 5 MiB，总计 50 MiB。
+
+不镜像的内容：凭据（`auth.json`、`mcp-auth.json`）、会话、缓存、仓库内的配置，以及程序（MCP 服务器的命令，或 `settings.json` 指定的包，后者由 pi 在成员上自行安装）。成员对 `settings.json` 中的以下键保留自己的值：`shellPath`、`shellCommandPrefix`、`npmCommand`、`selfUpdateCommand`、`externalEditor`、`sessionDir`、`httpProxy`、`extensions`、`skills`、`prompts`、`themes`、`deviceId`、`trackingId`、`lastChangelogVersion`、`extensionChangelogVersions` 和 `terminal`。
+
+首次应用时，成员自己的配置会移到 `~/.pi/agent/tau/own-config/`；离开集群时再放回去。一台主机同一时间只持有一个服务器的配置。提供商登录永远不会被镜像：请在每个成员上分别登录（见下文）。
+
+## 配置
+
+tau 使用 pi 自己的文件，并增加几个自己的文件：
+
+| 路径 | 内容 |
+| --- | --- |
+| `~/.pi/agent/settings.json` | pi 设置；**Settings** 可编辑默认思考级别、思考块显示、启用的模型、重试和压缩（compaction）。 |
+| `~/.pi/agent/models.json` | 自定义提供商和模型；在 **Settings → API Keys & Providers** 中编辑。 |
+| `~/.pi/agent/auth.json` | pi 的提供商登录和 API 密钥，由 pi 写入。 |
+| `~/.pi/agent/sessions/` | pi 会话文件，tau 列出并读取它们。 |
+| `~/.pi/agent/tau-settings.json` | tau 服务器设置：重启后自动恢复、智能体工具、GitHub 写入和 Actions 权限、智能体环境变量、上传保留期。 |
+| `~/.pi/agent/projects.json` | 添加到侧边栏或从侧边栏隐藏的工作区。 |
+| `~/.pi/agent/tau/` | tau 状态：主机注册表（`hosts.json`）、守护进程的链接（`host.json`）、集群（`pools.json`）、登录签名密钥、通知、消息发件箱、上传。 |
+| `~/.pi/agent/web-service.env` | `tau-systemd` 写入的服务设置（Windows 上为 `web-service.json`）。 |
+
+所有路径都遵循 `PI_CODING_AGENT_DIR`。
+
+**提供商登录按主机分别保存。** tau 自己从不读取 `auth.json`。登录（OAuth 和 API 密钥）在所选主机的守护进程上、通过 tau 的配套扩展（`lib/pi/tau-extension.ts` 中的 `/tau_auth` 命令）在 pi 内部完成；原始密钥和令牌留在该主机的 pi 中。要在某台主机上登录，请在 **Settings → API Keys & Providers** 中选择该主机。
+
+**智能体环境变量**（**Settings → System**）会加到之后启动的每个 pi 进程中。会改变 pi 状态位置或 tau 内部机制的名称会被拒绝：`PATH`、`PATHEXT`、`COMSPEC`、`SYSTEMROOT`、`WINDIR`、`NODE_OPTIONS`、`HOME`、`USERPROFILE`、`HOMEDRIVE`、`HOMEPATH`、`XDG_DATA_HOME`、`XDG_CONFIG_HOME`、`PI_CODING_AGENT_DIR`、`PI_CODING_AGENT_SESSION_DIR`、`PORT`、`NODE_ENV`，以及所有以 `TAU_` 或 `_` 开头的名称。
+
+## 安全说明
+
+- **智能体以你的用户权限运行。** pi 的工具可以读写你的用户能访问的任何文件并执行命令。tau 不对其做沙箱隔离。任何能登录 tau 的人，都能让智能体在每台已链接的主机上这样做。
+- **密码门。** 设置 `TAU_PASSWORD_HASH` 后，除登录页、静态资源、Service Worker 和主机认证的路径外，所有页面和 API 路由都需要会话 Cookie（或受信任代理的请求头）。没有密码哈希时，tau 拒绝监听非回环地址。
+- **HTTPS。** tau 使用明文 HTTP。任何远程访问都应放在 HTTPS（反向代理或 VPN）之后，以保护密码、会话 Cookie 和主机令牌。Web Push 通知也需要 HTTPS。
+- **密钥不会进入会话。** `TAU_PASSWORD`、`TAU_PASSWORD_HASH`、`TAU_TRUSTED_HEADER_SECRET`、`TAU_TRUSTED_HEADER_SHA256`、`TAU_STT_KEY`、`PORT` 和 `NODE_ENV` 会从每个 pi 进程和项目命令的环境中移除。
+- **主机令牌。** 服务器只保存每个主机令牌的 SHA-256。主机守护进程从标准输入读取令牌，并保存在权限为 `600` 的文件中。被撤销的令牌会立即被拒绝。
+- **浏览器中的文件访问。** 文件查看器和浏览器只提供允许的根目录：你添加或打开过的工作区、会话的工作目录和经过验证的 worktree，以及会话对话记录引用的文件（只读）。即使在允许的根目录内，pi 目录中已知的凭据文件（`models.json`、`.env` 文件）也会被拒绝。这些限制针对浏览器，不针对智能体。
+- **智能体工具默认关闭。** 启用后，任何会话都可以列出会话、启动会话或向另一个会话发送消息，并使用服务器 `gh` 登录的 GitHub 工具。除非开启 **Allow agent GitHub writes without asking**，评论和讨论串写入会在会话中询问；Actions 的 dispatch、cancel 和 rerun 默认各自询问。在某台主机上启动会话时，除非该主机允许智能体启动，否则会询问。
+
+## 开发
+
+```bash
+npm install
+npm run dev            # Bun hot reload at http://127.0.0.1:30188
+npm run build          # bundle the browser app into dist/
+npm start              # serve dist/ at http://127.0.0.1:30187
+npm run build:binary   # single binary for this machine into release/ (-- --target bun-linux-arm64 for another)
+npm run typecheck && npm run lint && npm test
+```
+
+开发服务器不会接管主机守护进程：开发时“This machine”显示为离线，守护进程仍链接到你已安装的 tau。
+
+## 许可证
+
+MIT，见 [LICENSE](./LICENSE)。tau 派生自 [ompweb](https://github.com/ompweb-dev/ompweb)，而 ompweb 派生自 [agegr/pi-web](https://github.com/agegr/pi-web)。

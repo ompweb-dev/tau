@@ -1,15 +1,13 @@
 import { existsSync, realpathSync, statSync } from "fs";
 import { homedir } from "os";
 import { comparableProjectPath } from "../comparable-path";
-import { isValidOmpProfile } from "../omp-profile";
-import { getAgentEnvOverrides } from "../omp/agent-env";
-import { spawnOmpTransport } from "../omp/rpc-process";
-import { readNativeSettings } from "../omp/settings-config";
+import { getAgentEnvOverrides } from "../pi/agent-env";
+import { spawnPiTransport } from "../pi/rpc-process";
 import { isReservedLaunchArg, loadProjectRegistry } from "../project-registry";
 import { invalidateSessionEntriesCache, invalidateSessionListCache, invalidateSessionListMeta } from "../session-reader";
 import { PRESET_FULL } from "../tool-presets";
 import type { ProjectLaunchConfig } from "../types";
-import { resolveProject } from "../worktree";
+import { registeredProjectFor, resolveProject } from "../worktree";
 import { HostOpError } from "./link-protocol";
 import type { Host } from "./host";
 import { sessionOps } from "./session-ops";
@@ -27,14 +25,10 @@ export function mapPresetToolNames(toolNames: string[]): string[] {
 const FULL_PRESET_KEY = [...PRESET_FULL].map((n) => n.toLowerCase()).sort().join(",");
 
 /** Extra CLI args for spawning `pi --mode rpc` for a session. */
-export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], advisor = false, launchConfig?: ProjectLaunchConfig, modelOverride?: string): string[] {
-  void advisor;
+export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[], launchConfig?: ProjectLaunchConfig): string[] {
   const args: string[] = [];
   if (sessionFile) {
     args.push("--session", sessionFile);
-    if (modelOverride && !modelOverride.startsWith("-") && !/\s/.test(modelOverride)) {
-      args.push("--model", modelOverride);
-    }
   } else if (toolNames !== undefined) {
     const presetKey = toolNames.map((n) => n.toLowerCase()).sort().join(",");
     if (toolNames.length === 0) {
@@ -44,11 +38,6 @@ export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[],
     } else {
       const mapped = mapPresetToolNames(toolNames);
       if (mapped.length > 0) args.push("--tools", mapped.join(","));
-    }
-  }
-  if (launchConfig?.profile !== undefined) {
-    if (!launchConfig.profile || !isValidOmpProfile(launchConfig.profile)) {
-      throw new HostOpError(400, "stored_invalid_profile", "Invalid saved workspace profile. Open the workspace launch configuration and correct or clear the profile before starting a session.");
     }
   }
   if (launchConfig?.extraArgs) {
@@ -64,9 +53,7 @@ export function buildSessionSpawnArgs(sessionFile: string, toolNames?: string[],
 /**
  * Pick a spawn cwd that actually exists. A session records the directory it was
  * created in, but that directory may have been deleted since: spawn() would
- * fail with ENOENT and `omp --cwd <missing>` throws in setProjectDir. omp's own
- * resume path skips the chdir when the recorded project dir is gone and keeps
- * the launch cwd (main.ts), so hand it a live directory and let it decide.
+ * fail with ENOENT, so hand pi a live directory instead.
  */
 export function resolveSpawnCwd(recordedCwd?: string | null): string {
   return resolveSpawnCwdResult(recordedCwd).cwd;
@@ -114,14 +101,20 @@ export async function launchConfigForCwd(cwd: string): Promise<ProjectLaunchConf
   })?.launchConfig;
 }
 
+/** pi's `--approve` (trust the project's .pi and .agents files) for a cwd inside a workspace registered on this
+ * machine; elsewhere pi's own trust rules apply (trust.json, then defaultProjectTrust, with no prompt in rpc mode). */
+export async function projectTrustArgs(cwd: string): Promise<string[]> {
+  return await registeredProjectFor(cwd) ? ["--approve"] : [];
+}
+
 /** This machine: `child_process.spawn` and direct `fs`. */
-export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
+export const localHost: Omit<Host, "workspaceOps"> = {
   id: "local",
   label: "This machine",
   sessionOps,
   status: () => "online",
   onStatus: () => () => {},
-  async spawnRpc(request, _sessionId, options) {
+  async spawnRpc(request) {
     const { cwd } = request;
     const launchConfig = await launchConfigForCwd(cwd);
     if (request.creationId !== undefined) {
@@ -131,18 +124,17 @@ export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
         throw new HostOpError(409, "prepared_cwd_changed", "The prepared worktree is no longer available");
       }
     }
-    const transport = spawnOmpTransport({
+    const transport = spawnPiTransport({
       cwd,
       // Re-read per spawn so a respawn picks up environment values the user
       // added in Settings after the session was created (#104).
-      env: { ...getAgentEnvOverrides(), ...options?.env },
-      extraArgs: [...buildSessionSpawnArgs(request.sessionFile, request.toolNames, request.advisor, launchConfig, request.spawnModel)],
+      env: getAgentEnvOverrides(),
+      extraArgs: [...await projectTrustArgs(cwd), ...buildSessionSpawnArgs(request.sessionFile, request.toolNames, launchConfig)],
     });
     return {
       transport,
       cwd,
       fellBack: !!request.recordedCwd && request.recordedCwd !== cwd,
-      launchAdvisor: launchConfig?.advisor === true,
     };
   },
   async sessionFileExists(path) {
@@ -156,15 +148,6 @@ export const localHost: Omit<Host, "workspaceOps" | "supportsWorkspaceOp"> = {
       invalidateSessionEntriesCache(sessionFile);
     } else {
       invalidateSessionListCache();
-    }
-  },
-  autoApproveExtension() {
-    // Only the "Allow tool: <name>" confirmation is covered (see the wrapper).
-    try {
-      return readNativeSettings().settings.tools?.approval?.extension === "allow";
-    } catch {
-      // A malformed config must not prevent normal interactive approval.
-      return false;
     }
   },
 };

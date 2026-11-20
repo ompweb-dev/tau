@@ -1,8 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { resolve } from "path";
-import { getAgentDir } from "./omp/paths";
-import { BROWSER_TRANSPORTS, type BrowserTransport, type BrowserTransportState } from "./event-stream-protocol";
+import { getAgentDir } from "./pi/paths";
 import { DEFAULT_UPLOAD_RETENTION_DAYS, isUploadRetentionDays } from "./upload-limits";
 import { isRecord } from "./type-guards";
 
@@ -10,9 +9,9 @@ export type GithubActionsOperation = "dispatch" | "cancel" | "rerun";
 export type GithubActionsPermission = "deny" | "ask" | "allow";
 export type GithubActionsPermissions = Record<GithubActionsOperation, GithubActionsPermission>;
 
-/** omp-web's own server-side settings (omp's config.yml stays omp's). */
+/** tau's own server-side settings (pi's settings.json stays pi's). */
 export interface WebServerSettings {
-  /** Resume sessions that were mid-run when omp-web stopped. */
+  /** Resume sessions that were mid-run when tau stopped. */
   autoResumeSessions: boolean;
   /**
    * Server-side agent tools (issue #275: list_sessions / new_session /
@@ -27,14 +26,12 @@ export interface WebServerSettings {
   /** Per-operation approval policy for GitHub Actions mutations. */
   githubActionsPermissions: GithubActionsPermissions;
   /**
-   * Environment variables merged into the `omp` child process (issue #104).
-   * Stored as a validated record; lib/omp/agent-env.ts owns the policy and
+   * Environment variables merged into the `pi` child process (issue #104).
+   * Stored as a validated record; lib/pi/agent-env.ts owns the policy and
    * re-checks every name before handing it to a spawn.
    */
   agentEnv: Record<string, string>;
-  /** Live-event transport the browser uses; "ws" unless the file says "sse" (a missing or unknown value, the experiment's ws-* values included, reads as "ws"). */
-  browserTransport: BrowserTransport;
-  /** Days a sent upload stays in its session's `local://uploads/` on every host; `null` keeps them for ever (docs/specs/2026-11-02-file-uploads-design.md, U6). */
+  /** Days a sent upload stays in its session's `local/uploads/` on every host; `null` keeps them for ever (docs/specs/2026-11-02-file-uploads-design.md, U6). */
   uploadRetentionDays: number | null;
 }
 
@@ -44,16 +41,10 @@ const DEFAULTS: WebServerSettings = {
   githubWritesUnasked: false,
   githubActionsPermissions: { dispatch: "ask", cancel: "ask", rerun: "ask" },
   agentEnv: {},
-  browserTransport: "ws",
   uploadRetentionDays: DEFAULT_UPLOAD_RETENTION_DAYS,
 };
 
-/** What every hello and `transport` frame tells the browser. */
-export function browserTransportState(settings = loadWebServerSettings()): BrowserTransportState {
-  return { transport: settings.browserTransport };
-}
-
-/** String-valued entries only — the allow-list lives in lib/omp/agent-env.ts. */
+/** String-valued entries only — the allow-list lives in lib/pi/agent-env.ts. */
 function readAgentEnvRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
   const entries: Array<[string, string]> = [];
@@ -83,11 +74,11 @@ function readGithubActionsPermissions(value: unknown): GithubActionsPermissions 
 }
 
 function settingsPath(): string {
-  return resolve(getAgentDir(), "omp-web-settings.json");
+  return resolve(getAgentDir(), "tau-settings.json");
 }
 
 function settingsLockPath(): string {
-  return resolve(getAgentDir(), "omp-web-settings.lock.sqlite");
+  return resolve(getAgentDir(), "tau-settings.lock.sqlite");
 }
 
 function normalizeSettings(raw: Record<string, unknown>): WebServerSettings {
@@ -97,7 +88,6 @@ function normalizeSettings(raw: Record<string, unknown>): WebServerSettings {
     githubWritesUnasked: raw.githubWritesUnasked === true,
     githubActionsPermissions: readGithubActionsPermissions(raw.githubActionsPermissions),
     agentEnv: readAgentEnvRecord(raw.agentEnv),
-    browserTransport: BROWSER_TRANSPORTS.find((transport) => transport === raw.browserTransport) ?? "ws",
     uploadRetentionDays: isUploadRetentionDays(raw.uploadRetentionDays) ? raw.uploadRetentionDays : DEFAULT_UPLOAD_RETENTION_DAYS,
   };
 }
@@ -128,12 +118,12 @@ export function readWebServerSettingsFromDisk(): WebServerSettings {
 
 declare global {
   // Survives `bun --hot` re-evaluation, which creates fresh module instances.
-  var __ompWebSettingsCache: { path: string; settings: WebServerSettings } | undefined;
+  var __tauSettingsCache: { path: string; settings: WebServerSettings } | undefined;
 }
 
 export function loadWebServerSettings(): WebServerSettings {
   const path = settingsPath();
-  const cached = globalThis.__ompWebSettingsCache;
+  const cached = globalThis.__tauSettingsCache;
   if (cached?.path === path) return cached.settings;
   let settings = DEFAULTS;
   try {
@@ -141,7 +131,7 @@ export function loadWebServerSettings(): WebServerSettings {
   } catch {
     // Unreadable settings fall back to the defaults.
   }
-  globalThis.__ompWebSettingsCache = { path, settings };
+  globalThis.__tauSettingsCache = { path, settings };
   return settings;
 }
 
@@ -187,7 +177,7 @@ export function saveWebServerSettings(patch: WebServerSettingsPatch): WebServerS
     };
     writeFileSync(temp, `${JSON.stringify(settings, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temp, path);
-    globalThis.__ompWebSettingsCache = { path, settings };
+    globalThis.__tauSettingsCache = { path, settings };
     lock.exec("COMMIT");
     return settings;
   } catch (error) {

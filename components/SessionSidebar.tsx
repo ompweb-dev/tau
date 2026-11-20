@@ -6,7 +6,6 @@ import { useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { ProjectLaunchConfigDialog } from "./ProjectLaunchConfigDialog";
-import { ProviderUsageBar } from "./ProviderUsageBar";
 import { Tooltip } from "./ui/primitives";
 import { toast } from "./ui/toast";
 import { clearLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
@@ -51,7 +50,7 @@ import {
   type WorktreeState,
   hostsCameOnline,
 } from "./SessionSidebar-helpers";
-import { OmpWebTitle, SIDEBAR_BUTTON_TRANSITION, SidebarIconButton, SidebarPortalMenu } from "./SessionSidebar-chrome";
+import { TauTitle, SIDEBAR_BUTTON_TRANSITION, SidebarIconButton, SidebarPortalMenu } from "./SessionSidebar-chrome";
 import { HostGroup, ProjectRow } from "./SessionSidebar-rows";
 
 /** Deadline for one /api/sessions fetch. A wedged-but-listening server never
@@ -93,11 +92,9 @@ interface Props {
   /** Host the open add-workspace picker is for (this machine when absent). */
   addProjectHostId?: string;
   setAddProjectOpen: (open: boolean, hostId?: string) => void;
-  /** Shows the provider usage bar above Settings; toggle lives in Settings. */
-  usageVisible?: boolean;
   /** Opens the app settings (pinned sidebar footer row). */
   onOpenSettings?: () => void;
-  /** True when an omp/ompweb update is available — shows a badge on the gear. */
+  /** True when a tau update is available — shows a badge on the gear. */
   updateAvailable?: boolean;
   /** Opens the archived sessions browser. */
   onOpenArchive?: () => void;
@@ -132,7 +129,7 @@ const projectRequestTarget = (project: ManagedProject) => project.poolId && proj
   ? { poolId: project.poolId, projectId: project.projectId }
   : { cwd: project.path, hostId: remoteHostId(project.hostId) };
 const THIS_MACHINE = { id: LOCAL_HOST_ID, label: "" };
-const COLLAPSED_HOSTS_STORAGE_KEY = "omp-web:collapsed-hosts";
+const COLLAPSED_HOSTS_STORAGE_KEY = "tau:collapsed-hosts";
 
 function loadCollapsedHosts(): Set<string> {
   try {
@@ -143,7 +140,7 @@ function loadCollapsedHosts(): Set<string> {
   }
 }
 
-export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, optimisticSession, onSelectSession, onNewSession, initialSessionId, initialSessionHostId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, selectedHostId: selectedHostIdProp, selectedLogicalProjectKey, onCwdChange, onWorkspaceOptionsChange, onWorktreeContextChange, addProjectOpen, addProjectHostId = LOCAL_HOST_ID, setAddProjectOpen, usageVisible = true, onOpenSettings, onOpenArchive, navigation, updateAvailable, settingsOpen = false, onClose, onSearchQueryChange, onOpenSearchMatch }: Props) {
+export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, optimisticSession, onSelectSession, onNewSession, initialSessionId, initialSessionHostId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, selectedHostId: selectedHostIdProp, selectedLogicalProjectKey, onCwdChange, onWorkspaceOptionsChange, onWorktreeContextChange, addProjectOpen, addProjectHostId = LOCAL_HOST_ID, setAddProjectOpen, onOpenSettings, onOpenArchive, navigation, updateAvailable, settingsOpen = false, onClose, onSearchQueryChange, onOpenSearchMatch }: Props) {
 
 
   const { t } = useI18n();
@@ -705,8 +702,8 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     return () => { cancelled = true; };
   }, [selectedCwd, selectedHostId, selectedPoolKey, wtRefreshKey, refreshKey, storeWorktreeState]);
 
-  // Keep a just-created session and its project visible while omp is still
-  // flushing the JSONL file. The server list remains authoritative once it
+  // Keep a just-created session and its project visible until pi has
+  // written the JSONL file. The server list remains authoritative once it
   // contains the same id.
   // IMPORTANT: derive synchronously — the previous projectRootFor(cwd) needs
   // the async /api/worktrees git lookup, so the optimistic row would park in
@@ -1513,7 +1510,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
                 <X size={16} strokeWidth={1.8} aria-hidden="true" />
               </button>
             )}
-            <OmpWebTitle />
+            <TauTitle />
           </div>
           <div style={{ display: "flex", gap: 2 }}>
             {navigation && (
@@ -1878,8 +1875,6 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
           })}
         </div>
 
-      {/* Provider usage bar — pinned above Settings */}
-      {usageVisible && <ProviderUsageBar />}
       {/* Pinned footer: Settings */}
       <div style={{ borderTop: "1px solid var(--border)", flexShrink: 0 }}>
         <button

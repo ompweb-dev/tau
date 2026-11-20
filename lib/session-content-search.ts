@@ -18,7 +18,7 @@ interface ContentCacheEntry {
 }
 
 declare global {
-  var __ompSessionContentSearchCache: Map<string, ContentCacheEntry> | undefined;
+  var __tauSessionContentSearchCache: Map<string, ContentCacheEntry> | undefined;
 }
 
 const PARSE_CONCURRENCY = 4;
@@ -281,7 +281,7 @@ export async function* searchSessions(rawQuery: string): AsyncGenerator<Record<s
   const query = compileSearchQuery(rawQuery);
   if (!query) return;
   const sessions = await listAllSessions();
-  const cache = (globalThis.__ompSessionContentSearchCache ??= new Map());
+  const cache = (globalThis.__tauSessionContentSearchCache ??= new Map());
   const listed = new Set(sessions.map((s) => s.path));
   for (const path of cache.keys()) if (!listed.has(path)) cache.delete(path);
 

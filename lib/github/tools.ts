@@ -137,7 +137,7 @@ async function allowWrite(ops: GithubToolOps, ctx: AgentToolContext, title: stri
 
 /** validate → gh check → permission → act. */
 export async function executeGithubTool(name: string, args: Record<string, unknown>, ops: GithubToolOps, ctx: AgentToolContext): Promise<unknown> {
-  if (!readAgentToolsEnabledFromDisk()) throw new Error('Agent tools are disabled. Enable "Agent tools" in omp-web Settings (System) first.');
+  if (!readAgentToolsEnabledFromDisk()) throw new Error('Agent tools are disabled. Enable "Agent tools" in tau Settings (System) first.');
   if (ACTION_TOOL_DEFINITIONS.some(tool => tool.name === name)) return executeActionTool(name, args, ops, ctx, target => allowRead(ops, ctx, target));
   if (name === "github_resolve_thread") {
     const threadId = stringArg(args, "threadId");

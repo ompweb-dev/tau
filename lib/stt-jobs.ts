@@ -12,11 +12,11 @@ export interface SttConfig {
   model: string | undefined;
 }
 
-/** STT settings from OMP_WEB_STT_*; null when OMP_WEB_STT_ENDPOINT is not configured. Server-only: lib/stt.ts is shared with the browser. */
+/** STT settings from TAU_STT_*; null when TAU_STT_ENDPOINT is not configured. Server-only: lib/stt.ts is shared with the browser. */
 export function readSttConfig(): SttConfig | null {
-  const endpoint = cleanEnvVar(process.env.OMP_WEB_STT_ENDPOINT);
+  const endpoint = cleanEnvVar(process.env.TAU_STT_ENDPOINT);
   if (!endpoint) return null;
-  return { endpoint, apiKey: cleanEnvVar(process.env.OMP_WEB_STT_KEY), model: cleanEnvVar(process.env.OMP_WEB_STT_MODEL) };
+  return { endpoint, apiKey: cleanEnvVar(process.env.TAU_STT_KEY), model: cleanEnvVar(process.env.TAU_STT_MODEL) };
 }
 
 /**
@@ -88,10 +88,10 @@ const MAX_TOMBSTONES = 20;
 
 declare global {
   // globalThis survives a `bun --hot` re-evaluation; a module-level Map does not.
-  var __ompSttJobs: Map<string, SttJob> | undefined;
+  var __tauSttJobs: Map<string, SttJob> | undefined;
 }
 
-const store = (globalThis.__ompSttJobs ??= new Map<string, SttJob>());
+const store = (globalThis.__tauSttJobs ??= new Map<string, SttJob>());
 
 function view(job: SttJob): SttJobView {
   return { id: job.id, status: job.status, error: job.error };

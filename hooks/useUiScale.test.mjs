@@ -12,7 +12,7 @@ const {
 
 test("has expected constants", () => {
   assert.equal(DEFAULT_UI_SCALE, "standard");
-  assert.equal(STORAGE_KEY, "omp-ui-scale");
+  assert.equal(STORAGE_KEY, "tau-ui-scale");
 });
 
 test("cycles UI scale preferences through compact -> standard -> comfortable -> large -> compact", () => {

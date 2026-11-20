@@ -3,7 +3,7 @@ import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/li
 import { outboxScope, outboxSnapshot } from "@/lib/message-outbox";
 
 /** Every answer, an offline host's 503 included, carries the session's held messages (`outbox`): a tab opening a
- * session with no omp running learns from it that there is an outbox to subscribe to. */
+ * session with no pi running learns from it that there is an outbox to subscribe to. */
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -22,8 +22,8 @@ export async function GET(
 
 async function sessionState(id: string): Promise<Response> {
   try {
-    // A live process proves the session exists: omp does not create the session
-    // file until the history holds an assistant message, so the path check
+    // A live process proves the session exists: pi does not create the session
+    // file until the history holds a user or assistant message, so the path check
     // below would 404 a brand-new running session.
     const rpc = getRpcSession(id);
     if (rpc?.isAlive()) {

@@ -9,7 +9,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace OmpWebTray;
+namespace TauTray;
 
 static class Program
 {
@@ -57,7 +57,7 @@ class TrayApplication : IDisposable
     private string _effectiveHostname = "127.0.0.1";
     private string _effectiveMode = "start";
     private bool _effectiveAutoRestart = true;
-    private string _serverUrl = "http://127.0.0.1:30177";
+    private string _serverUrl = "http://127.0.0.1:30187";
 
     private NotifyIcon _notifyIcon = null!;
     private ContextMenuStrip _contextMenu = null!;
@@ -121,16 +121,16 @@ class TrayApplication : IDisposable
         }
         catch { }
 
-        _icoPath = Path.Combine(_repoRoot, "public", "omp-web.ico");
+        _icoPath = Path.Combine(_repoRoot, "public", "tau.ico");
         _pngPath = Path.Combine(_repoRoot, "public", "icon.png");
 
         var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "logs");
         Directory.CreateDirectory(logDir);
-        _logFile = Path.Combine(logDir, "omp-web-service.log");
+        _logFile = Path.Combine(logDir, "tau-service.log");
         try
         {
             if (File.Exists(_logFile) && new FileInfo(_logFile).Length > 5 * 1024 * 1024)
-                File.Move(_logFile, Path.Combine(logDir, "omp-web-service.old.log"), true);
+                File.Move(_logFile, Path.Combine(logDir, "tau-service.old.log"), true);
         }
         catch { }
 
@@ -139,7 +139,7 @@ class TrayApplication : IDisposable
 
     private void ResolveConfig()
     {
-        const int DefaultPort = 30177;
+        const int DefaultPort = 30187;
         const string DefaultHostname = "127.0.0.1";
         const string DefaultMode = "start";
 
@@ -181,7 +181,7 @@ class TrayApplication : IDisposable
         if (_effectiveMode == "start" && !File.Exists(buildIndex))
         {
             _effectiveMode = "dev";
-            if (_effectivePort == 30177) _effectivePort = 30178;
+            if (_effectivePort == 30187) _effectivePort = 30188;
         }
 
         _serverUrl = (_effectiveHostname == "0.0.0.0" || _effectiveHostname == "::" || string.IsNullOrWhiteSpace(_effectiveHostname))
@@ -228,7 +228,7 @@ class TrayApplication : IDisposable
         return "node.exe";
     }
 
-    // Copy an omp-web credential from the user (then system) environment into the child,
+    // Copy an tau credential from the user (then system) environment into the child,
     // or remove it there. The tray's own environment was captured at logon, so a value
     // changed or removed with `setx` since then must not survive a server restart: the
     // old password would keep working after rotation.
@@ -277,7 +277,7 @@ class TrayApplication : IDisposable
 
         if (_effectiveMode == "start")
         {
-            var launcher = Path.Combine(_repoRoot, "bin", "omp-web.js");
+            var launcher = Path.Combine(_repoRoot, "bin", "tau.js");
             psi.Arguments = $"\"{launcher}\" -p {_effectivePort} -H {_effectiveHostname} --no-open";
         }
         else
@@ -290,18 +290,18 @@ class TrayApplication : IDisposable
             psi.Arguments = $"\"{bunLauncher}\" \"--config={bunfig}\" --hot \"{devEntry}\" -H {_effectiveHostname} -p {_effectivePort}";
         }
 
-        psi.EnvironmentVariables["OMP_WEB_PORT"] = _effectivePort.ToString();
+        psi.EnvironmentVariables["TAU_PORT"] = _effectivePort.ToString();
         // The child runs outside the installation, so name it explicitly (dev mode derives its root from this).
-        psi.EnvironmentVariables["OMP_WEB_PACKAGE_DIR"] = _repoRoot;
-        psi.EnvironmentVariables["OMP_WEB_HOSTNAME"] = _effectiveHostname;
-        psi.EnvironmentVariables["OMP_WEB_SERVICE"] = "1";
+        psi.EnvironmentVariables["TAU_PACKAGE_DIR"] = _repoRoot;
+        psi.EnvironmentVariables["TAU_HOSTNAME"] = _effectiveHostname;
+        psi.EnvironmentVariables["TAU_SERVICE"] = "1";
         psi.EnvironmentVariables["PORT"] = _effectivePort.ToString();
-        // bin/omp-web.js refuses a non-loopback bind without a password hash. A plaintext
-        // OMP_WEB_PASSWORD is passed through only so the server can refuse it with instructions.
-        if (string.IsNullOrEmpty(SetChildCredential(psi, "OMP_WEB_PASSWORD_HASH")))
-            WriteLog("WARN: OMP_WEB_PASSWORD_HASH not found in the user or system environment; a non-loopback bind will be refused by bin/omp-web.js (generate one with: ompweb hash-password)");
-        SetChildCredential(psi, "OMP_WEB_PASSWORD");
-        SetChildCredential(psi, "OMP_WEB_TRUSTED_HEADER_SHA256");
+        // bin/tau.js refuses a non-loopback bind without a password hash. A plaintext
+        // TAU_PASSWORD is passed through only so the server can refuse it with instructions.
+        if (string.IsNullOrEmpty(SetChildCredential(psi, "TAU_PASSWORD_HASH")))
+            WriteLog("WARN: TAU_PASSWORD_HASH not found in the user or system environment; a non-loopback bind will be refused by bin/tau.js (generate one with: tau hash-password)");
+        SetChildCredential(psi, "TAU_PASSWORD");
+        SetChildCredential(psi, "TAU_TRUSTED_HEADER_SHA256");
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
         proc.OutputDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) WriteLog($"[STDOUT] {e.Data}"); };
@@ -370,7 +370,7 @@ class TrayApplication : IDisposable
         try
         {
             var startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            var lnk = Path.Combine(startup, "omp-web-tray.lnk");
+            var lnk = Path.Combine(startup, "tau-tray.lnk");
             return File.Exists(lnk);
         }
         catch { return false; }
@@ -381,7 +381,7 @@ class TrayApplication : IDisposable
         try
         {
             var startup = Environment.GetFolderPath(Environment.SpecialFolder.Startup);
-            var lnk = Path.Combine(startup, "omp-web-tray.lnk");
+            var lnk = Path.Combine(startup, "tau-tray.lnk");
             if (enable)
             {
                 // Recreate via install script logic (simplified): copy from install
@@ -413,7 +413,7 @@ class TrayApplication : IDisposable
             _ => _state
         };
         _menuStatus.Text = $"  Status: {statusText}";
-        var tip = $"omp-web ({statusText})";
+        var tip = $"tau ({statusText})";
         if (tip.Length > 63) tip = tip.Substring(0, 63);
         if (_notifyIcon != null) _notifyIcon.Text = tip;
 
@@ -438,7 +438,7 @@ class TrayApplication : IDisposable
         // Mutex
         try
         {
-            _appMutex = new Mutex(true, @"Local\OmpWebTray_Instance_Mutex", out _createdNew);
+            _appMutex = new Mutex(true, @"Local\TauTray_Instance_Mutex", out _createdNew);
         }
         catch { _createdNew = true; }
         if (!_createdNew)
@@ -451,7 +451,7 @@ class TrayApplication : IDisposable
         }
 
         WriteLog("==========================================");
-        WriteLog($"omp-web System Tray Manager v{_pkgVersion} starting (native)");
+        WriteLog($"tau System Tray Manager v{_pkgVersion} starting (native)");
         WriteLog($"Repository Root: {_repoRoot}");
         WriteLog($"Target: {_serverUrl} (Mode: {_effectiveMode}, Port: {_effectivePort})");
         WriteLog("==========================================");
@@ -473,7 +473,7 @@ class TrayApplication : IDisposable
 
         _contextMenu = new ContextMenuStrip();
 
-        _menuHeader = new ToolStripMenuItem($"omp-web (v{_pkgVersion})") { Enabled = false, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold) };
+        _menuHeader = new ToolStripMenuItem($"tau (v{_pkgVersion})") { Enabled = false, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold) };
         _contextMenu.Items.Add(_menuHeader);
 
         _menuStatus = new ToolStripMenuItem($"  Status: Starting ({_effectivePort})") { Enabled = false };
@@ -488,7 +488,7 @@ class TrayApplication : IDisposable
             try
             {
                 Clipboard.SetText(_serverUrl);
-                _notifyIcon.ShowBalloonTip(1500, "omp-web", $"URL copied: {_serverUrl}", ToolTipIcon.Info);
+                _notifyIcon.ShowBalloonTip(1500, "tau", $"URL copied: {_serverUrl}", ToolTipIcon.Info);
             }
             catch { }
         });
@@ -512,7 +512,7 @@ class TrayApplication : IDisposable
         _contextMenu.Items.Add(_menuToggle);
         _contextMenu.Items.Add(new ToolStripSeparator());
 
-        _menuViewLogs = new ToolStripMenuItem("View Logs", null, (s, e) => { try { Process.Start("notepad.exe", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "logs", "omp-web-service.log")}\""); } catch { } });
+        _menuViewLogs = new ToolStripMenuItem("View Logs", null, (s, e) => { try { Process.Start("notepad.exe", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "logs", "tau-service.log")}\""); } catch { } });
         _contextMenu.Items.Add(_menuViewLogs);
 
         _menuConfig = new ToolStripMenuItem("Edit Configuration", null, (s, e) =>
@@ -555,7 +555,7 @@ class TrayApplication : IDisposable
         {
             Icon = icon,
             ContextMenuStrip = _contextMenu,
-            Text = $"omp-web ({_state})",
+            Text = $"tau ({_state})",
             Visible = true
         };
         _notifyIcon.DoubleClick += (s, e) => { try { Process.Start(new ProcessStartInfo(_serverUrl) { UseShellExecute = true }); } catch { } };
@@ -579,7 +579,7 @@ class TrayApplication : IDisposable
                     {
                         _state = "Error";
                         WriteLog("Server crashed repeatedly (3 times in 60s). Auto-restart suspended.");
-                        _notifyIcon.ShowBalloonTip(3000, "omp-web Service Error", "Server crashed repeatedly. Check logs for details.", ToolTipIcon.Error);
+                        _notifyIcon.ShowBalloonTip(3000, "tau Service Error", "Server crashed repeatedly. Check logs for details.", ToolTipIcon.Error);
                     }
                     else
                     {

@@ -166,7 +166,7 @@ interface Props {
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
   entryId?: string;
-  /** Branch point omp's `branch` command accepts for this message (a user entry; see lib/chat-fork.ts). */
+  /** Fork point pi's `fork` command accepts for this message (a user entry; see lib/chat-fork.ts). */
   forkEntryId?: string;
   /** Forking puts the branched prompt back into the composer (edit-and-resend). */
   forkEditsPrompt?: boolean;
@@ -182,12 +182,10 @@ interface Props {
   toolCallsDefaultCollapsed?: boolean;
   /** Open thinking blocks on mount ("Expand thinking blocks by default" in Settings). */
   expandThinkingByDefault?: boolean;
-  /** omp `hideThinkingBlock`: omit thinking blocks. */
+  /** pi `hideThinkingBlock`: omit thinking blocks. */
   hideThinking?: boolean;
   /** Source `content` index of each block when `message` carries a subset of an entry's blocks, so deferred thinking loads the right block. */
   sourceBlockIndices?: number[];
-  /** omp-reported output throughput (get_state.tokensPerSecond), live while streaming. */
-  liveTokensPerSecond?: number | null;
 }
 
 function formatTime(ts: number | undefined, locale: Locale): string | null {
@@ -245,18 +243,17 @@ export function areMessageViewPropsEqual(prev: Props, next: Props): boolean {
     && Object.is(prev.toolCallsDefaultCollapsed, next.toolCallsDefaultCollapsed)
     && Object.is(prev.expandThinkingByDefault, next.expandThinkingByDefault)
     && Object.is(prev.hideThinking, next.hideThinking)
-    && prev.sourceBlockIndices?.join() === next.sourceBlockIndices?.join()
-    && (!prev.isStreaming || Object.is(prev.liveTokensPerSecond, next.liveTokensPerSecond));
+    && prev.sourceBlockIndices?.join() === next.sourceBlockIndices?.join();
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, forkEntryId, forkEditsPrompt, onFork, forking, forkDisabled, onEdit, editing, editDisabled, showTimestamp, prevTimestamp, sessionId, toolCallsDefaultCollapsed = true, expandThinkingByDefault = false, hideThinking = false, sourceBlockIndices, liveTokensPerSecond }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, forkEntryId, forkEditsPrompt, onFork, forking, forkDisabled, onEdit, editing, editDisabled, showTimestamp, prevTimestamp, sessionId, toolCallsDefaultCollapsed = true, expandThinkingByDefault = false, hideThinking = false, sourceBlockIndices }: Props) {
   if (message.role === "user") {
     const user = message as UserMessage;
     if (user.origin) return <OriginMessageView message={user} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} onFork={onFork} forking={forking} forkDisabled={forkDisabled} onEdit={onEdit} editing={editing} editDisabled={editDisabled} />;
     return <UserMessageView message={user} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} onFork={onFork} forking={forking} forkDisabled={forkDisabled} onEdit={onEdit} editing={editing} editDisabled={editDisabled} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} forkEntryId={forkEntryId} forkEditsPrompt={forkEditsPrompt} onFork={onFork} forking={forking} forkDisabled={forkDisabled} toolCallsDefaultCollapsed={toolCallsDefaultCollapsed} expandThinkingByDefault={expandThinkingByDefault} hideThinking={hideThinking} sourceBlockIndices={sourceBlockIndices} liveTokensPerSecond={liveTokensPerSecond} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} forkEntryId={forkEntryId} forkEditsPrompt={forkEditsPrompt} onFork={onFork} forking={forking} forkDisabled={forkDisabled} toolCallsDefaultCollapsed={toolCallsDefaultCollapsed} expandThinkingByDefault={expandThinkingByDefault} hideThinking={hideThinking} sourceBlockIndices={sourceBlockIndices} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -297,8 +294,8 @@ function imageBlockSrc(img: ImageContent): string {
 /**
  * "New session" (fork) action, shared by user and assistant messages.
  *
- * omp's `branch` command accepts a user-message entry only (an assistant entry
- * answers "Invalid entry ID for branching"), so `entryId` is the branch point
+ * pi's `fork` command accepts a user-message entry only (an assistant entry
+ * answers "Invalid entry ID for forking"), so `entryId` is the fork point
  * resolved by `resolveForkTargets` — for an assistant reply, the next user
  * prompt, so the reply stays in the fork's history.
  */
@@ -536,8 +533,8 @@ const heldActionStyle = {
   fontSize: 11, whiteSpace: "nowrap",
 } as const;
 
-/** A message omp-web holds until omp has it (docs/specs/2026-11-04-message-outbox-design.md O1): dimmed, after the
- * live turn, naming the leg it waits on. Delete only while nothing of it can have reached omp; Retry a failed one. */
+/** A message tau holds until pi has it (docs/specs/2026-11-04-message-outbox-design.md O1): dimmed, after the
+ * live turn, naming the leg it waits on. Delete only while nothing of it can have reached pi; Retry a failed one. */
 export function HeldMessageView({ held, hostLabel, onDelete, onRetry }: {
   held: HeldMessage;
   hostLabel?: string;
@@ -678,7 +675,6 @@ function AssistantMessageView({
   expandThinkingByDefault,
   hideThinking,
   sourceBlockIndices,
-  liveTokensPerSecond,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -690,7 +686,7 @@ function AssistantMessageView({
   prevTimestamp?: number;
   sessionId?: string;
   entryId?: string;
-  /** User entry omp's `branch` command accepts for this reply (see lib/chat-fork.ts). */
+  /** User entry pi's `fork` command accepts for this reply (see lib/chat-fork.ts). */
   forkEntryId?: string;
   forkEditsPrompt?: boolean;
   onFork?: (entryId: string, editPrompt: boolean) => void;
@@ -700,7 +696,6 @@ function AssistantMessageView({
   expandThinkingByDefault: boolean;
   hideThinking: boolean;
   sourceBlockIndices?: number[];
-  liveTokensPerSecond?: number | null;
 }) {
   const { t, locale } = useI18n();
   const { isSupported: ttsSupported, isSpeaking: ttsSpeaking, speakingId: ttsSpeakingId, toggle: ttsToggle } = useSpeechContext();
@@ -843,18 +838,6 @@ function AssistantMessageView({
                     </svg>
                     {est}
                   </span>
-                  {liveTokensPerSecond != null && (() => {
-                    // Speed tiers use the semantic status tokens as TEXT color
-                    // (theme-adaptive, AA-verified) over a subtle tint — the
-                    // old hardcoded palette failed AA for white-on-fill.
-                    const tier = liveTokensPerSecond >= 50 ? "success" : liveTokensPerSecond >= 30 ? "renamed" : liveTokensPerSecond >= 15 ? "warning" : "error";
-                    const tone = `var(--status-${tier})`;
-                    return (
-                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: `color-mix(in srgb, ${tone} 14%, var(--bg-panel))`, color: tone, fontSize: 11, fontWeight: 400 }}>
-                        {t("messageView.tokensPerSecond", { tps: liveTokensPerSecond.toFixed(1) })}
-                      </span>
-                    );
-                  })()}
                 </span>
               )}
             </>
@@ -1126,7 +1109,7 @@ const ToolCallBlock = memo(function ToolCallBlock({
 }) {
   const { t } = useI18n();
   const openAgentLink = useContext(AgentLinkContext);
-  // `partial` results are omp's live snapshots for a tool that is still
+  // `partial` results are pi's live snapshots for a tool that is still
   // executing (see lib/types.ts); the committed toolResult replaces them.
   const isRunning = result?.partial === true;
   // A running tool opens its row when the interface keeps tool calls expanded
@@ -1230,7 +1213,7 @@ const ToolCallBlock = memo(function ToolCallBlock({
     ? String((block.input as Record<string, unknown>).path).trim()
     : null;
   const agentIds = agentLinkIds(rawFilePath ?? undefined);
-  // `history://`, `proc://`, `local://`, ... are resolved by omp, not files the viewer can open.
+  // A URL (`https://`, `skill://`, ...) is no file the viewer can open.
   const hasUrlScheme = rawFilePath !== null && /^[a-z][a-z0-9+.-]*:\/\//i.test(rawFilePath);
   const webUrl = hasUrlScheme && /^https?:\/\//i.test(rawFilePath) ? readTargetWebUrl(rawFilePath) : null;
   // Strip only a trailing :<line> suffix. Splitting on the first ":" broke
@@ -1448,12 +1431,8 @@ function CompactionMessageView({ message, sessionId }: { message: CustomMessage;
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
   const time = formatTime(message.timestamp, locale);
-  // omp ≥17.4 compaction entries carry the maintenance method and the real
-  // post-compaction token count; older sessions only have tokensBefore.
-  const details = (message.details ?? null) as { tokensBefore?: unknown; tokensAfter?: unknown; method?: unknown } | null;
+  const details = (message.details ?? null) as { tokensBefore?: unknown } | null;
   const tokensBefore = typeof details?.tokensBefore === "number" ? details.tokensBefore : null;
-  const tokensAfter = typeof details?.tokensAfter === "number" ? details.tokensAfter : null;
-  const method = typeof details?.method === "string" && details.method ? details.method : null;
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -1464,21 +1443,9 @@ function CompactionMessageView({ message, sessionId }: { message: CustomMessage;
         </div>
         <div data-selection-scope="message" tabIndex={-1} style={{ padding: "11px 13px 12px" }}>
           <div style={{ color: "var(--text)", fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>{t("messageView.conversationCompacted")}</div>
-          {(method || (tokensBefore !== null && tokensAfter !== null)) && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-              {method && (
-                <span style={{ padding: "1px 7px", borderRadius: 4, background: "var(--bg-subtle)", color: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)", fontWeight: 600 }}>
-                  {method}
-                </span>
-              )}
-              {tokensBefore !== null && tokensAfter !== null && (
-                <span style={{ color: "var(--text-muted)", fontSize: 11 }}>
-                  {t("messageView.compactionTokenDelta", {
-                    before: formatCompactNumber(tokensBefore, locale),
-                    after: formatCompactNumber(tokensAfter, locale),
-                  })}
-                </span>
-              )}
+          {tokensBefore !== null && (
+            <div style={{ marginBottom: 8, color: "var(--text-muted)", fontSize: 11 }}>
+              {t("messageView.compactionTokensBefore", { before: formatCompactNumber(tokensBefore, locale) })}
             </div>
           )}
           <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: 14, lineHeight: 1.5 }}>{t("messageView.compactionDescription")}</div>
@@ -1802,9 +1769,7 @@ function CustomMessageView({ message, cwd, onOpenFile, sessionId }: { message: C
     ? wrapperTitle(wrapper)
     : isIrc
     ? (ircEnvelope?.sender ?? formatCustomType(message.customType))
-    : message.customType === "advisor"
-      ? t("messageView.advisorLabel")
-      : formatCustomType(message.customType);
+    : formatCustomType(message.customType);
   const time = formatTime(message.timestamp, locale);
 
 

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useHostRows } from "@/hooks/useHostRows";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { isLinkUp } from "@/lib/hosts/host";
 import { useI18n } from "@/lib/i18n";
 import { isSafeExternalUrl } from "@/lib/safe-url";
 import { omitUntouchedModelDrafts } from "@/lib/models-config-drafts";
@@ -20,10 +22,11 @@ import {
   ConfirmDialog,
   useFieldValidation,
 } from "@/components/ui/field";
-import { Plus, Trash2, RefreshCw, AlertCircle, Cpu, Settings, Sparkles, Check as CheckIcon, Layers, RotateCcw, SlidersHorizontal, BookOpen, Search, KeyRound, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, RefreshCw, AlertCircle, Cpu, Settings, Sparkles, Check as CheckIcon, Layers, RotateCcw, BookOpen, Search, KeyRound, ArrowLeft } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
 import { ModelCatalogPicker } from "./ModelCatalogPicker";
+import { hostName } from "./host-status";
 import { ProviderAccounts } from "./ProviderAccounts";
 import {
   API_OPTIONS,
@@ -44,14 +47,13 @@ import {
   type ConnectedProvider,
   type RuntimeModelEntry,
   type Selection,
-  type ThinkingConfig,
+  type ThinkingLevelMap,
   type ThinkingLevel,
 } from "./ModelsConfig-types";
 import {
   AddProviderPicker,
   ApiKeyDetail,
   CodeText,
-  ModelRolesDetail,
   ModelsConfigSurface,
   NativeRegistryDetail,
   ProviderIcon,
@@ -315,55 +317,33 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete }: {
 }
 
 // ── Thinking levels editor ────────────────────────────────────────────────────
-// Edits omp's `thinking` config: `efforts` lists the enabled levels, and
-// `effortMap` overrides the string sent on the wire for a level. When every
-// row is Default the config is omitted and omp derives the ladder itself.
+// Edits a model's `thinkingLevelMap`: Default leaves a level out, Disabled
+// maps it to null, Custom to the value sent on the wire. When every row is
+// Default the map is omitted.
 
 
 function ThinkingEditor({
   value,
   onChange,
 }: {
-  value: ThinkingConfig | undefined;
-  onChange: (v: ThinkingConfig | undefined) => void;
+  value: ThinkingLevelMap | undefined;
+  onChange: (v: ThinkingLevelMap | undefined) => void;
 }) {
   const { t } = useI18n();
-  const efforts = value?.efforts;
-  const effortMap = value?.effortMap ?? {};
 
   const setLevel = (level: ThinkingLevel, entry: string | null | "omit") => {
-    // entry: "omit" → enabled with the default wire value; null → level
-    // disabled (excluded from efforts); string → enabled with a custom value.
-    const included = new Set<string>(efforts ?? [...THINKING_LEVELS]);
-    const map: Record<string, string> = { ...effortMap };
-    if (entry === null) {
-      included.delete(level);
-      delete map[level];
-    } else {
-      included.add(level);
-      if (entry === "omit") delete map[level];
-      else map[level] = entry;
-    }
-    const ordered = THINKING_LEVELS.filter((l) => included.has(l));
-    if (ordered.length === 0 || (ordered.length === THINKING_LEVELS.length && Object.keys(map).length === 0)) {
-      onChange(undefined);
-      return;
-    }
-    onChange({
-      ...(value ?? {}),
-      mode: value?.mode ?? "effort",
-      efforts: ordered,
-      effortMap: Object.keys(map).length ? map : undefined,
-    });
+    const map: ThinkingLevelMap = { ...value };
+    if (entry === "omit") delete map[level];
+    else map[level] = entry;
+    onChange(Object.keys(map).length ? map : undefined);
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       {THINKING_LEVELS.map((level) => {
-        const disabled = efforts !== undefined && !efforts.includes(level);
-        const raw = disabled ? null : effortMap[level];
+        const raw = value?.[level];
         const state: "omit" | "null" | "string" =
-          disabled ? "null" : typeof raw === "string" ? "string" : "omit";
+          raw === null ? "null" : typeof raw === "string" ? "string" : "omit";
         const strVal = typeof raw === "string" ? raw : "";
         const color = LEVEL_COLORS[level];
 
@@ -608,10 +588,10 @@ function ModelDetail({
           }
         >
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
-            {model.thinking && (
+            {model.thinkingLevelMap && (
               <button
                 type="button"
-                onClick={() => set("thinking", undefined)}
+                onClick={() => set("thinkingLevelMap", undefined)}
                 style={{
                   fontSize: 10,
                   padding: "3px 9px",
@@ -630,8 +610,8 @@ function ModelDetail({
             )}
           </div>
           <ThinkingEditor
-            value={model.thinking}
-            onChange={(v) => set("thinking", v)}
+            value={model.thinkingLevelMap}
+            onChange={(v) => set("thinkingLevelMap", v)}
           />
         </FieldGroup>
       )}
@@ -780,7 +760,7 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+function OAuthDetail({ provider, hostId, onRefresh }: { provider: OAuthProvider; hostId: string; onRefresh: () => void }) {
   const { t, tn } = useI18n();
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const [inputValue, setInputValue] = useState("");
@@ -812,7 +792,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
     setLoginState({ phase: "connecting" });
     setInputValue("");
 
-    const es = new EventSource(`/api/auth/login/${encodeURIComponent(provider.id)}`);
+    const es = new EventSource(`/api/auth/login/${encodeURIComponent(provider.id)}?hostId=${encodeURIComponent(hostId)}`);
     eventSourceRef.current = es;
 
     es.onmessage = (e) => {
@@ -863,7 +843,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       es.close();
       setLoginState((prev) => prev.phase === "success" ? prev : { phase: "error", message: t("modelsConfig.connectionLost") });
     };
-  }, [provider.id, onRefresh, t]);
+  }, [provider.id, hostId, onRefresh, t]);
 
   const submitCode = useCallback(async (token: string, code: string) => {
     if (!code.trim()) return;
@@ -1007,7 +987,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
       </div>
 
-      <ProviderAccounts key={`${provider.id}:${accountsVersion}`} providerId={provider.id} enabled={provider.loggedIn} onChanged={onRefresh} />
+      <ProviderAccounts key={`${provider.id}:${accountsVersion}`} providerId={provider.id} hostId={hostId} enabled={provider.loggedIn} onChanged={onRefresh} />
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8 }}>
@@ -1046,7 +1026,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
   const [subTab, setSubTab] = useState<"connected" | "custom" | "system">("connected");
-  const [systemTab, setSystemTab] = useState<"registry" | "picker" | "roles" | "fallbacks">("registry");
+  const [systemTab, setSystemTab] = useState<"registry" | "picker" | "fallbacks">("registry");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
   const [apiKeyProviders, setApiKeyProviders] = useState<ApiKeyProvider[]>([]);
@@ -1063,24 +1043,31 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
   // instead of an empty form, and saving stays blocked so the hand-written file
   // is never overwritten with nothing.
   const [parseError, setParseError] = useState<{ message: string; path?: string } | null>(null);
+  // Logins are per host: each one keeps its own pi credentials. Only hosts whose link is up can be asked.
+  const { hosts } = useHostRows();
+  const authHosts = (hosts ?? []).filter((host) => isLinkUp(host.status));
+  const [chosenAuthHost, setAuthHost] = useState("local");
+  const authHost = authHosts.some((host) => host.id === chosenAuthHost) ? chosenAuthHost : "local";
 
   const loadOAuthProviders = useCallback(() => {
-    fetch("/api/auth/providers")
+    setOauthProviders([]);
+    fetch(`/api/auth/providers?hostId=${encodeURIComponent(authHost)}`)
       .then((r) => r.json())
       .then((d: { providers?: OAuthProvider[] }) => {
         if (Array.isArray(d.providers)) setOauthProviders(d.providers);
       })
       .catch(() => {});
-  }, []);
+  }, [authHost]);
 
   const loadApiKeyProviders = useCallback(() => {
-    fetch("/api/auth/all-providers")
+    setApiKeyProviders([]);
+    fetch(`/api/auth/all-providers?hostId=${encodeURIComponent(authHost)}`)
       .then((r) => r.json())
       .then((d: { providers?: ApiKeyProvider[] }) => {
         if (Array.isArray(d.providers)) setApiKeyProviders(d.providers);
       })
       .catch(() => {});
-  }, []);
+  }, [authHost]);
 
   const loadRuntimeModels = useCallback(async () => {
     setRuntimeModelsLoading(true);
@@ -1120,10 +1107,14 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
 
   useEffect(() => {
     loadConfig();
+    loadRuntimeModels();
+  }, [loadConfig, loadRuntimeModels]);
+
+  // Again whenever another host is chosen.
+  useEffect(() => {
     loadOAuthProviders();
     loadApiKeyProviders();
-    loadRuntimeModels();
-  }, [loadConfig, loadOAuthProviders, loadApiKeyProviders, loadRuntimeModels]);
+  }, [loadOAuthProviders, loadApiKeyProviders]);
 
   useEffect(() => {
     try {
@@ -1138,7 +1129,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
     if (visibleModelKeys === null) return;
     try {
       localStorage.setItem(COMPOSER_MODELS_STORAGE_KEY, JSON.stringify([...visibleModelKeys]));
-      window.dispatchEvent(new Event("omp-composer-models-change"));
+      window.dispatchEvent(new Event("tau-composer-models-change"));
     } catch {
       // Storage is optional UI state; a disabled or full store must not break settings.
     }
@@ -1165,13 +1156,6 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
     });
   }, [runtimeModels]);
 
-
-  const enableConnectedProvider = useCallback(async (provider: string) => {
-    const response = await fetch("/api/providers/enable", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider }) });
-    const data = await response.json() as { error?: string };
-    if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
-    await loadRuntimeModels();
-  }, [loadRuntimeModels]);
 
   const addCustomProvider = useCallback(() => {
     let finalName = "new-provider";
@@ -1315,16 +1299,15 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <OAuthDetail key={p.id} provider={p} onRefresh={() => { loadOAuthProviders(); loadApiKeyProviders(); void loadRuntimeModels(); }} />;
+      return <OAuthDetail key={`${authHost}:${p.id}`} provider={p} hostId={authHost} onRefresh={() => { loadOAuthProviders(); loadApiKeyProviders(); void loadRuntimeModels(); }} />;
     }
     if (selection.type === "apikey") {
       const p = apiKeyProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
-      return <ApiKeyDetail key={p.id} provider={p} />;
+      return <ApiKeyDetail key={`${authHost}:${p.id}`} provider={p} hostId={authHost} onRefresh={() => { loadApiKeyProviders(); void loadRuntimeModels(); }} />;
     }
-    if (selection.type === "roles") return <ModelRolesDetail models={runtimeModels} />;
-    if (selection.type === "registry") return <NativeRegistryDetail models={runtimeModels} connectedProviders={connectedProviders} onChanged={loadRuntimeModels} />;
-    if (selection.type === "fallbacks") return <RetryFallbackDetail models={runtimeModels} />;
+    if (selection.type === "registry") return <NativeRegistryDetail models={runtimeModels} onChanged={loadRuntimeModels} />;
+    if (selection.type === "fallbacks") return <RetryFallbackDetail />;
     if (selection.type === "picker") {
       const pickerQuery = composerPickerSearch.trim().toLowerCase();
       const matchesPicker = (model: RuntimeModelEntry) =>
@@ -1344,7 +1327,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                 <SectionTitle>{t("modelsConfig.composerPickerTitle")}</SectionTitle>
                 <p style={{ margin: "6px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{t("modelsConfig.composerPickerDesc")}</p>
               </div>
-              {/* Refresh OMP runtime models */}
+              {/* Refresh pi runtime models */}
               <button type="button" onClick={() => void loadRuntimeModels()} disabled={runtimeModelsLoading} title={t("modelsConfig.refreshRuntimeModels")} style={{ padding: 7, border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text-muted)", cursor: runtimeModelsLoading ? "wait" : "pointer", flexShrink: 0 }}><RefreshCw size={14} aria-hidden="true" /></button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -1393,8 +1376,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
           {!runtimeModelsLoading && connectedProviders.filter((provider) => !runtimeModelsByProvider[provider.id]).map((provider) => (
             <section key={provider.id} style={{ border: "1px dashed var(--border)", borderRadius: "var(--radius-card)", padding: 14, background: "var(--bg-panel)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text)", fontSize: 12, fontWeight: 600 }}><ProviderIcon id={provider.id} size={15} />{provider.name}</div>
-              <p style={{ margin: "8px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{provider.disabled ? t("modelsConfig.connectedDisabledDesc") : t("modelsConfig.connectedNoModelsDesc")}</p>
-              {provider.disabled && <button type="button" onClick={() => void enableConnectedProvider(provider.id).catch((error) => toast.error(t("modelsConfig.couldNotEnableProvider"), error instanceof Error ? error.message : String(error)))} style={{ marginTop: 10, padding: "6px var(--control-padding-inline)", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg)", color: "var(--text)", cursor: "pointer", fontSize: "var(--text-sm)" }}>{t("modelsConfig.enableInOmp")}</button>}
+              <p style={{ margin: "8px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5 }}>{t("modelsConfig.connectedNoModelsDesc")}</p>
             </section>
           ))}
         </div>
@@ -1437,7 +1419,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
         {!embedded && (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <DialogTitle style={{ fontSize: 16, margin: 0 }}>{t("modelsConfig.title")}</DialogTitle>
-            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>~/.omp/agent/models.yml</code>
+            <code style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>~/.pi/agent/models.json</code>
           </div>
           <button onClick={onClose} aria-label={t("modelsConfig.close")} title={t("modelsConfig.close")} className="ui-focus-ring" style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "4px 8px", minWidth: "var(--control-height-sm)", minHeight: "var(--control-height-sm)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "var(--radius-control)" }}>×</button>
         </div>)}
@@ -1494,10 +1476,22 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                   onClick={() => { setSubTab("system"); setSelection({ type: systemTab }); }}
                 >
                   <Layers size={14} aria-hidden="true" />
-                  <span>{t("modelsConfig.ompSystemSection")}</span>
+                  <span>{t("modelsConfig.piSystemSection")}</span>
                 </button>
               </div>
 
+              {subTab === "connected" && authHosts.length > 1 && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" }}>
+                  {t("modelsConfig.authHost")}
+                  <select
+                    value={authHost}
+                    onChange={(event) => { setAuthHost(event.target.value); setSelection(null); }}
+                    style={{ padding: "4px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-panel)", color: "var(--text)", fontSize: 12 }}
+                  >
+                    {authHosts.map((host) => <option key={host.id} value={host.id}>{hostName(t, host)}</option>)}
+                  </select>
+                </label>
+              )}
               {subTab === "connected" && !selection && (
                 <button
                   type="button"
@@ -1789,7 +1783,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                     <div style={{ flex: "1 1 220px", minWidth: 0, overflowWrap: "anywhere" }}>
                       <div style={{ fontSize: "var(--text-md)", fontWeight: 600, color: "var(--text)" }}>{t("modelsConfig.customProviders")}</div>
                       <div style={{ fontSize: "var(--text-body)", color: "var(--text-muted)", marginTop: 3 }}>
-                        Custom endpoints, local Ollama / vLLM models, or reverse proxies defined in <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>~/.omp/agent/models.yml</code>.
+                        Custom endpoints, local Ollama / vLLM models, or reverse proxies defined in <code style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>~/.pi/agent/models.json</code>.
                       </div>
                     </div>
                     <button
@@ -1909,7 +1903,7 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                                 {discoveredModels.map((model) => (
                                   <span
                                     key={model.id}
-                                    title="Automatically discovered by OMP"
+                                    title="Automatically discovered by pi"
                                     style={{
                                       display: "inline-flex", alignItems: "center", padding: "3px 8px",
                                       borderRadius: 5, background: "var(--bg)", border: "1px solid var(--border)",
@@ -1953,14 +1947,6 @@ export function ModelsConfig({ onClose, onSelectTab, onSaved, embedded = false }
                   >
                     <BookOpen size={13} aria-hidden="true" />
                     <span>{t("modelsConfig.navComposerPicker")}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`providers-segmented-btn${systemTab === "roles" ? " active" : ""}`}
-                    onClick={() => { setSystemTab("roles"); setSelection({ type: "roles" }); }}
-                  >
-                    <SlidersHorizontal size={13} aria-hidden="true" />
-                    <span>{t("modelsConfig.navModelRoles")}</span>
                   </button>
                   <button
                     type="button"

@@ -13,8 +13,8 @@ import { promisify } from "util";
 import { comparableProjectPath } from "../comparable-path";
 import { MAX_SESSION_SEARCH_QUERY_LENGTH, searchSessions as searchSessionContent } from "../session-content-search";
 import { mediaFilePath } from "../media-cache";
-import { OMP_NOT_FOUND, resolveOmpBin, wrapWindowsScript } from "../omp/omp-cli";
-import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "../omp/archive";
+import { PI_NOT_FOUND, resolvePiBin, wrapWindowsScript } from "../pi/pi-cli";
+import { listArchivedSessionInfos, restoreArchivedSession, restoreFailureStatus } from "../pi/archive";
 import {
   archiveSessionFileWithArtifacts,
   buildSessionTree,
@@ -23,11 +23,11 @@ import {
   getLeafEntryId,
   loadSessionFile,
   MAX_SESSION_LOAD_BYTES,
-  parseTitleSlotLine,
   readSessionHeaderSync,
+  sessionNameFromEntries,
   setSessionTitle,
   writeSessionFileAtomicSync,
-} from "../omp/session-files";
+} from "../pi/session-files";
 import { preparePoolProject, type PreparedPoolProject } from "../pooled-projects";
 import { projectIdentityKey, sessionPathKey } from "../paths";
 import {
@@ -57,10 +57,10 @@ import {
   SessionFileTooLargeError,
 } from "../session-reader";
 import type { SessionHistoryCursor } from "../session-sync";
-import { extractSubagentHistory, readCompletionArtifact, readSubagentTranscriptPage, resolveSubagentArtifact, subagentTranscriptPath } from "../subagent-history";
+import { extractSubagentHistory, readCompletionArtifact, readSubagentTranscriptPage, readTranscriptCompletion, resolveSubagentArtifact, resolveSubagentSessionFile, subagentTranscriptPath } from "../subagent-history";
 import { SUBAGENT_ID_RE } from "../subagent-types";
 import { isRecord } from "../type-guards";
-import type { ArchivedSessionInfo, ManagedProject, ProjectLaunchConfig, SessionContext, SessionInfo, SessionTitleSource } from "../types";
+import type { ArchivedSessionInfo, ManagedProject, ProjectLaunchConfig, SessionContext, SessionInfo } from "../types";
 import { resolveProject } from "../worktree";
 
 export type OpResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; error: string };
@@ -106,9 +106,10 @@ export interface SessionOps {
   readThinking(id: string, entryId: string, block: number): Promise<OpResult<unknown>>;
   readSessionState(id: string): Promise<OpResult<unknown>>;
   readSubagentHistory(id: string): Promise<OpResult<unknown>>;
-  readSubagentTranscript(id: string, subagentId: string, mode: "page" | "completion", cursor: number): Promise<OpResult<unknown>>;
-  renameSessionFile(id: string, title: string, source?: SessionTitleSource): Promise<OpResult<null>>;
-  /** `liveSessionIds`: sessions main has a live omp process for; their files are never rewritten. */
+  /** `file`: a pi-subagents child's own session file (its progress names it), read only inside the parent's artifacts dir. */
+  readSubagentTranscript(id: string, subagentId: string, mode: "page" | "completion", cursor: number, file?: string): Promise<OpResult<unknown>>;
+  renameSessionFile(id: string, title: string): Promise<OpResult<null>>;
+  /** `liveSessionIds`: sessions main has a live pi process for; their files are never rewritten. */
   deleteSession(id: string, liveSessionIds: string[]): Promise<OpResult<{ skippedChildren?: Array<{ id: string; reason: string }> }>>;
   archiveSession(id: string): Promise<OpResult<{ archivedPath: string }>>;
   /** This host's archive, newest first (browser entries; no hostId). */
@@ -140,7 +141,7 @@ const execFileAsync = promisify(execFile);
 const ok = <T>(value: T): OpResult<T> => ({ ok: true, value });
 const fail = (status: number, code: string, error: string): OpResult<never> => ({ ok: false, status, code, error });
 const sessionNotFound = () => fail(404, "session_not_found", "Session not found");
-const sessionTooLarge = () => fail(413, "session_file_too_large", "Session file is too large to open in omp-web");
+const sessionTooLarge = () => fail(413, "session_file_too_large", "Session file is too large to open in tau");
 
 /** This daemon process, as restore claims see it. Fresh per process, never stored: the token sets below die with the process,
  * so a claim reserved under another value was reserved by a process this one cannot speak for. */
@@ -155,7 +156,7 @@ const runningRestores = new Set<string>();
 const SUBAGENT_ID_MAX_LENGTH = 100;
 
 // Subagent ids are AdjectiveNoun names, optionally dotted for nested spawns
-// (OMP allocates hierarchical ids like `Parent.Child`). The grammar bounds the
+// (hierarchical ids like `Parent.Child`). The grammar bounds the
 // value, rejects empty segments and traversal forms, and guarantees the joined
 // path cannot escape the sibling dir; symlink escapes are additionally blocked
 // by realpath confinement (resolveSubagentArtifact).
@@ -165,7 +166,7 @@ export function isValidSubagentId(subagentId: string): boolean {
 
 /** Header-less files: tell "too large" from "missing or malformed" (the bounded header read returns null for both). */
 function unreadableSession(filePath: string): OpResult<never> {
-  const loaded = loadSessionFile(filePath, { resolveBlobs: false });
+  const loaded = loadSessionFile(filePath);
   if (loaded.error === "too_large") return sessionTooLarge();
   return fail(404, "session_file_malformed", "Session file is missing or malformed");
 }
@@ -298,14 +299,13 @@ function normalizeCwd(cwd: string): string {
 }
 
 /**
- * Render a session to self-contained HTML by shelling out to the user's omp
- * binary: `omp --export <sessionPath> <outPath>` (the output path is the first
- * positional argument; verified against oh-my-pi main.ts/flag-tables.ts).
+ * Render a session to self-contained HTML by shelling out to the user's pi
+ * binary: `pi --export <sessionPath> <outPath>` (`pi --help`: `--export <file> [output]`).
  */
-async function runOmpExport(filePath: string, outputPath: string): Promise<void> {
-  const bin = resolveOmpBin();
+async function runPiExport(filePath: string, outputPath: string): Promise<void> {
+  const bin = resolvePiBin();
   if (!bin) {
-    throw new Error(OMP_NOT_FOUND);
+    throw new Error(PI_NOT_FOUND);
   }
   const target = wrapWindowsScript(bin, ["--export", filePath, outputPath]);
   await execFileAsync(target.file, target.args, {
@@ -334,11 +334,10 @@ export const sessionOps: SessionOps = {
     if (!filePath) return sessionNotFound();
     try {
       // Single unified read path: the cached parse serves unchanged files from
-      // memory (a stat per request), and blob resolution happens on a per-entry
-      // deep copy so shared cached objects are never mutated.
+      // memory (a stat per request); shared cached objects are never mutated.
       const header = readSessionHeader(filePath);
       if (header === null) return unreadableSession(filePath);
-      const displayEntries = await getSessionEntriesForDisplayAsync(filePath, { skipToolResultImages: deferToolResultImages });
+      const displayEntries = await getSessionEntriesForDisplayAsync(filePath);
       const leafId = getLeafEntryId(displayEntries);
       const tree = projectTreeForResponse(buildSessionTree(displayEntries));
       const context = buildSessionContext(displayEntries, leafId, { deferThinking, deferToolResultImages });
@@ -353,7 +352,7 @@ export const sessionOps: SessionOps = {
         path: filePath,
         id: header.id,
         cwd: header.cwd ?? "",
-        name: header.title,
+        name: sessionNameFromEntries(displayEntries),
         created: header.timestamp,
         modified,
         messageCount: context.messages.length,
@@ -386,8 +385,8 @@ export const sessionOps: SessionOps = {
           includePreCompaction,
         }));
       }
-      // Deduplicated cached read; blob resolution on per-entry deep copies.
-      const entries = await getSessionEntriesForDisplayAsync(filePath, { skipToolResultImages: deferToolResultImages });
+      // Deduplicated cached read.
+      const entries = await getSessionEntriesForDisplayAsync(filePath);
       const context = buildSessionContext(entries, leafId, {
         deferThinking,
         deferToolResultImages,
@@ -405,7 +404,7 @@ export const sessionOps: SessionOps = {
   async readThinking(id, entryId, blockIndex) {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
-    // Lenient JSONL parsing keeps omp's malformed-line tolerance.
+    // Lenient JSONL parsing keeps pi's malformed-line tolerance.
     const entry = getSessionEntries(filePath).find((candidate) => candidate.id === entryId);
     if (!entry || entry.type !== "message" || !isRecord(entry.message) || entry.message.role !== "assistant") {
       return fail(404, "assistant_message_not_found", "Assistant message not found");
@@ -427,10 +426,16 @@ export const sessionOps: SessionOps = {
     return ok({ subagents: extractSubagentHistory(filePath) });
   },
 
-  async readSubagentTranscript(id, subagentId, mode, fromByte) {
+  async readSubagentTranscript(id, subagentId, mode, fromByte, file) {
     if (!isValidSubagentId(subagentId)) return fail(400, "invalid_subagent_id", "Invalid subagent id");
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
+    if (typeof file === "string" && file) {
+      const resolved = resolveSubagentSessionFile(filePath, file);
+      if (!resolved) return fail(404, "transcript_not_found", "Subagent transcript not found");
+      if (mode === "completion") return ok({ sessionFile: resolved, completion: readTranscriptCompletion(resolved), truncated: false });
+      return ok(readSubagentTranscriptPage(resolved, fromByte));
+    }
     if (mode === "completion") {
       const resolved = resolveSubagentArtifact(filePath, subagentId, ".md");
       if (!resolved) return fail(404, "transcript_not_found", "Subagent completion not found");
@@ -448,10 +453,10 @@ export const sessionOps: SessionOps = {
     return ok(readSubagentTranscriptPage(resolved, fromByte));
   },
 
-  async renameSessionFile(id, title, source = "user") {
+  async renameSessionFile(id, title) {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
-    setSessionTitle(filePath, title, source);
+    setSessionTitle(filePath, title);
     invalidateSessionCaches(filePath);
     return ok(null);
   },
@@ -512,8 +517,7 @@ export const sessionOps: SessionOps = {
                 const head = Buffer.alloc(64 * 1024);
                 const bytes = readSync(fd, head, 0, head.length, 0);
                 const lines = head.toString("utf8", 0, bytes).split("\n");
-                const headerIndex = parseTitleSlotLine(lines[0] ?? "") ? 1 : 0;
-                const parsed = JSON.parse(lines[headerIndex] ?? "{}") as { id?: unknown };
+                const parsed = JSON.parse(lines[0] ?? "{}") as { id?: unknown };
                 if (typeof parsed.id === "string") oversizedId = parsed.id;
               } finally {
                 closeSync(fd);
@@ -532,9 +536,8 @@ export const sessionOps: SessionOps = {
         const linkedByPath = sessionPathKey(childHeader.parentSession) === targetPathKey;
         if (!linkedByPath && childHeader.parentSession !== deletedSessionId) continue;
 
-        // A live omp process owns its session file and flushes its whole
-        // in-memory state on write — our rewrite would be clobbered by (or
-        // interleaved with) its next flush.
+        // A live pi process owns its session file — our rewrite would be
+        // clobbered by (or interleaved with) its next write.
         const childId = childHeader.id;
         if (childId && live.has(childId)) {
           skippedChildren.push({ id: childId, reason: "session_child_live" });
@@ -542,12 +545,10 @@ export const sessionOps: SessionOps = {
         }
 
         let lines: string[];
-        let headerIndex: number;
         let header: { type?: string; id?: string; parentSession?: string };
         try {
           lines = readFileSync(childPath, "utf8").split("\n");
-          headerIndex = parseTitleSlotLine(lines[0] ?? "") ? 1 : 0;
-          header = JSON.parse(lines[headerIndex]) as typeof header;
+          header = JSON.parse(lines[0]) as typeof header;
         } catch {
           continue;
         }
@@ -556,7 +557,7 @@ export const sessionOps: SessionOps = {
         header.parentSession = linkedByPath
           ? (grandparentPath ?? parentSession)
           : (grandparentId ?? parentSession);
-        lines[headerIndex] = JSON.stringify(header);
+        lines[0] = JSON.stringify(header);
         try {
           // Atomic: writeFileSync truncates first, so a crash or ENOSPC here
           // would permanently truncate a session the user did NOT delete.
@@ -623,16 +624,16 @@ export const sessionOps: SessionOps = {
   async exportSession(id) {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return sessionNotFound();
-    const tempDir = join(tmpdir(), "omp-web-export");
+    const tempDir = join(tmpdir(), "tau-export");
     mkdirSync(tempDir, { recursive: true });
-    const fileName = `omp-session-${basename(filePath, ".jsonl")}.html`;
+    const fileName = `tau-session-${basename(filePath, ".jsonl")}.html`;
     const outputPath = join(tempDir, `${randomUUID()}.html`);
     try {
-      await runOmpExport(filePath, outputPath);
+      await runPiExport(filePath, outputPath);
       return ok({ html: readFileSync(outputPath, "utf8"), fileName });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes(OMP_NOT_FOUND)) return fail(500, "omp_not_found", message);
+      if (message.includes(PI_NOT_FOUND)) return fail(500, "pi_not_found", message);
       throw error;
     } finally {
       rmSync(outputPath, { force: true });
@@ -641,11 +642,8 @@ export const sessionOps: SessionOps = {
 
   async readMedia(hash) {
     if (!/^[0-9a-f]{64}$/.test(hash)) return fail(400, "invalid_hash", "Invalid media hash");
-    // As /api/media: the sweep can delete our copy between lookup and read once
-    // omp's blob is complete; one more lookup then finds the blob.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const file = mediaFilePath(hash);
-      if (!file) break;
+    const file = mediaFilePath(hash);
+    if (file) {
       try {
         return ok(readFileSync(file));
       } catch (error) {
@@ -755,7 +753,7 @@ export const sessionOps: SessionOps = {
     for (const update of merged.values()) {
       const key = comparableProjectPath(update.path);
       if (!registry.projects.some((p) => comparableProjectPath(p.path) === key)) {
-        registry = upsertProject(registry, update.path);
+        registry = upsertProject(registry, update.path, undefined, undefined, true);
         newRoots.push(update.path);
       }
     }

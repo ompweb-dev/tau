@@ -4,13 +4,13 @@ Status: approved by the user (2026-11-14), adapted to current `main` (2026-11-15
 
 ## Intent
 
-Some messages a session receives were not typed by the user. Another agent session sends them through omp-web's agent tools (`send_to_session`, `new_session` with a first prompt), and omp-web's GitHub watcher sends repository updates through the message outbox. Today both become native user messages and render like the user typed them.
+Some messages a session receives were not typed by the user. Another agent session sends them through tau's agent tools (`send_to_session`, `new_session` with a first prompt), and tau's GitHub watcher sends repository updates through the message outbox. Today both become native user messages and render like the user typed them.
 
-The UI must show at a glance that omp-web generated the message, identify its source, and link to a sending session or GitHub item. The receiving model must still get enough plain text to understand and reply to the source.
+The UI must show at a glance that tau generated the message, identify its source, and link to a sending session or GitHub item. The receiving model must still get enough plain text to understand and reply to the source.
 
 ## Goals
 
-- Every message omp-web sends on behalf of another session or an internal watcher carries server-written structured `origin` metadata.
+- Every message tau sends on behalf of another session or an internal watcher carries server-written structured `origin` metadata.
 - Origin metadata persists with the native message, survives reloads, branches, queueing, reconnects and outbox retries, and never changes model authority.
 - The chat renders trusted-origin messages as distinctive, left-aligned cards rather than user bubbles.
 - Pending outbox messages and native queue chips expose origin before delivery.
@@ -71,26 +71,26 @@ type MessageOrigin =
 
 ## Storage and transport
 
-OMP's message entries cannot carry arbitrary fields. Its runner already journals `clientMessageId` in a `client-message-entry` custom entry. The same entry gains `origin`; live `message_start` and `message_end` frames, queue snapshots and reconciliation status carry it beside the existing ID.
+pi's message entries cannot carry arbitrary fields. tau's companion extension (`lib/pi/tau-extension.ts`, `/tau_meta`) journals `clientMessageId` in a `client-message-entry` custom entry (`appendEntry`). The same entry carries `origin`; live `message_start` and `message_end` frames, queue snapshots and reconciliation status carry it beside the existing ID.
 
 The session reader joins journaled origin onto the active branch's user message. Malformed, oversized or abandoned-branch metadata is dropped without losing the message or `clientMessageId`.
 
-The outbox gains a nullable `origin` column. It appears in browser snapshots and is forwarded to the runner, but browser commands cannot populate it. GitHub pending batches persist the same origin with the batch so a crash cannot change or lose provenance on replay.
+The outbox gains a nullable `origin` column. It appears in browser snapshots and is forwarded to pi (through `/tau_meta`), but browser commands cannot populate it. GitHub pending batches persist the same origin with the batch so a crash cannot change or lose provenance on replay.
 
-Current and older runners ignore unknown command fields. Therefore no link capability or protocol bump is needed. An older runner stores the native message without metadata; the model-facing header remains visible as ordinary text instead of being parsed into a forgeable card.
+The host link forwards the metadata unchanged, so no link capability or protocol bump is needed. Without the companion extension (`TAU_NO_EXTENSION=1`), pi stores the native message without metadata; the model-facing header remains visible as ordinary text instead of being parsed into a forgeable card.
 
 ## Model-facing text
 
 A cross-session message starts with a fixed header:
 
 ```text
-[Message from omp-web session "Incident review" (session id 01a1c9d8-4206-736f-b9cf-ebccf7912207, host worker-1, delivery follow-up).
+[Message from tau session "Incident review" (session id 01a1c9d8-4206-736f-b9cf-ebccf7912207, host worker-1, delivery follow-up).
 It was sent by another agent session, not by the user. Reply with send_to_session to that session id.]
 
 <body>
 ```
 
-An unnamed sender says `an unnamed omp-web session`. GitHub updates keep their existing `GitHub update (omp-web): ...` header. Trusted cards hide only a recognized server-generated header and provide **Show raw**. The same text without metadata remains an ordinary user bubble.
+An unnamed sender says `an unnamed tau session`. GitHub updates keep their existing `GitHub update (tau): ...` header. Trusted cards hide only a recognized server-generated header and provide **Show raw**. The same text without metadata remains an ordinary user bubble.
 
 ## UI
 
@@ -102,11 +102,11 @@ The card uses semantic links, keyboard-accessible controls, `role="article"`, ex
 
 ### Session links
 
-`SessionLink` renders the origin's name snapshot and host-qualified URL. Untitled sessions use project/date context when available, never the UUID as visible text. Plain clicks use omp-web navigation; modified clicks remain normal browser navigation. Deleted and offline targets retain their snapshot label and report the existing appropriate error.
+`SessionLink` renders the origin's name snapshot and host-qualified URL. Untitled sessions use project/date context when available, never the UUID as visible text. Plain clicks use tau navigation; modified clicks remain normal browser navigation. Deleted and offline targets retain their snapshot label and report the existing appropriate error.
 
 ### Confirmations and sender tool rows
 
-Server-owned confirmation payloads show source, destination, delivery and escaped message text. Runner-supplied UI requests cannot inject these payloads. `send_to_session` and `new_session` tool rows show the named target, delivery and actual result state; raw arguments remain in the existing details view.
+Server-owned confirmation payloads show source, destination, delivery and escaped message text. Agent-supplied UI requests cannot inject these payloads. `send_to_session` and `new_session` tool rows show the named target, delivery and actual result state; raw arguments remain in the existing details view.
 
 ### Held messages and queue chips
 
@@ -115,9 +115,9 @@ Outbox-held messages and native queued messages use compact origin identity (`Fr
 ## Security and compatibility
 
 - External commands carrying `origin` fail with `400 origin_not_allowed`.
-- The runner and reader enforce the 4096-byte cap independently.
+- The server and reader enforce the 4096-byte cap independently.
 - React escapes all origin labels and message text; no raw HTML is introduced.
 - GitHub origin stores bounded metadata only, never comment, review or workflow text.
 - Unknown origin kinds render a generic automated-message card.
 - Missing or invalid metadata degrades to the ordinary user message.
-- Existing transcripts and old runners remain readable; no parsed-prefix card fallback is used.
+- Existing transcripts and sessions without the extension remain readable; no parsed-prefix card fallback is used.

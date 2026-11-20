@@ -3,7 +3,6 @@
 import * as agentIdBashOutput from "@/app/api/agent/[id]/bash-output/route";
 import * as agentId from "@/app/api/agent/[id]/route";
 import * as agentNew from "@/app/api/agent/new/route";
-import * as agents from "@/app/api/agents/route";
 import * as appUpdateNotes from "@/app/api/app-update/notes/route";
 import * as appUpdate from "@/app/api/app-update/route";
 import * as authAccountsProvider from "@/app/api/auth/accounts/[provider]/route";
@@ -15,14 +14,12 @@ import * as cwdBrowse from "@/app/api/cwd/browse/route";
 import * as cwdValidate from "@/app/api/cwd/validate/route";
 import * as defaultCwd from "@/app/api/default-cwd/route";
 import * as events from "@/app/api/events/route";
-import * as eventsLink from "@/app/api/events/link/route";
 import * as fileIndex from "@/app/api/file-index/route";
 import * as filesPath from "@/app/api/files/[...path]/route";
 import * as gitDiff from "@/app/api/git/diff/route";
 import * as gitStatus from "@/app/api/git/status/route";
 import * as githubRepo from "@/app/api/github-repo/route";
 import * as home from "@/app/api/home/route";
-import * as hostsBrokerPath from "@/app/api/hosts/broker/[...path]/route";
 import * as hostsClusterConfigFileHash from "@/app/api/hosts/cluster-config/file/[hash]/route";
 import * as hostsClusterConfigManifest from "@/app/api/hosts/cluster-config/manifest/route";
 import * as hostsLink from "@/app/api/hosts/link/route";
@@ -34,7 +31,6 @@ import * as hostsIdMaintenance from "@/app/api/hosts/[id]/maintenance/route";
 import * as manifest from "@/app/api/manifest/route";
 import * as mcp from "@/app/api/mcp/route";
 import * as mediaHash from "@/app/api/media/[hash]/route";
-import * as modelRoles from "@/app/api/model-roles/route";
 import * as modelsConfigCatalog from "@/app/api/models-config/catalog/route";
 import * as modelsConfig from "@/app/api/models-config/route";
 import * as modelsConfigTest from "@/app/api/models-config/test/route";
@@ -43,20 +39,16 @@ import * as notificationsDevices from "@/app/api/notifications/devices/route";
 import * as notificationsHistory from "@/app/api/notifications/history/route";
 import * as notificationsPresence from "@/app/api/notifications/presence/route";
 import * as notificationsTest from "@/app/api/notifications/test/route";
-import * as ompSettings from "@/app/api/omp-settings/route";
-import * as ompUpdate from "@/app/api/omp-update/route";
-import * as ompVersion from "@/app/api/omp-version/route";
+import * as piSettings from "@/app/api/pi-settings/route";
+import * as piVersion from "@/app/api/pi-version/route";
 import * as plugins from "@/app/api/plugins/route";
 import * as projectsClone from "@/app/api/projects/clone/route";
 import * as projects from "@/app/api/projects/route";
-import * as providerUsage from "@/app/api/provider-usage/route";
-import * as providersEnable from "@/app/api/providers/enable/route";
 import * as sessionsIdArchive from "@/app/api/sessions/[id]/archive/route";
 import * as sessionsIdAutoName from "@/app/api/sessions/[id]/auto-name/route";
 import * as sessionsIdContext from "@/app/api/sessions/[id]/context/route";
 import * as sessionsIdEntriesEntryIdThinking from "@/app/api/sessions/[id]/entries/[entryId]/thinking/route";
 import * as sessionsIdExport from "@/app/api/sessions/[id]/export/route";
-import * as sessionsIdLocalFile from "@/app/api/sessions/[id]/local-file/route";
 import * as sessionsIdMatches from "@/app/api/sessions/[id]/matches/route";
 import * as sessionsId from "@/app/api/sessions/[id]/route";
 import * as sessionsIdState from "@/app/api/sessions/[id]/state/route";
@@ -82,18 +74,17 @@ import * as webAuthSession from "@/app/api/web-auth/session/route";
 import * as webSettings from "@/app/api/web-settings/route";
 import * as windowsService from "@/app/api/windows-service/route";
 import * as worktrees from "@/app/api/worktrees/route";
-import type { BrowserLinkData } from "@/lib/browser-link";
 import type { LinkSocketData } from "@/lib/hosts/hub";
 import type { MaintenanceSocketData } from "@/lib/hosts/maintenance-hub";
 
-/** What Bun keeps on an upgraded socket: application, maintenance API, or browser transport. */
-export type ServerSocketData = LinkSocketData | MaintenanceSocketData | BrowserLinkData;
+/** What Bun keeps on an upgraded socket: application or maintenance API. */
+export type ServerSocketData = LinkSocketData | MaintenanceSocketData;
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 // never: each handler narrows its own params; the router passes Record<string, string | string[]>.
 // disableIdleTimeout: a handler whose response stays open without traffic (a stream) keeps Bun's idle timeout off for
 // its socket; see handle() in server/app.ts.
-// upgrade: makes the request a WebSocket (server.upgrade), a host link or a browser link; a handler that upgraded
+// upgrade: makes the request a WebSocket (server.upgrade), a host link; a handler that upgraded
 // returns undefined.
 export type RouteHandler = (
   request: Request,
@@ -106,7 +97,6 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "agent/[id]/bash-output": agentIdBashOutput,
   "agent/[id]": agentId,
   "agent/new": agentNew,
-  "agents": agents,
   "app-update/notes": appUpdateNotes,
   "app-update": appUpdate,
   "auth/accounts/[provider]": authAccountsProvider,
@@ -118,14 +108,12 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "cwd/validate": cwdValidate,
   "default-cwd": defaultCwd,
   "events": events,
-  "events/link": eventsLink,
   "file-index": fileIndex,
   "files/[...path]": filesPath,
   "git/diff": gitDiff,
   "git/status": gitStatus,
   "github-repo": githubRepo,
   "home": home,
-  "hosts/broker/[...path]": hostsBrokerPath,
   "hosts/cluster-config/file/[hash]": hostsClusterConfigFileHash,
   "hosts/cluster-config/manifest": hostsClusterConfigManifest,
   "hosts/link": hostsLink,
@@ -137,7 +125,6 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "manifest": manifest,
   "mcp": mcp,
   "media/[hash]": mediaHash,
-  "model-roles": modelRoles,
   "models-config/catalog": modelsConfigCatalog,
   "models-config": modelsConfig,
   "models-config/test": modelsConfigTest,
@@ -146,20 +133,16 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "notifications/history": notificationsHistory,
   "notifications/presence": notificationsPresence,
   "notifications/test": notificationsTest,
-  "omp-settings": ompSettings,
-  "omp-update": ompUpdate,
-  "omp-version": ompVersion,
+  "pi-settings": piSettings,
+  "pi-version": piVersion,
   "plugins": plugins,
   "projects/clone": projectsClone,
   "projects": projects,
-  "provider-usage": providerUsage,
-  "providers/enable": providersEnable,
   "sessions/[id]/archive": sessionsIdArchive,
   "sessions/[id]/auto-name": sessionsIdAutoName,
   "sessions/[id]/context": sessionsIdContext,
   "sessions/[id]/entries/[entryId]/thinking": sessionsIdEntriesEntryIdThinking,
   "sessions/[id]/export": sessionsIdExport,
-  "sessions/[id]/local-file": sessionsIdLocalFile,
   "sessions/[id]/matches": sessionsIdMatches,
   "sessions/[id]": sessionsId,
   "sessions/[id]/state": sessionsIdState,

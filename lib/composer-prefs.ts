@@ -1,11 +1,11 @@
 /**
  * Client-side composer preferences (localStorage). These live outside the
- * native OMP config because they are ompweb UI behaviors.
+ * pi's settings because they are tau UI behaviors.
  */
 
 export type SubmitDuringRunBehavior = "steer" | "queue";
 
-const SUBMIT_DURING_RUN_KEY = "omp-web:submit-during-run";
+const SUBMIT_DURING_RUN_KEY = "tau:submit-during-run";
 
 /** The default, applied when nothing was ever stored under the key. */
 export const DEFAULT_SUBMIT_DURING_RUN_BEHAVIOR: SubmitDuringRunBehavior = "queue";

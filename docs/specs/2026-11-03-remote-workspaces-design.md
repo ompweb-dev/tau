@@ -342,7 +342,7 @@ ordinary imported source modules need no separate copied asset.
 1. Use two hosts with the same absolute workspace path and different contents.
    Open both files/tabs and switch chats; listing, reads, suggestions, links,
    Git, downloads and watches remain attached to their owner.
-2. Exercise the actual Node `ompweb host` daemon and real server routes, not
+2. Exercise the actual Node `tau host` daemon and real server routes, not
    only a fake Host: browse, preview, Range download including a file over
    64 MiB, upload with each conflict choice, modify a watched file and cancel
    a transfer. Upload files larger than 25 MiB and batches larger than 100 MiB

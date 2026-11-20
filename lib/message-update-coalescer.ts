@@ -1,10 +1,10 @@
 // Client-side coalescing of `message_update` SSE frames.
 //
-// omp emits message_update per token batch (often far above display rate), and
+// pi emits message_update per token batch (often far above display rate), and
 // dispatching each one re-renders the whole streaming bubble. Only the latest
 // message is worth showing; buffer it and flush at animation-frame rate.
 //
-// A frame is either the whole message (omp's full updates, or the server's
+// A frame is either the whole message (the server's
 // replay to a tab that attaches mid-message) or a delta (lib/message-delta.ts).
 // The coalescer keeps the message deltas apply to, applies each one as it
 // arrives, and dispatches the whole message, so the transcript only ever sees
@@ -12,7 +12,7 @@
 // and `onMissingBase` asks for the server's snapshot (`seed`), which the held
 // deltas newer than it then complete.
 //
-// `tool_execution_update` frames are coalesced the same way (omp sends the full
+// `tool_execution_update` frames are coalesced the same way (pi sends the full
 // accumulated partial result roughly per output chunk — measured ~10-100+/s on
 // chatty commands), keyed by toolCallId so concurrent tools keep their own
 // latest snapshot.

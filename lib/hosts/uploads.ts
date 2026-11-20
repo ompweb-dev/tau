@@ -1,6 +1,6 @@
 // Composer file uploads, the daemon's side (docs/specs/2026-11-02-file-uploads-design.md, U3 and U5): an upload is
-// staged as `<agent dir>/omp-web/uploads/<id>.part` plus `<id>.json`, written in order at the part's length, and on
-// attach hard-linked (or copied) into the session's `local://uploads/`.
+// staged as `<agent dir>/tau/uploads/<id>.part` plus `<id>.json`, written in order at the part's length, and on
+// attach hard-linked (or copied) into the session's `local/uploads/`.
 // Loaded by the daemon through jiti: no `@/` imports and no Bun APIs.
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, createReadStream, realpathSync } from "node:fs";
@@ -9,20 +9,20 @@ import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
-import { getAgentDir, sessionLocalRoot } from "../omp/paths";
+import { getAgentDir, sessionLocalRoot } from "../pi/paths";
 import { inspectUploadTargets, parseUploadConflictStrategy, validateUploadFileNames, type UploadConflictStrategy } from "../file-upload";
 import type { WorkspaceOwner, WorkspaceUploadResult } from "../workspace-types";
-import { authorizeWorkspaceDirectory } from "./workspace-roots";
+import { authorizeWritableDirectory } from "./workspace-roots";
 import { sessionPathKey } from "../paths";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import { MAX_UPLOAD_BYTES, UPLOAD_ID_RE } from "../upload-limits";
 import { HostOpError, LINK_LIMITS } from "./link-protocol";
 
-/** Uploads land in this subdirectory of the session's `local://` root. */
+/** Uploads land in this subdirectory of the session's local root (`sessionLocalRoot`). */
 export const UPLOADS_LOCAL_DIR = "uploads";
 
-/** Separate daemons' files inside omp's shared Windows temp root, including copied session UUIDs. */
+/** Separate daemons' files inside the shared Windows temp root, including copied session UUIDs. */
 export function uploadOwnerNamespace(agentDir = getAgentDir()): string {
   let canonical: string;
   try { canonical = realpathSync.native(agentDir); }
@@ -38,8 +38,11 @@ export const STAGED_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const UPLOAD_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
 let nameSteps: Promise<unknown> = Promise.resolve();
-/** Retention deletes by a file's stat: a publication must not put a new file at that name between the stat and the
- * unlink. Every such step (the sweep's per-file stat-and-unlink, a publication's rename or link) runs alone here. */
+/** Retention deletes by a file's stat: an attach must not put a new file at that name between the stat and the
+ * unlink. Every such step (the sweep's per-file stat-and-unlink, an attach's link or exclusive create) runs alone here.
+ * Files-panel publication does not take it: session upload folders live under the agent directory, which it refuses.
+ * shortcut: Windows' `<tmp>/tau-local` fallback is reachable only if a workspace root contains the temp directory;
+ * lock and stamp publication again if that case matters. */
 export function withUploadNameLock<T>(step: () => Promise<T>): Promise<T> {
   const run = nameSteps.then(step, step);
   nameSteps = run.catch(() => {});
@@ -89,7 +92,7 @@ export function sanitizeUploadName(name: string): string {
 /** What the daemon sends up as `upload_ack`. */
 export type UploadAck = { id: string; attempt: string; received: number; done: boolean; error?: { status: number; code: string; message: string } };
 
-type Receipt = { sessionFile: string; path: string; url: string };
+type Receipt = { sessionFile: string; path: string };
 type FileIdentity = { dev: string; ino: string };
 type WorkspaceReceipt = {
   directory: string; canonical: string; name: string; conflict: UploadConflictStrategy;
@@ -147,7 +150,7 @@ export class StagedUploads {
 
   constructor(
     private readonly send: (ack: UploadAck) => void,
-    readonly dir: string = join(getAgentDir(), "omp-web", "uploads"),
+    readonly dir: string = join(getAgentDir(), "tau", "uploads"),
   ) {}
   /** Includes accepted controls before their first await, queued writes and still-open transfers. */
   busy(): boolean {
@@ -175,7 +178,7 @@ export class StagedUploads {
       const meta: unknown = JSON.parse(await readFile(this.path(id, "json"), "utf8"));
       if (!isRecord(meta) || typeof meta.name !== "string" || !Number.isSafeInteger(meta.size) || typeof meta.type !== "string") return null;
       const { attached } = meta;
-      if (attached !== undefined && !(isRecord(attached) && typeof attached.sessionFile === "string" && typeof attached.path === "string" && typeof attached.url === "string")) return null;
+      if (attached !== undefined && !(isRecord(attached) && typeof attached.sessionFile === "string" && typeof attached.path === "string")) return null;
       const { workspace } = meta;
       if (workspace !== undefined && !(isRecord(workspace) && typeof workspace.directory === "string" && typeof workspace.canonical === "string"
         && typeof workspace.name === "string" && parseUploadConflictStrategy(workspace.conflict as string) === workspace.conflict
@@ -202,7 +205,7 @@ export class StagedUploads {
         await rm(receipt.candidate);
       }
     } catch (error) {
-      if (errno(error) !== "ENOENT") console.error("[ompweb host] could not clean workspace upload candidate", error);
+      if (errno(error) !== "ENOENT") console.error("[tau host] could not clean workspace upload candidate", error);
     }
   }
   private async remove(id: string): Promise<void> {
@@ -222,7 +225,7 @@ export class StagedUploads {
       } catch (error) {
         // Its files could not be removed (a .part replaced by a directory, EPERM): the upload is closed already, and
         // the file scan below tries them again on every sweep.
-        console.error(`[ompweb host] could not delete staged upload ${id}: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(`[tau host] could not delete staged upload ${id}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     let names: string[];
@@ -370,7 +373,7 @@ export class StagedUploads {
           throw new HostOpError(409, "upload_destination_conflict", "The upload already has another destination");
         }
         if (receipt.result) return receipt.result;
-        const canonical = await authorizeWorkspaceDirectory(directory, owner);
+        const canonical = await authorizeWritableDirectory(directory, owner);
         if (canonical !== receipt.canonical || !sameIdentity(await identity(canonical), receipt.parent)) throw uncertainPublication();
         const target = join(canonical, name);
         try {
@@ -382,13 +385,13 @@ export class StagedUploads {
         return receipt.result;
       }
       if (meta.name !== name) throw new HostOpError(409, "upload_destination_conflict", "The file name differs from the staged upload");
-      const canonical = await authorizeWorkspaceDirectory(directory, owner);
+      const canonical = await authorizeWritableDirectory(directory, owner);
       const part = this.path(id, "part");
       if (this.open.has(id) || await sizeOf(part) !== meta.size) throw new HostOpError(409, "upload_incomplete", "The upload has not finished");
       const parent = await identity(canonical);
       const target = join(canonical, name);
       // shortcut: a crash before the prepared receipt can leave a private sibling; add preparation journaling if automatic crash cleanup is required.
-      const candidate = join(canonical, `.omp-upload-${randomUUID()}`);
+      const candidate = join(canonical, `.tau-upload-${randomUUID()}`);
       let owned: FileIdentity | undefined;
       let source: FileHandle | undefined, candidateHandle: FileHandle | undefined, parentHandle: FileHandle | undefined;
       try {
@@ -398,14 +401,11 @@ export class StagedUploads {
         source = await open(part, fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0));
         const sourceInfo = await source.stat({ bigint: true });
         if (!sourceInfo.isFile() || sourceInfo.size !== BigInt(meta.size)) throw new HostOpError(409, "upload_incomplete", "The upload has not finished");
-        // An unstamped inode would carry its staging age into the folder: copy instead.
-        let copying = !await stampSent(part);
-        if (!copying) {
-          try { await link(part, candidate); }
-          catch (error) {
-            if (!["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes(errno(error) ?? "")) throw error;
-            copying = true;
-          }
+        let copying = false;
+        try { await link(part, candidate); }
+        catch (error) {
+          if (!["EXDEV", "EPERM", "ENOTSUP", "ENOSYS"].includes(errno(error) ?? "")) throw error;
+          copying = true;
         }
         if (copying) {
           candidateHandle = await open(candidate, "wx");
@@ -434,14 +434,14 @@ export class StagedUploads {
         receipt = { directory, canonical, name, conflict, candidate, identity: owned, parent };
         meta.workspace = receipt;
         await this.saveMeta(id, meta);
-        if (await authorizeWorkspaceDirectory(directory, owner) !== canonical || !sameIdentity(await identity(canonical), parent)
+        if (await authorizeWritableDirectory(directory, owner) !== canonical || !sameIdentity(await identity(canonical), parent)
           || !sameIdentity(await identity(candidate), owned)) throw uncertainPublication();
         const inspection = inspectUploadTargets(canonical, [name]);
         if (inspection.nonReplaceable.length) throw new HostOpError(409, "upload_conflict_non_replaceable", "A directory or symbolic link cannot be replaced");
         let skipped = false;
-        if (conflict === "overwrite") await withUploadNameLock(() => rename(candidate, target));
+        if (conflict === "overwrite") await rename(candidate, target);
         else {
-          try { await withUploadNameLock(() => link(candidate, target)); }
+          try { await link(candidate, target); }
           catch (error) {
             if (errno(error) !== "EEXIST") throw error;
             if (inspectUploadTargets(canonical, [name]).nonReplaceable.length) throw new HostOpError(409, "upload_conflict_non_replaceable", "A directory or symbolic link cannot be replaced");
@@ -453,7 +453,7 @@ export class StagedUploads {
         try { await this.saveMeta(id, meta); }
         catch { throw uncertainPublication(); }
         await this.removeCandidate(receipt);
-        await rm(part, { force: true }).catch((error) => console.error("[ompweb host] could not remove published staging", error));
+        await rm(part, { force: true }).catch((error) => console.error("[tau host] could not remove published staging", error));
         return receipt.result;
       } catch (error) {
         if (owned) await this.removeCandidate({ directory, canonical, name, conflict, candidate, identity: owned, parent });
@@ -464,14 +464,14 @@ export class StagedUploads {
     });
   }
 
-  /** Op uploadAttach: hard-link (or copy) a finished upload into the session's `local://uploads/`, never over an
+  /** Op uploadAttach: hard-link (or copy) a finished upload into the session's `local/uploads/`, never over an
    * existing file (a taken name gets ` (1)`, ` (2)`, ...). `sessionFile` is already confined to the sessions directory. */
-  async attach(id: unknown, sessionFile: string, sessionId: unknown): Promise<{ path: string; url: string }> {
+  async attach(id: unknown, sessionFile: string, sessionId: unknown): Promise<{ path: string }> {
     if (!isUploadId(id) || typeof sessionId !== "string" || !isValidSessionId(sessionId)) throw new HostOpError(400, "invalid_request", "Invalid upload attach");
     return this.control(id, () => this.finishAttach(id, sessionFile, sessionId));
   }
 
-  private async finishAttach(id: string, sessionFile: string, sessionId: string): Promise<{ path: string; url: string }> {
+  private async finishAttach(id: string, sessionFile: string, sessionId: string): Promise<{ path: string }> {
     const part = this.path(id, "part");
     const meta = await this.meta(id);
     if (meta?.workspace) throw new HostOpError(409, "upload_destination_conflict", "The upload already belongs to a workspace");
@@ -479,7 +479,7 @@ export class StagedUploads {
       // Attached already (the reply was lost): the same session file gets the same answer, any other one finds it gone.
       if (meta.attached.sessionFile === sessionFile) {
         await requireReceiptTarget(meta.attached);
-        return { path: meta.attached.path, url: meta.attached.url };
+        return { path: meta.attached.path };
       }
       throw new HostOpError(404, "upload_missing", "The upload is gone: attach the file again");
     }
@@ -487,7 +487,7 @@ export class StagedUploads {
     if (!meta || size === null) throw new HostOpError(404, "upload_missing", "The upload is gone: attach the file again");
     if (this.open.has(id) || size !== meta.size) throw new HostOpError(409, "upload_incomplete", "The upload has not finished");
     const local = sessionLocalRoot(sessionFile, sessionId);
-    const relativeDir = local === join(tmpdir(), "omp-local", sessionId)
+    const relativeDir = local === join(tmpdir(), "tau-local", sessionId)
       ? `${UPLOADS_LOCAL_DIR}/${uploadOwnerNamespace(this.agentDir)}` : UPLOADS_LOCAL_DIR;
     const dir = join(local, relativeDir);
     await mkdir(dir, { recursive: true });
@@ -532,7 +532,7 @@ export class StagedUploads {
         }
       }
       // Publish atomically before removing the part; a failed receipt leaves the original metadata and data retryable.
-      const receipt: Receipt = { sessionFile, path: target, url: `local://${relativeDir}/${fileName}` };
+      const receipt: Receipt = { sessionFile, path: target };
       const temporary = `${this.path(id, "json")}.${randomUUID()}.tmp`;
       try {
         await writeFile(temporary, JSON.stringify({ ...meta, attached: receipt } satisfies Meta), { flag: "wx" });
@@ -543,7 +543,7 @@ export class StagedUploads {
         throw error;
       }
       await rm(part, { force: true });
-      return { path: target, url: receipt.url };
+      return { path: target };
     }
   }
 }

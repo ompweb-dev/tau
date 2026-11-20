@@ -2,8 +2,8 @@ import { lstatSync, realpathSync, mkdirSync, watch } from "node:fs";
 import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { getOmpVersion } from "../omp/omp-cli";
-import { getAgentDir, getSessionsDir } from "../omp/paths";
+import { getPiVersion } from "../pi/pi-cli";
+import { getAgentDir, getSessionsDir } from "../pi/paths";
 import { ProjectPathError } from "../project-registry";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
@@ -14,13 +14,11 @@ import { DaemonLink, dialable, nextRedialDelay } from "./daemon-link";
 import { DaemonMaintenance } from "./daemon-maintenance";
 import { MAINTENANCE_API_VERSION, type MaintenanceOp } from "./maintenance-protocol";
 import { ChannelTable } from "./daemon-channels";
-import { credentialsEnv, serverFetch, startBrokerForwarder } from "./daemon-broker";
+import { createDaemonAuth } from "./daemon-auth";
 import { createClusterConfig } from "./daemon-cluster-config";
-import { runOmpCli } from "../omp/plugins-cli";
 import { HostResumeTracker, type HostResumeEntry } from "./host-resume";
 import { CONFIG_VERSION_RE, CREATION_ID_RE, encodeLine, HostOpError, isHostOp, LINK_LIMITS, LINK_PROTOCOL_VERSION, SESSION_OP_PARAMS, type DownMessage, type OpenChannelRequest, type UnknownMessage } from "./link-protocol";
 import { localHost, resolveSpawnCwdResult } from "./local-host";
-import { listenHostSocket, type HostSocket } from "./omp-socket";
 import { sessionOps } from "./session-ops";
 import packageJson from "../../package.json";
 import { acknowledgeHostUpdateReceipt, checkHostUpdates, configureHostUpdateSafety, getHostUpdateOperation, hostUpdateBlocksNewWork, HostUpdateError, startHostUpdate } from "./updates";
@@ -33,7 +31,7 @@ import { createWorkspaceService, type WorkspaceService } from "./workspace-ops";
 import { grantWorkspaceRoot, invalidateWorkspaceRoots } from "./workspace-roots";
 export { nextRedialDelay };
 const reason = (error: unknown) => error instanceof Error ? error.message : String(error);
-const log = (message: string) => console.error("[ompweb host] " + message);
+const log = (message: string) => console.error("[tau host] " + message);
 /** realpath of the longest existing prefix; null when a component is a dangling symlink. */
 function canonicalPath(path: string): string | null {
   try {
@@ -92,16 +90,29 @@ const CONFIG_API = "/api/hosts/cluster-config/";
 export interface HostDaemon {
   stop(): Promise<void>;
   done: Promise<number>;
-  /** Settles once startup work (upload sweep, session recovery, omp version read) is done; until then drain reports busy. */
+  /** Settles once startup work (upload sweep, session recovery, pi version read) is done; until then drain reports busy. */
   started: Promise<void>;
   control(command: HostControlCommand): HostControlStatus;
 }
-/** `hostSocket`: where omps started from a TUI attach (`hostSocketPath()`); unset, none can. */
-type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[]; hostSocket?: string };
+type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[] };
+/**
+ * `path` under `route` (`/api/hosts/<name>/`) on a linked server, with that link's token; null when dot segments
+ * (also encoded) would climb out of `route`, which the route's own allow-list cannot see.
+ */
+function serverFetch(login: { url: string; token: string }, route: string, path: string, init: RequestInit): Promise<Response> | null {
+  const root = new URL(`${login.url.replace(/\/+$/, "")}${route}`).href;
+  const target = new URL(root + path);
+  if (!target.href.startsWith(root)) return null;
+  const headers = new Headers(init.headers);
+  headers.set("authorization", `Bearer ${login.token}`);
+  // A redirect would carry the link token on to whatever it names, on the same origin too: it is a failure, not a hop.
+  return fetch(target, { ...init, headers, redirect: "error" });
+}
+
 export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const explicit = options.url !== undefined && options.token !== undefined ? [{ url: options.url, token: options.token }] : options.links;
   const initial = explicit ?? readHostLinks();
-  for (const link of initial) if (!dialable(link.url, options.allowHttp)) throw new Error("ompweb host needs an https:// server URL (http:// only for loopback, or with --allow-http)");
+  for (const link of initial) if (!dialable(link.url, options.allowHttp)) throw new Error("tau host needs an https:// server URL (http:// only for loopback, or with --allow-http)");
   const primaryUrl = (explicit?.[0]?.url ?? readHostLogin()?.url ?? initial[0]?.url)?.replace(/\/+$/, "");
   const links = new Map<string, DaemonLink>();
   const maintenanceLinks = new Map<string, DaemonMaintenance>();
@@ -111,27 +122,27 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   const uploadAttempts = new Map<string, DaemonLink>();
   const stops = new Set<Promise<void>>();
   const { promise: done, resolve: finish } = Promise.withResolvers<number>();
-  let stopped = false, linkId = 0, notifierId: string | null = null, ompVersion: string | null = null;
+  let stopped = false, linkId = 0, notifierId: string | null = null, piVersion: string | null = null;
   let stopping: Promise<void> | undefined;
   let updateStateWarningLogged = false;
   let reloadTimer: NodeJS.Timeout | undefined;
-  let drained = process.env.OMP_WEB_HOST_DRAINED === "1";
+  let drained = process.env.TAU_HOST_DRAINED === "1";
   let preparationsInFlight = 0, operationsInFlight = 0, nativeUpdatesInFlight = 0;
   const executable = realpathSync(process.execPath);
   const entrypoint = canonicalPath(process.argv[1] || process.execPath) || resolve(process.argv[1] || process.execPath);
   const resume = new HostResumeTracker();
   // A cluster member runs on the master's configuration (spec K3-K6): fetched over the link that asks, with its token.
   // Each link is told whether the configuration this host holds is its server's.
+  const auth = createDaemonAuth();
   const config = createClusterConfig({
     roots: () => ({ agent: getAgentDir(), home: homedir() }),
-    stateDir: () => join(getAgentDir(), "omp-web"),
+    stateDir: () => join(getAgentDir(), "tau"),
     fetch: async (serverUrl, path, signal) => {
       const login = links.get(serverUrl)?.login;
       const pending = login && serverFetch(login, CONFIG_API, path.slice(CONFIG_API.length), { signal });
       if (!pending) throw new Error("the web server is no longer linked to this host");
       return pending;
     },
-    runOmp: runOmpCli,
     commandExists,
     // Never called while createClusterConfig runs: `config` is set by then.
     onState: state => reportConfig(state),
@@ -143,49 +154,35 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     },
     log,
   });
-  const forwarder = startBrokerForwarder({ login: url => links.get(url)?.login ?? null, log });
   const channels = new ChannelTable({
     spawn: async launch => {
       if (drained) throw new HostOpError(409, "host_drained", "This host is locally drained for maintenance");
       let operation: HostUpdateOperation | null = null;
       try { operation = getHostUpdateOperation(); }
       catch (error) { if (!updateStateWarningLogged) log("could not read host update status: " + reason(error)); updateStateWarningLogged = true; }
-      if (operation?.target === "ompweb" && hostUpdateBlocksNewWork(operation)) throw new HostOpError(409, "host_updating", "This host is updating its daemon; new sessions must wait");
+      if (operation?.target === "tau" && hostUpdateBlocksNewWork(operation)) throw new HostOpError(409, "host_updating", "This host is updating its daemon; new sessions must wait");
       const resolved = launch.creationId === undefined ? resolveSpawnCwdResult(launch.recordedCwd ?? launch.cwd) : { cwd: launch.cwd, fellBack: false };
-      // A sharing session never starts on this host's own logins: no link, or no usable broker, refuses.
-      if (launch.credentialsServer !== undefined && !links.has(launch.credentialsServer)) throw new HostOpError(409, "credentials_link_gone", "The web server that shares its credentials with this session is no longer linked to this host");
-      const env = await credentialsEnv(launch, { forwarder, ompVersion: getOmpVersion });
       // Never on this host's own configuration: the master's version is applied first, or the start is refused (spec K4).
       if (launch.configVersion !== undefined) {
-        if (launch.credentialsServer === undefined) throw new HostOpError(409, "cluster_config_failed", "A cluster session must start through the web server that shares its configuration");
-        await config.ensure(launch.configVersion, launch.credentialsServer);
+        if (launch.configServer === undefined) throw new HostOpError(409, "cluster_config_failed", "A cluster session must start through the web server that shares its configuration");
+        await config.ensure(launch.configVersion, launch.configServer);
       }
-      const spawned = await localHost.spawnRpc({ ...launch, cwd: resolved.cwd }, null, { env });
+      const spawned = await localHost.spawnRpc({ ...launch, cwd: resolved.cwd });
       return { ...spawned, fellBack: resolved.fellBack || spawned.fellBack };
     },
     prepareLaunch: launch => {
       if (!isRecord(launch) || typeof launch.cwd !== "string"
         || !(launch.recordedCwd === null || launch.recordedCwd === undefined || typeof launch.recordedCwd === "string")
-        || typeof launch.sessionFile !== "string" || typeof launch.advisor !== "boolean"
+        || typeof launch.sessionFile !== "string"
         || !(launch.toolNames === undefined || Array.isArray(launch.toolNames) && launch.toolNames.every(name => typeof name === "string"))
-        || !(launch.spawnModel === undefined || typeof launch.spawnModel === "string")
-        || !(launch.credentialsServer === undefined || typeof launch.credentialsServer === "string")
         || !(launch.creationId === undefined || typeof launch.creationId === "string" && CREATION_ID_RE.test(launch.creationId))) throw new HostOpError(400, "invalid_request", "Invalid spawn request");
       return { ...launch, recordedCwd: launch.recordedCwd ?? null, sessionFile: launch.sessionFile ? sessionsPath(launch.sessionFile) : "" };
     },
-    autoApproveExtension: () => localHost.autoApproveExtension(), log,
+    log,
     runningChanged: () => { try { resume.recordRunning(channels.running()); } catch (error) { log("could not save interrupted sessions: " + reason(error)); } },
     sessionsChanged,
     channelsChanged,
   });
-  const hostSocket: Promise<HostSocket | undefined> = options.hostSocket === undefined ? Promise.resolve(undefined) : listenHostSocket(options.hostSocket, {
-    adopt: async (spawned, launch, sessionId) => {
-      if (stopped) throw new HostOpError(503, "host_stopping", "This host is stopping");
-      if (drained) throw new HostOpError(409, "host_drained", "This host is locally drained for maintenance");
-      return channels.adopt(spawned, launch, sessionId);
-    },
-    log,
-  }).catch(error => { log("omps started from a TUI cannot attach: " + reason(error)); return undefined; });
   configureHostUpdateSafety(() => drained ? "This host is locally drained for maintenance." : busyReason(), { drained: () => drained, sessions: () => channels.size });
   const uploads = new StagedUploads(ack => {
     const link = uploadAttempts.get(ack.id + ":" + ack.attempt);
@@ -200,7 +197,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   const startupSweep = sweepUploads();
   const sweepTimer = setInterval(sweepUploads, UPLOAD_SWEEP_INTERVAL_MS); sweepTimer.unref?.();
-  const configDir = join(getAgentDir(), "omp-web"); mkdirSync(configDir, { recursive: true, mode: 0o700 });
+  const configDir = join(getAgentDir(), "tau"); mkdirSync(configDir, { recursive: true, mode: 0o700 });
   const watcher = watch(configDir, (_event, name) => {
     if (name !== null && String(name) !== "host.json") return;
     clearTimeout(reloadTimer); reloadTimer = setTimeout(() => reconcile(), 200); reloadTimer.unref?.();
@@ -280,8 +277,8 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   function makeLink(login: HostLink, primary: boolean): DaemonLink {
     const link = new DaemonLink(login, "l" + ++linkId, { allowHttp: options.allowHttp, primary, log, keepOnVersionMismatch: true,
-      hello: (link, replay) => encodeLine({ type: "hello", v: link.version, ompVersion, ompwebVersion: packageJson.version,
-        workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), platform: process.platform, home: homedir(), autoApproveExtension: localHost.autoApproveExtension(),
+      hello: (link, replay) => encodeLine({ type: "hello", v: link.version, piVersion, tauVersion: packageJson.version,
+        platform: process.platform,
         ack: link.ackedDown, channels: channels.listing(link, replay),
         link: { id: link.id, notifier: notifierId === link.id } }),
       handleDown,
@@ -305,11 +302,11 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         dropLink(link); electNotifier();
         // A revoked server can never send its restore, and while host.json still names it no other server may (spec K6).
         const restored = why === "revoked" && config.holds(login.url)
-          ? config.restore(login.url).catch(error => log("could not put this host's own omp configuration back: " + reason(error)))
+          ? config.restore(login.url).catch(error => log("could not put this host's own pi configuration back: " + reason(error)))
           : null;
-        if (restored) log("the server that revoked this host held its omp configuration; putting this host's own back");
+        if (restored) log("the server that revoked this host held its pi configuration; putting this host's own back");
         if (links.size === 0) {
-          log(why === "revoked" ? "the server rejected this host's token (revoked?); stopping its omp sessions" : "the last host link ended");
+          log(why === "revoked" ? "the server rejected this host's token (revoked?); stopping its pi sessions" : "the last host link ended");
           const code = why === "replaced" ? 0 : 1;
           void (restored ? restored.then(() => shutdown(code)) : shutdown(code));
         }
@@ -319,9 +316,9 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     links.set(login.url, link);
     const maintenance = new DaemonMaintenance(login, {
       hello: () => ({ type: "hello", apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        ompwebVersion: packageJson.version, ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, piVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"] }),
-      handleRequest: (op, args) => runMaintenance(link, op, args),
+      handleRequest: (op, args) => runMaintenance(op, args),
       // A staged candidate that awaits its server's cutover acknowledges its operation here, not on the application link.
       onState: up => { if (up) void acknowledgeHostUpdateReceipt(LINK_PROTOCOL_VERSION); },
       reload: () => { reconcile(link, true); },
@@ -361,16 +358,17 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     reportConfig(); electNotifier(); return source ? links.get(source.login.url) !== source || source.login.token !== previousToken : true;
   }
 
-  async function runMaintenance(link: DaemonLink, op: MaintenanceOp, args: Record<string, unknown>): Promise<unknown> {
+  /** Host software updates run only here, never on the application link. */
+  async function runMaintenance(op: MaintenanceOp, args: Record<string, unknown>): Promise<unknown> {
     if (stopped) throw new HostOpError(503, "host_stopping", "This host is stopping");
     const update = op === "checkUpdates" || op === "updateSoftware";
     if (update) nativeUpdatesInFlight++;
     try {
       if (op === "status") return {
         apiVersion: MAINTENANCE_API_VERSION, protocolVersion: LINK_PROTOCOL_VERSION,
-        ompwebVersion: packageJson.version, ompVersion, platform: process.platform,
+        tauVersion: packageJson.version, piVersion, platform: process.platform,
         capabilities: ["status", "listSessions", "checkUpdates", "updateSoftware"],
-        workspaceOps: Object.keys(WORKSPACE_OP_PARAMS), sessionProcesses: channels.size,
+        sessionProcesses: channels.size,
         activeTurns: channels.activeTurns, sessions: channels.maintenanceSessions(),
         drained, busyReason: busyReason(), operation: getHostUpdateOperation(),
       };
@@ -381,7 +379,14 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
           processRunning: states.has(session.id), active: states.get(session.id)?.active ?? false,
         }));
       }
-      return await runOp(link, op, args);
+      if (drained) throw new HostOpError(409, "host_drained", "This host is locally drained for maintenance; resume it before starting new work");
+      if (op === "checkUpdates") {
+        if (args.force !== undefined && typeof args.force !== "boolean") throw new HostOpError(400, "invalid_request", "force must be a boolean");
+        const releasePin = args.releasePin === undefined ? undefined : validateApprovedReleasePin(args.releasePin);
+        return await checkHostUpdates(updateCompatibility(args.compatibility), args.force === true, args.targetCompatibility === undefined ? undefined : updateCompatibility(args.targetCompatibility), releasePin);
+      }
+      if (args.target !== "tau" || typeof args.version !== "string") throw new HostOpError(400, "invalid_request", "Invalid host update");
+      return await startHostUpdate(args.target, args.version, updateCompatibility(args.compatibility), updateRequest(args));
     } finally {
       if (update) nativeUpdatesInFlight--;
     }
@@ -393,7 +398,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         case "stdin": channels.stdin(link, message.ch, message.line); return;
         case "kill": channels.kill(link, message.ch, message.force); return;
         case "interest": channels.setInterest(link, message.ch, message.on, message.preparing); return;
-        case "host_tools": channels.setTools(link, message.ch, message.tools, message.schemes); return;
+        case "host_tools": channels.setTools(link, message.ch, message.tools); return;
         case "req": void answer(link, message.id, message.op, message.args); return;
       }
     } catch (error) { log("ignored a channel command: " + reason(error)); }
@@ -401,8 +406,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   async function answer(link: DaemonLink, id: string, op: string, args: unknown): Promise<void> {
     const session = isRecord(args) && typeof args.id === "string" && isValidSessionId(args.id) ? args.id : null;
     let opened: string | undefined;
-    const nativeUpdate = op === "checkUpdates" || op === "updateSoftware";
-    if (nativeUpdate) nativeUpdatesInFlight++; else operationsInFlight++;
+    operationsInFlight++;
     try {
       const result = await runOp(link, op, args);
       if (op === "open" && isRecord(result) && typeof result.ch === "string") opened = result.ch;
@@ -418,7 +422,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         : { status: 500, code: "host_op_failed", message: reason(error) };
       link.queue({ type: "res", id, ok: false, error: failure }, id, { session });
     } finally {
-      if (nativeUpdate) nativeUpdatesInFlight--; else operationsInFlight--;
+      operationsInFlight--;
     }
   }
   function requireUploadOwner(link: DaemonLink, id: unknown): void {
@@ -459,14 +463,6 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
       }
       case "sessionFileExists": return localHost.sessionFileExists(sessionsPath(args.path));
       case "invalidateSessionLists": invalidateWorkspaceRoots(); localHost.invalidateSessionLists(args.path === undefined ? undefined : sessionsPath(args.path)); sessionsChanged(); return;
-      case "checkUpdates": {
-        if (args.force !== undefined && typeof args.force !== "boolean") throw new HostOpError(400, "invalid_request", "force must be a boolean");
-        const releasePin = args.releasePin === undefined ? undefined : validateApprovedReleasePin(args.releasePin);
-        return checkHostUpdates(updateCompatibility(args.compatibility), args.force === true, args.targetCompatibility === undefined ? undefined : updateCompatibility(args.targetCompatibility), releasePin);
-      }
-      case "updateSoftware":
-        if (args.target !== "ompweb" || typeof args.version !== "string") throw new HostOpError(400, "invalid_request", "Invalid host update");
-        return startHostUpdate(args.target, args.version, updateCompatibility(args.compatibility), updateRequest(args));
       case "preparePoolProject": {
         if (hostUpdateBlocksNewWork(getHostUpdateOperation())) throw new HostUpdateError("host_updating", "This host is updating; new project preparation must wait");
         preparationsInFlight++;
@@ -499,6 +495,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
         else if (args.action === "restore") await config.restore(link.login.url);
         else throw new HostOpError(400, "invalid_request", "Invalid cluster configuration request");
         return { state: config.state(), owned: config.holds(link.login.url) };
+      case "auth": return auth.run(args);
       default: {
         const run = sessionOps[op] as (...params: unknown[]) => Promise<unknown>;
         const result = await run.apply(sessionOps, SESSION_OP_PARAMS[op].map(name => args[name]));
@@ -516,7 +513,8 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     resume.freeze();
     // The configuration first: its requests to a server are aborted at once, so no start waiting on them holds the stop.
     const configStopped = config.stop();
-    stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await (await hostSocket)?.close(); await channels.stop(); await configStopped; await forwarder.stop(); resume.dispose(); finish(code); })();
+    auth.stop();
+    stopping = (async () => { await Promise.all([...links.values()].map(link => link.stop())); await Promise.all([...maintenanceLinks.values()].map(link => link.stop())); await Promise.all([...stops, ...[...services.values()].map(service => service.stop())]); await channels.stop(); await configStopped; resume.dispose(); finish(code); })();
     return stopping;
   }
   // Links first: a recovered sharing session needs its link to start.
@@ -544,11 +542,11 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   const startupRecovery = recover();
   operationsInFlight++;
-  const versionRead = getOmpVersion().then(version => { ompVersion = version; }).catch(error => log("could not read omp version: " + reason(error)))
+  const versionRead = getPiVersion().then(version => { piVersion = version; }).catch(error => log("could not read pi version: " + reason(error)))
     .finally(() => {
       operationsInFlight--;
       if (!stopped) for (const link of links.values()) link.start();
     });
-  const started = Promise.all([startupSweep, startupRecovery, versionRead, hostSocket]).then(() => {});
+  const started = Promise.all([startupSweep, startupRecovery, versionRead]).then(() => {});
   return { stop: () => shutdown(0), done, control, started };
 }

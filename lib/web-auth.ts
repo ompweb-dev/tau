@@ -2,23 +2,23 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import { deriveSessionSigningKey } from "./web-auth-secret";
 import { isPasswordHash, verifyPassword } from "./web-password-hash";
 
-export const OMP_WEB_SESSION_COOKIE = "omp_web_session";
-export const OMP_WEB_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const TAU_SESSION_COOKIE = "tau_session";
+export const TAU_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 // Set by a trusted reverse proxy (see README) to vouch for a request in place of a session.
-export const OMP_WEB_TRUSTED_HEADER = "x-omp-web-auth";
+export const TAU_TRUSTED_HEADER = "x-tau-auth";
 
 /**
  * Password protection for the web UI (issue #239). Only a hash is accepted:
- * `OMP_WEB_PASSWORD_HASH` holds the output of `ompweb hash-password`, and the
+ * `TAU_PASSWORD_HASH` holds the output of `tau hash-password`, and the
  * plaintext is never read from the environment, so it cannot leak into the
- * `omp` child processes omp-web spawns or into anything an agent prints.
+ * `pi` child processes tau spawns or into anything an agent prints.
  */
-export const WEB_PASSWORD_HASH_VAR = "OMP_WEB_PASSWORD_HASH";
+export const WEB_PASSWORD_HASH_VAR = "TAU_PASSWORD_HASH";
 /** Legacy plaintext variable. Still *detected*, only to refuse to start. */
-export const WEB_PASSWORD_VAR = "OMP_WEB_PASSWORD";
+export const WEB_PASSWORD_VAR = "TAU_PASSWORD";
 
 function hash(value: string): Buffer {
-  return createHmac("sha256", "omp-web-compare-v1").update(value, "utf8").digest();
+  return createHmac("sha256", "tau-compare-v1").update(value, "utf8").digest();
 }
 
 function equal(left: string, right: string): boolean {
@@ -34,22 +34,21 @@ export function isWebPasswordEnabled(env: NodeJS.ProcessEnv = process.env): bool
   return isPasswordHash(configuredHash(env));
 }
 
-// The proxy sends the secret itself; omp-web holds only its SHA-256 hex digest.
+// The proxy sends the secret itself; tau holds only its SHA-256 hex digest.
 // The secret is random, so a fast hash suffices.
 export function isTrustedProxyRequest(
   value: string | null | undefined,
-  digest = process.env.OMP_WEB_TRUSTED_HEADER_SHA256,
+  digest = process.env.TAU_TRUSTED_HEADER_SHA256,
 ): boolean {
   if (!value || !digest || !/^[0-9a-f]{64}$/i.test(digest)) return false;
   return timingSafeEqual(createHash("sha256").update(value, "utf8").digest(), Buffer.from(digest, "hex"));
 }
 
-/** The web session a request belongs to (browser link spec B5): browser-link resumes and composer uploads are honored
- * only for the same one. */
+/** The web session a request belongs to: composer uploads are honored only for the same one. */
 export function requestOwner(request: Request): string {
-  const cookie = new Bun.CookieMap(request.headers.get("cookie") ?? "").get(OMP_WEB_SESSION_COOKIE);
+  const cookie = new Bun.CookieMap(request.headers.get("cookie") ?? "").get(TAU_SESSION_COOKIE);
   if (cookie) return `session:${createHash("sha256").update(cookie).digest("base64url")}`;
-  return isTrustedProxyRequest(request.headers.get(OMP_WEB_TRUSTED_HEADER)) ? "trusted" : "open";
+  return isTrustedProxyRequest(request.headers.get(TAU_TRUSTED_HEADER)) ? "trusted" : "open";
 }
 
 /** Check a sign-in attempt against the configured hash. */
@@ -68,17 +67,17 @@ export function webPasswordConfigurationProblem(env: NodeJS.ProcessEnv = process
   const legacy = env[WEB_PASSWORD_VAR];
   const hasLegacy = typeof legacy === "string" && legacy.length > 0;
   if (raw && hasLegacy) {
-    return `Both ${WEB_PASSWORD_HASH_VAR} and the plaintext ${WEB_PASSWORD_VAR} are set. Remove ${WEB_PASSWORD_VAR}: omp-web no longer reads a plaintext password.`;
+    return `Both ${WEB_PASSWORD_HASH_VAR} and the plaintext ${WEB_PASSWORD_VAR} are set. Remove ${WEB_PASSWORD_VAR}: tau no longer reads a plaintext password.`;
   }
   if (!raw) {
     if (!hasLegacy) return null;
     return [
-      `Plaintext passwords are no longer accepted: omp-web refuses to start with ${WEB_PASSWORD_VAR} set.`,
+      `Plaintext passwords are no longer accepted: tau refuses to start with ${WEB_PASSWORD_VAR} set.`,
       "",
       "Create a hash and use that instead:",
       "",
-      "  ompweb hash-password",
-      `  OMP_WEB_PASSWORD_HASH='scrypt$...' ompweb`,
+      "  tau hash-password",
+      `  TAU_PASSWORD_HASH='scrypt$...' tau`,
       "",
       `See the README for the service installers, which hash the password for you.`,
     ].join("\n");
@@ -89,7 +88,7 @@ export function webPasswordConfigurationProblem(env: NodeJS.ProcessEnv = process
       "",
       "Generate one with:",
       "",
-      "  ompweb hash-password",
+      "  tau hash-password",
       "",
       `The value must look like scrypt$<ln>$<r>$<p>$<salt>$<digest> (unquoted, single line).`,
     ].join("\n");
@@ -111,7 +110,7 @@ function signingKey(env: NodeJS.ProcessEnv = process.env): string {
 
 /** Sign a session cookie. The key mixes the stored hash with a per-install random secret. */
 export function createWebSession(now = Date.now(), env: NodeJS.ProcessEnv = process.env): string {
-  const expiresAt = now + OMP_WEB_SESSION_MAX_AGE_SECONDS * 1000;
+  const expiresAt = now + TAU_SESSION_MAX_AGE_SECONDS * 1000;
   const payload = `v1.${expiresAt}.${randomBytes(16).toString("base64url")}`;
   const signature = createHmac("sha256", signingKey(env)).update(payload, "utf8").digest("base64url");
   return `${payload}.${signature}`;

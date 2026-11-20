@@ -5,7 +5,7 @@ import {
   isExistingFilePathAllowed,
   isExistingPathWithinRoots,
   isFilePathAllowed,
-  isOmpSecretFile,
+  isPiSecretFile,
   isWindowsAbsolutePath,
   normalizeSlashes,
   resolveRequestedFilePath,
@@ -62,7 +62,7 @@ const ACCESS_DENIED: FileAccessDecision = { ok: false, status: 403, error: "Acce
  * The single allow-list gate for reading workspace files (`/api/files` and the
  * live file-watch channel): resolves the requested catch-all segments, then
  * admits the path when it is inside an allowed root, or — when
- * `allowSessionReference` — inside the given session's own `local://`
+ * `allowSessionReference` — inside the given session's own `local/`
  * directory, or referenced by that session's transcript.
  */
 export async function authorizeFileAccess(
@@ -82,7 +82,7 @@ export async function authorizeFileAccess(
     await isFilePathReferencedBySession(filePath, sessionId);
   if (!allowedByRoot && !localRoot && !allowedBySessionReference) return ACCESS_DENIED;
   // Authorize the namespace before canonical secret probing touches the filesystem.
-  if (isOmpSecretFile(filePath)) return ACCESS_DENIED;
+  if (isPiSecretFile(filePath)) return ACCESS_DENIED;
 
   let realPath: string;
   try {

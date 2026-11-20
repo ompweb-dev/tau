@@ -1,8 +1,8 @@
-// Linked-host registry for the main omp-web server. Pure Node: no Next or `@/` imports.
+// Linked-host registry for the main tau server. Pure Node: no Next or `@/` imports.
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 
 export interface HostRecord {
   id: string;
@@ -11,7 +11,6 @@ export interface HostRecord {
   createdAt: string;
   lastSeenAt: string | null;
   allowAgentStart: boolean;
-  shareCredentials: boolean;
 }
 
 interface HostsFile {
@@ -49,7 +48,6 @@ function parseHostRecord(raw: unknown): HostRecord | null {
     createdAt: typeof r.createdAt === "string" ? r.createdAt : "",
     lastSeenAt: typeof r.lastSeenAt === "string" ? r.lastSeenAt : null,
     allowAgentStart: r.allowAgentStart === true,
-    shareCredentials: r.shareCredentials === true,
   };
 }
 
@@ -60,7 +58,7 @@ export class HostRegistryUnreadableError extends Error {
 
 /** Every usable record; a missing file is an empty registry, an unreadable one throws. */
 export function readHosts(): HostRecord[] {
-  const file = join(getAgentDir(), "omp-web", "hosts.json");
+  const file = join(getAgentDir(), "tau", "hosts.json");
   let text: string;
   try {
     text = readFileSync(file, "utf8");
@@ -88,7 +86,7 @@ export function loadHosts(): HostRecord[] {
 }
 
 function saveHosts(hosts: HostRecord[]): void {
-  const file = join(getAgentDir(), "omp-web", "hosts.json");
+  const file = join(getAgentDir(), "tau", "hosts.json");
   mkdirSync(dirname(file), { recursive: true });
   // Atomic write, owner-only: the file holds token hashes for every linked host.
   const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
@@ -111,7 +109,6 @@ export function createHost(label: string): { host: HostRecord; token: string } {
     createdAt: new Date().toISOString(),
     lastSeenAt: null,
     allowAgentStart: false,
-    shareCredentials: false,
   };
   saveHosts([...readHosts(), host]);
   return { host, token };
@@ -132,15 +129,14 @@ export class ReservedHostError extends Error {
   }
 }
 
-export function updateHost(id: string, updates: { label?: string; allowAgentStart?: boolean; shareCredentials?: boolean }): HostRecord {
-  if (id === LOCAL_HOST_ID && (updates.allowAgentStart !== undefined || updates.shareCredentials !== undefined)) throw new ReservedHostError();
+export function updateHost(id: string, updates: { label?: string; allowAgentStart?: boolean }): HostRecord {
+  if (id === LOCAL_HOST_ID && updates.allowAgentStart !== undefined) throw new ReservedHostError();
   const hosts = readHosts();
   const host = hosts.find((h) => h.id === id);
   if (!host) throw new UnknownHostError();
   // An empty name resets this machine to the default.
   if (updates.label !== undefined) host.label = id === LOCAL_HOST_ID && !updates.label.trim() ? "" : normalizeLabel(updates.label);
   if (updates.allowAgentStart !== undefined) host.allowAgentStart = updates.allowAgentStart;
-  if (updates.shareCredentials !== undefined) host.shareCredentials = updates.shareCredentials;
   saveHosts(hosts);
   return host;
 }
@@ -157,7 +153,6 @@ export function rotateLocalHostToken(): string {
     createdAt: existing?.createdAt || new Date().toISOString(),
     lastSeenAt: existing?.lastSeenAt ?? null,
     allowAgentStart: true,
-    shareCredentials: false,
   };
   saveHosts([...hosts.filter((h) => h.id !== LOCAL_HOST_ID), record]);
   return token;

@@ -32,7 +32,7 @@ const START_TIMEOUT_MS = 30_000;
 const EXIT_SETTLE_MS = 3_000;
 const PROBE_INTERVAL_MS = 250;
 /** The server's secrets and paths stay out of the daemon, as the update worker's environment keeps them out. */
-const SERVER_ONLY: Record<string, true> = { PORT: true, NODE_ENV: true, OMP_WEB_PASSWORD: true, OMP_WEB_PASSWORD_HASH: true, OMP_WEB_TRUSTED_HEADER_SECRET: true, OMP_WEB_TRUSTED_HEADER_SHA256: true, OMP_WEB_PACKAGE_DIR: true, OMP_WEB_LAUNCHER_PID: true };
+const SERVER_ONLY: Record<string, true> = { PORT: true, NODE_ENV: true, TAU_PASSWORD: true, TAU_PASSWORD_HASH: true, TAU_TRUSTED_HEADER_SECRET: true, TAU_TRUSTED_HEADER_SHA256: true, TAU_PACKAGE_DIR: true, TAU_LAUNCHER_PID: true };
 
 async function sleep(ms: number): Promise<void> {
   const { promise, resolve } = Promise.withResolvers<void>();
@@ -55,10 +55,10 @@ async function probe(): Promise<HostControlStatus | null> {
 /** This install's host command: the standalone binary's `host`, or the package's entrypoint under the Node runtime. */
 export function localHostLaunch(env: NodeJS.ProcessEnv = process.env): UpgradeLaunch {
   if (typeof Bun !== "undefined" && Bun.isStandaloneExecutable) return { command: process.execPath, args: ["host"], cwd: homedir() };
-  const packageDir = env.OMP_WEB_PACKAGE_DIR ?? process.cwd();
+  const packageDir = env.TAU_PACKAGE_DIR ?? process.cwd();
   // The daemon is Node-only: a web server running on Bun must start it with the launcher's Node binary.
-  const command = env.OMP_WEB_NODE_BIN || (process.versions.bun ? "node" : process.execPath);
-  return { command, args: [join(resolve(packageDir), "bin", "omp-web-host.js")], cwd: homedir() };
+  const command = env.TAU_NODE_BIN || (process.versions.bun ? "node" : process.execPath);
+  return { command, args: [join(resolve(packageDir), "bin", "tau-host.js")], cwd: homedir() };
 }
 
 function daemonEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

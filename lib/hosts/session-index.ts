@@ -28,20 +28,20 @@ interface HostLists {
 }
 
 declare global {
-  var __ompHostLists: Map<string, HostLists> | undefined;
+  var __tauHostLists: Map<string, HostLists> | undefined;
 }
 
 // globalThis, like the hub: survives a `bun --hot` re-evaluation.
 function hostLists(hostId: string): HostLists {
-  if (!globalThis.__ompHostLists) {
-    globalThis.__ompHostLists = new Map();
+  if (!globalThis.__tauHostLists) {
+    globalThis.__tauHostLists = new Map();
     // A host that links again may have changed its sessions while away.
     onHostHello((id) => invalidateHostSessionList(id));
   }
-  let lists = globalThis.__ompHostLists.get(hostId);
+  let lists = globalThis.__tauHostLists.get(hostId);
   if (!lists) {
     lists = { sessions: [], fetchedAt: 0, generation: 0, loading: null, projects: [], loaded: false };
-    globalThis.__ompHostLists.set(hostId, lists);
+    globalThis.__tauHostLists.set(hostId, lists);
   }
   return lists;
 }
@@ -175,14 +175,14 @@ export async function sessionSpawnTarget(
 
 /** Drop one host's cached session list; it is kept as the fallback while the host is unreachable. */
 export function invalidateHostSessionList(hostId: string): void {
-  const lists = globalThis.__ompHostLists?.get(hostId);
+  const lists = globalThis.__tauHostLists?.get(hostId);
   if (!lists) return;
   lists.fetchedAt = 0;
   lists.generation += 1;
   lists.loaded = false;
 }
 
-/** This machine's session files changed outside any host op (a terminal omp, an import, an archive restore): its daemon and main drop their lists. */
+/** This machine's session files changed outside any host op (a terminal pi, an import, an archive restore): its daemon and main drop their lists. */
 export function invalidateLocalSessionLists(sessionFile?: string): void {
   getHost(LOCAL_HOST_ID).invalidateSessionLists(sessionFile);
   invalidateHostSessionList(LOCAL_HOST_ID);

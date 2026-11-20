@@ -217,7 +217,7 @@ function describe(event: GithubEvent): string {
 
 /** Header, then one line per event. Only validated metadata comes from GitHub; never check/workflow names, branches, logs or file paths, which a fork writes. */
 export function formatUpdate(targetText: string, url: string, events: GithubEvent[]): string {
-  return [`GitHub update (omp-web): ${targetText} ${url}`, ...events.map(describe)].join("\n");
+  return [`GitHub update (tau): ${targetText} ${url}`, ...events.map(describe)].join("\n");
 }
 
 /** Bounded, prose-free provenance for one persisted update batch. */
@@ -252,7 +252,7 @@ const jsonStringContentBytes = (value: string): number => Buffer.byteLength(JSON
 
 /** Splits events without losing any; the caller supplies space left after its complete JSON command envelope. */
 export function splitUpdateEvents(targetText: string, url: string, events: GithubEvent[], maxMessageContentBytes: number): GithubEvent[][] {
-  const headerBytes = jsonStringContentBytes(`GitHub update (omp-web): ${targetText} ${url}`);
+  const headerBytes = jsonStringContentBytes(`GitHub update (tau): ${targetText} ${url}`);
   const batches: GithubEvent[][] = [];
   let batch: GithubEvent[] = [];
   let bytes = headerBytes;

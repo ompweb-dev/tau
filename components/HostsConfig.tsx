@@ -185,24 +185,22 @@ function JoinDialog({ host, localJoins, reload, onClose }: { host: HostRow; loca
 /** `localReason`: this machine is not a member yet, so a join adds it too, and why its own daemon is not ready for that. */
 type ClusterState = { pools: HostPool[]; poolsLoaded: boolean; poolsFailed: boolean; localReason: string | null; masterFailed: boolean };
 
-const joinBlock = (row: HostRow) => clusterJoinBlock({ status: row.status, ompVersion: row.ompVersion, supports: (operation) => row.workspaceOps.includes(operation) });
+const joinBlock = (row: HostRow) => clusterJoinBlock({ status: row.status });
 
-function HostCard({ host, cluster, onRename, onRevoke, onShare, onJoin, onLeave }: { host: HostRow; cluster: ClusterState; onRename: () => void; onRevoke: () => void; onShare: () => void; onJoin: () => void; onLeave: () => void }) {
+function HostCard({ host, cluster, onRename, onRevoke, onJoin, onLeave }: { host: HostRow; cluster: ClusterState; onRename: () => void; onRevoke: () => void; onJoin: () => void; onLeave: () => void }) {
   const { t } = useI18n();
   const name = hostName(t, host);
   const linked = "allowAgentStart" in host ? host : null;
   const member = isClusterMember(cluster.pools, host.id);
-  // Unknown membership (pools not loaded) disables every switch and every share toggle; the reason is only shown once the load failed.
+  // Unknown membership (pools not loaded) disables every switch; the reason is only shown once the load failed.
   // Otherwise only a non-member needs a ready host, and this machine too while it is not a member: leaving always works.
   const unavailable = !cluster.poolsLoaded && cluster.poolsFailed ? t("hostsConfig.poolsUnavailable") : null;
   const block = cluster.poolsLoaded && !member && linked ? joinBlock(host) : null;
-  const joinReason = unavailable ?? (block === "upgrade" || block === "needs-upgrade" ? t("hostsConfig.joinUpgrade")
-    : block === "omp-old" ? t("hostsConfig.joinOmpOld", { name })
-      : block === "omp-missing" ? hostStatusText(t, host)
+  const joinReason = unavailable ?? (block === "needs-upgrade" ? t("hostsConfig.joinUpgrade")
+    : block === "pi-missing" ? hostStatusText(t, host)
         : block !== null ? t("hostsConfig.joinOffline")
           : !member ? cluster.localReason : null);
   const reasonId = useId();
-  const forcedId = useId();
   const details = [
     host.platform,
     host.hostVersion !== null && host.status !== "needs-upgrade" && t("hostsConfig.protocol", { version: host.hostVersion }),
@@ -212,7 +210,7 @@ function HostCard({ host, cluster, onRename, onRevoke, onShare, onJoin, onLeave 
   // so it needs an update; a member without a report yet is still being brought up to date, unless this machine cannot
   // serve its configuration, which the message above the rows says once.
   const memberBlock = member && linked ? joinBlock(host) : null;
-  const outdated = memberBlock === "upgrade" || memberBlock === "needs-upgrade";
+  const outdated = memberBlock === "needs-upgrade";
   const config = member && !outdated ? linked?.clusterConfig : undefined;
   const updating = cluster.masterFailed ? null : t("hostsConfig.configUpdating");
   const configLine = !member || !linked || host.status === "offline" ? null
@@ -238,7 +236,7 @@ function HostCard({ host, cluster, onRename, onRevoke, onShare, onJoin, onLeave 
             {t("hostsConfig.localOfflineHint")}
             <CopyField label={t("hostsConfig.command")} value={localInstallCommand(host.serverPlatform)} />
             {t("hostsConfig.localForegroundHint")}
-            <CopyField label={t("hostsConfig.command")} value="ompweb host" />
+            <CopyField label={t("hostsConfig.command")} value="tau host" />
           </div>
         )}
       </div>
@@ -267,19 +265,6 @@ function HostCard({ host, cluster, onRename, onRevoke, onShare, onJoin, onLeave 
             />
           </div>
         )}
-        {linked && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, maxWidth: "100%", flexWrap: "wrap" }}>
-            <span style={{ fontSize: 11, color: "var(--text-muted)", maxWidth: 200 }}>{t("hostsConfig.shareCredentials")}</span>
-            <ToggleSwitch
-              checked={linked.shareCredentials || member}
-              disabled={member || !cluster.poolsLoaded}
-              aria-label={t("hostsConfig.shareCredentialsAria", { name })}
-              aria-describedby={member ? forcedId : unavailable ? reasonId : undefined}
-              onChange={(shareCredentials) => { if (shareCredentials) onShare(); else void call("PATCH", "/api/hosts", { id: host.id, shareCredentials }).catch(failure); }}
-            />
-            {member && <span id={forcedId} style={{ fontSize: 11, color: "var(--text-dim)", maxWidth: 200 }}>{t("hostsConfig.shareForced")}</span>}
-          </div>
-        )}
         <button type="button" className="ui-focus-ring" aria-label={t("hostsConfig.renameAria", { name })} style={{ ...buttonStyle, display: "inline-flex", alignItems: "center", gap: 5 }} onClick={onRename}>
           <Pencil size={13} aria-hidden="true" />{t("hostsConfig.rename")}
         </button>
@@ -299,30 +284,15 @@ export function HostsConfig() {
   const { hosts, pools, poolsLoaded, poolsFailed, failed: loadFailed, masterConfigError, reload } = useHostRows();
   const [dialog, setDialog] = useState<Dialogs>(null);
   const [revoking, setRevoking] = useState<HostRow | null>(null);
-  const [sharing, setSharing] = useState<HostRow | null>(null);
   const [joining, setJoining] = useState<HostRow | null>(null);
   const [leaving, setLeaving] = useState<HostRow | null>(null);
   const [busy, setBusy] = useState(false);
   const local = hosts?.find(isLocalRow);
   const localJoins = !isClusterMember(pools, LOCAL_HOST_ID);
   const localBlock = poolsLoaded && localJoins && local ? joinBlock(local) : null;
-  const localReason = !local || localBlock === null ? null
-    : localBlock === "omp-old" ? t("hostsConfig.joinOmpOld", { name: hostName(t, local) }) : t("hostsConfig.joinLocalRestart");
+  const localReason = !local || localBlock === null ? null : t("hostsConfig.joinLocalRestart");
   const cluster = clusterOf(pools);
   const linkedMembers = cluster?.members.some((member) => member.hostId !== LOCAL_HOST_ID) ?? false;
-
-  const share = async () => {
-    if (!sharing) return;
-    setBusy(true);
-    try {
-      await call("PATCH", "/api/hosts", { id: sharing.id, shareCredentials: true });
-      setSharing(null);
-    } catch (error) {
-      failure(error);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const leave = async () => {
     if (!leaving) return;
@@ -384,7 +354,7 @@ export function HostsConfig() {
       ) : (
         <ul aria-label={t("hostsConfig.title")} style={{ margin: 0, padding: 0 }}>
           {hosts.map((host) => (
-            <HostCard key={host.id} host={host} cluster={{ pools, poolsLoaded, poolsFailed, localReason, masterFailed: masterConfigError !== null }} onRename={() => setDialog({ kind: "rename", host })} onRevoke={() => setRevoking(host)} onShare={() => setSharing(host)} onJoin={() => setJoining(host)} onLeave={() => setLeaving(host)} />
+            <HostCard key={host.id} host={host} cluster={{ pools, poolsLoaded, poolsFailed, localReason, masterFailed: masterConfigError !== null }} onRename={() => setDialog({ kind: "rename", host })} onRevoke={() => setRevoking(host)} onJoin={() => setJoining(host)} onLeave={() => setLeaving(host)} />
           ))}
           {hosts.length === 1 && <li style={{ listStyle: "none", fontSize: 12, color: "var(--text-dim)" }}>{t("hostsConfig.empty")}</li>}
         </ul>
@@ -411,16 +381,6 @@ export function HostsConfig() {
         danger
         busy={busy}
         onConfirm={() => void revoke()}
-      />
-      <ConfirmDialog
-        open={sharing !== null}
-        onOpenChange={(open) => { if (!open) setSharing(null); }}
-        title={t("hostsConfig.shareCredentialsTitle", { name: sharing?.label ?? "" })}
-        description={t("hostsConfig.shareCredentialsDescription", { name: sharing?.label ?? "" })}
-        confirmLabel={t("hostsConfig.shareCredentialsConfirm")}
-        cancelLabel={t("hostsConfig.cancel")}
-        busy={busy}
-        onConfirm={() => void share()}
       />
     </div>
   );

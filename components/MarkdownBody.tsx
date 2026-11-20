@@ -36,7 +36,7 @@ export interface MarkdownBodyRendering {
   urlTransform: UrlTransform;
 }
 
-/** Builds omp-web's markdown rendering setup (links, images, tables, code) so any renderer can reuse it. */
+/** Builds tau's markdown rendering setup (links, images, tables, code) so any renderer can reuse it. */
 export function useMarkdownBodyRendering({ children, isStreaming, cwd, sourceSessionId, onOpenFile, suppressImages = false, autoCharts = false }: Omit<MarkdownBodyProps, "className">): MarkdownBodyRendering {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   const fileSource = useContext(WorkspaceFileContext);

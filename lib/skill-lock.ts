@@ -130,14 +130,14 @@ export function annotateSkillsWithInstallInfo(
 ): SkillInfo[] {
   const globalEntries = readSkillLock(globalLockPath);
   const projectEntries = readSkillLock(projectLockPath);
-  // skills.sh installs with --agent universal land in .agents/skills; omp's
+  // skills.sh installs with --agent universal land in .agents/skills; pi's
   // own dirs remain valid install roots for manually placed skills.
   const globalSkillsRoots = [join(agentDir, "skills"), join(homedir(), ".agents", "skills")];
-  const projectSkillsRoots = [join(cwd, ".omp", "skills"), join(cwd, ".agents", "skills")];
+  const projectSkillsRoots = [join(cwd, ".pi", "skills"), join(cwd, ".agents", "skills")];
 
   return skills.map((skill) => {
     if (!existsSync(skill.filePath)) return skill;
-    // omp lists colliding skills as `namespace/name`; lock files key the
+    // A colliding skill may be listed as `namespace/name`; lock files key the
     // installed name.
     const lockName = skill.name.slice(skill.name.lastIndexOf("/") + 1);
 

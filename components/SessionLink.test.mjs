@@ -18,7 +18,7 @@ const session = {
 test("plain clicks open the host-qualified session while modified clicks stay browser-native", () => {
   const opened = [];
   const listener = (event) => opened.push(event.detail);
-  window.addEventListener("omp-open-session", listener);
+  window.addEventListener("tau-open-session", listener);
   try {
     render(React.createElement(SessionLink, { session }));
     const link = screen.getByRole("link", { name: "Open session Incident review on Worker 1" });
@@ -29,7 +29,7 @@ test("plain clicks open the host-qualified session while modified clicks stay br
     fireEvent.click(link, { ctrlKey: true });
     assert.equal(opened.length, 1);
   } finally {
-    window.removeEventListener("omp-open-session", listener);
+    window.removeEventListener("tau-open-session", listener);
   }
 });
 

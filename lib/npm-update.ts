@@ -6,7 +6,6 @@ import { homedir } from "os";
 import { join, normalize, sep } from "path";
 
 const NPM_PACKAGE = "@ompweb-dev/tau";
-const PI_NPM_PACKAGE = "@earendil-works/pi-coding-agent";
 const CHECK_TTL_MS = 60 * 60 * 1000;
 
 export interface NpmUpdateStatus {
@@ -24,7 +23,7 @@ let cached: { checkedAt: number; status: NpmUpdateStatus } | null = null;
 
 export async function checkNpmUpdate(force = false): Promise<NpmUpdateStatus> {
   const currentVersion = packageJson.version;
-  const packageDir = process.env.OMP_WEB_PACKAGE_DIR ?? process.cwd();
+  const packageDir = process.env.TAU_PACKAGE_DIR ?? process.cwd();
   const installMethod = typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "binary" : detectInstallMethod(packageDir);
   const updateCommand = installMethod === "binary" ? `https://github.com/${releaseRepo()}/releases/latest` : installMethod === "bun" ? "bun add -g @ompweb-dev/tau" : "npm install -g @ompweb-dev/tau";
 
@@ -51,26 +50,6 @@ export async function checkNpmUpdate(force = false): Promise<NpmUpdateStatus> {
     return status;
   } catch {
     return { currentVersion, availableVersion: null, updateAvailable: false, installMethod, updateCommand };
-  }
-}
-
-let cachedPi: { checkedAt: number; availableVersion: string | null } | null = null;
-
-/** Check npm registry for the latest `@earendil-works/pi-coding-agent` version. */
-export async function checkPiRegistryVersion(force = false): Promise<string | null> {
-  if (isUpdateDisabled()) return null;
-  if (!force && cachedPi && Date.now() - cachedPi.checkedAt < CHECK_TTL_MS) return cachedPi.availableVersion;
-  try {
-    const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(PI_NPM_PACKAGE)}/latest`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(5_000),
-    });
-    const data = response.ok ? await response.json() as { version?: unknown } : null;
-    const availableVersion = typeof data?.version === "string" ? data.version : null;
-    cachedPi = { checkedAt: Date.now(), availableVersion };
-    return availableVersion;
-  } catch {
-    return null;
   }
 }
 

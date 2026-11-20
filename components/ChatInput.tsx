@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, memo, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Mic, Paperclip, Plus, RotateCw, Shrink, Snail, Sparkles, Terminal, Wrench, X, Zap } from "lucide-react";
+import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Mic, Paperclip, Plus, RotateCw, Shrink, Terminal, Wrench, X } from "lucide-react";
 import { getSubmitDuringRunBehavior } from "@/lib/composer-prefs";
 import type { BuiltinSlashCommandResult, CompactResultInfo, PromptSendOptions, PromptSubmissionResult, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { ActiveGoal, ActivePlan } from "@/lib/web-mode-state";
@@ -10,12 +10,12 @@ import { toast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/field";
 import { useDictation } from "@/hooks/useDictation";
 import { toastBtwError } from "@/hooks/useBtw";
-import type { GenerationSpeedInfo, SessionStatsInfo, SlowModeScope, UsageLimitState } from "@/lib/pi-types";
+import type { GenerationSpeedInfo, SessionStatsInfo } from "@/lib/pi-types";
 import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, moveDraftSubmissions, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft, type ChatDraftImage } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -36,7 +36,7 @@ import {
   uploadRecovery,
   type AttachedUpload,
 } from "./ChatInput-uploads";
-import { discardUpload, uploadFile, UploadFailedError, type UploadHandle } from "@/lib/event-stream";
+import { discardUpload, uploadFile, type UploadHandle } from "@/lib/event-stream";
 import { randomUUID } from "@/lib/random-uuid";
 import { MAX_UPLOAD_BYTES, MAX_UPLOADS_PER_MESSAGE } from "@/lib/upload-limits";
 import { hostProjectKey, LOCAL_HOST_ID } from "@/lib/project-ordering";
@@ -97,59 +97,6 @@ function ThinkingGlyph({ level }: { level: string }) {
   );
 }
 
-const SLOW_MODE_SAME_DAY_MS = 20 * 3_600_000;
-
-function formatSlowModeResetClock(resetsAtSec: number, now: number): string {
-  const date = new Date(resetsAtSec * 1000);
-  return resetsAtSec * 1000 - now > SLOW_MODE_SAME_DAY_MS
-    ? date.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-/** A reset time we can actually put on screen, or null when omp gave us none.
- *  omp may omit the field or send a non-number, and a reset already in the
- *  past would render a plausible but wrong clock — both are worse than saying
- *  no time at all, because the user would plan around them. */
-function usableSlowModeResetTime(
-  resetsAtSec: number | null | undefined,
-  now: number,
-): string | null {
-  if (typeof resetsAtSec !== "number" || !Number.isFinite(resetsAtSec)) return null;
-  if (resetsAtSec * 1000 <= now) return null;
-  return formatSlowModeResetClock(resetsAtSec, now);
-}
-
-function slowModeAllowancePercent(
-  allowanceLeftPercent: number | null | undefined,
-): number | null {
-  return typeof allowanceLeftPercent === "number" && Number.isFinite(allowanceLeftPercent)
-    ? allowanceLeftPercent
-    : null;
-}
-
-function formatUsageLimitLabel(
-  state: UsageLimitState,
-  t: (key: string, vars?: Record<string, string | number>) => string,
-  now = Date.now(),
-): string {
-  const time = usableSlowModeResetTime(state.resetsAtSec, now);
-  if (state.stage === "low_priority") {
-    // Read inside the narrowing: allowanceLeftPercent is not on the wrap_up arm.
-    const percent = slowModeAllowancePercent(state.allowanceLeftPercent);
-    if (time === null) {
-      return percent === null
-        ? t("chatInput.slowMode.lowPriorityNoReset")
-        : t("chatInput.slowMode.lowPriorityAllowanceOnly", { percent });
-    }
-    return percent === null
-      ? t("chatInput.slowMode.lowPriority", { time })
-      : t("chatInput.slowMode.lowPriorityAllowance", { time, percent });
-  }
-  if (state.extraUsage) return t("chatInput.slowMode.wrapUpExtraUsage");
-  if (time === null) return t("chatInput.slowMode.wrapUp");
-  return t("chatInput.slowMode.wrapUpReset", { time });
-}
-
 /** A file's bytes as base64, without the data URL's prefix. */
 function readBase64(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -189,22 +136,11 @@ interface Props {
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
-  modelList?: { id: string; name: string; provider: string; supportsFastMode?: boolean }[];
+  modelList?: { id: string; name: string; provider: string }[];
   modelError?: string | null;
   modelsLoading?: boolean;
   onModelChange?: (provider: string, modelId: string) => void;
-  fastModeEnabled?: boolean;
-  fastModeActive?: boolean;
-  /** omp's structured provider usage-limit state, shown as a warning chip. */
-  usageLimit?: UsageLimitState;
-  fastModeSupported?: boolean;
-  onFastModeChange?: (enabled: boolean) => void;
-  /** omp reports `/slow` applies to the active model (absent on older omp). */
-  slowModeSupported?: boolean;
-  slowModeEnabled?: boolean;
-  /** `global` = shared persisted omp setting; `session` = this session only. */
-  slowModeScope?: SlowModeScope;
-  onSlowModeChange?: (enabled: boolean) => void;
+  /** Structured provider usage-limit state, shown as a warning chip (pi 1.5.2 does not report it). */
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactResult?: CompactResultInfo | null;
@@ -221,10 +157,6 @@ interface Props {
   onAbortRetry?: () => void;
   queuedMessages?: QueuedMessages | null;
   inputHistory?: string[];
-  /** True while the advisor model is actively reviewing the running turn. */
-  advisorActive?: boolean;
-  /** Resolved advisor role (display model + reasoning) for the composer tooltips. */
-  advisorModel?: { name: string; reasoning: string | null } | null;
   /** Compact the session context from the session information panel. */
   onCompact?: () => void;
   /** Live context totals feeding the session information ring. */
@@ -237,11 +169,9 @@ interface Props {
   modelCapacity?: { contextWindow?: number; maxTokens?: number } | null;
   /** Generation speed shown in the context ring popover. */
   generationSpeed?: GenerationSpeedInfo | null;
-  /** Cancel one pending message in omp before removing it from the queue
-   *  panel; resolves to its images once omp confirms, else false. */
-  onRemoveQueuedMessage?: (text: string, queue: "steering" | "followUp") => Promise<ChatDraftImage[] | false>;
+  /** Takes the whole queue back from pi (it clears only whole): the texts in delivery order, or false. */
+  onClearQueuedMessages?: () => Promise<string[] | false>;
   /** Promote the first matching native follow-up into steering. */
-  onPromoteQueuedToSteer?: (text: string) => void | Promise<void>;
   slashCommands?: SlashCommandInfo[];
   slashCommandsLoading?: boolean;
   onLoadSlashCommands?: () => Promise<SlashCommandInfo[]> | SlashCommandInfo[];
@@ -252,15 +182,10 @@ interface Props {
   uploadHostId?: string;
   /** Lazily bind a pool's real owner before staging any file bytes. Failure never falls back locally. */
   resolveUploadHost?: () => Promise<string>;
-  /** Backend-confirmed ownership relocation, distinct from navigating to a draft. */
-  draftIdentityMove?: { from: string; to: string; sourceDraft?: ChatDraft };
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
   activeGoal?: ActiveGoal | null;
   activePlan?: ActivePlan | null;
-  advisorEnabled?: boolean;
-  /** Toggle the per-chat advisor (composer icon + /advisor command). */
-  onAdvisorChange?: (enabled: boolean) => void;
   /** Collapse the entire composer into a minimized bar. */
   onMinimize?: () => void;
   /** Active status label attached to the composer's top edge (e.g. "Waiting for model..."). */
@@ -276,8 +201,6 @@ export interface ChatInputHandle {
   prependText: (text: string) => void;
   addFiles: (files: File[]) => void;
   openContextPanel: () => void;
-  /** Retarget captured queue recoveries before a confirmed move can render. */
-  retargetPendingRecovery: (from: string, to: string) => void;
 }
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 
@@ -357,7 +280,7 @@ function menuDropStyle(placement: MenuPlacement, maxHeight: number | null): Reac
 }
 
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange, fastModeEnabled, fastModeActive, usageLimit, fastModeSupported, onFastModeChange, slowModeSupported, slowModeEnabled, slowModeScope, onSlowModeChange,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange,
   onAbortCompaction, isCompacting, compactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, modelNameOverride,
   toolPreset, onToolPresetChange,
@@ -367,25 +290,19 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   onAudioUnlock,
   outbox = false,
   submissionBlocked = false,
-  advisorActive,
-  advisorModel,
   onCompact,
   contextUsage,
   sessionStats,
   sessionInfoContainer,
   modelCapacity,
   generationSpeed,
-  onRemoveQueuedMessage,
-  onPromoteQueuedToSteer,
+  onClearQueuedMessages,
   draftKey = "new:unassigned",
   uploadHostId = LOCAL_HOST_ID,
   resolveUploadHost,
-  draftIdentityMove,
   cwd,
   activeGoal,
   activePlan,
-  advisorEnabled,
-  onAdvisorChange,
   onMinimize,
   statusText,
   onOpenProviders,
@@ -414,9 +331,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     items[next]?.focus();
   }, []);
   const { t, tn, locale } = useI18n();
-  const usageLimitLabel = usageLimit
-    ? formatUsageLimitLabel(usageLimit, t)
-    : undefined;
   const modelCollator = React.useMemo(
     () => new Intl.Collator(locale, { numeric: true, sensitivity: "base" }),
     [locale],
@@ -429,8 +343,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     setPromptOnlyState(next);
   }, []);
   const [queuedDeleteTarget, setQueuedDeleteTarget] = useState<{
-    text: string;
-    kind: "follow-up" | "steer";
     draftKey: string | undefined;
     queue: Props["queuedMessages"];
   } | null>(null);
@@ -443,7 +355,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const [composerContextContainer, setComposerContextContainer] = useState<HTMLDivElement | null>(null);
   const contextContainer = isMobile ? sessionInfoContainer : composerContextContainer;
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [plusExpanded, setPlusExpanded] = useState<"tools" | "advisor" | null>(null);
+  const [plusExpanded, setPlusExpanded] = useState<"tools" | null>(null);
   const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
@@ -527,20 +439,15 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
    *  The edit is recorded at admission, before React batches state or flushes the persist effect, so an equal final
    *  value (clear then retype in one batch) still invalidates an older outbox commit. */
   const markInputEdited = useCallback(() => {
-    // A confirmed move can hand off the identity before React commits the draftKey prop. Edits in that window belong
-    // to the new owner, just like pending queue recovery; marking the old display key would miss its pending commit.
-    const key = draftRecoveryIdentityRef.current.key;
+    const key = draftKeyRef.current;
     if (key) markDraftEdited(key);
   }, []);
   const setValue: React.Dispatch<React.SetStateAction<string>> = useCallback((next) => {
     markInputEdited();
     setRawValue(next);
   }, [markInputEdited]);
-  const consumedIdentityMoveRef = useRef<typeof draftIdentityMove>(undefined);
-  // Pending queue edits retain this identity across confirmed moves only.
   // Navigation starts a new identity, even when a draft key is later reused.
   const draftRecoveryIdentityRef = useRef({ key: draftKey });
-  const persistedDraftRef = useRef<ChatDraft | null>(null);
   // Async dictation and slash-command completions must see the latest edit gate.
   const submissionBlockedRef = useRef(submissionBlocked);
   const valueRef = useRef(value);
@@ -556,7 +463,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   // Bumped whenever the user clears/sends the composer: in-flight FileReader
   // and file.text() reads must not re-append their results afterwards.
   const attachmentRevisionRef = useRef(0);
-  const attachmentIdentityRevisionRef = useRef(0);
   const pendingImageCountRef = useRef(0);
   const pendingTextFileCountRef = useRef(0);
   const pendingTextFileBytesRef = useRef(0);
@@ -662,15 +568,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     openContextPanel() {
       setContextOpen(true);
     },
-    retargetPendingRecovery(from, to) {
-      const identity = draftRecoveryIdentityRef.current;
-      if (identity.key === from) {
-        // The hook has transferred the stored draft, but React may not have committed the new key yet. Retarget active
-        // submissions here too: an ACK in that gap must find its draft, including one sent by an earlier mount.
-        moveDraftSubmissions(from, to);
-        identity.key = to;
-      }
-    },
   }));
 
   const patchUpload = useCallback((id: string, patch: Partial<AttachedUpload>) => {
@@ -710,9 +607,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     };
     handle.promise.then(
       ({ proof }) => settle({ status: "done", received: size, error: null, proof }),
-      // 410: the worker already cancelled it on its host (the page went into the back/forward cache). A Retry under a
-      // new id starts over, so the cancel still pending for this one can never reach it.
-      (error: unknown) => settle({ status: "error", error: uploadErrorMessage(error), ...(error instanceof UploadFailedError && error.status === 410 ? { id: randomUUID(), proof: undefined } : {}) }),
+      (error: unknown) => settle({ status: "error", error: uploadErrorMessage(error) }),
     );
   }, [patchUpload, t]);
 
@@ -773,7 +668,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     // Admission is a new composer edit now, not only when FileReader finishes: an older ACK must not invalidate it.
     markInputEdited();
     const revision = attachmentRevisionRef.current;
-    const identityRevision = attachmentIdentityRevisionRef.current;
     pendingImageCountRef.current += imageFiles.length;
     pendingImageBytesRef.current += inlineBytes;
     const created: AttachedImage[] = [];
@@ -792,11 +686,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         return;
       }
       setAttachedImages((prev) => {
-        // These reads already passed the picker budget before the move.
-        // A merged target must not take away their reserved slots.
-        const accepted = identityRevision !== attachmentIdentityRevisionRef.current
-          ? newImages
-          : newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
+        const accepted = newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
         newImages.slice(accepted.length).forEach(revokeImagePreview);
         return [...prev, ...accepted];
       });
@@ -811,8 +701,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     }
   }, [attachAsFiles, fitsInline, markInputEdited, t]);
 
-  /** Text is inlined while it fits the text budget; past it, when it turns out binary, and always for a PDF (omp reads
-   *  it as a document; its decoded bytes are not text), it goes As file. */
+  /** Text is inlined while it fits the text budget; past it, when it turns out binary, and always for a PDF (its
+   *  decoded bytes are not text), it goes As file. */
   const processTextFiles = useCallback(async (files: File[]) => {
     // In-flight batches reserve their bytes too, so two overlapping drops
     // cannot each fit under the aggregate budget on their own.
@@ -824,7 +714,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     if (!textFiles.length) return;
     markInputEdited();
     const revision = attachmentRevisionRef.current;
-    const identityRevision = attachmentIdentityRevisionRef.current;
     pendingTextFileCountRef.current += textFiles.length;
     pendingTextFileBytesRef.current += textFiles.reduce((total, file) => total + file.size, 0);
     try {
@@ -847,9 +736,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       attachAsFiles(textFiles.filter((_, index) => binary[index]));
       setAttachedTextFiles((prev) => [
         ...prev,
-        ...(identityRevision !== attachmentIdentityRevisionRef.current
-          ? newFiles
-          : newFiles.slice(0, Math.max(0, MAX_ATTACHED_TEXT_FILES - prev.length))),
+        ...newFiles.slice(0, Math.max(0, MAX_ATTACHED_TEXT_FILES - prev.length)),
       ]);
     } catch {
       setAttachError(t("chatInput.attachmentTextReadFailed"));
@@ -1031,14 +918,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const uploads = attachedUploadsRef.current;
     const key = draftKeyRef.current;
     // Dictation can submit before the layout persistence effect sees its inserted text.
-    if (key && draftRecoveryIdentityRef.current.key === key) {
-      setDraft(key, captureDraft());
-    }
+    if (key) setDraft(key, captureDraft());
     const pending = beginDraftSubmission(draftKeyRef.current);
     const commit = () => {
       endDraftSubmission(pending);
-      // `pending.key` follows a confirmed identity move of an unchanged draft and is cleared if the move merged or the
-      // draft was edited first, so only the sent draft itself is ever consumed.
+      // Only the sent draft itself is ever consumed: an edit since it was sent keeps it.
       if (pending.edited) return;
       if (composerAliveRef.current && draftKeyRef.current === pending.key
         && (!pending.key || getDraftRevision(pending.key) === pending.revision)
@@ -1058,71 +942,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   }), [clearInput, captureDraft]);
 
   useLayoutEffect(() => {
-    // The synchronous ref handoff can precede the prop commit. Keep live deltas in React for the existing move merge,
-    // rather than recreating the obsolete key (which could evict an unrelated draft at capacity).
-    if (!draftKey || draftKeyRef.current !== draftKey || draftRecoveryIdentityRef.current.key !== draftKey) return;
-    const draft = captureDraft();
-    persistedDraftRef.current = draft;
-    setDraft(draftKey, draft);
+    if (!draftKey || draftKeyRef.current !== draftKey) return;
+    setDraft(draftKey, captureDraft());
   }, [attachedImages, attachedTextFiles, attachedUploads, draftKey, value, promptOnly, captureDraft]);
 
   useLayoutEffect(() => {
     const previousDraftKey = draftKeyRef.current;
     if (previousDraftKey === draftKey) return;
-
-    if (draftIdentityMove !== consumedIdentityMoveRef.current
-      && draftIdentityMove?.from === previousDraftKey && draftIdentityMove.to === draftKey) {
-      consumedIdentityMoveRef.current = draftIdentityMove;
-      attachmentIdentityRevisionRef.current += 1;
-      draftRecoveryIdentityRef.current.key = draftKey;
-      // The hook's transfer may precede this batch's mounted state updates.
-      // Add only live deltas to its merged snapshot, not the source twice.
-      const source = draftIdentityMove.sourceDraft ?? persistedDraftRef.current;
-      const draft = getDraft(draftKey);
-      setPromptOnly(promptOnlyRef.current || Boolean(draft?.promptOnly));
-      draftKeyRef.current = draftKey;
-      // A pending outbox commit (possibly from an earlier mount) follows only its own unchanged draft to the new key.
-      moveDraftSubmissions(previousDraftKey, draftKey);
-      setRawValue((current) => {
-        const transferred = draft?.value ?? "";
-        if (!source || current === source.value) return transferred;
-        const destination = source.value && transferred.startsWith(source.value)
-          ? transferred.slice(source.value.length).replace(/^\n\n/, "")
-          : transferred;
-        return mergeRecoveredText(destination, { text: current });
-      });
-      setAttachedImages((current) => {
-        // Match occurrences, not a set: intentional identical attachments in
-        // the source or target must retain their original multiplicity.
-        const remaining = [...(source?.images ?? [])];
-        const added = current.filter((image) => {
-          const index = remaining.findIndex((item) => item.data === image.data && item.mimeType === image.mimeType);
-          if (index === -1 && source) return true;
-          if (index !== -1) remaining.splice(index, 1);
-          revokeImagePreview(image);
-          return false;
-        });
-        return [...draftImagesToAttachedImages(draft?.images), ...added];
-      });
-      setAttachedTextFiles((current) => {
-        const remaining = [...(source?.files ?? [])];
-        const added = current.filter((file) => {
-          const index = remaining.findIndex((item) => item.name === file.name && item.mimeType === file.mimeType
-            && item.content === file.content && item.size === file.size);
-          if (index === -1) return Boolean(source);
-          remaining.splice(index, 1);
-          return false;
-        });
-        return [...draftFilesToAttachedFiles(draft?.files), ...added];
-      });
-      // The same composer's uploads stay; the transferred draft's finished ones join them once.
-      setAttachedUploads((current) => [
-        ...draftUploadsToAttachedUploads(draft?.uploads).filter((upload) => !current.some((each) => each.id === upload.id)),
-        ...current,
-      ]);
-      setQueuedDeleteTarget(null);
-      return;
-    }
 
     // Invalidate any attachment reads still in flight for the old session so
     // they cannot append onto the new session's composer, and drop any stale
@@ -1157,7 +983,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       for (const upload of prev) if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
       return draftUploadsToAttachedUploads(draft?.uploads);
     });
-  }, [draftKey, draftIdentityMove, setPromptOnly, captureDraft]);
+  }, [draftKey, setPromptOnly, captureDraft]);
 
   useLayoutEffect(() => subscribeDraftRecovery((key, recovery) => {
     if (draftKeyRef.current !== key) return;
@@ -1272,7 +1098,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const raw = overrideText ?? value;
     const msg = raw.trim();
     if (!msg && !attachedImagesRef.current.length && !attachedTextFilesRef.current.length && !attachedUploadsRef.current.length) return;
-    // `!cmd` runs right away during a run too, as in omp's terminal; it is never queued as text.
+    // `!cmd` runs right away during a run too, as in pi's TUI; it is never queued as text.
     const shellCommand = !promptOnlyRef.current && msg.startsWith("!") && !attachedImagesRef.current.length && !attachedTextFilesRef.current.length && !attachedUploadsRef.current.length;
     if (submissionBlockedRef.current || holdingRef.current) return;
     onAudioUnlock?.();
@@ -1347,7 +1173,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     confirmTranscribe: confirmTranscribeDictation,
   } = useDictation({
     scope: draftKey,
-    identityMove: draftIdentityMove,
     // `after` comes back with the transcript from the server job, so a send or
     // queue chosen before a session switch (which remounts this composer) holds.
     // The run may have started or ended since: queue while the agent runs
@@ -1444,28 +1269,25 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
 
   const builtinSlashCommands: SlashCommandPaletteItem[] = React.useMemo(
     () => BUILTIN_SLASH_COMMAND_DEFS
-      // The /advisor command is linked to Settings → Enable Advisor: hidden
-      // from the palette while the advisor is disabled.
-      .filter((def) => def.name !== "advisor" || advisorEnabled)
       .map((def) => ({
         name: def.name,
         description: t(def.descriptionKey),
         ...(def.argumentHintKey ? { argumentHint: t(def.argumentHintKey) } : {}),
         source: "builtin" as const,
       })),
-    [t, advisorEnabled],
+    [t],
   );
 
-  // Externally reported commands (extension/prompt/skill/ompBuiltin) group
+  // Externally reported commands (extension/prompt/skill/piBuiltin) group
   // below the client built-ins; any name the web UI intercepts itself —
-  // whether an omp builtin or a user extension — is dropped so each command
+  // whether a pi builtin or a user extension — is dropped so each command
   // appears exactly once and the client interception behavior is unchanged.
   const externalSlashCommands: SlashCommandPaletteItem[] = React.useMemo(
     () => (slashCommands ?? []).flatMap((command): SlashCommandPaletteItem[] => {
       const source = command.source as string;
       if (CLIENT_BUILTIN_COMMAND_NAMES.has(command.name)) return [];
-      if (source === "builtin" || source === "ompBuiltin") {
-        return [{ name: command.name, description: command.description, source: "ompBuiltin" }];
+      if (source === "builtin" || source === "piBuiltin") {
+        return [{ name: command.name, description: command.description, source: "piBuiltin" }];
       }
       return [command];
     }),
@@ -1812,17 +1634,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const files = attachedTextFilesRef.current;
     onAudioUnlock?.();
     if (msg.startsWith("/")) {
-      const commandName = msg.slice(1).split(/\s+/)[0];
-      // Same gate as the direct path (useAgentSession refuses /advisor while
-      // disabled): queueing must not become a bypass around the toggle.
-      if (commandName === "advisor" && !advisorEnabled) {
-        toast.error(t("agentSession.advisorDisabled"));
-        return;
-      }
       // Web commands must be expanded even when queued: the raw slash text
-      // would otherwise reach omp as a literal message (its /goal //plan are
-      // TUI-only). Action commands (compact/...) keep the raw text so omp's
-      // own ACP handlers can run them.
+      // would otherwise reach pi as a literal message. Action commands
+      // (compact/...) keep the raw text so pi's own handlers can run them.
       const expansion = expandWebSlashCommand(msg);
       if (expansion.kind === "expand") {
         const prompt = composeMessageWithTextAttachments(expansion.prompt, files);
@@ -1841,7 +1655,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const composedMessage = composeMessageWithTextAttachments(msg, files);
     if (rejectsOversizedPrompt(composedMessage, attachedImagesRef.current)) return;
     hold(composedMessage);
-  }, [value, handleSend, onSteer, onFollowUp, clearOnceStored, onAudioUnlock, t, advisorEnabled, rejectsOversizedPrompt, rejectsPendingUploads, sendSideQuestion]);
+  }, [value, handleSend, onSteer, onFollowUp, clearOnceStored, onAudioUnlock, t, rejectsOversizedPrompt, rejectsPendingUploads, sendSideQuestion]);
   // A typed message or attachment during a run is a queued follow-up — and so
   // is a dictation in progress: the primary button must take the same state it
   // would have if the composer already held text. Keep Stop as the action
@@ -1887,54 +1701,41 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   const activeDeleteTarget = queuedDeleteTarget?.draftKey === draftKey
     && queuedDeleteTarget?.queue === queuedMessages ? queuedDeleteTarget : null;
 
-  const handleQueueAction = useCallback(async (
-    entry: { kind: "follow-up" | "steer"; text: string },
-    action: "edit" | "delete" | "steer",
-  ) => {
-    if (queueActionPendingRef.current || (action === "steer" && submissionBlockedRef.current)) return;
+  const handleQueueAction = useCallback(async (action: "edit" | "delete") => {
+    if (queueActionPendingRef.current) return;
     queueActionPendingRef.current = true;
     setQueueActionPending(true);
     const recoveryIdentity = draftRecoveryIdentityRef.current;
     try {
-      if (action === "steer") {
-        if (entry.kind === "follow-up") await onPromoteQueuedToSteer?.(entry.text);
-        return;
-      }
-      const removed = await onRemoveQueuedMessage?.(
-        entry.text, entry.kind === "steer" ? "steering" : "followUp",
-      );
-      setQueuedDeleteTarget(null);
-      if (!removed || action !== "edit") return;
-      // Recover to this conversation's last confirmed owner, not a later navigation.
-      // omp labels an image-only message "[Image]": not text when it has images.
-      recoverDraft(recoveryIdentity.key, { text: entry.text === "[Image]" && removed.length > 0 ? "" : entry.text, images: removed, promptOnly: true });
+      const texts = await onClearQueuedMessages?.();
+      // Recover to the conversation the action started in, not a later navigation.
+      if (action === "edit" && texts && texts.length > 0) recoverDraft(recoveryIdentity.key, { text: texts.join("\n\n"), promptOnly: true });
     } catch (error) {
-      setQueuedDeleteTarget(null);
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
+      setQueuedDeleteTarget(null);
       queueActionPendingRef.current = false;
       setQueueActionPending(false);
     }
-  }, [onRemoveQueuedMessage, onPromoteQueuedToSteer]);
+  }, [onClearQueuedMessages]);
 
-  const handleItemDelete = useCallback((entry: { kind: "follow-up" | "steer"; text: string }) => {
-    setQueuedDeleteTarget({ ...entry, draftKey, queue: queuedMessages });
-  }, [draftKey, queuedMessages]);
-
-  const handleQueuedEdit = useCallback(() => {
-    if (!firstQueued) return;
-    void handleQueueAction(firstQueued, "edit");
-  }, [firstQueued, handleQueueAction]);
+  const handleQueuedEdit = useCallback(() => { void handleQueueAction("edit"); }, [handleQueueAction]);
 
   const handleQueuedDelete = useCallback(() => {
-    if (!firstQueued) return;
-    handleItemDelete(firstQueued);
-  }, [firstQueued, handleItemDelete]);
+    setQueuedDeleteTarget({ draftKey, queue: queuedMessages });
+  }, [draftKey, queuedMessages]);
 
-  const handleQueuedSteer = useCallback(() => {
-    if (!firstQueued) return;
-    void handleQueueAction(firstQueued, "steer");
-  }, [firstQueued, handleQueueAction]);
+  /** Edit and Delete act on the whole queue: pi takes queued messages back only together. */
+  const queueActions = (
+    <>
+      <QueuedActionButton disabled={queueActionPending || !onClearQueuedMessages} onClick={handleQueuedEdit} title={t("chatInput.queuedEditTitle")}>
+        {t("chatInput.queuedEdit")}
+      </QueuedActionButton>
+      <QueuedActionButton disabled={queueActionPending || !onClearQueuedMessages} onClick={handleQueuedDelete} title={t("chatInput.queuedDeleteTitle")}>
+        {t("chatInput.queuedDelete")}
+      </QueuedActionButton>
+    </>
+  );
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = filteredSlashCommands.length - 1;
@@ -2172,10 +1973,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       if (event.key === null || event.key === COMPOSER_MODELS_STORAGE_KEY) refresh();
     };
     refresh();
-    window.addEventListener("omp-composer-models-change", refresh);
+    window.addEventListener("tau-composer-models-change", refresh);
     window.addEventListener("storage", refreshFromStorage);
     return () => {
-      window.removeEventListener("omp-composer-models-change", refresh);
+      window.removeEventListener("tau-composer-models-change", refresh);
       window.removeEventListener("storage", refreshFromStorage);
     };
   }, []);
@@ -2377,7 +2178,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
           <>
             {t("chatInput.queuedDeleteConfirmBody")}
             <span style={{ display: "block", marginTop: 12, maxHeight: 180, overflowY: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {activeDeleteTarget?.text}
+              {queuedEntries.map((entry) => entry.text).join("\n\n")}
             </span>
           </>
         )}
@@ -2387,7 +2188,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
         busy={queueActionPending}
         onConfirm={() => {
           if (!activeDeleteTarget) return;
-          void handleQueueAction(activeDeleteTarget, "delete");
+          void handleQueueAction("delete");
         }}
       />
       {/* Hidden file input */}
@@ -2997,17 +2798,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                       : ""}
                   {firstQueued?.text}
                 </span>
-                <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={handleQueuedEdit} title={t("chatInput.queuedEditTitle")}>
-                  {t("chatInput.queuedEdit")}
-                </QueuedActionButton>
-                <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={handleQueuedDelete} title={t("chatInput.queuedDeleteTitle")}>
-                  {t("chatInput.queuedDelete")}
-                </QueuedActionButton>
-                {firstQueued?.kind === "follow-up" && (
-                  <QueuedActionButton disabled={submissionBlocked || queueActionPending || !onPromoteQueuedToSteer} onClick={handleQueuedSteer} title={t("chatInput.queuedSteerTitle")} accent>
-                    {t("chatInput.queuedSteerAction")}
-                  </QueuedActionButton>
-                )}
+                {queueActions}
               </div>
             ) : (
               <div>
@@ -3077,6 +2868,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                     )}
                   </button>
                   <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    {queueActions}
                     <button
                       type="button"
                       onClick={() => setQueueExpanded((prev) => !prev)}
@@ -3153,17 +2945,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                         >
                           {entry.text}
                         </span>
-                        <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={() => void handleQueueAction(entry, "edit")} title={t("chatInput.queuedEditTitle")}>
-                          {t("chatInput.queuedEdit")}
-                        </QueuedActionButton>
-                        <QueuedActionButton disabled={queueActionPending || !onRemoveQueuedMessage} onClick={() => handleItemDelete(entry)} title={t("chatInput.queuedDeleteTitle")}>
-                          {t("chatInput.queuedDelete")}
-                        </QueuedActionButton>
-                        {entry.kind === "follow-up" && (
-                          <QueuedActionButton disabled={submissionBlocked || queueActionPending || !onPromoteQueuedToSteer} onClick={() => void handleQueueAction(entry, "steer")} title={t("chatInput.queuedSteerTitle")} accent>
-                            {t("chatInput.queuedSteerAction")}
-                          </QueuedActionButton>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -3297,7 +3078,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             flexWrap: "wrap",
             rowGap: 6,
           }}>
-            {/* Plus menu — attachment · tools submenu · advisor submenu */}
+            {/* Plus menu — attachment · tools submenu */}
             <div ref={plusMenuRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
                 onClick={() => setPlusMenuOpen((v) => !v)}
@@ -3411,42 +3192,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                           </button>
                         );
                       })}
-                    </>
-                  )}
-                  {onAdvisorChange && (
-                    <>
-                      <button
-                        role="menuitem"
-                        type="button"
-                        aria-expanded={plusExpanded === "advisor"}
-                        onClick={() => setPlusExpanded((v) => (v === "advisor" ? null : "advisor"))}
-                        title={advisorEnabled ? t("chatInput.advisorDisableTitle", { model: advisorModel?.name ?? t("messageView.advisorLabel"), reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault") }) : t("chatInput.advisorEnableTitle")}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8, width: "100%",
-                          padding: "7px 10px", border: 0, borderRadius: 5,
-                          background: plusExpanded === "advisor" ? "var(--bg-selected)" : "transparent",
-                          color: advisorEnabled ? "var(--accent)" : "var(--text-muted)", cursor: "pointer", fontSize: 12, textAlign: "left",
-                        }}
-                      >
-                        <Sparkles size={12} strokeWidth={1.8} style={{ flexShrink: 0 }} aria-hidden="true" />
-                        <span style={{ flex: 1 }}>{t("messageView.advisorLabel")}</span>
-                        <span style={{ color: "var(--text-dim)" }}>{advisorEnabled ? t("chatInput.plusOn") : t("chatInput.plusOff")}</span>
-                        <ChevronDown size={12} strokeWidth={1.8} style={{ flexShrink: 0, opacity: 0.7, transform: plusExpanded === "advisor" ? "rotate(180deg)" : "none", transition: "transform var(--dur-fast) var(--ease-out-warm)" }} aria-hidden="true" />
-                      </button>
-                      {plusExpanded === "advisor" && (
-                        <button
-                          className="picker-row"
-                          role="menuitem"
-                          type="button"
-                          onClick={() => { setPlusMenuOpen(false); onAdvisorChange(!advisorEnabled); }}
-                          title={advisorEnabled ? t("chatInput.advisorDisableTitle", { model: advisorModel?.name ?? t("messageView.advisorLabel"), reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault") }) : t("chatInput.advisorEnableTitle")}
-                          style={{ paddingLeft: 30 }}
-                        >
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {advisorEnabled ? t("chatInput.advisorDisableTitle", { model: advisorModel?.name ?? t("messageView.advisorLabel"), reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault") }) : t("chatInput.advisorEnableTitle")}
-                          </span>
-                        </button>
-                      )}
                     </>
                   )}
                 </div>
@@ -3651,101 +3396,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                   </div>
                 )}
               </div>
-            )}
-
-            {/* Fast toggle — only for models that support fast mode. Stays
-                visible while the agent runs (disabled) so it does not look
-                like fast mode was reset; the toggle affects the family tier
-                for the next prompt. */}
-            {fastModeSupported && onFastModeChange && (
-              <button
-                type="button"
-                className="composer-fast-control"
-                onClick={() => { if (isStreaming) return; onFastModeChange(!fastModeEnabled); }}
-                disabled={isStreaming}
-                title={fastModeEnabled && fastModeActive === false ? "Fast mode is enabled but inactive for this model" : `Turn OMP Fast mode ${fastModeEnabled ? "off" : "on"} for this model`}
-                aria-label={t("chatInput.fastLabel")}
-                aria-pressed={fastModeEnabled}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  height: "var(--control-height-sm)",
-                  padding: "0 8px",
-                  background: fastModeEnabled ? "var(--bg-selected)" : "none",
-                  border: "none",
-                  borderRadius: 7,
-                  color: fastModeEnabled && fastModeActive === false ? "var(--status-warning)" : fastModeEnabled ? "var(--accent)" : "var(--text-muted)",
-                  cursor: isStreaming ? "not-allowed" : "pointer",
-                  opacity: isStreaming ? 0.5 : 1,
-                  fontSize: "var(--text-sm)",
-                  fontWeight: 600,
-                  transition: "background var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-                <span>{t("chatInput.fastLabel")}</span>
-              </button>
-            )}
-
-            {/* Slow toggle — only when omp reports /slow applies to the
-                active model. A `global` scope is a persisted omp setting
-                shared by every session; `session` is this session's flex
-                tier — the tooltip says which. */}
-            {slowModeSupported && onSlowModeChange && (
-              <button
-                type="button"
-                className="composer-slow-control"
-                onClick={() => { if (isStreaming) return; onSlowModeChange(!slowModeEnabled); }}
-                disabled={isStreaming}
-                title={t(slowModeScope === "global" ? "chatInput.slowTitleGlobal" : "chatInput.slowTitleSession")}
-                aria-label={t("chatInput.slowLabel")}
-                aria-pressed={slowModeEnabled}
-                style={{
-                  display: "flex", alignItems: "center", gap: 5,
-                  height: "var(--control-height-sm)",
-                  padding: "0 8px",
-                  background: slowModeEnabled ? "var(--bg-selected)" : "none",
-                  border: "none",
-                  borderRadius: 7,
-                  color: slowModeEnabled ? "var(--accent)" : "var(--text-muted)",
-                  cursor: isStreaming ? "not-allowed" : "pointer",
-                  opacity: isStreaming ? 0.5 : 1,
-                  fontSize: "var(--text-sm)",
-                  fontWeight: 600,
-                  transition: "background var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                }}
-              >
-                <Snail size={11} aria-hidden="true" />
-                <span>{t("chatInput.slowLabel")}</span>
-              </button>
-            )}
-
-            {/* Provider usage-limit stage (wrap-up allowance or /slow low
-                priority), warning-colored like the TUI status line so
-                past-the-limit service is never mistaken for normal.
-                Layout lives in globals.css (own row on mobile). */}
-            {usageLimitLabel && (
-              <div className="composer-usage-limit-badge" role="status" aria-live="polite" title={usageLimitLabel}>
-                {usageLimitLabel}
-              </div>
-            )}
-
-            {/* Advisor activity — thunder while the advisor model reviews this run */}
-            {advisorActive && (
-              <span
-                title={t("chatInput.advisorReviewingTitle", {
-                  model: advisorModel?.name ?? t("messageView.advisorLabel"),
-                  reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault"),
-                })}
-                aria-label={t("chatInput.advisorReviewingTitle", {
-                  model: advisorModel?.name ?? t("messageView.advisorLabel"),
-                  reasoning: advisorModel?.reasoning ?? t("chatInput.advisorReasoningDefault"),
-                })}
-                style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, flexShrink: 0, color: "var(--accent)" }}
-              >
-                <Zap size={14} strokeWidth={2} fill="currentColor" aria-hidden="true" />
-              </span>
             )}
 
             {/* Desktop keeps the control in the composer; mobile uses the header mount. */}

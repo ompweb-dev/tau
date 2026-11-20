@@ -1,10 +1,10 @@
-// Shared models.yml types, constants, and pure helpers extracted from
+// Shared models.json types, constants, and pure helpers extracted from
 // ModelsConfig.tsx (pure extraction, no behavior change).
 
 export type IconComponent = React.ComponentType<{ size?: number | string; style?: React.CSSProperties }>;
 
 // Provider glyphs are derived from the provider id. Provider ids come from
-// OMP/models.yml at runtime, so adding one never requires a UI registry entry.
+// pi's models.json at runtime, so adding one never requires a UI registry entry.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +20,10 @@ export interface ApiKeyProvider {
   displayName: string;
   configured: boolean;
   modelCount: number;
+  /** pi can store a key for it (`/api/auth/api-key/[provider]`). */
+  apiKeyLogin?: boolean;
+  /** The credential type stored in the host's auth.json, if any. */
+  stored?: "api_key" | "oauth" | null;
 }
 
 export type OAuthLoginState =
@@ -33,21 +37,16 @@ export type OAuthLoginState =
   | { phase: "success" }
   | { phase: "error"; message: string };
 
-// Mirrors the ModelThinkingSchema subset of omp's models.yml
-// (oh-my-pi/packages/coding-agent/src/config/models-config-schema.ts).
-export interface ThinkingConfig {
-  mode?: string;
-  efforts?: string[];
-  defaultLevel?: string;
-  effortMap?: Record<string, string>;
-}
+// pi's `thinkingLevelMap`: the value sent for a level, null when the model does not support it; an absent level
+// keeps pi's default (supported through high; xhigh and max unsupported).
+export type ThinkingLevelMap = Record<string, string | null>;
 
 export interface ModelEntry {
   id: string;
   name?: string;
   api?: string;
   reasoning?: boolean;
-  thinking?: ThinkingConfig;
+  thinkingLevelMap?: ThinkingLevelMap;
   input?: string[];
   contextWindow?: number;
   maxTokens?: number;
@@ -81,7 +80,6 @@ export type Selection =
   | { type: "model"; providerName: string; index: number }
   | { type: "oauth"; providerId: string }
   | { type: "apikey"; providerId: string }
-  | { type: "roles" }
   | { type: "picker" }
   | { type: "registry" }
   | { type: "fallbacks" };
@@ -95,22 +93,17 @@ export interface RuntimeModelEntry {
 export interface ConnectedProvider {
   id: string;
   name: string;
-  disabled: boolean;
 }
 
 export type NativeRegistrySettings = {
   enabledModels?: string[];
-  disabledProviders?: string[];
-  modelProviderOrder?: string[];
-  registryHasScopedEntries?: boolean;
 };
 
 export type RetrySettings = {
-  retry?: { enabled?: boolean; maxRetries?: number; modelFallback?: boolean; fallbackRevertPolicy?: "cooldown-expiry" | "never"; fallbackChains?: Record<string, string[]> };
+  retry?: { enabled?: boolean; maxRetries?: number };
 };
-export const COMPOSER_MODELS_STORAGE_KEY = "omp-composer-models";
-export const NATIVE_MODEL_ROLES = ["default", "smol", "slow", "vision", "plan", "designer", "commit", "tiny", "task", "advisor"];
-// omp's models.yml ApiSchema (config/models-config-schema.ts)
+export const COMPOSER_MODELS_STORAGE_KEY = "tau-composer-models";
+// APIs a models.json provider or model can name.
 export const API_OPTIONS = [
   "openai-completions",
   "openai-responses",
@@ -154,10 +147,11 @@ export const presetButtonStyle = {
   color: "var(--text)",
   cursor: "pointer",
 } as const;
-export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
 export const LEVEL_COLORS: Record<ThinkingLevel, string> = {
+  off:     "var(--text-dim)",
   minimal: "var(--text-dim)",
   low:     "color-mix(in srgb, var(--accent) 45%, var(--text-muted))",
   medium:  "var(--accent)",

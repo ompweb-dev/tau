@@ -161,7 +161,7 @@ function formatReleaseNotes({
 
     for (const c of commits) {
       const s = c.subject.trim();
-      if (/^(?:chore: )?release( ompweb)? v?[0-9]/i.test(s) || /^v?[0-9]+\.[0-9]+\.[0-9]+$/i.test(s)) {
+      if (/^(?:chore: )?release( tau)? v?[0-9]/i.test(s) || /^v?[0-9]+\.[0-9]+\.[0-9]+$/i.test(s)) {
         continue;
       }
 
@@ -213,7 +213,7 @@ function formatReleaseNotes({
   if (!lines.join("\n").includes("## Upgrade")) {
     lines.push("\n## Upgrade\n");
     lines.push("```bash");
-    lines.push(`npm install -g @kahme247/ompweb@${version}`);
+    lines.push(`npm install -g @ompweb-dev/tau@${version}`);
     lines.push("```");
   }
 

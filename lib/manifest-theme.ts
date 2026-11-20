@@ -2,7 +2,7 @@
 // but Chrome refreshes an installed app's manifest without cookies. The color
 // therefore travels in the manifest URL: the browser remembers the theme in a
 // cookie, the server renders it into the link, and the hook updates the link.
-export const THEME_COLOR_COOKIE = "omp-theme-color";
+export const THEME_COLOR_COOKIE = "tau-theme-color";
 
 const HEX = /^[0-9a-f]{6}$/i;
 

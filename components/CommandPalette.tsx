@@ -125,7 +125,7 @@ export const CommandPalette = memo(function CommandPalette({ onSelectSession, on
                     height: 13,
                     borderRadius: "50%",
                     backgroundColor: theme.bg,
-                    border: theme.id === "omp" ? "1.5px solid #7DD7E8" : "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
+                    border: theme.id === "midnight" ? "1.5px solid #7DD7E8" : "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -136,7 +136,7 @@ export const CommandPalette = memo(function CommandPalette({ onSelectSession, on
                 </span>
                 <span style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 6 }}>
                   {theme.name}
-                  {theme.id === "omp" && <Sparkles size={12} color="var(--accent)" />}
+                  {theme.id === "midnight" && <Sparkles size={12} color="var(--accent)" />}
                 </span>
                 {preference === theme.id && <Check size={14} color="var(--accent)" />}
               </Command.Item>

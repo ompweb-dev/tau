@@ -1,3 +1,5 @@
+> Historical design record (ompweb era); tau still runs on this Bun server and Node launcher design, with tau's names: package `@ompweb-dev/tau`, launcher `bin/tau.js`, `TAU_*` variables, ports 30187 (production) and 30188 (dev), data in `<agent dir>/tau/`.
+
 # Bun runtime instead of Next.js — design
 
 Date: 2026-10-30. Branch: `feat/bun-runtime`. Evidence: `spike/REPORT.md` (Bun 1.4.4, base `8e639641`).

@@ -52,11 +52,11 @@ interface HubState {
 }
 
 declare global {
-  var __ompNotificationHub: HubState | undefined;
+  var __tauNotificationHub: HubState | undefined;
 }
 
 function hub(): HubState {
-  return (globalThis.__ompNotificationHub ??= { presence: new Map(), streams: new Map() });
+  return (globalThis.__tauNotificationHub ??= { presence: new Map(), streams: new Map() });
 }
 
 export function getVapidPublicKey(): string {
@@ -94,10 +94,9 @@ export function attachNotificationClient(clientId: string, send: Send): () => vo
 
 // ---------------------------------------------------------------- routing
 
-/** A visible tab is showing the event's conversation (under any of its ids). */
+/** A visible tab is showing the event's conversation. */
 function isOnScreen(event: NotificationEvent, presence: NotificationPresence[]): boolean {
-  const viewedAs = new Set([event.sessionId, ...(event.aliases ?? [])]);
-  return presence.some((tab) => tab.visible && tab.sessionId !== null && viewedAs.has(tab.sessionId));
+  return presence.some((tab) => tab.visible && tab.sessionId === event.sessionId);
 }
 
 /**
@@ -231,5 +230,5 @@ export function publishNotification(event: NotificationEvent): void {
 export async function sendTestPush(deviceId: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const device = getDevice(deviceId);
   if (!device) return { ok: false, error: "unknown device" };
-  return sendPush(device, { type: "test", sessionId: "", sessionName: "omp web" });
+  return sendPush(device, { type: "test", sessionId: "", sessionName: "tau" });
 }

@@ -6,7 +6,7 @@ export interface ModelOption {
   name: string;
 }
 
-export const COMPOSER_MODELS_STORAGE_KEY = "omp-composer-models";
+export const COMPOSER_MODELS_STORAGE_KEY = "tau-composer-models";
 
 export function readVisibleModelKeys(): Set<string> | null {
   try {

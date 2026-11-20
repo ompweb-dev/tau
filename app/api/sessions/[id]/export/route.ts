@@ -2,7 +2,7 @@ import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/li
 import { getContentDisposition } from "@/lib/content-disposition";
 import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 
-/** Render a session to self-contained HTML with the omp binary on its host (`omp --export`). */
+/** Render a session to self-contained HTML with the pi binary on its host (`pi --export`). */
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

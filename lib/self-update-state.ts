@@ -45,7 +45,7 @@ export function resolveSelfUpdateTempRoot(
 ): string {
   const pathApi = platform === "win32" ? win32 : posix;
   const suffix = platform === "win32" ? "" : `-${uid ?? "user"}`;
-  return pathApi.join(temporary, `ompweb-self-update${suffix}`);
+  return pathApi.join(temporary, `tau-self-update${suffix}`);
 }
 
 export const rootDir = (): string => resolveSelfUpdateTempRoot();

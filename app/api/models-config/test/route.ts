@@ -6,12 +6,12 @@ import {
   type ProviderConfig,
   serializeModelsConfig,
   validateModelsConfig,
-} from "@/lib/omp/models-config";
-import { type OmpModel, runIsolatedUtilityCommand } from "@/lib/omp/rpc-utility";
+} from "@/lib/pi/models-config";
+import { type PiModel, runIsolatedUtilityCommand } from "@/lib/pi/rpc-utility";
 import { isRecord } from "@/lib/type-guards";
 
 // Registry resolution (spawn + model discovery), not a completion round-trip:
-// omp-web cannot send test prompts without going through a full agent session.
+// tau cannot send test prompts without going through a full agent session.
 const TEST_TIMEOUT_MS = 60_000;
 
 function errorMessage(error: unknown): string {
@@ -45,18 +45,16 @@ export async function POST(req: Request) {
       return Response.json({ ok: false, error: errorMessage(error) });
     }
 
-    // Isolated throwaway agent dir: the spawned omp sees only this candidate
-    // config (no stored credentials, no models.db cache) and never touches
-    // ~/.omp. Profile/XDG overrides are cleared so the redirect always wins
-    // (the omp child still honors profiles even though omp-web ignores them).
-    tempDir = mkdtempSync(join(tmpdir(), "omp-web-model-test-"));
-    writeFileSync(join(tempDir, "models.yml"), serializeModelsConfig(config), "utf8");
+    // Isolated throwaway agent dir: the spawned pi sees only this candidate
+    // config (no stored credentials) and never touches ~/.pi.
+    tempDir = mkdtempSync(join(tmpdir(), "tau-model-test-"));
+    writeFileSync(join(tempDir, "models.json"), serializeModelsConfig(config), "utf8");
 
     const startedAt = Date.now();
-    const { models } = await runIsolatedUtilityCommand<{ models: OmpModel[] }>(
+    const { models } = await runIsolatedUtilityCommand<{ models: PiModel[] }>(
       { type: "get_available_models" },
       {
-        env: { PI_CODING_AGENT_DIR: tempDir, OMP_PROFILE: "", PI_PROFILE: "", XDG_DATA_HOME: "" },
+        env: { PI_CODING_AGENT_DIR: tempDir },
         timeoutMs: TEST_TIMEOUT_MS,
         signal: req.signal,
       },

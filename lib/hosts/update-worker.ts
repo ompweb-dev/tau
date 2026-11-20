@@ -11,14 +11,11 @@ import type { ApprovedReleasePin, HostUpdateOperation, HostUpdateTarget } from "
 import type { UpgradeLaunch, UpgradeProcess } from "../upgrade-process";
 import type * as ProcessRuntime from "../upgrade-process";
 import type * as IdentityRuntime from "../process-identity";
-import type * as JitiRuntime from "jiti";
-import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { setTimeout as pause } from "node:timers/promises";
 const exec = promisify(execFile);
-// A prerelease archive carries ompweb (~112 MB) plus its omp runner (~284 MB on linux-x64, ~172 MB gzipped), and a
-// release's runner asset (lib/omp/runner-fetch.ts) is held to the member limit: sized with headroom for both.
+// Sized for a tau release archive (~112 MB) with ample headroom.
 // scripts/check-host-release-archive.ts holds every built archive to these in CI.
 export const HOST_RELEASE_MAX_ARCHIVE = 512 * 1024 * 1024;
 export const HOST_RELEASE_MAX_EXPANDED = 1024 * 1024 * 1024;
@@ -45,14 +42,12 @@ export interface HostUpdateDescriptor {
   hostArgs: string[];
   cwd: string;
   daemonPid: number;
-  /** The daemon as inspected when claimed: its process identity and verified supervisor, persisted verbatim. stop/restart re-verify it. Absent on a descriptor an earlier engine wrote: the worker inspects the still-running daemon itself. */
-  process?: UpgradeProcess;
-  /** Earlier engines' proof of the daemon's identity (a recycled pid is never signalled); only read when `process` is absent. */
-  daemonIdentity?: string | null;
+  /** The daemon as inspected when claimed: its process identity and verified supervisor, persisted verbatim. stop/restart re-verify it. */
+  process: UpgradeProcess;
   managerPath?: string;
   restartOnly?: boolean;
-  /** Binary release source; absent only on a legacy restart-only descriptor, which downloads nothing. */
-  releaseRepo?: string;
+  /** Binary release source. */
+  releaseRepo: string;
   releasePin?: ApprovedReleasePin;
   requireReleasePin?: boolean;
   /** Full staging and preflight stop at a durable gate until this operation is committed or cancelled. */
@@ -63,15 +58,13 @@ export interface HostUpdateDescriptor {
   force?: boolean;
   /** The protocol range the candidate must speak for a maintenance receipt to acknowledge it, while its application protocol may await the server's cutover. */
   receipt?: { min: number; max: number };
-  /** Set by the recovery CLI: the old daemon was drained (idle proven) through its private control endpoint, and is resumed if this update fails before it is stopped. */
-  recovery?: { drained: boolean };
 }
 interface WorkerRuntime {
   process: typeof ProcessRuntime;
   identity: typeof IdentityRuntime;
 }
 
-async function workerRuntime(d: HostUpdateDescriptor): Promise<WorkerRuntime> {
+async function workerRuntime(): Promise<WorkerRuntime> {
   // Runtime-selected: a copied worker cannot import these statically (its `../` specifiers resolve outside the attempt directory).
   const embedded = async () => ({ process: await import("../upgrade-process"), identity: await import("../process-identity") });
   // A compiled binary embeds these modules; its worker has no copies beside it.
@@ -85,19 +78,13 @@ async function workerRuntime(d: HostUpdateDescriptor): Promise<WorkerRuntime> {
   }
   // Run from source under Bun (the web server's own runtime, tests).
   if (typeof Bun !== "undefined") return embedded();
-  // A legacy restart-only updater copied no dependencies. validateDescriptor checked this owned package and its identity first.
-  const { createJiti } = createRequire(join(d.installDir, "package.json"))("jiti") as typeof JitiRuntime;
-  const jiti = createJiti(import.meta.url);
-  return {
-    process: await jiti.import<typeof ProcessRuntime>(join(d.installDir, "lib", "upgrade-process.ts")),
-    identity: await jiti.import<typeof IdentityRuntime>(join(d.installDir, "lib", "process-identity.ts")),
-  };
+  throw new Error("The host update worker's lifecycle modules are missing beside it");
 }
 
 
 export function hostUpdateRoot(): string {
-  const agent = process.env.PI_CODING_AGENT_DIR ? resolve(process.env.PI_CODING_AGENT_DIR) : join(homedir(), process.env.PI_CONFIG_DIR || ".omp", "agent");
-  return join(agent, "omp-web", "host-update");
+  const agent = process.env.PI_CODING_AGENT_DIR ? resolve(process.env.PI_CODING_AGENT_DIR) : join(homedir(), ".pi", "agent");
+  return join(agent, "tau", "host-update");
 }
 export function assertOwnedPath(path: string, directory = false): void {
   const info = lstatSync(path);
@@ -110,7 +97,7 @@ export function ensureHostUpdateRoot(): string {
   const root = hostUpdateRoot();
   mkdirSync(dirname(root), { recursive: true, mode: 0o700 });
   const parent = lstatSync(dirname(root));
-  if (parent.isSymbolicLink() || !parent.isDirectory() || (process.getuid && parent.uid !== process.getuid()) || (process.platform !== "win32" && (parent.mode & 0o022))) throw new Error("Unsafe omp-web data directory");
+  if (parent.isSymbolicLink() || !parent.isDirectory() || (process.getuid && parent.uid !== process.getuid()) || (process.platform !== "win32" && (parent.mode & 0o022))) throw new Error("Unsafe tau data directory");
   mkdirSync(root, { recursive: true, mode: 0o700 });
   assertOwnedPath(root, true);
   return root;
@@ -186,7 +173,7 @@ export function readHostUpdateState(): HostUpdateStoredState | null {
   assertOwnedPath(file);
   if (lstatSync(file).size > 65536) throw new Error("Host update status is too large");
   const state = JSON.parse(readFileSync(file, "utf8")) as HostUpdateStoredState;
-  if (!state.operation || !["ompweb", "omp"].includes(state.operation.target) || !["running", "failed", "succeeded"].includes(state.operation.state) || !/^[a-zA-Z0-9-]{1,80}$/.test(state.operation.id) || !HOST_VERSION_PATTERN.test(state.operation.version) || !Number.isFinite(state.startedAt)) throw new Error("Invalid host update status");
+  if (!state.operation || state.operation.target !== "tau" || !["running", "failed", "succeeded"].includes(state.operation.state) || !/^[a-zA-Z0-9-]{1,80}$/.test(state.operation.id) || !HOST_VERSION_PATTERN.test(state.operation.version) || !Number.isFinite(state.startedAt)) throw new Error("Invalid host update status");
   return state;
 }
 export function finishHostUpdate(id: string, error?: string): void {
@@ -215,7 +202,7 @@ async function readHostUpdate(url: string, maxBytes: number, timeout: number, on
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const response = await fetch(url, { signal: controller.signal, cache: "no-store", headers: { "User-Agent": "ompweb-host-updater" } });
+    const response = await fetch(url, { signal: controller.signal, cache: "no-store", headers: { "User-Agent": "tau-host-updater" } });
     if (!response.ok || !response.body) throw new Error(`Release request failed (${response.status})`);
     if (response.url && (!response.url.startsWith("https://") || !["raw.githubusercontent.com", "api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "registry.npmjs.org"].includes(new URL(response.url).hostname))) throw new Error("Unexpected release download destination");
     if (Number(response.headers.get("content-length")) > maxBytes) throw new Error("Release response is too large");
@@ -247,7 +234,7 @@ export async function downloadHostUpdateFile(url: string, file: string, maxBytes
 }
 export function hostReleaseName(platform = process.platform, arch = process.arch): string {
   if (!["linux", "darwin", "win32"].includes(platform) || !["x64", "arm64"].includes(arch) || (platform === "win32" && arch !== "x64")) throw new Error(`Host updates are unsupported on ${platform}/${arch}`);
-  return `ompweb-${platform === "win32" ? "windows" : platform}-${arch}`;
+  return `tau-${platform === "win32" ? "windows" : platform}-${arch}`;
 }
 interface ArchiveMember { name: string; directory: boolean; size: number; write(file: string): void }
 function memberName(name: string, root: string): string {
@@ -388,7 +375,7 @@ export function validateApprovedReleasePin(value: unknown, version?: string, rep
   const assets: Record<string, string> = {};
   for (const name of Object.keys(value.assets).sort()) {
     const digest = value.assets[name];
-    if (!/^ompweb-(?:(?:linux|darwin)-(?:x64|arm64)\.tar\.gz|windows-x64\.zip|omp-(?:(?:linux|darwin)-(?:x64|arm64)|windows-x64\.exe))$/.test(name) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return invalid();
+    if (!/^tau-(?:(?:linux|darwin)-(?:x64|arm64)\.tar\.gz|windows-x64\.zip)$/.test(name) || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest)) return invalid();
     assets[name] = digest;
   }
   if (value.npm === undefined) return { version: value.version, releaseRepo: value.releaseRepo, assets };
@@ -422,12 +409,9 @@ export async function stageBinary(source: HostReleaseSource, staging: string): P
   const release = join(staging, name);
   mkdirSync(release, { mode: 0o700 });
   try { await extractHostReleaseArchive(download, name, staging); } finally { rmSync(download, { force: true }); }
-  const binary = join(release, process.platform === "win32" ? "ompweb.exe" : "ompweb");
+  const binary = join(release, process.platform === "win32" ? "tau.exe" : "tau");
   if (!existsSync(join(release, "dist", "index.html"))) throw new Error("Incomplete host binary release layout");
   chmodSync(binary, 0o755);
-  // Releases from before the runner became its own asset (preflightHostRelease fetches it otherwise) carry it here.
-  const runner = join(release, process.platform === "win32" ? "ompweb-omp.exe" : "ompweb-omp");
-  if (existsSync(runner)) chmodSync(runner, 0o755);
   if (!(await binaryReportsVersion(binary, release, source.version))) throw new Error("Downloaded host binary reports a different version");
   return release;
 }
@@ -448,7 +432,7 @@ export async function stagePackage(d: HostPackageSource, staging: string): Promi
   const prefix = join(staging, "fetch");
   mkdirSync(prefix, { mode: 0o700 });
   writeFileSync(join(prefix, "package.json"), '{"private":true}', { mode: 0o600 });
-  let packageName = `@kahme247/ompweb@${d.version}`;
+  let packageName = `@ompweb-dev/tau@${d.version}`;
   if (pin) {
     packageName = join(staging, "approved-package.tgz");
     const fd = openSync(packageName, "wx", 0o600);
@@ -464,9 +448,9 @@ export async function stagePackage(d: HostPackageSource, staging: string): Promi
   const line = [command, ...args].map((arg) => `"${arg.replaceAll('"', '')}"`).join(" ");
   await exec(windows ? process.env.ComSpec || "cmd.exe" : command, windows ? ["/d", "/s", "/c", `"${line}"`] : args, { timeout: DOWNLOAD_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: workerEnvironment(), windowsHide: true, windowsVerbatimArguments: windows });
   const modules = join(prefix, "node_modules");
-  const packageDir = join(modules, "@kahme247", "ompweb");
+  const packageDir = join(modules, "@ompweb-dev", "tau");
   const metadata = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
-  if (metadata.name !== "@kahme247/ompweb" || metadata.version !== d.version || !existsSync(join(packageDir, "bin", "omp-web-host.js"))) throw new Error("Installed host package does not match the requested version");
+  if (metadata.name !== "@ompweb-dev/tau" || metadata.version !== d.version || !existsSync(join(packageDir, "bin", "tau-host.js"))) throw new Error("Installed host package does not match the requested version");
   if (lstatSync(packageDir).isSymbolicLink()) throw new Error("Unsupported linked host package layout");
   const release = join(staging, "release");
   renameSync(packageDir, release);
@@ -475,7 +459,7 @@ export async function stagePackage(d: HostPackageSource, staging: string): Promi
 }
 function workerEnvironment(additions: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env = { ...process.env, ...additions };
-  for (const name of Object.keys(env)) if (["PORT", "NODE_ENV", "OMP_WEB_PASSWORD", "OMP_WEB_PASSWORD_HASH", "OMP_WEB_TRUSTED_HEADER_SECRET", "OMP_WEB_TRUSTED_HEADER_SHA256", "OMP_WEB_PACKAGE_DIR", "OMP_WEB_LAUNCHER_PID"].includes(name.toUpperCase()) && !(name in additions)) delete env[name];
+  for (const name of Object.keys(env)) if (["PORT", "NODE_ENV", "TAU_PASSWORD", "TAU_PASSWORD_HASH", "TAU_TRUSTED_HEADER_SECRET", "TAU_TRUSTED_HEADER_SHA256", "TAU_PACKAGE_DIR", "TAU_LAUNCHER_PID"].includes(name.toUpperCase()) && !(name in additions)) delete env[name];
   return env;
 }
 
@@ -543,8 +527,8 @@ export async function sharedHostInstallReason(installDir: string, ignoredPids: n
 export function hostLaunch(d: Pick<HostUpdateDescriptor, "installMethod" | "installDir" | "runtime" | "hostArgs" | "cwd">): UpgradeLaunch {
   const binary = d.installMethod === "binary";
   return {
-    command: binary ? join(d.installDir, process.platform === "win32" ? "ompweb.exe" : "ompweb") : d.runtime,
-    args: binary ? ["host", ...d.hostArgs] : [join(d.installDir, "bin", "omp-web-host.js"), ...d.hostArgs],
+    command: binary ? join(d.installDir, process.platform === "win32" ? "tau.exe" : "tau") : d.runtime,
+    args: binary ? ["host", ...d.hostArgs] : [join(d.installDir, "bin", "tau-host.js"), ...d.hostArgs],
     cwd: d.cwd,
     env: workerEnvironment(),
   };
@@ -552,34 +536,29 @@ export function hostLaunch(d: Pick<HostUpdateDescriptor, "installMethod" | "inst
 
 /** `<binary> --version` printed the exact version (a leading v is allowed). */
 async function binaryReportsVersion(binary: string, packageDir: string, version: string): Promise<boolean> {
-  const { stdout } = await exec(binary, ["--version"], { timeout: 10000, env: workerEnvironment({ OMP_WEB_PACKAGE_DIR: packageDir }), maxBuffer: 1024 * 1024 });
+  const { stdout } = await exec(binary, ["--version"], { timeout: 10000, env: workerEnvironment({ TAU_PACKAGE_DIR: packageDir }), maxBuffer: 1024 * 1024 });
   return stdout.trim().split(/\s+/).some((token) => token.replace(/^v/, "") === version);
 }
 /** PREFLIGHT_MARKER (lib/hosts/preflight.ts), encoded so this module, bundled into the same binary, does not embed it. */
-export const PREFLIGHT_MARKER_BASE64 = "b21wd2ViLXByZWZsaWdodC1zY3JhdGNoLQ==";
+export const PREFLIGHT_MARKER_BASE64 = "dGF1LXByZWZsaWdodC1zY3JhdGNoLQ==";
 export interface HostReleasePreflightInput {
   installMethod: "npm" | "bun" | "binary";
   version: string;
   /** The JavaScript runtime that runs an npm/bun release; not used for a binary one. */
   runtime?: string;
-  /** The release already runs here: a candidate that predates the preflight command is restarted unchecked instead of refused. */
-  restartOnly?: boolean;
   releasePin?: ApprovedReleasePin;
   requireReleasePin?: boolean;
 }
-/** Pinned updates stage their approved runner before any candidate command; ordinary updates keep the candidate's
- * `fetch-omp` behavior. Then `preflight` must start the resolved session runner and receive its hello before cutover.
- * A restart-only update without a pin may retain an installation that predates preflight. */
+/** `preflight` must start the candidate's resolved pi and get its get_state answer before cutover; a release without the
+ * command fails the update and keeps the prior install. */
 export async function preflightHostRelease(d: HostReleasePreflightInput, release: string): Promise<void> {
-  if (d.requireReleasePin !== undefined && typeof d.requireReleasePin !== "boolean" || d.requireReleasePin && !d.releasePin) throw new Error("Missing approved release pin for runner preflight");
-  const pin = d.releasePin === undefined ? undefined : validateApprovedReleasePin(d.releasePin, d.version);
+  if (d.requireReleasePin !== undefined && typeof d.requireReleasePin !== "boolean" || d.requireReleasePin && !d.releasePin) throw new Error("Missing approved release pin for preflight");
+  if (d.releasePin !== undefined) validateApprovedReleasePin(d.releasePin, d.version);
   const binary = d.installMethod === "binary";
-  const entry = binary ? join(release, process.platform === "win32" ? "ompweb.exe" : "ompweb") : join(release, "bin", "omp-web.js");
-  // Detected statically: an older ompweb takes `preflight` for a positional and starts the web server.
+  const entry = binary ? join(release, process.platform === "win32" ? "tau.exe" : "tau") : join(release, "bin", "tau.js");
+  // Detected statically: a build without the command takes `preflight` for a positional and starts the web server.
   if (!(binary ? readFileSync(entry).includes(Buffer.from(PREFLIGHT_MARKER_BASE64, "base64")) : existsSync(join(release, "lib", "hosts", "preflight.ts")))) {
-    if (pin || binary && !d.restartOnly) throw new Error("The new host release has no preflight command to check its pi runtime with");
-    console.warn(`tau ${d.version} has no preflight command; its pi runtime was not checked`);
-    return;
+    throw new Error("The new host release has no preflight command to check its pi runtime with");
   }
   const command = (args: string[], timeout: number) => exec(binary ? entry : d.runtime!, binary ? args : [entry, ...args], { cwd: release, timeout, env: workerEnvironment(), maxBuffer: 1024 * 1024, windowsHide: true });
   const detail = (error: unknown) => (String((error as { stderr?: unknown }).stderr ?? "").trim() || (error instanceof Error ? error.message : String(error))).slice(-500);
@@ -593,14 +572,14 @@ export async function preflightHostRelease(d: HostReleasePreflightInput, release
 /** The installation on disk already holds `version`: what a restart-only update relies on. */
 export async function installedHostVersionMatches(method: HostUpdateDescriptor["installMethod"], installDir: string, version: string): Promise<boolean> {
   try {
-    if (method === "binary") return await binaryReportsVersion(join(installDir, process.platform === "win32" ? "ompweb.exe" : "ompweb"), installDir, version);
+    if (method === "binary") return await binaryReportsVersion(join(installDir, process.platform === "win32" ? "tau.exe" : "tau"), installDir, version);
     const metadata = JSON.parse(readFileSync(join(installDir, "package.json"), "utf8"));
-    return metadata.name === "@kahme247/ompweb" && metadata.version === version;
+    return metadata.name === "@ompweb-dev/tau" && metadata.version === version;
   } catch { return false; }
 }
 
 const ATTEMPT_NAME = /^[a-zA-Z0-9-]{1,80}$/;
-const ARTIFACT_NAME = /^\.ompweb-(backup|failed|staging)-([a-zA-Z0-9-]{1,80})$/;
+const ARTIFACT_NAME = /^\.tau-(backup|failed|staging)-([a-zA-Z0-9-]{1,80})$/;
 function removeOwnedTree(path: string): boolean {
   try {
     const info = lstatSync(path);
@@ -613,8 +592,8 @@ function removeOwnedTree(path: string): boolean {
  * Bounds the disk an update leaves behind. Only paths an owned, trusted attempt descriptor for THIS install proves this
  * code created are touched, only as direct children of the install's parent or of the update state directory, and
  * never a symlink or a directory owned by someone else. Nothing is pruned while an update is running.
- * Retained: the newest `.ompweb-backup-<id>` (the rollback), the latest attempt's small files, `keepAttempt`'s artifacts.
- * Deleted: older backups, every other `.ompweb-failed-<id>` / `.ompweb-staging-<id>`, copied runtimes, finished attempts.
+ * Retained: the newest `.tau-backup-<id>` (the rollback), the latest attempt's small files, `keepAttempt`'s artifacts.
+ * Deleted: older backups, every other `.tau-failed-<id>` / `.tau-staging-<id>`, copied runtimes, finished attempts.
  */
 export function pruneHostUpdateArtifacts(installDir: string, options: { keepAttempt?: string } = {}): void {
   const root = hostUpdateRoot();
@@ -650,7 +629,7 @@ export function pruneHostUpdateArtifacts(installDir: string, options: { keepAtte
     if (id === options.keepAttempt) continue;
     for (const kind of kinds) {
       if (kind === "backup" && id === keepBackup) continue;
-      if (!removeOwnedTree(join(parent, `.ompweb-${kind}-${id}`))) leftover.add(id);
+      if (!removeOwnedTree(join(parent, `.tau-${kind}-${id}`))) leftover.add(id);
     }
   }
   for (const id of attempts.keys()) {
@@ -704,12 +683,9 @@ export async function moveHostRelease(from: string, to: string): Promise<void> {
     }
   }
 }
-/** The daemon's verified process and supervisor: the snapshot the claim persisted or, for a descriptor an earlier engine wrote, inspected now against its recorded identity. */
-async function daemonProcess(d: HostUpdateDescriptor, runtime: WorkerRuntime): Promise<UpgradeProcess> {
-  if (d.process) return { ...d.process, current: { ...d.process.current } };
-  if (!runtime.identity.isProcessAlive(d.daemonPid)) throw new Error("The host daemon is no longer running, so its supervisor cannot be inspected; restart it manually");
-  if (d.daemonIdentity && await runtime.identity.processStartIdentity(d.daemonPid) !== d.daemonIdentity) throw new Error("The recorded host daemon is no longer the process with this pid (process identity mismatch); refusing to signal it");
-  return runtime.process.inspectUpgradeProcess({ pid: d.daemonPid, installDir: d.installDir, role: "host", launch: hostLaunch(d) });
+/** The daemon's verified process and supervisor: the snapshot the claim persisted. */
+function daemonProcess(d: HostUpdateDescriptor): UpgradeProcess {
+  return { ...d.process, current: { ...d.process.current } };
 }
 /** A forced update's commit: from here the daemon accepts no new sessions (it reads this file at each start). */
 function markCommitting(id: string): void {
@@ -723,12 +699,6 @@ function recordPreflight(d: HostUpdateDescriptor): string {
   writeHostUpdateJson(join(hostUpdateRoot(), d.id, "preflight.json"), { id: d.id, version: d.version, nonce });
   return nonce;
 }
-/** Only recovery's drained old daemon: put it back to work when staging fails before anything was stopped. */
-async function resumeDrainedDaemon(): Promise<void> {
-  const { requestHostControl } = await import("./host-control");
-  await requestHostControl("resume");
-}
-
 function markHostUpdatePrepared(d: HostUpdateDescriptor): HostUpdateStoredState {
   const state = readHostUpdateState();
   if (state?.operation.id !== d.id || state.operation.version !== d.version || state.operation.state !== "running") throw new Error("Host update no longer owns the operation");
@@ -788,10 +758,9 @@ async function launchDaemon(d: HostUpdateDescriptor, plan: UpgradeProcess, runti
 function validateDescriptor(path: string): HostUpdateDescriptor {
   const root = ensureHostUpdateRoot();
   assertOwnedPath(path);
-  const d = JSON.parse(readFileSync(path, "utf8")) as HostUpdateDescriptor & { systemd?: { unit?: unknown; user?: unknown } | null };
-  if (!/^[a-zA-Z0-9-]{1,80}$/.test(d.id) || resolve(path) !== join(root, d.id, "descriptor.json") || !HOST_VERSION_PATTERN.test(d.version) || !HOST_VERSION_PATTERN.test(d.fromVersion) || d.target !== "ompweb" || !["npm", "bun", "binary"].includes(d.installMethod) || !isAbsolute(d.installDir) || !isAbsolute(d.runtime) || !isAbsolute(d.cwd) || !Number.isSafeInteger(d.daemonPid) || d.daemonPid <= 1 || !Array.isArray(d.hostArgs) || d.hostArgs.some((arg) => arg !== "--allow-http")) throw new Error("Invalid host update descriptor");
-  // A v10 daemon copies this new worker after the shared web installation has already been replaced.
-  if (d.releaseRepo === undefined ? d.restartOnly !== true : typeof d.releaseRepo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(d.releaseRepo)) throw new Error("Invalid host update descriptor");
+  const d = JSON.parse(readFileSync(path, "utf8")) as HostUpdateDescriptor;
+  if (!/^[a-zA-Z0-9-]{1,80}$/.test(d.id) || resolve(path) !== join(root, d.id, "descriptor.json") || !HOST_VERSION_PATTERN.test(d.version) || !HOST_VERSION_PATTERN.test(d.fromVersion) || d.target !== "tau" || !["npm", "bun", "binary"].includes(d.installMethod) || !isAbsolute(d.installDir) || !isAbsolute(d.runtime) || !isAbsolute(d.cwd) || !Number.isSafeInteger(d.daemonPid) || d.daemonPid <= 1 || !Array.isArray(d.hostArgs) || d.hostArgs.some((arg) => arg !== "--allow-http")) throw new Error("Invalid host update descriptor");
+  if (typeof d.releaseRepo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(d.releaseRepo)) throw new Error("Invalid host update descriptor");
   if (d.restartOnly !== undefined && typeof d.restartOnly !== "boolean") throw new Error("Invalid host restart-only descriptor");
   if (d.prepareOnly !== undefined && typeof d.prepareOnly !== "boolean") throw new Error("Invalid host update descriptor");
   if (d.compatibility !== undefined && (!Number.isSafeInteger(d.compatibility.min) || !Number.isSafeInteger(d.compatibility.max) || d.compatibility.min < 1 || d.compatibility.max < d.compatibility.min)) throw new Error("Invalid host update descriptor: compatibility");
@@ -800,13 +769,10 @@ function validateDescriptor(path: string): HostUpdateDescriptor {
   if (d.releasePin !== undefined) d.releasePin = validateApprovedReleasePin(d.releasePin, d.version, d.releaseRepo);
   if (d.releasePin && d.restartOnly) throw new Error("An existing installation cannot be adopted as an approved release without artifact evidence");
   if (d.receipt !== undefined && (!d.receipt || !Number.isSafeInteger(d.receipt.min) || !Number.isSafeInteger(d.receipt.max) || d.receipt.min < 1 || d.receipt.max < d.receipt.min)) throw new Error("Invalid host update descriptor: the approved protocol range");
-  if (d.recovery !== undefined && (!d.recovery || typeof d.recovery.drained !== "boolean")) throw new Error("Invalid host update descriptor");
-  // The daemon's process snapshot, or what an earlier engine recorded instead: an identity, or the service it had verified.
-  if (d.process !== undefined ? typeof d.process !== "object" || d.process === null || Array.isArray(d.process) : !(d.systemd || (typeof d.daemonIdentity === "string" && d.daemonIdentity && d.daemonIdentity.length <= 200))) throw new Error("Invalid host update descriptor: the daemon's process identity is missing");
+  if (typeof d.process !== "object" || d.process === null || Array.isArray(d.process)) throw new Error("Invalid host update descriptor: the daemon's process identity is missing");
   assertOwnedPath(dirname(path), true);
   const state = readHostUpdateState();
   if (state?.operation.id !== d.id || state.operation.state !== "running" || state.operation.version !== d.version || state.daemonPid !== d.daemonPid) throw new Error("Host update descriptor does not own the running operation");
-  if (d.systemd && (typeof d.systemd.unit !== "string" || !/^[a-zA-Z0-9_.@\\:-]+\.service$/.test(d.systemd.unit) || /^ompweb-api(?:[.@-]|$)/i.test(d.systemd.unit) || typeof d.systemd.user !== "boolean")) throw new Error("Refusing to control a non-host service");
   const info = lstatSync(d.installDir);
   if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(d.installDir) !== resolve(d.installDir) || (process.getuid && info.uid !== process.getuid()) || (process.platform !== "win32" && (info.mode & 0o022))) throw new Error("Unsupported or unsafe host installation layout");
   const parent = lstatSync(dirname(d.installDir));
@@ -814,11 +780,11 @@ function validateDescriptor(path: string): HostUpdateDescriptor {
   if (d.installMethod === "binary") {
     hostReleaseName();
     // The running host may use an operator-supplied runner; the candidate's actual runner is checked by preflight.
-    if (!existsSync(join(d.installDir, process.platform === "win32" ? "ompweb.exe" : "ompweb")) || !existsSync(join(d.installDir, "dist", "index.html"))) throw new Error("Incomplete host binary release layout");
+    if (!existsSync(join(d.installDir, process.platform === "win32" ? "tau.exe" : "tau")) || !existsSync(join(d.installDir, "dist", "index.html"))) throw new Error("Incomplete host binary release layout");
   } else {
-    if (basename(d.installDir) !== "ompweb" || basename(dirname(d.installDir)) !== "@kahme247" || basename(dirname(dirname(d.installDir))) !== "node_modules") throw new Error("Package updates require an installed npm/bun package layout");
+    if (basename(d.installDir) !== "tau" || basename(dirname(d.installDir)) !== "@ompweb-dev" || basename(dirname(dirname(d.installDir))) !== "node_modules") throw new Error("Package updates require an installed npm/bun package layout");
     const current = JSON.parse(readFileSync(join(d.installDir, "package.json"), "utf8"));
-    if (current.name !== "@kahme247/ompweb" || (!d.restartOnly && current.version !== d.fromVersion)) throw new Error("Host install changed since this update was requested");
+    if (current.name !== "@ompweb-dev/tau" || (!d.restartOnly && current.version !== d.fromVersion)) throw new Error("Host install changed since this update was requested");
   }
   return d;
 }
@@ -836,28 +802,27 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
   let nonce: string | undefined;
   try {
     d = validateDescriptor(path);
-    runtime = await workerRuntime(d);
+    runtime = await workerRuntime();
     const workerLease = join(dirname(path), "worker.lock");
     try { writeFileSync(workerLease, String(process.pid), { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return 1; throw error; }
-    if (["1", "true", "yes", "on"].includes((process.env.OMP_WEB_DISABLE_AUTOUPDATE || "").trim().toLowerCase())) throw new Error("Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE");
-    const restartCandidateMissing = "The shared installation no longer contains the requested ompweb version; refresh the host updates";
+    if (["1", "true", "yes", "on"].includes((process.env.TAU_DISABLE_AUTOUPDATE || "").trim().toLowerCase())) throw new Error("Updates are disabled by TAU_DISABLE_AUTOUPDATE");
+    const restartCandidateMissing = "The shared installation no longer contains the requested tau version; refresh the host updates";
     if (d.restartOnly && !(await installedHostVersionMatches(d.installMethod, d.installDir, d.version))) throw new Error(restartCandidateMissing);
     const state = readHostUpdateState()!;
     writeHostUpdateJson(join(hostUpdateRoot(), "status.json"), { ...state, workerPid: process.pid });
     // Give the host op response time to reach the web server before any stop.
     await pause(500);
-    plan = await daemonProcess(d, runtime);
+    plan = daemonProcess(d);
     await runtime.process.assertUpgradeProcessControl(plan);
     let release: string | undefined;
     if (!d.restartOnly) {
       // The daemon's own sessions and subagents run the installed runner; stopping the daemon ends them, so they are not sharers. Anything else is.
       const sharing = await sharedHostInstallReason(d.installDir, [process.pid], plan.current.pid === d.daemonPid ? [d.daemonPid] : []);
       if (sharing) throw new Error(`Update the web server first because this installation is shared. ${sharing}`);
-      staging = join(dirname(d.installDir), `.ompweb-staging-${d.id}`);
+      staging = join(dirname(d.installDir), `.tau-staging-${d.id}`);
       mkdirSync(staging, { mode: 0o700 });
       stagingCreated = true;
-      if (!d.releaseRepo) throw new Error("The host update has no verified release repository");
       release = d.installMethod === "binary"
         ? await stageBinary({ version: d.version, releaseRepo: d.releaseRepo, releasePin: d.releasePin, requireReleasePin: d.requireReleasePin }, staging)
         : await stagePackage({ version: d.version, installMethod: d.installMethod, managerPath: d.managerPath, releasePin: d.releasePin, requireReleasePin: d.requireReleasePin }, staging);
@@ -869,7 +834,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     if (d.prepareOnly) {
       const decision = await waitForHostUpdateDecision(d);
       if (decision === "cancel") throw new Error("Prepared host update was cancelled");
-      if (["1", "true", "yes", "on"].includes((process.env.OMP_WEB_DISABLE_AUTOUPDATE || "").trim().toLowerCase())) throw new Error("Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE");
+      if (["1", "true", "yes", "on"].includes((process.env.TAU_DISABLE_AUTOUPDATE || "").trim().toLowerCase())) throw new Error("Updates are disabled by TAU_DISABLE_AUTOUPDATE");
       const currentDescriptor = validateDescriptor(path);
       if (JSON.stringify(currentDescriptor) !== JSON.stringify(d)) throw new Error("Host update descriptor changed after preparation");
       if (d.restartOnly && !(await installedHostVersionMatches(d.installMethod, d.installDir, d.version))) throw new Error(restartCandidateMissing);
@@ -896,7 +861,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     stopped = true;
     if (release) {
       await waitUnshared(d.installDir);
-      backup = join(dirname(d.installDir), `.ompweb-backup-${d.id}`);
+      backup = join(dirname(d.installDir), `.tau-backup-${d.id}`);
       if (existsSync(backup)) throw new Error("Host backup directory already exists");
       await moveHostRelease(d.installDir, backup);
       try { await moveHostRelease(release, d.installDir); swapped = true; } catch (error) { await moveHostRelease(backup, d.installDir); backup = undefined; throw error; }
@@ -908,7 +873,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     if (!d) {
       try {
         const state = readHostUpdateState();
-        if (state?.operation.state === "running" && state.operation.target === "ompweb" && resolve(path) === join(hostUpdateRoot(), state.operation.id, "descriptor.json")) finishHostUpdate(state.operation.id, error instanceof Error ? error.message : String(error));
+        if (state?.operation.state === "running" && state.operation.target === "tau" && resolve(path) === join(hostUpdateRoot(), state.operation.id, "descriptor.json")) finishHostUpdate(state.operation.id, error instanceof Error ? error.message : String(error));
       } catch {}
     }
     let message = error instanceof Error ? error.message : String(error);
@@ -920,10 +885,6 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
       }
     }
     if (error instanceof UnsafeHostRestartError) recoveryRequired = true;
-    if (d?.recovery?.drained && !stopped && !stopPending) {
-      try { await resumeDrainedDaemon(); }
-      catch (resumeError) { recoveryRequired = true; message += `; the old host stays drained and must be resumed with \`ompweb host resume\`: ${resumeError instanceof Error ? resumeError.message : String(resumeError)}`; }
-    }
     if (d?.restartOnly && stopped) message += "; existing shared installation retained; the previous loaded runtime cannot be restored without reinstalling";
     if (d?.restartOnly && stopPending && stopped && plan && runtime) {
       try { await launchDaemon(d, plan, runtime, join(dirname(path), "health.json"), d.version, nonce); }
@@ -932,7 +893,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     if (d && plan && runtime && stopped && !d.restartOnly && !(error instanceof UnsafeHostRestartError)) {
       try {
         if (swapped && backup) {
-          await moveHostRelease(d.installDir, join(dirname(d.installDir), `.ompweb-failed-${d.id}`));
+          await moveHostRelease(d.installDir, join(dirname(d.installDir), `.tau-failed-${d.id}`));
           await moveHostRelease(backup, d.installDir);
         }
         await launchDaemon(d, plan, runtime, join(dirname(path), "health.json"), d.fromVersion);

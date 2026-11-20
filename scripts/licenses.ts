@@ -24,7 +24,7 @@ const LICENSE_FILE = /^(licen[cs]e|copying|notice)([.-]|$)/i;
 export function writeLicenses(out: string, packageDirs: string[], bunLicense: string): void {
   const dir = path.join(out, "licenses");
   cpSync(bunLicense, path.join(dir, "bun", "LICENSE.md"));
-  const rows = [`| Bun (the runtime in \`ompweb\`) | ${Bun.version} | MIT; JavaScriptCore and WebKit LGPL-2; see the file for the rest | bun/LICENSE.md |`];
+  const rows = [`| Bun (the runtime in \`tau\`) | ${Bun.version} | MIT; JavaScriptCore and WebKit LGPL-2; see the file for the rest | bun/LICENSE.md |`];
   const seen = new Set<string>();
   for (const packageDir of packageDirs) {
     const { name, version, license } = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8")) as { name: string; version: string; license?: string | { type?: string } };
@@ -39,7 +39,7 @@ export function writeLicenses(out: string, packageDirs: string[], bunLicense: st
   writeFileSync(path.join(dir, "README.md"), [
     "# Third-party licenses",
     "",
-    "ompweb itself is MIT-licensed (`../LICENSE`). The `ompweb` program embeds the Bun runtime and the npm packages below,",
+    "tau itself is MIT-licensed (`../LICENSE`). The `tau` program embeds the Bun runtime and the npm packages below,",
     "and `dist/` carries the ones the browser app bundles. Each directory here holds the license files its package ships.",
     "The fonts' licenses are in `../app/fonts/`, and KaTeX's (for its CSS and fonts) is also in `../node_modules/katex/`.",
     "",

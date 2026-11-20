@@ -19,7 +19,7 @@ const UPLOAD_IDLE_MS = 10 * 60_000;
 /** Aborts kept per host while it cannot take them; past this the oldest go (the daemon's sweep deletes those files). */
 const MAX_PENDING_ABORTS_PER_HOST = 1000;
 
-/** Who hears back about one upload: a browser link, or an HTTP request waiting for its chunk's ack. */
+/** Who hears back about one upload: an HTTP request waiting for its chunk's ack. */
 export interface UploadSink {
   ack(received: number, done: boolean, proof?: string): void;
   error(status: number, code: string, message: string): void;
@@ -61,10 +61,10 @@ interface Upload {
   done: boolean;
   live: boolean;
   sink: UploadSink | null;
-  attached: { sessionFile: string; path: string; url: string } | null;
+  attached: { sessionFile: string; path: string } | null;
   completionKey?: string;
   /** The attach in flight, shared by overlapping attaches of this upload to this session file. */
-  attaching?: { sessionFile: string; completionKey?: string; result: Promise<{ sessionFile: string; path: string; url: string }> } | null;
+  attaching?: { sessionFile: string; completionKey?: string; result: Promise<{ sessionFile: string; path: string }> } | null;
   attempt: string;
   touched: number;
   workspace?: { directory: string; name: string; conflict: UploadConflictStrategy; pending?: Promise<WorkspaceUploadResult>; result?: WorkspaceUploadResult; timer?: NodeJS.Timeout };
@@ -155,14 +155,14 @@ function persistCompletedUpload(id: string, upload: Upload): string {
 }
 
 declare global {
-  var __ompUploads: Map<string, Upload> | undefined;
-  var __ompPendingAborts: Map<string, Set<string>> | undefined;
+  var __tauUploads: Map<string, Upload> | undefined;
+  var __tauPendingAborts: Map<string, Set<string>> | undefined;
 }
 
 // globalThis, like the rpc-manager registry: survives a `bun --hot` re-evaluation.
 function uploads(): Map<string, Upload> {
-  if (!globalThis.__ompUploads) {
-    globalThis.__ompUploads = new Map();
+  if (!globalThis.__tauUploads) {
+    globalThis.__tauUploads = new Map();
     onUploadEvent(onHostEvent);
     onHostHello((hostId) => {
       const ids = pendingAborts().get(hostId);
@@ -171,12 +171,12 @@ function uploads(): Map<string, Upload> {
       for (const id of ids) deliverAbort(hostId, id);
     });
   }
-  return globalThis.__ompUploads;
+  return globalThis.__tauUploads;
 }
 
 /** Aborts a host could not take (offline, timed out): sent again on its next hello. In memory only. */
 function pendingAborts(): Map<string, Set<string>> {
-  return (globalThis.__ompPendingAborts ??= new Map());
+  return (globalThis.__tauPendingAborts ??= new Map());
 }
 
 function deliverAbort(hostId: string, id: string): Promise<void> {
@@ -362,9 +362,10 @@ function forward(id: string, upload: Upload, bytes: Uint8Array): void {
   upload.touched = Date.now();
 }
 
-/** Forward one chunk (a binary frame's payload) to its upload's host. False when `id` is not an upload of `owner`,
- * `sink` is not its current sender (a WS link superseded by an HTTP resume or a newer start: its late frames would land
- * after the offset that start reported), or the chunk is over pieceBytes. */
+/** Forward one chunk to its upload's host. False when `id` is not an upload of `owner`, `sink` is not its current sender
+ * (superseded by a newer start: its late chunks would land after the offset that start reported), or the chunk is over
+ * pieceBytes. shortcut: no production caller since the browser link went (putUploadChunk forwards inline); kept as the
+ * primitive lib/uploads.test.mjs drives the host link with, fold it into those tests if they are reworked. */
 export function forwardUploadFrame(owner: string, id: string, bytes: Uint8Array, sink: UploadSink): boolean {
   const upload = uploads().get(id);
   if (!upload || upload.owner !== owner || upload.sink !== sink || bytes.byteLength > LINK_LIMITS.pieceBytes) return false;
@@ -434,12 +435,6 @@ export async function abortUpload(id: string, owner: string, hostId?: string): P
   if (hostId && UPLOAD_ID_RE.test(id) && getHost(hostId)) return deliverAbort(hostId, id);
 }
 
-/** Detach a sink (its browser link is gone) without aborting the upload; a later startUpload resumes it. */
-export function releaseUploadSink(id: string, sink: UploadSink): void {
-  const upload = uploads().get(id);
-  if (upload?.sink === sink) upload.sink = null;
-}
-
 const PROMPT_TYPES: Record<string, true> = { prompt: true, steer: true, follow_up: true };
 
 /** Remove browser-only fields before native dispatch. Trusted receipts are supplied ONLY by the server dispatcher. */
@@ -474,7 +469,7 @@ export function takeUploads(command: Record<string, unknown>, owner: string, tru
   return { ids: ids as string[], receipts };
 }
 
-/** Link (or copy) each upload into the session's `local://uploads/` on its host and append the block naming them to the
+/** Link (or copy) each upload into the session's `local/uploads/` directory on its host and append the block naming them to the
  * command's `message` (spec U1). The uploads stay registered until forgetUploads, so a retried send reuses an attach. */
 export async function attachUploads(
   ids: string[],
@@ -497,10 +492,10 @@ export async function attachUploads(
     if (upload.attaching?.sessionFile !== sessionFile || upload.attaching.completionKey !== upload.completionKey) {
       const completionKey = upload.completionKey;
       const result = hostUploadOp(upload.hostId, "uploadAttach", { id, sessionFile, sessionId }).then((answer) => {
-        if (!isRecord(answer) || typeof answer.path !== "string" || typeof answer.url !== "string") {
+        if (!isRecord(answer) || typeof answer.path !== "string") {
           throw new UploadError(502, "host_bad_result", "The host sent an invalid uploadAttach result");
         }
-        return { sessionFile, path: answer.path, url: answer.url };
+        return { sessionFile, path: answer.path };
       });
       upload.attaching = { sessionFile, completionKey, result };
       const settled = () => { if (upload.attaching?.result === result) upload.attaching = null; };
@@ -509,12 +504,12 @@ export async function attachUploads(
     const attached = await upload.attaching!.result;
     if (uploads().get(id) !== upload || (receipt && !sameUpload(upload, receipt, receipt.owner ?? owner))) throw missing();
     upload.attached = attached;
-    const { url, path } = attached;
-    // The agent reads the exact path in the parentheses; the link target is percent-encoded so no name breaks it.
+    const { path } = attached;
+    // The agent reads the exact path in the code span; the link target is percent-encoded so no name breaks it.
     const href = encodeURI(path.toWellFormed()).replace(/[()#?&]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-    lines.push(`- [${markdownCode(url)}](${href}) (${path}, ${formatUploadSize(upload.size)}, ${upload.type || "application/octet-stream"})`);
+    lines.push(`- [${markdownCode(path)}](${href}) (${formatUploadSize(upload.size)}, ${upload.type || "application/octet-stream"})`);
   }
-  const block = `Attached files (this session's local:// directory):\n${lines.join("\n")}`;
+  const block = `Attached files:\n${lines.join("\n")}`;
   const message = typeof command.message === "string" ? command.message : "";
   command.message = message ? `${message}\n\n${block}` : block;
 }
@@ -526,7 +521,7 @@ function markdownCode(text: string): string {
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
-/** The prompt carrying these uploads reached omp: their registry entries go. */
+/** The prompt carrying these uploads reached pi: their registry entries go. */
 export function forgetUploads(ids: string[], owner: string, receipts?: OutboxUploadReceipt[]): void {
   for (const id of ids) {
     const upload = uploads().get(id);

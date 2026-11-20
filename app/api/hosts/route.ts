@@ -1,15 +1,14 @@
-import { isClusterMember, leaveCluster, sharesCredentials } from "@/lib/hosts/cluster";
+import { isClusterMember, leaveCluster } from "@/lib/hosts/cluster";
 import { closeHostLink, hostsSnapshot, listHosts, notifyHostsChange } from "@/lib/hosts/hub";
 import { loadPools, savePools, type HostPool } from "@/lib/hosts/pools";
 import { createHost, HostRegistryUnreadableError, readHosts, revokeHost, UnknownHostError, updateHost, type HostRecord } from "@/lib/hosts/registry";
-import { abortBrokerRequests } from "@/lib/omp/auth-broker";
 import { isRecord } from "@/lib/type-guards";
 
 const MAX_LABEL_LENGTH = 100;
 const noStore = { "cache-control": "no-store" };
 
 const fail = (error: string, status: number) => Response.json({ error }, { status, headers: noStore });
-const poolStorageFailure = () => fail("The pool registry (omp-web/pools.json) cannot be read or written; fix it before changing pools", 503);
+const poolStorageFailure = () => fail("The pool registry (tau/pools.json) cannot be read or written; fix it before changing pools", 503);
 
 function hasOnlyKeys(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   return isRecord(value) && Object.keys(value).every((key) => keys.includes(key));
@@ -17,19 +16,10 @@ function hasOnlyKeys(value: unknown, keys: readonly string[]): value is Record<s
 
 function failFor(error: unknown) {
   if (error instanceof HostRegistryUnreadableError) {
-    return fail("The linked-hosts registry (omp-web/hosts.json) cannot be read; fix or remove it before changing hosts", 503);
+    return fail("The linked-hosts registry (tau/hosts.json) cannot be read; fix or remove it before changing hosts", 503);
   }
   if (error instanceof UnknownHostError) return fail("Unknown host", 404);
   throw error;
-}
-
-/** A member keeps sharing when its own flag goes off; pools that cannot be read leave that unknown, so its requests are cut. */
-function stillShares(record: HostRecord): boolean {
-  try {
-    return sharesCredentials(record, loadPools());
-  } catch {
-    return false;
-  }
 }
 
 async function readBody(req: Request): Promise<Record<string, unknown> | null> {
@@ -92,14 +82,14 @@ export async function PUT(req: Request) {
     }
     for (const project of pool.projects) {
       if (!hasOnlyKeys(project, ["id", "name", "origin", "defaultRef", "clonePaths", "addedAt", "hidden", "alias", "sortOrder", "pinOrder", "launchConfig"])
-        || (project.launchConfig !== undefined && !hasOnlyKeys(project.launchConfig, ["profile", "advisor", "extraArgs"]))) {
+        || (project.launchConfig !== undefined && !hasOnlyKeys(project.launchConfig, ["extraArgs"]))) {
         return fail("Invalid pool project configuration", 400);
       }
     }
   }
-  let before: HostPool[];
+  // A damaged registry is never replaced: fix it first.
   try {
-    before = loadPools();
+    loadPools();
   } catch {
     return poolStorageFailure();
   }
@@ -112,10 +102,6 @@ export async function PUT(req: Request) {
     return fail("Invalid pool configuration", 400);
   }
   notifyHostsChange();
-  // Leaving the first pool, or no longer being in it, can end a host's sharing: cut off what it already has open.
-  for (const host of hosts) {
-    if (sharesCredentials(host, before) && !sharesCredentials(host, after)) abortBrokerRequests(host.id);
-  }
   return Response.json({ pools: after }, { headers: noStore });
 }
 
@@ -130,7 +116,7 @@ export async function POST(req: Request) {
       {
         host: listHosts().find((h) => h.id === host.id),
         token,
-        command: `ompweb host login --url ${requestOrigin(req)}`,
+        command: `tau host login --url ${requestOrigin(req)}`,
       },
       { headers: noStore },
     );
@@ -145,17 +131,14 @@ export async function PATCH(req: Request) {
   if (!body || typeof body.id !== "string" || !body.id) return fail("id is required", 400);
   const isLocal = body.id === "local";
   if (isLocal && body.allowAgentStart !== undefined) return fail("This machine's agent-start setting cannot be changed", 400);
-  if (isLocal && body.shareCredentials !== undefined) return fail("This machine's credential sharing cannot be changed", 400);
   // An empty name resets this machine to its default name.
   const label = isLocal && typeof body.label === "string" && !body.label.trim() ? "" : parseLabel(body.label);
   if (label === null) return fail(`label must be a non-empty string of at most ${MAX_LABEL_LENGTH} characters`, 400);
-  const { allowAgentStart, shareCredentials } = body;
+  const { allowAgentStart } = body;
   if (allowAgentStart !== undefined && typeof allowAgentStart !== "boolean") return fail("allowAgentStart must be a boolean", 400);
-  if (shareCredentials !== undefined && typeof shareCredentials !== "boolean") return fail("shareCredentials must be a boolean", 400);
-  if (label === undefined && allowAgentStart === undefined && shareCredentials === undefined) return fail("Nothing to update", 400);
+  if (label === undefined && allowAgentStart === undefined) return fail("Nothing to update", 400);
   try {
-    const updated = updateHost(body.id, { label, allowAgentStart, shareCredentials });
-    if (shareCredentials === false && !stillShares(updated)) abortBrokerRequests(body.id);
+    updateHost(body.id, { label, allowAgentStart });
     notifyHostsChange();
     return Response.json({ host: hostsSnapshot().hosts.find((h) => h.id === body.id) }, { headers: noStore });
   } catch (error) {
@@ -207,7 +190,6 @@ export async function DELETE(req: Request) {
     // Registry first: with the record gone a daemon that redials gets 401 instead of reconnecting.
     if (!revokeHost(id)) return fail("Unknown host", 404);
     closeHostLink(id);
-    abortBrokerRequests(id);
     notifyHostsChange();
     return Response.json({ ok: true }, { headers: noStore });
   } catch (error) {

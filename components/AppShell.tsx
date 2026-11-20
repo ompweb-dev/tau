@@ -26,7 +26,7 @@ import { NotificationBell } from "./NotificationBell";
 import { BranchNavigator } from "./BranchNavigator";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { CommandPaletteMount } from "./CommandPaletteMount";
-import { Check, ChevronDown, Command, Ellipsis, Folder, GitBranch, History, Menu, PanelLeft, PanelRight, Server, Terminal, Wand2, Zap } from "lucide-react";
+import { Check, ChevronDown, Command, Ellipsis, Folder, GitBranch, History, Menu, PanelLeft, PanelRight, Server, Terminal, Wand2 } from "lucide-react";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { translate, useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -111,15 +111,14 @@ const RightPanel = dynamic(() => import("./RightPanel").then((m) => m.RightPanel
   loading: () => null,
 });
 
-const TOOL_CALLS_COLLAPSED_STORAGE_KEY = "omp-web:tool-calls-collapsed";
-const HIDE_TOOL_ACTIVITY_STORAGE_KEY = "omp-web:hide-tool-activity";
-const NEVER_FOLD_ACTIVITY_STORAGE_KEY = "omp-web:never-fold-activity";
-const SHOW_TOOL_CALLS_UNFOLDED_STORAGE_KEY = "omp-web:show-tool-calls-unfolded";
+const TOOL_CALLS_COLLAPSED_STORAGE_KEY = "tau:tool-calls-collapsed";
+const HIDE_TOOL_ACTIVITY_STORAGE_KEY = "tau:hide-tool-activity";
+const NEVER_FOLD_ACTIVITY_STORAGE_KEY = "tau:never-fold-activity";
+const SHOW_TOOL_CALLS_UNFOLDED_STORAGE_KEY = "tau:show-tool-calls-unfolded";
 // Off by default, so the transcript keeps collapsing reasoning until asked.
-const EXPAND_THINKING_STORAGE_KEY = "omp-web:expand-thinking";
-const PROVIDER_USAGE_VISIBLE_STORAGE_KEY = "omp-web:provider-usage-visible";
-const NATIVE_SELECT_ALL_STORAGE_KEY = "omp-web:scope-native-select-all";
-const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "omp-web:open-url-automatically";
+const EXPAND_THINKING_STORAGE_KEY = "tau:expand-thinking";
+const NATIVE_SELECT_ALL_STORAGE_KEY = "tau:scope-native-select-all";
+const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 
 
 type AutoNameStatus =
@@ -178,14 +177,14 @@ export function AppShell({ appName }: { appName: string }) {
   const [neverFoldActivity, setNeverFoldActivity] = useState(false);
   const [showToolCallsUnfolded, setShowToolCallsUnfolded] = useState(false);
   // "Expand thinking blocks by default" — like the tool-call preference, a
-  // UI-only behavior, so it lives in localStorage rather than omp's config.
+  // UI-only behavior, so it lives in localStorage rather than pi's settings.
   const [expandThinkingByDefault, setExpandThinkingByDefault] = useState(false);
   const [hideThinkingBlock, setHideThinkingBlock] = useState(false);
   useEffect(() => {
-    // omp's own setting, so the transcript hides thinking when the TUI does.
+    // pi's own setting, so the transcript hides thinking when the TUI does.
     // Re-read on focus: the TUI or another tab may have changed it.
     const load = () => {
-      fetch("/api/omp-settings")
+      fetch("/api/pi-settings")
         .then((response) => (response.ok ? response.json() : null))
         .then((data: { settings?: { hideThinkingBlock?: boolean } } | null) => { if (data) setHideThinkingBlock(data.settings?.hideThinkingBlock === true); })
         .catch(() => {});
@@ -194,7 +193,6 @@ export function AppShell({ appName }: { appName: string }) {
     window.addEventListener("focus", load);
     return () => window.removeEventListener("focus", load);
   }, []);
-  const [providerUsageVisible, setProviderUsageVisible] = useState(true);
   const [scopeNativeSelectAll, setScopeNativeSelectAll] = useState(false);
   const [openUrlAutomatically, setOpenUrlAutomatically] = useState(false);
   const [sidebarResizing, setSidebarResizing] = useState(false);
@@ -214,7 +212,6 @@ export function AppShell({ appName }: { appName: string }) {
       setNeverFoldActivity(window.localStorage.getItem(NEVER_FOLD_ACTIVITY_STORAGE_KEY) === "true");
       setShowToolCallsUnfolded(window.localStorage.getItem(SHOW_TOOL_CALLS_UNFOLDED_STORAGE_KEY) === "true");
       setExpandThinkingByDefault(window.localStorage.getItem(EXPAND_THINKING_STORAGE_KEY) === "true");
-      setProviderUsageVisible(window.localStorage.getItem(PROVIDER_USAGE_VISIBLE_STORAGE_KEY) !== "false");
       setScopeNativeSelectAll(window.localStorage.getItem(NATIVE_SELECT_ALL_STORAGE_KEY) === "true");
       setOpenUrlAutomatically(window.localStorage.getItem(OPEN_URL_AUTOMATICALLY_STORAGE_KEY) === "true");
     } catch {
@@ -257,14 +254,6 @@ export function AppShell({ appName }: { appName: string }) {
     setExpandThinkingByDefault(expand);
     try {
       window.localStorage.setItem(EXPAND_THINKING_STORAGE_KEY, String(expand));
-    } catch {
-      // The preference still applies for this page load.
-    }
-  }, []);
-  const handleProviderUsageVisibleChange = useCallback((visible: boolean) => {
-    setProviderUsageVisible(visible);
-    try {
-      window.localStorage.setItem(PROVIDER_USAGE_VISIBLE_STORAGE_KEY, String(visible));
     } catch {
       // The preference still applies for this page load.
     }
@@ -420,7 +409,7 @@ export function AppShell({ appName }: { appName: string }) {
           <UpdateToastBody
             currentVersion={data.currentVersion}
             availableVersion={version}
-            target={data.updateCommand || "npm install -g @kahme247/ompweb"}
+            target={data.updateCommand || "npm install -g @ompweb-dev/tau"}
             link={binary}
             action={binary ? undefined : {
               label: translate("settingsConfig.appUpdateAction"),
@@ -1497,19 +1486,6 @@ export function AppShell({ appName }: { appName: string }) {
     router.replace(sessionNavigationUrl(session));
   }, [router, hydrateSelectedSession]);
 
-  const handleSessionMoved = useCallback((oldId: string, newId: string) => {
-    if (activeSessionIdRef.current !== oldId) return;
-    const hostId = activeSelectedSessionHostId;
-    activeSessionIdRef.current = newId;
-    activeSessionTargetRef.current = { id: newId, hostId };
-    setSelectedSession((current) => current && sameSessionTarget(current, { id: oldId, hostId }) ? { ...current, id: newId, path: "" } : current);
-    setRefreshKey((key) => key + 1);
-    hydrateSelectedSession(newId, hostId);
-    // This is the same conversation. Preserve ChatWindow's run/edit fences
-    // and its mounted composer, including unfinished attachments and audio.
-    router.replace(sessionNavigationUrl({ id: newId, hostId }));
-  }, [router, hydrateSelectedSession, activeSelectedSessionHostId]);
-
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
@@ -1719,7 +1695,7 @@ export function AppShell({ appName }: { appName: string }) {
     }
     setPendingOpens((queue) => [...queue, { kind: "url", target: url, name: url, sessionId, crossSession }]);
     return crossSession
-      ? `Asked the user to confirm opening ${url}; they are viewing another omp-web session.`
+      ? `Asked the user to confirm opening ${url}; they are viewing another tau session.`
       : `Asked the user to confirm opening ${url}.`;
   }, [openUrlAutomatically]);
   const handleSessionOpenUrl = useCallback((url: string) => requestOpenUrl(url, selectedSession?.id ?? "", false), [requestOpenUrl, selectedSession?.id]);
@@ -1735,13 +1711,12 @@ export function AppShell({ appName }: { appName: string }) {
     try {
       const { text, isError } = await runHostTool(call.toolName, call.arguments, {
         openUrl: (url) => requestOpenUrl(url, call.sessionId, !viewing()),
-        openFile: (path, name, owner) => {
-          const source = owner ? { ...call, sessionId: owner } : call;
-          if (viewing()) return handleOpenFile(path, name, source);
-          setPendingOpens((queue) => [...queue, { kind: "file", target: path, name, sessionId: call.sessionId, source, crossSession: true }]);
-          return `Asked the user to confirm opening ${path}; they are viewing another omp-web session.`;
+        openFile: (path, name) => {
+          if (viewing()) return handleOpenFile(path, name, call);
+          setPendingOpens((queue) => [...queue, { kind: "file", target: path, name, sessionId: call.sessionId, source: call, crossSession: true }]);
+          return `Asked the user to confirm opening ${path}; they are viewing another tau session.`;
         },
-      }, call.sessionId, controller.signal);
+      }, controller.signal);
       if (controller.signal.aborted) return;
       await sendAgentCommand(call.sessionId, {
         type: "host_tool_result",
@@ -1903,8 +1878,7 @@ export function AppShell({ appName }: { appName: string }) {
   const settingsTarget = activeCwd ? { hostId: activeHostId } : selectedSession ?? (newSessionCwd !== null ? { hostId: newSessionHostId } : effectivePoolProject);
   const clusterSettings = isClusterTarget(settingsTarget, settingsHostId, pools);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null || effectivePoolProject !== null;
-  const currentRate = generationSpeed?.current;
-  const rate = currentRate ?? generationSpeed?.average;
+  const rate = generationSpeed?.average;
   const speed = showChat ? formatGenerationSpeed(rate) : null;
   const hasGenerationSpeed = speed !== null;
   useLayoutEffect(() => {
@@ -2037,7 +2011,6 @@ export function AppShell({ appName }: { appName: string }) {
       addProjectOpen={addProjectOpen}
       addProjectHostId={addProjectHostId}
       setAddProjectOpen={openAddProject}
-      usageVisible={providerUsageVisible}
       settingsOpen={Boolean(settingsTab)}
       onOpenSettings={() => setSettingsTab((prev) => prev ? null : "general")}
       onOpenArchive={() => setArchiveBrowserOpen(true)}
@@ -2084,7 +2057,7 @@ export function AppShell({ appName }: { appName: string }) {
         onNewSession={() => {
           // An empty cwd is truthy, so showChat would render the shell while
           // useAgentSession refuses to start — every send a silent no-op.
-          // Fall back to the server's default cwd (~/omp-cwd-<date>) instead.
+          // Fall back to the server's default cwd (~/tau-cwd-<date>) instead.
           if (activeCwd || activePoolProject) {
             handleNewSession(randomUUID(), activeCwd, activeHostId, activePoolProject ?? undefined);
             return;
@@ -2237,8 +2210,6 @@ export function AppShell({ appName }: { appName: string }) {
             expandThinkingByDefault={expandThinkingByDefault}
             onExpandThinkingByDefaultChange={handleExpandThinkingByDefaultChange}
             onHideThinkingBlockChange={setHideThinkingBlock}
-            providerUsageVisible={providerUsageVisible}
-            onProviderUsageVisibleChange={handleProviderUsageVisibleChange}
             scopeNativeSelectAll={scopeNativeSelectAll}
             onScopeNativeSelectAllChange={handleScopeNativeSelectAllChange}
             openUrlAutomatically={openUrlAutomatically}
@@ -2307,7 +2278,7 @@ export function AppShell({ appName }: { appName: string }) {
                       mobileToolsRef.current.open = false;
                       setActiveTopPanel(null);
                     }
-                    window.dispatchEvent(new Event("omp:open-command-palette"));
+                    window.dispatchEvent(new Event("tau:open-command-palette"));
                   }}
                   title={`${t("commandPalette.label")} (Ctrl/⌘ K)`}
                   aria-label={t("commandPalette.label")}
@@ -2563,8 +2534,7 @@ export function AppShell({ appName }: { appName: string }) {
             {/* Generation speed pill */}
             {showChat && (() => {
               if (!speed || rate == null) return null;
-              const isLive = currentRate != null;
-              const speedTitle = t(isLive ? "appShell.tooltipCurrentSpeed" : "appShell.tooltipAverageSpeed", {
+              const speedTitle = t("appShell.tooltipAverageSpeed", {
                 value: `${rate.toFixed(1)} t/s`,
               });
 
@@ -2583,7 +2553,7 @@ export function AppShell({ appName }: { appName: string }) {
                     borderRadius: "var(--radius-control)",
                     border: "1px solid var(--border)",
                     background: "var(--bg-subtle)",
-                    color: isLive ? "var(--accent)" : "var(--text-muted)",
+                    color: "var(--text-muted)",
                     fontSize: 11,
                     fontFamily: "var(--font-mono)",
                     fontVariantNumeric: "tabular-nums",
@@ -2593,12 +2563,8 @@ export function AppShell({ appName }: { appName: string }) {
                     flexShrink: 0,
                   }}
                 >
-                  {isLive ? (
-                    <Zap size={11} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />
-                  ) : (
-                    <span aria-hidden="true" style={{ width: 11, lineHeight: "11px", textAlign: "center", flexShrink: 0, color: "var(--text-dim)" }}>~</span>
-                  )}
-                  <span style={{ display: "inline-flex", gap: "1ch", fontWeight: isLive ? 600 : 400 }}>
+                  <span aria-hidden="true" style={{ width: 11, lineHeight: "11px", textAlign: "center", flexShrink: 0, color: "var(--text-dim)" }}>~</span>
+                  <span style={{ display: "inline-flex", gap: "1ch", fontWeight: 400 }}>
                     <span style={{ width: "5ch", textAlign: "right" }}>{speed.value}</span>
                     <span style={{ width: "4ch" }}>{speed.unit}</span>
                   </span>
@@ -2759,7 +2725,6 @@ export function AppShell({ appName }: { appName: string }) {
               onAgentEnd={handleAgentEnd}
               onSessionCreated={handleSessionCreated}
               onSessionForked={handleSessionForked}
-              onSessionMoved={handleSessionMoved}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
               onOpenFile={selectedSession || !effectivePoolProject ? handleOpenFile : undefined}

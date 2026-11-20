@@ -1,11 +1,9 @@
-import { execFile } from "node:child_process";
 import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import packageJson from "../../package.json";
-import { checkNpmUpdate, checkPiRegistryVersion, detectInstallMethod } from "../npm-update";
-import { getOmpVersion, resolveOmpBin, wrapWindowsScript } from "../omp/omp-cli";
+import { checkNpmUpdate, detectInstallMethod } from "../npm-update";
 import { createChildProcessEnvironment } from "../project-command-env";
 import { isUpdateDisabled } from "../update-policy";
 import { isNewerVersion } from "../version-compare";
@@ -63,7 +61,7 @@ export function hostUpdateBlocksNewWork(operation: HostUpdateOperation | null): 
 export function acknowledgeHostUpdateHealth(): void {
   try {
     const state = readHostUpdateState();
-    if (state?.operation.state !== "running" || state.operation.target !== "ompweb" || state.daemonPid === process.pid) return;
+    if (state?.operation.state !== "running" || state.operation.target !== "tau" || state.daemonPid === process.pid) return;
     const attempt = join(hostUpdateRoot(), state.operation.id);
     assertOwnedPath(attempt, true);
     const path = join(attempt, "descriptor.json");
@@ -85,7 +83,7 @@ export function acknowledgeHostUpdateHealth(): void {
 export async function acknowledgeHostUpdateReceipt(protocol: number): Promise<void> {
   try {
     const state = readHostUpdateState();
-    if (state?.operation.state !== "running" || state.operation.target !== "ompweb" || state.daemonPid === process.pid) return;
+    if (state?.operation.state !== "running" || state.operation.target !== "tau" || state.daemonPid === process.pid) return;
     const attempt = join(hostUpdateRoot(), state.operation.id);
     assertOwnedPath(attempt, true);
     const read = (name: string): unknown => { const path = join(attempt, name); assertOwnedPath(path); return JSON.parse(readFileSync(path, "utf8")); };
@@ -118,14 +116,14 @@ export async function candidateProtocol(version: string, refresh: boolean): Prom
   return value;
 }
 function installDirectory(): string {
-  return resolve(process.env.OMP_WEB_PACKAGE_DIR || fileURLToPath(new URL("../../", import.meta.url)));
+  return resolve(process.env.TAU_PACKAGE_DIR || fileURLToPath(new URL("../../", import.meta.url)));
 }
 function hostArguments(binary: boolean): string[] {
   if (binary && process.argv[2] === "host") return process.argv.slice(3);
-  if (!binary && ["omp-web.js", "omp-web-host.js"].includes(basename(realpathSync(process.argv[1] || "")))) {
+  if (!binary && ["tau.js", "tau-host.js"].includes(basename(realpathSync(process.argv[1] || "")))) {
     return process.argv[2] === "host" ? process.argv.slice(3) : process.argv.slice(2);
   }
-  throw new Error("Host updates require the standalone ompweb host daemon, not the web server or a development process");
+  throw new Error("Host updates require the standalone tau host daemon, not the web server or a development process");
 }
 
 /** `execPath` lies physically inside `installDir` (a bundled Bun the swap replaces), as opposed to a system or Homebrew runtime. */
@@ -145,8 +143,8 @@ function installSupport(method: "npm" | "bun" | "binary"): string | null {
     if (!info.isDirectory() || info.isSymbolicLink() || realpathSync(directory) !== directory || (process.getuid && info.uid !== process.getuid()) || (process.platform !== "win32" && (info.mode & 0o022))) throw new Error("Host install is not an owned, writable release directory");
     if (method === "binary") {
       hostReleaseName();
-      if (realpathSync(process.execPath) !== join(directory, process.platform === "win32" ? "ompweb.exe" : "ompweb") || !existsSync(join(directory, "dist", "index.html"))) throw new Error("Binary updates require a complete owned host release directory");
-    } else if (basename(directory) !== "ompweb" || basename(dirname(directory)) !== "@kahme247" || basename(dirname(dirname(directory))) !== "node_modules") throw new Error("Host updates require an installed npm/bun package; source checkouts are manual-only");
+      if (realpathSync(process.execPath) !== join(directory, process.platform === "win32" ? "tau.exe" : "tau") || !existsSync(join(directory, "dist", "index.html"))) throw new Error("Binary updates require a complete owned host release directory");
+    } else if (basename(directory) !== "tau" || basename(dirname(directory)) !== "@ompweb-dev" || basename(dirname(dirname(directory))) !== "node_modules") throw new Error("Host updates require an installed npm/bun package; source checkouts are manual-only");
     if (!safetyGuard) throw new Error("Host daemon restart safety is not configured");
     return null;
   } catch (error) { return messageOf(error); }
@@ -197,37 +195,20 @@ async function evaluateHostUpdate(compatibility: HostUpdateCompatibility, refres
   assertCompatibility(compatibility);
   if (targetCompatibility !== undefined) assertCompatibility(targetCompatibility);
   const operation = getHostUpdateOperation();
-  const disabled = isUpdateDisabled() ? "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE" : null;
-  const [npm, ompVersion, piLatest] = await Promise.all([targetVersion === undefined ? checkNpmUpdate(refresh).catch(() => null) : { currentVersion: packageJson.version, availableVersion: targetVersion, updateAvailable: isNewerVersion(targetVersion, packageJson.version) }, getOmpVersion(), checkPiRegistryVersion(refresh)]);
+  const disabled = isUpdateDisabled() ? "Updates are disabled by TAU_DISABLE_AUTOUPDATE" : null;
+  const npm = targetVersion === undefined ? await checkNpmUpdate(refresh).catch(() => null) : { currentVersion: packageJson.version, availableVersion: targetVersion, updateAvailable: isNewerVersion(targetVersion, packageJson.version) };
   const base: HostSoftwareUpdate = { currentVersion: null, availableVersion: null, updateAvailable: false, canUpdate: false, blockers: [], canForceUpdate: false, blockedReason: null, updateCommand: "" };
   base.supportsReleasePin = true;
   base.supportsTwoPhaseUpdate = true;
   const installMethod = typeof Bun !== "undefined" && Bun.isStandaloneExecutable ? "binary" : detectInstallMethod(installDirectory());
-  const ompweb: HostUpdateInfo["ompweb"] = { ...base, ...npm, currentVersion: packageJson.version, installMethod, protocolVersion: null, activeSessions: safetyState.sessions(), updateCommand: installMethod === "binary" ? `https://github.com/${releaseRepo()}/releases/latest` : installMethod === "bun" ? "bun add -g @ompweb-dev/tau" : "npm install -g @ompweb-dev/tau" };
-  const piCurrent = ompVersion?.replace(/^(?:omp|pi)\//, "") ?? null;
-  const piUpdateAvailable = Boolean(piCurrent && piLatest && isNewerVersion(piLatest, piCurrent));
-  const piBlockers: HostUpdateBlocker[] = [];
-  if (disabled) piBlockers.push({ code: "updates_disabled", message: disabled, forceable: false });
-  if (operation?.state === "running") piBlockers.push({ code: "update_in_progress", message: "Another host update is in progress", forceable: false });
-  const piBusy = safetyGuard?.();
-  if (piUpdateAvailable && piBusy) piBlockers.push({ code: safetyState.drained() ? "host_drained" : "host_busy", message: piBusy, forceable: !safetyState.drained() });
-  const runtime: HostUpdateInfo["omp"] = {
-    currentVersion: piCurrent,
-    availableVersion: piLatest,
-    updateAvailable: piUpdateAvailable,
-    canUpdate: piUpdateAvailable && piBlockers.length === 0,
-    canForceUpdate: piUpdateAvailable && piBlockers.length > 0 && piBlockers.every((b) => b.forceable),
-    blockers: piBlockers,
-    blockedReason: piBlockers[0]?.message ?? null,
-    updateCommand: "pi update pi",
-  };
+  const tau: HostUpdateInfo["tau"] = { ...base, ...npm, currentVersion: packageJson.version, installMethod, protocolVersion: null, activeSessions: safetyState.sessions(), updateCommand: installMethod === "binary" ? `https://github.com/${releaseRepo()}/releases/latest` : installMethod === "bun" ? "bun add -g @ompweb-dev/tau" : "npm install -g @ompweb-dev/tau" };
   const blockers: HostUpdateBlocker[] = [];
   let plan: HostRestartPlan | null = null;
   let awaitsServerCutover = false;
   if (disabled) blockers.push({ code: "updates_disabled", message: disabled, forceable: false });
-  else if (!npm || !npm.availableVersion || !HOST_VERSION_PATTERN.test(npm.availableVersion)) blockers.push({ code: "check_failed", message: "Could not check the host's ompweb update version", forceable: false });
+  else if (!npm || !npm.availableVersion || !HOST_VERSION_PATTERN.test(npm.availableVersion)) blockers.push({ code: "check_failed", message: "Could not check the host's tau update version", forceable: false });
   else if (npm.updateAvailable) {
-    const protocol = ompweb.protocolVersion = await candidateProtocol(npm.availableVersion, refresh);
+    const protocol = tau.protocolVersion = await candidateProtocol(npm.availableVersion, refresh);
     const inside = (range: HostUpdateCompatibility) => protocol !== null && protocol >= range.min && protocol <= range.max;
     if (protocol === null) blockers.push({ code: "protocol_unverified", message: "The candidate's daemon link protocol could not be verified; update is blocked", forceable: false });
     // With an approved target, the candidate must also speak what the server will speak after its cutover.
@@ -242,12 +223,12 @@ async function evaluateHostUpdate(compatibility: HostUpdateCompatibility, refres
     }
   }
   if (operation?.state === "running") blockers.push({ code: "update_in_progress", message: "Another host update is in progress", forceable: false });
-  ompweb.blockers = blockers;
-  ompweb.blockedReason = blockers[0]?.message ?? null;
-  ompweb.canUpdate = ompweb.updateAvailable && blockers.length === 0;
-  ompweb.canForceUpdate = ompweb.updateAvailable && blockers.length > 0 && blockers.every((blocker) => blocker.forceable);
-  if (ompweb.canForceUpdate) ompweb.forceMethod = "native";
-  return { info: { ompweb, omp: runtime, operation }, plan, awaitsServerCutover };
+  tau.blockers = blockers;
+  tau.blockedReason = blockers[0]?.message ?? null;
+  tau.canUpdate = tau.updateAvailable && blockers.length === 0;
+  tau.canForceUpdate = tau.updateAvailable && blockers.length > 0 && blockers.every((blocker) => blocker.forceable);
+  if (tau.canForceUpdate) tau.forceMethod = "native";
+  return { info: { tau, operation }, plan, awaitsServerCutover };
 }
 
 /** `refresh` bypasses the registry and protocol caches (the existing meaning of the request's `force` for a check, not the update force). An approved pin evaluates its immutable version instead of the moving registry latest. */
@@ -391,7 +372,7 @@ export async function startHostUpdate(target: HostUpdateTarget, version: string,
   if (request.force !== undefined && typeof request.force !== "boolean") throw new HostUpdateError("invalid_request", "force must be a boolean", 400);
   if (request.phase !== undefined && !["prepare", "commit", "cancel"].includes(request.phase)) throw new HostUpdateError("invalid_request", "Invalid host update phase", 400);
   const force = request.force === true;
-  if (target !== "ompweb" && target !== "omp") throw new HostUpdateError("invalid_target", "Invalid host software target", 400);
+  if (target !== "tau") throw new HostUpdateError("invalid_target", "Invalid host software target", 400);
   if (typeof version !== "string" || version.length > 100 || !HOST_VERSION_PATTERN.test(version)) throw new HostUpdateError("invalid_version", "Invalid host update version", 400);
   if (request.operationId !== undefined && (typeof request.operationId !== "string" || !OPERATION_ID.test(request.operationId))) throw new HostUpdateError("invalid_request", "operationId must be a UUID", 400);
   if (request.phase && (!request.operationId || request.requireReleasePin !== true || !request.releasePin)) throw new HostUpdateError("invalid_request", "Phased host updates require an operationId and approved release pin", 400);
@@ -416,35 +397,19 @@ export async function startHostUpdate(target: HostUpdateTarget, version: string,
     if (request.phase === "commit" || request.phase === "cancel") throw new HostUpdateError("operation_missing", "That prepared host update operation does not exist");
     if (existing?.id === request.operationId) throw new HostUpdateError("operation_conflict", "That operation has no immutable update descriptor");
   }
-  if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE", 403);
+  if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by TAU_DISABLE_AUTOUPDATE", 403);
   const id = request.operationId ?? randomUUID();
   const root = claimHostUpdate(id);
   let claimed = false;
   try {
     const { info, plan, awaitsServerCutover } = await evaluateHostUpdate(compatibility, true, request.targetCompatibility, true, releasePin?.version);
-    const software = info[target];
+    const software = info.tau;
     if (!software.updateAvailable || software.availableVersion !== version) throw new HostUpdateError("candidate_changed", "The available update candidate changed; refresh host updates");
     if (!software.canUpdate && !(force && software.canForceUpdate)) throw new HostUpdateError(software.canForceUpdate ? "host_busy" : "update_blocked", software.blockedReason || "This host update is blocked");
-    if (target === "omp") {
-      const piBin = resolveOmpBin(true);
-      if (!piBin) throw new HostUpdateError("update_blocked", "pi binary not found on this host");
-      if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE", 403);
-      const operation: HostUpdateOperation = { id, target, version, state: "running", ...(force ? { force: true as const } : {}) };
-      writeHostUpdateJson(join(root, "status.json"), { operation, startedAt: Date.now(), daemonPid: process.pid });
-      claimed = true;
-      const busy = safetyGuard?.() ?? null;
-      if (busy && (!force || safetyState.drained())) throw new HostUpdateError(safetyState.drained() ? "host_drained" : "host_busy", busy);
-      const cmd = wrapWindowsScript(piBin, ["update", "pi"]);
-      execFile(cmd.file, cmd.args, { cwd: dirname(piBin), timeout: 300_000, env: createChildProcessEnvironment(), windowsHide: true }, (error, stdout, stderr) => {
-        if (error) finishHostUpdate(id, (stderr || stdout || error.message).trim().slice(-500));
-        else finishHostUpdate(id);
-      });
-      return { accepted: true, operation };
-    }
-    const method = info.ompweb.installMethod;
+    const method = info.tau.installMethod;
     if (!plan?.process) throw new HostUpdateError("update_blocked", "This host's process could not be verified");
     if (releasePin && plan?.restartOnly) throw new HostUpdateError("update_blocked", "An existing installation cannot be adopted as an approved release without artifact evidence");
-    if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by OMP_WEB_DISABLE_AUTOUPDATE", 403);
+    if (isUpdateDisabled()) throw new HostUpdateError("updates_disabled", "Updates are disabled by TAU_DISABLE_AUTOUPDATE", 403);
     const operation: HostUpdateOperation = { id, target, version, state: "running", ...(force ? { force: true as const, interruptedSessions: safetyState.sessions() } : {}), ...(awaitsServerCutover ? { awaitingServerCutover: true as const } : {}) };
     writeHostUpdateJson(join(root, "status.json"), { operation, startedAt: Date.now(), daemonPid: process.pid });
     claimed = true;

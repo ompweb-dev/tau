@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { getAgentDir } from "../omp/paths";
+import { getAgentDir } from "../pi/paths";
 
 const UNCERTAIN = "The GitHub Actions write outcome is unknown. Inspect existing runs with github_run_list or github_read before deciding whether to try again; the operation was not replayed.";
 
 /** Reserve before sending: a process death cannot turn the same tool request into another dispatch. */
 export async function withActionReceipt(session: string, request: string, operation: string, args: unknown, perform: () => Promise<unknown>): Promise<unknown> {
   if (!request) throw new Error("GitHub Actions writes require a request identity.");
-  const dir = join(getAgentDir(), "omp-web");
+  const dir = join(getAgentDir(), "tau");
   mkdirSync(dir, { recursive: true });
   const db = new Database(join(dir, "github-action-receipts.sqlite"));
   try {

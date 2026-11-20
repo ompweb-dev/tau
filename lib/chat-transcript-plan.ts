@@ -12,7 +12,7 @@ import type { AgentMessage, AssistantContentBlock, AssistantMessage, CustomMessa
  * - { kind: "message", index } — one message rendered standalone (messages
  *   before the first anchor, or a turn with nothing to fold)
  * - { kind: "group", userIndex, endIndex, segments } — one anchored turn. Like
- *   the omp TUI, agent text is never hidden: the turn renders as its anchor
+ *   the pi TUI, agent text is never hidden: the turn renders as its anchor
  *   followed by `segments` in order, where each run of activity (thinking,
  *   tool calls, notices) between two pieces of text folds into one collapsed
  *   row. A turn stays one row so the render-window math is unchanged.
@@ -32,7 +32,7 @@ export type TranscriptRow =
   | { kind: "group"; userIndex: number; endIndex: number; segments: TranscriptSegment[] };
 
 export interface PlanOptions {
-  /** Mirrors omp's `hideThinkingBlock`: drop thinking blocks entirely. */
+  /** Mirrors pi's `hideThinkingBlock`: drop thinking blocks entirely. */
   hideThinking?: boolean;
   /** "Expand thinking blocks by default": thinking stays visible like text instead of folding. */
   showThinking?: boolean;
@@ -128,8 +128,8 @@ export function planTurnSegments(
 
 /**
  * True when the tail of the transcript looks mid-run, without asking the owning
- * process. omp-web receives SSE frames only for runs it spawned itself, so a
- * session driven by a separate `omp` process had no signal at all and its
+ * process. tau receives SSE frames only for runs it spawned itself, so a
+ * session driven by a separate `pi` process had no signal at all and its
  * in-progress turn was always folded into "Process details" (#136).
  *
  * Mid-run has exactly two shapes: a tool result just landed and the agent is
@@ -158,7 +158,7 @@ export function looksLikeRunningTurn(messages: AgentMessage[]): boolean {
 }
 
 /**
- * customType the session reader gives omp's passive tool context (developer
+ * customType the session reader gives passive tool context (developer
  * messages marked `passiveToolContext`). It is never a transcript row: its
  * text rides on the last tool card of the tool batch it follows.
  */
@@ -203,8 +203,7 @@ const resultsWithContext = new WeakMap<ToolResultMessage, ToolResultMessage>();
 
 /**
  * Index committed tool results by tool call id and attach each passive tool
- * context to the last tool call (call order) of the batch it follows, as
- * omp's terminal does. A batch stays open through its tool results; any
+ * context to the last tool call (call order) of the batch it follows. A batch stays open through its tool results; any
  * other message closes it, so context after a non-tool message is dropped
  * instead of landing on an earlier, unrelated card.
  */

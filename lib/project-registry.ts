@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, 
 import { homedir } from "os";
 import { isAbsolute, resolve } from "path";
 import { comparableProjectPath } from "./comparable-path";
-import { getAgentDir } from "./omp/paths";
+import { getAgentDir } from "./pi/paths";
 import type { ManagedProject, ProjectLaunchConfig } from "./types";
 
 // ============================================================================
 // Project registry: which directories the user explicitly manages, and which
-// of them are hidden from the sidebar. Stored as ~/.omp/agent/projects.json
+// of them are hidden from the sidebar. Stored as `projects.json` in the agent dir
 // (the same agent dir as sessions), written atomically so a crash can never
 // leave a half-written registry. Hiding is reversible: the entry (and its
 // sessions) is restored by adding the directory again.
@@ -31,8 +31,11 @@ export interface ProjectRegistryEntry {
   sortOrder?: number;
   /** Present when pinned; position among pinned projects, lower first. */
   pinOrder?: number;
-  /** Workspace-level omp launch configuration. */
+  /** Workspace-level pi launch configuration. */
   launchConfig?: ProjectLaunchConfig;
+  /** Registered only to keep a session-discovered row's display data (reorder, rename, launch config), never added
+   *  by the user: such a project is not trusted (`registeredProjectFor`, pi's `--approve`). An explicit add clears it. */
+  discovered?: true;
 }
 
 export interface ProjectPresentationUpdate {
@@ -83,30 +86,30 @@ function canonicalProjectPath(value: string): string {
   }
 }
 
-/** Launch args the web UI manages itself; a workspace config must never carry
- *  them (bare or `--flag=value`), or a stored config could hijack the session
- *  boundary (`--cwd`/`--resume`/`--profile`) or the rpc-ui mode. `--profile`
- *  is reserved too: it would bypass the validated `profile` field and could
- *  hand omp a name it rejects, failing every session in the workspace. */
-const RESERVED_LAUNCH_ARGS: Record<string, true> = { "--mode": true, "rpc-ui": true, "--cwd": true, "--resume": true, "--session": true, "--profile": true };
-const RESERVED_LAUNCH_ARG_PREFIXES = ["--mode=", "--cwd=", "--resume=", "--session=", "--profile="];
+/** pi flags (`pi --help`, 1.5.2) a workspace config must never carry, bare, short or `--flag=value`: they would pick
+ *  another session or its storage (`--session`, `--session-id`, `--fork`, `--continue`, `--resume`, `--session-dir`,
+ *  `--no-session`), leave RPC mode or end the process (`--mode`, `--print`, `--export`, `--list-models`, `--help`,
+ *  `--version`), change which extensions load beside tau's (`--extension`, `--no-extensions`) or override tau's
+ *  project trust (`--approve`, `--no-approve`). */
+const RESERVED_LAUNCH_ARGS = new Set([
+  "--session", "--session-id", "--fork", "--continue", "-c", "--resume", "-r", "--session-dir", "--no-session",
+  "--mode", "--print", "-p", "--export", "--list-models", "--help", "-h", "--version", "-v",
+  "--extension", "-e", "--no-extensions", "-ne", "--approve", "-a", "--no-approve", "-na",
+]);
 export function isReservedLaunchArg(arg: string): boolean {
-  return RESERVED_LAUNCH_ARGS[arg] === true || RESERVED_LAUNCH_ARG_PREFIXES.some((prefix) => arg.startsWith(prefix));
+  return RESERVED_LAUNCH_ARGS.has(arg.split("=", 1)[0]);
 }
 
-/** Preserve stored strings so invalid legacy configurations can be corrected,
- * rather than silently changing the profile or leaving orphaned arguments. */
+/** Preserve stored strings so invalid configurations can be corrected
+ * rather than leaving orphaned arguments. Only `extraArgs` is read. */
 function parseLaunchConfig(item: Record<string, unknown>): ProjectLaunchConfig | undefined {
   const raw = item.launchConfig;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const value = raw as Record<string, unknown>;
-  const profile = typeof value.profile === "string" ? value.profile : undefined;
-  const advisor = value.advisor === true ? true : undefined;
   const extraArgs = Array.isArray(value.extraArgs)
     ? value.extraArgs.filter((arg): arg is string => typeof arg === "string")
     : undefined;
-  if (profile === undefined && advisor === undefined && (!extraArgs || extraArgs.length === 0)) return undefined;
-  return { profile, advisor, extraArgs };
+  return extraArgs && extraArgs.length > 0 ? { extraArgs } : undefined;
 }
 
 /** Parse registry JSON; missing, corrupt, or foreign-shaped input yields an
@@ -130,6 +133,7 @@ export function parseProjectRegistry(raw: string): ProjectRegistryFile {
         sortOrder: "sortOrder" in item && typeof item.sortOrder === "number" && Number.isFinite(item.sortOrder) ? item.sortOrder : undefined,
         pinOrder: "pinOrder" in item && typeof item.pinOrder === "number" && Number.isFinite(item.pinOrder) ? item.pinOrder : undefined,
         launchConfig: parseLaunchConfig(item as Record<string, unknown>),
+        ...("discovered" in item && item.discovered === true ? { discovered: true as const } : {}),
       });
     }
     return { version: 1, projects: entries };
@@ -174,6 +178,7 @@ export function upsertProject(
   path: string,
   now = new Date().toISOString(),
   launchConfig?: ProjectLaunchConfig,
+  discovered = false,
 ): ProjectRegistryFile {
   const canonical = canonicalProjectPath(path);
   const key = comparableProjectPath(canonical);
@@ -182,7 +187,7 @@ export function upsertProject(
   // An omitted launchConfig preserves the stored one: re-adding a workspace
   // (e.g. un-hiding) without config must not wipe it. Explicit clear goes
   // through PATCH with null.
-  projects.push({ path: canonical, addedAt: now, hidden: false, launchConfig: launchConfig ?? existing?.launchConfig });
+  projects.push({ path: canonical, addedAt: now, hidden: false, launchConfig: launchConfig ?? existing?.launchConfig, ...(discovered ? { discovered: true as const } : {}) });
   return { version: 1, projects };
 }
 

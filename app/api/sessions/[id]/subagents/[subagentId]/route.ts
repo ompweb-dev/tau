@@ -11,6 +11,9 @@ import { isValidSubagentId } from "@/lib/hosts/session-ops";
  *
  * ?mode=completion: the subagent's final output (`<id>.md`), without loading
  * the transcript — works even for transcripts beyond the readable size cap.
+ *
+ * &file=<path>: a pi-subagents child's own session file (from its progress or the history); the host reads it only
+ * inside the parent session's artifacts dir. Its completion is the last assistant message.
  */
 export async function GET(
   req: Request,
@@ -30,6 +33,7 @@ export async function GET(
       subagentId,
       searchParams.get("mode") === "completion" ? "completion" : "page",
       fromByteRaw !== null ? Number(fromByteRaw) : 0,
+      searchParams.get("file") ?? undefined,
     );
     return result.ok ? Response.json(result.value) : opErrorResponse(result);
   } catch (error) {

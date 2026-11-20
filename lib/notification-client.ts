@@ -11,8 +11,8 @@ import {
   type RenderedNotification,
 } from "./notification-events";
 
-const DEVICE_KEY = "omp-notify-device";
-const PREFS_KEY = "omp-notify-prefs";
+const DEVICE_KEY = "tau-notify-device";
+const PREFS_KEY = "tau-notify-prefs";
 
 /** crypto.randomUUID exists only in secure contexts; plain-HTTP LAN origins still need ids. */
 function randomId(): string {
@@ -193,7 +193,7 @@ async function subscribeForPush(): Promise<boolean> {
 }
 
 /** Window event (detail: session id) asking the app to open a notification's session. */
-export const OPEN_SESSION_EVENT = "omp-open-session";
+export const OPEN_SESSION_EVENT = "tau-open-session";
 
 /**
  * Show a system notification the same way the service worker shows pushes.
