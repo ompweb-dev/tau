@@ -29,6 +29,8 @@ import {
   writeSessionFileAtomicSync,
 } from "../pi/session-files";
 import { preparePoolProject, type PreparedPoolProject } from "../pooled-projects";
+import { HostOpError } from "./link-protocol";
+import { assertOutsideAgentDir } from "./workspace-roots";
 import { projectIdentityKey, sessionPathKey } from "../paths";
 import {
   hideProject,
@@ -801,6 +803,14 @@ export const sessionOps: SessionOps = {
       || typeof input.origin !== "string" || typeof input.cloneRoot !== "string"
       || (input.ref !== undefined && typeof input.ref !== "string")) {
       return fail(400, "invalid_request", "Invalid pool project preparation input");
+    }
+    // A clone root inside pi's agent directory or ~/.pi would let a pool clone write pi's configuration (a clone that
+    // would create a root holding a missing one is refused where it clones). A malformed root is left to the 400.
+    try {
+      if (isAbsolute(input.cloneRoot) && resolve(input.cloneRoot) === input.cloneRoot) assertOutsideAgentDir(input.cloneRoot);
+    } catch (error) {
+      if (error instanceof HostOpError) return fail(error.status, error.code, error.message);
+      throw error;
     }
     return preparePoolProject(input);
   },
