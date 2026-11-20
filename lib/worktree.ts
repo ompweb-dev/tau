@@ -223,7 +223,7 @@ export async function registeredProjectFor(cwd: string): Promise<ProjectRegistry
   const within = (key: string, root: string) => key === root || key.startsWith(`${root}/`);
   return loadProjectRegistry().projects.find((project) => {
     if (project.hidden || project.discovered) return false;
-    const root = comparableProjectPath(project.path);
+    const root = comparableProjectPath(realPathOrSelf(project.path));
     return keys.some((key) => within(comparableProjectPath(key), root) || within(comparableProjectPath(key), `${root}-worktrees`));
   });
 }
