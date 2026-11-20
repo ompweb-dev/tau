@@ -83,9 +83,12 @@ export class SubagentBridge {
     return null;
   }
 
-  /** The children still running, as get_subagents answers them. */
+  /** The children still running, as get_subagents answers them. A foreground child detached when its call ended is left
+   *  out: no later frame of that call can end it (a wait on it reports under another call), so a snapshot would keep it
+   *  running for good. */
   running(): Array<Record<string, unknown>> {
-    return [...this.entries.values()].filter((entry) => !terminal(entry.status)).map((entry) => defined({ ...entry }));
+    return [...this.entries.values()].filter((entry) => !terminal(entry.status) && !(entry.detached && entry.parentToolCallId))
+      .map((entry) => defined({ ...entry }));
   }
 
   private foreground(frame: Frame): Frame[] {
@@ -153,7 +156,7 @@ export class SubagentBridge {
     };
     const progressed = JSON.stringify(previous?.progress) !== JSON.stringify(next.progress);
     if (!previous) return [lifecycle, progress];
-    if (previous.status !== next.status) return progressed ? [progress, lifecycle] : [lifecycle];
+    if (previous.status !== next.status || previous.detached !== next.detached) return progressed ? [progress, lifecycle] : [lifecycle];
     return progressed ? [progress] : [];
   }
 }
