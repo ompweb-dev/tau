@@ -411,6 +411,9 @@ export class AgentSessionWrapper {
   /** Positive evidence for this run, retained after native completion but before disk append. */
   private responseObserved = false;
   private responseRunActive = false;
+  /** Counts run boundaries (agent_start/agent_end/prompt_*) and visible assistant output, so a refused prompt can tell what changed meanwhile. */
+  private runBoundaries = 0;
+  private visibleOutputs = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Lazily-armed deadline for tearing down a session nobody is watching. */
   private reapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1304,11 +1307,13 @@ export class AgentSessionWrapper {
     delete event.web;
     switch (event.type) {
       case "agent_start":
+        this.runBoundaries += 1;
         this.responseObserved = false;
         this.responseRunActive = true;
         this.clearLiveSnapshots();
         break;
       case "agent_end":
+        this.runBoundaries += 1;
         if (event.isTerminal === false) break;
         this.responseRunActive = false;
         this.streaming = false;
@@ -1319,6 +1324,7 @@ export class AgentSessionWrapper {
         break;
       case "prompt_error":
       case "prompt_result":
+        this.runBoundaries += 1;
         this.responseRunActive = false;
         this.streaming = false;
         this.compacting = false;
@@ -1349,12 +1355,18 @@ export class AgentSessionWrapper {
           this.streamingMessage = message;
           this.streamingMessageId = messageId;
         }
-        if (this.responseRunActive && hasVisibleAssistantContent(message)) this.responseObserved = true;
+        if (hasVisibleAssistantContent(message)) {
+          this.visibleOutputs += 1;
+          if (this.responseRunActive) this.responseObserved = true;
+        }
         break;
       }
       case "message_end": {
         const message = event.message as Partial<AgentMessage> | undefined;
-        if (this.responseRunActive && hasVisibleAssistantContent(message)) this.responseObserved = true;
+        if (hasVisibleAssistantContent(message)) {
+          this.visibleOutputs += 1;
+          if (this.responseRunActive) this.responseObserved = true;
+        }
         if (typeof event.messageId === "string") this.openMessages.delete(event.messageId);
         if (message?.role && message.role === this.streamingMessage?.role) {
           this.streamingMessage = null;
@@ -2101,11 +2113,12 @@ export class AgentSessionWrapper {
     switch (type) {
       case "prompt": {
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
-        // pi refuses a bare prompt while a run is active ("already processing"): that refusal must not end the run.
-        const runBefore = this.streaming || this.promptRunning
-          ? { streaming: this.streaming, awaitingAgentStart: this.awaitingAgentStart, awaitingAgentStartDeadline: this.awaitingAgentStartDeadline,
-            responseObserved: this.responseObserved, responseRunActive: this.responseRunActive }
-          : null;
+        // What this dispatch resets, kept so a failure can hand an active run back untouched.
+        const before = streamingBehavior ? null : {
+          active: this.streaming || this.promptRunning, runBoundaries: this.runBoundaries, visibleOutputs: this.visibleOutputs,
+          responseObserved: this.responseObserved, responseRunActive: this.responseRunActive, continuationGraceUntil: this.continuationGraceUntil,
+          awaitingAgentStart: this.awaitingAgentStart, awaitingAgentStartDeadline: this.awaitingAgentStartDeadline,
+        };
         if (!streamingBehavior) {
           this.responseObserved = false;
           this.responseRunActive = false;
@@ -2148,22 +2161,23 @@ export class AgentSessionWrapper {
           if (preserveUnknownDelivery && error instanceof RpcCommandTimeoutError) {
             throw new WebRpcError("The initial prompt may have reached its session; check that session before sending it again.", "host_offline", "unknown");
           }
-          // Frames that arrived meanwhile win: a run that ended is reset below, one that started kept its own state.
-          if (runBefore && !streamingBehavior && !(error instanceof RpcCommandTimeoutError)) {
-            if (this.streaming) {
-              if (runBefore.streaming && !this.responseRunActive) {
-                this.responseObserved = runBefore.responseObserved;
-                this.responseRunActive = runBefore.responseRunActive;
+          // A failed prompt never ends a run it did not start: pi refuses a bare prompt during a run ("already
+          // processing"), and a streamingBehavior prompt never touched the run state. A timeout keeps its recycle below.
+          if (!(error instanceof RpcCommandTimeoutError)) {
+            if (!before) throw error;
+            const unchanged = this.runBoundaries === before.runBoundaries;
+            if (unchanged && before.active) {
+              this.responseRunActive = before.responseRunActive;
+              this.responseObserved = before.responseObserved || (before.responseRunActive && this.visibleOutputs !== before.visibleOutputs);
+              this.continuationGraceUntil = Math.max(this.continuationGraceUntil, before.continuationGraceUntil);
+              if (!this.awaitingAgentStart) {
+                this.awaitingAgentStart = before.awaitingAgentStart;
+                this.awaitingAgentStartDeadline = before.awaitingAgentStartDeadline;
               }
               throw error;
             }
-            if (!runBefore.streaming && this.promptRunning) {
-              this.awaitingAgentStart = runBefore.awaitingAgentStart;
-              this.awaitingAgentStartDeadline = runBefore.awaitingAgentStartDeadline;
-              this.responseObserved = runBefore.responseObserved;
-              this.responseRunActive = runBefore.responseRunActive;
-              throw error;
-            }
+            // A run that started meanwhile (another tab or server) owns the state its agent_start set.
+            if (this.streaming) throw error;
           }
           this.promptRunning = false;
           this.awaitingAgentStart = false;

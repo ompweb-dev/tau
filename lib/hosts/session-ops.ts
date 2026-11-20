@@ -30,7 +30,7 @@ import {
 } from "../pi/session-files";
 import { preparePoolProject, type PreparedPoolProject } from "../pooled-projects";
 import { HostOpError } from "./link-protocol";
-import { assertOutsideAgentDir } from "./workspace-roots";
+import { assertRemovableOutsideAgentDir } from "./workspace-roots";
 import { projectIdentityKey, sessionPathKey } from "../paths";
 import {
   hideProject,
@@ -804,8 +804,9 @@ export const sessionOps: SessionOps = {
       || (input.ref !== undefined && typeof input.ref !== "string")) {
       return fail(400, "invalid_request", "Invalid pool project preparation input");
     }
-    // A clone root inside pi's agent directory or ~/.pi would let a pool clone write pi's configuration.
-    try { assertOutsideAgentDir(input.cloneRoot); } catch (error) {
+    // A clone root inside pi's agent directory or ~/.pi, or holding a missing one, would let a pool clone write
+    // pi's configuration. A malformed root is left to preparePoolProject's 400.
+    try { if (isAbsolute(input.cloneRoot) && resolve(input.cloneRoot) === input.cloneRoot) assertRemovableOutsideAgentDir(input.cloneRoot); } catch (error) {
       if (error instanceof HostOpError) return fail(error.status, error.code, error.message);
       throw error;
     }
