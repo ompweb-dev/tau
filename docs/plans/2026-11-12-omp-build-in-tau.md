@@ -6,7 +6,7 @@
 
 **Goal:** the omp round runs in `ompweb-dev/oh-my-pi` from its default branch `fork-ci` (RPC dropped; also triggered by carried-PR changes; escalating on the fork; fork binaries versioned `<upstream>-int.<stamp>.g<sha7>` and updating from fork releases; each promoted release carrying an npm package zip). ompweb's `runner/` compiles against that zip, every ompweb (pre)release re-pins to the newest `integration-release` build, and the omp row follows ompweb. integration-ci keeps only the script and its other builds.
 
-**Spec:** `docs/specs/2026-11-12-omp-build-in-ompweb-design.md` (F1–F9, W1–W3, cleanup). Read it first. No open questions.
+**Spec:** `docs/specs/2026-11-12-omp-build-in-tau-design.md` (F1–F9, W1–W3, cleanup). Read it first. No open questions.
 
 **State (2026-11-13):** I1, I2 and K1–K5 are done, and K7's schedule is back; the first promoted release is `v18.20.0-int.202611130808.gfd57e86`. W1–W3 landed in ompweb PR #473 (one PR instead of PRs B and C), pinned to that release. Open: K6's rewiring, K7's first scheduled run, W2's first pre-release after the merge, and I3.
 

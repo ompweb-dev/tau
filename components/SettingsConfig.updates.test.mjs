@@ -57,7 +57,7 @@ test("System keeps web-server updates but never checks or updates the host runti
 });
 
 test("a binary install's tau update links the release page instead of showing a command", async (t) => {
-  const releases = "https://github.com/ompweb-dev/ompweb/releases/latest";
+  const releases = "https://github.com/ompweb-dev/tau/releases/latest";
   const appUpdate = { currentVersion: "0.6.0", availableVersion: "0.7.0", updateAvailable: true, selfUpdateSupported: false };
   const { container: binary } = await renderSystemTab(t, { appUpdate: { ...appUpdate, installMethod: "binary", updateCommand: releases } });
   const link = binary.querySelector(`a[href="${releases}"]`);
@@ -71,7 +71,7 @@ test("a binary install's tau update links the release page instead of showing a 
 });
 
 test("a supported binary install gets the in-app Update action, not a download link, and clicking it only opens the review", async (t) => {
-  const releases = "https://github.com/ompweb-dev/ompweb/releases/latest";
+  const releases = "https://github.com/ompweb-dev/tau/releases/latest";
   let requested = 0;
   const { container, requests } = await renderSystemTab(t, {
     appUpdate: { currentVersion: "0.7.0", availableVersion: "0.8.0", updateAvailable: true, selfUpdateSupported: true, installMethod: "binary", updateCommand: releases },

@@ -146,21 +146,21 @@ test("GitHub watcher origins render a linked automated update card", () => {
   const view = render(React.createElement(MessageView, {
     message: {
       role: "user",
-      content: "GitHub update (tau): ompweb-dev/ompweb#503 https://github.com/ompweb-dev/ompweb/pull/503",
+      content: "GitHub update (tau): ompweb-dev/tau#503 https://github.com/ompweb-dev/tau/pull/503",
       origin: {
         v: 1, kind: "github", sentAt: "2026-11-15T12:42:00.000Z",
         github: {
-          repo: "ompweb-dev/ompweb", number: 503, target: "pr",
-          url: "https://github.com/ompweb-dev/ompweb/pull/503",
+          repo: "ompweb-dev/tau", number: 503, target: "pr",
+          url: "https://github.com/ompweb-dev/tau/pull/503",
           events: [{ kind: "review", author: "coderabbitai", bot: true, state: "APPROVED" }],
         },
       },
     },
   }));
-  const card = view.getByRole("article", { name: "Automated GitHub update for ompweb-dev/ompweb#503" });
+  const card = view.getByRole("article", { name: "Automated GitHub update for ompweb-dev/tau#503" });
   assert.match(card.textContent, /GitHub update/);
   assert.match(card.textContent, /Review from coderabbitai/);
-  assert.equal(view.getByRole("link", { name: "Open ompweb-dev/ompweb#503 on GitHub" }).getAttribute("target"), "_blank");
+  assert.equal(view.getByRole("link", { name: "Open ompweb-dev/tau#503 on GitHub" }).getAttribute("target"), "_blank");
 });
 
 test("held automated messages identify their source before delivery", () => {
