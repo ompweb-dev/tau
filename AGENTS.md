@@ -83,8 +83,10 @@ pi speaks JSON lines on stdin/stdout: commands answered by `{type:"response", id
 - pi-subagents (the pi package) needs no extension bridge: `lib/pi/subagent-bridge.ts` turns its `subagent` tool
   progress and `subagent-async` widget snapshots into tau's `subagent_lifecycle`/`subagent_progress` frames and
   answers `get_subagents`.
-- `TAU_NO_EXTENSION=1` starts pi without the extension (tests). `resolveTauExtensionPath` looks under
-  `TAU_PACKAGE_DIR`, then beside `rpc-process.ts`, never in the session's cwd.
+- `TAU_NO_EXTENSION=1` starts pi without the extension (tests only). `resolveTauExtensionPath` looks under
+  `TAU_PACKAGE_DIR`, then beside `rpc-process.ts`, never in the session's cwd. Without that flag a missing extension
+  refuses the spawn (`TAU_EXTENSION_MISSING`): pi would read every `/tau_*` call as a prompt and send it, an API key
+  included, to the model. With the flag the utility's extension calls are refused for the same reason.
 
 ### `lib/pi/` (pi foundations)
 

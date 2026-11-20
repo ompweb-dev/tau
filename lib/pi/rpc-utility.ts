@@ -121,6 +121,8 @@ export function runUtilityCommand<T = unknown>(
 
 /** Call a companion-extension command (`RpcProcess.callExtension`) on the shared utility process. */
 export function runUtilityExtension<T = unknown>(command: string, args: Record<string, unknown>, timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS): Promise<T> {
+  // A pi started without the extension (tests) would send the call, an API key included, to the model as a prompt.
+  if (process.env.TAU_NO_EXTENSION === "1") return Promise.reject(new Error(`/${command} needs tau's pi extension`));
   return runOnUtility((proc) => proc.callExtension<T>(command, args, timeoutMs));
 }
 

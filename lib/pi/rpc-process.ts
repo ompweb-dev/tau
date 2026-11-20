@@ -76,6 +76,7 @@ export interface RpcProcessOptions {
   /** Injectable process boundary for deterministic transport tests. */
   dependencies?: {
     resolvePiBin?: typeof resolvePiBin;
+    resolveTauExtensionPath?: typeof resolveTauExtensionPath;
     spawn?: typeof spawn;
   };
 }
@@ -113,6 +114,8 @@ const requestId = (frame: RpcFrame) => {
   return REQUEST_TYPES.has(frame.type) && (typeof frame.id === "string" || typeof frame.id === "number") ? String(frame.id) : null;
 };
 
+export const TAU_EXTENSION_MISSING = "tau's pi extension (lib/pi/tau-extension.ts) is missing from this install: reinstall tau";
+
 /** Locate the companion pi extension bundled with tau, if present on disk. */
 export function resolveTauExtensionPath(): string | null {
   if (process.env.TAU_NO_EXTENSION === "1") return null;
@@ -139,7 +142,9 @@ export function spawnPiTransport(options: RpcProcessOptions): RpcTransport {
   if (!bin) {
     throw new Error(PI_NOT_FOUND);
   }
-  const extPath = resolveTauExtensionPath();
+  const extPath = (options.dependencies?.resolveTauExtensionPath ?? resolveTauExtensionPath)();
+  // Without the extension pi reads tau's `/tau_*` calls as prompts and sends them, API keys included, to the model.
+  if (!extPath && process.env.TAU_NO_EXTENSION !== "1") throw new Error(TAU_EXTENSION_MISSING);
   const args = ["--mode", "rpc", ...(extPath ? ["--extension", extPath] : []), ...(options.extraArgs ?? [])];
   const env = sanitizeProjectCommandEnvironment({ ...process.env, ...options.env });
   return spawnLocalRpcTransport({ bin, args, cwd: options.cwd, env, spawn: options.dependencies?.spawn });
