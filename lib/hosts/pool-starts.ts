@@ -333,21 +333,22 @@ export async function requireProviderLogin(host: Host, provider: string | undefi
 }
 
 /** Reserve durably before host work; trusted authorization runs before preparation and never on completed replay.
- * A start that names a provider goes only to a member logged in to it: members whose logins are not known yet are asked
- * first; with all known, the reservation is durable when this returns, as without a provider. */
+ * A start that names a provider skips members known not to be logged in to it: members whose logins are not known yet
+ * are asked first, and one that still cannot say stays eligible (pi reports a missing login itself, as for
+ * `requireProviderLogin`); with all known, the reservation is durable when this returns, as without a provider. */
 export function startPooledSession(input: PoolCreateInput, start: Start, authorize?: (host: Host) => Promise<boolean>): Promise<PoolCreateResult> {
   try {
     const provider = isRecord(input) && isRecord(input.intent) && typeof input.intent.provider === "string" ? input.intent.provider : null;
     if (!provider || readJournal().starts.some((entry) => entry.creationId === input.creationId)) return reservePooledSession(input, start, authorize, null, undefined);
     const members = loadPools().find((pool) => pool.id === input.poolId)?.members.map((member) => member.hostId) ?? [];
     const reserve = () => reservePooledSession(input, start, authorize, provider,
-      new Map(members.map((hostId) => [hostId, cachedProviders(hostId)?.includes(provider) === true])));
+      new Map(members.map((hostId) => [hostId, cachedProviders(hostId)?.includes(provider)])));
     const unknown = members.filter((hostId) => !cachedProviders(hostId));
     return unknown.length ? Promise.all(unknown.map(fetchProviders)).then(reserve) : reserve();
   } catch (error) { return Promise.reject(error); }
 }
 
-function reservePooledSession(input: PoolCreateInput, start: Start, authorize: ((host: Host) => Promise<boolean>) | undefined, provider: string | null, authenticated: ReadonlyMap<string, boolean> | undefined): Promise<PoolCreateResult> {
+function reservePooledSession(input: PoolCreateInput, start: Start, authorize: ((host: Host) => Promise<boolean>) | undefined, provider: string | null, authenticated: ReadonlyMap<string, boolean | undefined> | undefined): Promise<PoolCreateResult> {
   try {
     if (!isRecord(input) || typeof input.creationId !== "string" || !CREATION_ID_RE.test(input.creationId)
       || typeof input.poolId !== "string" || !CREATION_ID_RE.test(input.poolId) || typeof input.projectId !== "string" || !CREATION_ID_RE.test(input.projectId)
@@ -379,7 +380,7 @@ function reservePooledSession(input: PoolCreateInput, start: Start, authorize: (
       for (const member of pool.members) {
         const host = getHost(member.hostId);
         // A cluster member behind the master's configuration stays in the map, marked, so selection skips it before any preparation.
-        if (host) snapshots.set(member.hostId, { status: host.status(), configCurrent: isHostConfigCurrent(member.hostId), capacity: getHostCapacity(member.hostId), ...(authenticated ? { canAuthenticate: authenticated.get(member.hostId) === true } : {}) });
+        if (host) snapshots.set(member.hostId, { status: host.status(), configCurrent: isHostConfigCurrent(member.hostId), capacity: getHostCapacity(member.hostId), ...(authenticated ? { canAuthenticate: authenticated.get(member.hostId) } : {}) });
       }
       const pending = new Map<string, number>();
       for (const current of journal.starts) {
