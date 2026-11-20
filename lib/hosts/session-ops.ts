@@ -5,7 +5,7 @@
 // No `next/*` or `@/` imports: the daemon loads this through plain jiti.
 import { randomUUID } from "crypto";
 import { execFile } from "child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, statSync, type Stats } from "fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, statSync, type Stats } from "fs";
 import * as fsRuntime from "fs";
 import { homedir, tmpdir } from "os";
 import { basename, dirname, isAbsolute, join, resolve } from "path";
@@ -30,7 +30,7 @@ import {
 } from "../pi/session-files";
 import { preparePoolProject, type PreparedPoolProject } from "../pooled-projects";
 import { HostOpError } from "./link-protocol";
-import { assertOutsideAgentDir, assertRemovableOutsideAgentDir } from "./workspace-roots";
+import { assertOutsideAgentDir } from "./workspace-roots";
 import { projectIdentityKey, sessionPathKey } from "../paths";
 import {
   hideProject,
@@ -804,15 +804,10 @@ export const sessionOps: SessionOps = {
       || (input.ref !== undefined && typeof input.ref !== "string")) {
       return fail(400, "invalid_request", "Invalid pool project preparation input");
     }
-    // A clone root inside pi's agent directory or ~/.pi would let a pool clone write pi's configuration, and so would a
-    // clone that creates a root holding a missing one. An existing checkout only gets sibling worktrees. A malformed
-    // root is left to preparePoolProject's 400.
-    const root = input.cloneRoot;
+    // A clone root inside pi's agent directory or ~/.pi would let a pool clone write pi's configuration (a clone that
+    // would create a root holding a missing one is refused where it clones). A malformed root is left to the 400.
     try {
-      if (isAbsolute(root) && resolve(root) === root) {
-        if (existsSync(root)) assertOutsideAgentDir(root);
-        else assertRemovableOutsideAgentDir(root);
-      }
+      if (isAbsolute(input.cloneRoot) && resolve(input.cloneRoot) === input.cloneRoot) assertOutsideAgentDir(input.cloneRoot);
     } catch (error) {
       if (error instanceof HostOpError) return fail(error.status, error.code, error.message);
       throw error;

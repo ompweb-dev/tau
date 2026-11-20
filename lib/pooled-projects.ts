@@ -7,6 +7,8 @@ import { cloneDirectoryName, repositoryKey } from "./git-clone";
 import { cloneRepository, withProjectReservation } from "./project-clone";
 import { createGitEnvironment } from "./project-command-env";
 import type { OpResult } from "./hosts/session-ops";
+import { HostOpError } from "./hosts/link-protocol";
+import { assertRemovableOutsideAgentDir } from "./hosts/workspace-roots";
 
 export interface PreparedPoolProject {
   cwd: string;
@@ -157,6 +159,11 @@ async function prepare(input: {
   }
 
   if (!existingClone) {
+    // A new root that would hold a missing agent directory or ~/.pi: a cloned `agent/` would become pi's configuration.
+    try { assertRemovableOutsideAgentDir(cloneRoot); } catch (error) {
+      if (error instanceof HostOpError) throw new PreparationError(error.code, error.message, error.status);
+      throw error;
+    }
     // Clone into the helper's exclusively mkdir-acquired final root. A rename
     // cannot publish safely here: POSIX rename may replace somebody else's empty reservation.
     const cloned = await cloneRepository({ origin, target: cloneRoot });

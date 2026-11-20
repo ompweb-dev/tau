@@ -411,9 +411,8 @@ export class AgentSessionWrapper {
   /** Positive evidence for this run, retained after native completion but before disk append. */
   private responseObserved = false;
   private responseRunActive = false;
-  /** Counts run boundaries and resets (every live-snapshot clear, agent_end, a restart) and visible assistant output, so a refused prompt can tell what changed meanwhile. */
-  private runBoundaries = 0;
-  private visibleOutputs = 0;
+  /** agent_start frames seen: a prompt acknowledged after one arrived knows its run already started. */
+  private runStarts = 0;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   /** Lazily-armed deadline for tearing down a session nobody is watching. */
   private reapTimer: ReturnType<typeof setTimeout> | null = null;
@@ -632,7 +631,6 @@ export class AgentSessionWrapper {
     this.openMessages.clear();
     this.liveToolEvents.clear();
     this.streamSequence += 1;
-    this.runBoundaries += 1;
   }
 
   private resetStream(): void {
@@ -934,6 +932,7 @@ export class AgentSessionWrapper {
 
     switch (event.type) {
       case "agent_start":
+        this.runStarts += 1;
         this.unsettled = true;
         this.promptRunning = true;
         this.streaming = true;
@@ -1313,7 +1312,6 @@ export class AgentSessionWrapper {
         this.clearLiveSnapshots();
         break;
       case "agent_end":
-        this.runBoundaries += 1;
         if (event.isTerminal === false) break;
         this.responseRunActive = false;
         this.streaming = false;
@@ -1354,18 +1352,12 @@ export class AgentSessionWrapper {
           this.streamingMessage = message;
           this.streamingMessageId = messageId;
         }
-        if (hasVisibleAssistantContent(message)) {
-          this.visibleOutputs += 1;
-          if (this.responseRunActive) this.responseObserved = true;
-        }
+        if (this.responseRunActive && hasVisibleAssistantContent(message)) this.responseObserved = true;
         break;
       }
       case "message_end": {
         const message = event.message as Partial<AgentMessage> | undefined;
-        if (hasVisibleAssistantContent(message)) {
-          this.visibleOutputs += 1;
-          if (this.responseRunActive) this.responseObserved = true;
-        }
+        if (this.responseRunActive && hasVisibleAssistantContent(message)) this.responseObserved = true;
         if (typeof event.messageId === "string") this.openMessages.delete(event.messageId);
         if (message?.role && message.role === this.streamingMessage?.role) {
           this.streamingMessage = null;
@@ -1874,7 +1866,6 @@ export class AgentSessionWrapper {
       this.awaitingAgentStart = false;
       this.awaitingAgentStartDeadline = 0;
       this.continuationGraceUntil = 0;
-      this.runBoundaries += 1;
       this.bashRunning = false;
       this.streaming = false;
       this.compacting = false;
@@ -2099,6 +2090,15 @@ export class AgentSessionWrapper {
     }
   }
 
+  /** A failed prompt's last word: `promptRunning` with no run, compaction, pending start, continuation window or other
+   *  prompt in flight belongs to nobody (two prompts refused in turn leave it so), and would keep the session running. */
+  private settleOrphanedPrompt(ownDispatches: number): void {
+    if (!this.promptRunning || this.streaming || this.compacting || this.awaitingAgentStart
+      || this.promptDispatchPendingCount > ownDispatches || Date.now() < this.continuationGraceUntil) return;
+    this.promptRunning = false;
+    notifyRunningChange();
+  }
+
   private async dispatchCommand(command: Record<string, unknown>, preserveUnknownDelivery = false, correlationKey: object = command): Promise<unknown> {
     const type = command.type as string;
 
@@ -2113,19 +2113,17 @@ export class AgentSessionWrapper {
     switch (type) {
       case "prompt": {
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
-        // What this dispatch resets, kept so a failure can hand an active run back untouched.
-        const before = streamingBehavior ? null : {
-          active: this.streaming || this.promptRunning || this.compacting, runBoundaries: this.runBoundaries, visibleOutputs: this.visibleOutputs,
-          responseObserved: this.responseObserved, responseRunActive: this.responseRunActive, continuationGraceUntil: this.continuationGraceUntil,
-          awaitingAgentStart: this.awaitingAgentStart, awaitingAgentStartDeadline: this.awaitingAgentStartDeadline,
-        };
-        if (!streamingBehavior) {
+        // pi refuses a bare prompt during a run ("already processing"). Sent while a run, compaction or another
+        // prompt is active, the prompt leaves that state alone; only pi taking it (the run had ended) starts its own.
+        const joinsRun = !streamingBehavior && (this.streaming || this.promptRunning || this.compacting);
+        const runStarts = this.runStarts;
+        if (!streamingBehavior) this.promptDispatchPendingCount += 1;
+        if (!streamingBehavior && !joinsRun) {
           this.responseObserved = false;
           this.responseRunActive = false;
           if (!this.isRunning()) this.clearLiveSnapshots();
           this.streamSequence += 1;
           this.promptRunning = true;
-          this.promptDispatchPendingCount += 1;
           this.awaitingAgentStart = false;
           this.awaitingAgentStartDeadline = 0;
           this.continuationGraceUntil = 0;
@@ -2142,6 +2140,19 @@ export class AgentSessionWrapper {
             ...(isClientMessageId(command.clientMessageId) ? { clientMessageId: command.clientMessageId } : {}),
             ...(isRecord(command.origin) ? { origin: command.origin } : {}),
           }, PROMPT_ACK_TIMEOUT_MS, correlationKey);
+          if (joinsRun) {
+            // An extension command ran beside the run (agentInvoked:false), or a run already started: nothing to start.
+            if (ack?.agentInvoked !== false && this.runStarts === runStarts) {
+              this.responseObserved = false;
+              this.responseRunActive = false;
+              this.promptRunning = true;
+              this.awaitingAgentStart = true;
+              this.awaitingAgentStartDeadline = Date.now() + AWAITING_AGENT_START_TIMEOUT_MS;
+              this.continuationGraceUntil = 0;
+              notifyRunningChange();
+            }
+            return ack?.agentInvoked === false ? ack : null;
+          }
           // Slash commands fully consumed by a builtin report agentInvoked:false
           // in the ack itself — no prompt_result frame follows.
           if (ack?.agentInvoked === false && !streamingBehavior) {
@@ -2161,24 +2172,14 @@ export class AgentSessionWrapper {
           if (preserveUnknownDelivery && error instanceof RpcCommandTimeoutError) {
             throw new WebRpcError("The initial prompt may have reached its session; check that session before sending it again.", "host_offline", "unknown");
           }
-          // A failed prompt never ends a run it did not start: pi refuses a bare prompt during a run ("already
-          // processing"), and a streamingBehavior prompt never touched the run state. A timeout keeps its recycle below.
           if (!(error instanceof RpcCommandTimeoutError)) {
-            if (!before) throw error;
-            const unchanged = this.runBoundaries === before.runBoundaries;
-            if (unchanged && before.active) {
-              this.responseRunActive = before.responseRunActive;
-              this.responseObserved = before.responseObserved || (before.responseRunActive && this.visibleOutputs !== before.visibleOutputs);
-              this.continuationGraceUntil = Math.max(this.continuationGraceUntil, before.continuationGraceUntil);
-              if (!this.awaitingAgentStart) {
-                this.awaitingAgentStart = before.awaitingAgentStart;
-                this.awaitingAgentStartDeadline = before.awaitingAgentStartDeadline;
-              }
+            // A prompt that joined a run never touched its state. An idle prompt leaves the state to a run that started
+            // meanwhile (another tab or server), a compaction, or a prompt still in flight or awaiting its agent_start.
+            const inFlight = streamingBehavior ? 0 : 1;
+            if (streamingBehavior || joinsRun || this.streaming || this.compacting || this.awaitingAgentStart || this.promptDispatchPendingCount > inFlight) {
+              this.settleOrphanedPrompt(inFlight);
               throw error;
             }
-            // A run that started meanwhile (another tab or server) owns the state its agent_start set, and a prompt
-            // still in flight or acked and awaiting its agent_start owns the pending state.
-            if (this.streaming || this.awaitingAgentStart || this.promptDispatchPendingCount > 1) throw error;
           }
           this.promptRunning = false;
           this.awaitingAgentStart = false;
