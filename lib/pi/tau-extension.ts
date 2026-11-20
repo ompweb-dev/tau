@@ -229,7 +229,11 @@ export default function tauExtension(pi: PiExtensionAPI): void {
   interface Named { clientMessageId: string; text: string; origin?: unknown }
   const MAX_PENDING_NAMES = 32;
   const named: Named[] = [];
-  let starting: Named | null = null;
+  /** Named prompts past their input handlers that have not started yet, oldest first: several can be in pi's preflight
+   *  at once (a follow-up sent while a prompt prepares fires input without its behaviour). */
+  const starting: Named[] = [];
+  /** The name the latest input event took, or null: the one message whose text another hook may have rewritten. */
+  let lastInput: Named | null = null;
   let current: Named | null = null;
   const queued: Record<"steering" | "followUp", Named[]> = { steering: [], followUp: [] };
   const emitTau = (ctx: PiContext, frame: Record<string, unknown>) => ctx.ui.setWidget("tau", [JSON.stringify(frame)]);
@@ -286,7 +290,7 @@ export default function tauExtension(pi: PiExtensionAPI): void {
       if (cmd.action === "status" && Array.isArray(cmd.clientMessageIds)) {
         const asked = cmd.clientMessageIds.filter((id): id is string => typeof id === "string");
         const { ids, resolved } = journaled(ctx);
-        const pending = new Set([...named, ...queued.steering, ...queued.followUp, ...(starting ? [starting] : []), ...(current ? [current] : [])].map((item) => item.clientMessageId));
+        const pending = new Set([...named, ...queued.steering, ...queued.followUp, ...starting, ...(current ? [current] : [])].map((item) => item.clientMessageId));
         const messages = asked.flatMap((clientMessageId) => {
           const entry = ids.has(clientMessageId) ? ctx.sessionManager?.getEntry?.(ids.get(clientMessageId)!) : undefined;
           return entry?.message ? [{ clientMessageId, message: entry.message }] : [];
@@ -307,8 +311,7 @@ export default function tauExtension(pi: PiExtensionAPI): void {
   });
 
   pi.on("input", (event, ctx) => {
-    // A new prompt replaces one pi refused after its input handlers ran (no model or key), so that name never sticks.
-    if (!event.streamingBehavior) starting = null;
+    lastInput = null;
     // Names go out in their prompts' order, so the oldest of equal texts is this one.
     const index = named.findIndex((item) => item.text === event.text);
     if (index === -1) return;
@@ -316,18 +319,27 @@ export default function tauExtension(pi: PiExtensionAPI): void {
     if (event.streamingBehavior === "steer") queued.steering.push(item);
     else if (event.streamingBehavior === "followUp") queued.followUp.push(item);
     // A bare prompt during a run is refused right after its input handlers ("already processing"): it never starts.
-    else if (ctx.isIdle?.() !== false) starting = item;
+    else if (ctx.isIdle?.() !== false) {
+      starting.push(item);
+      // One pi refused after this point (no model or key) never starts: keep only the newest few.
+      if (starting.length > MAX_PENDING_NAMES) starting.shift();
+      lastInput = item;
+    }
     if (event.streamingBehavior) emitQueue(ctx);
   });
 
   pi.on("message_start", (event, ctx) => {
     const message = event.message as { role?: string; content?: unknown } | undefined;
     if (message?.role !== "user") return;
-    // A prompt pi refused left no `starting`: the next prompt's input cleared it. Its text may differ from the name's
-    // (a skill, a template, another extension's input transform), so it is not compared.
-    const wasQueued = !starting;
-    current = starting ?? takeQueued(textOf(message.content));
-    starting = null;
+    const text = textOf(message.content);
+    // Its own text first; else, only right after its input, a prompt whose text a skill, template or another
+    // extension's input hook rewrote. A prompt pi refused never matches another message's text.
+    let index = starting.findIndex((item) => item.text === text);
+    if (index === -1 && lastInput && !queued.steering.length && !queued.followUp.length) index = starting.indexOf(lastInput);
+    lastInput = null;
+    const started = index === -1 ? null : starting.splice(index, 1)[0];
+    const wasQueued = !started;
+    current = started ?? takeQueued(text);
     if (!current) return;
     emitTau(ctx, { type: "tau_message_identity", clientMessageId: current.clientMessageId, ...(current.origin !== undefined ? { origin: current.origin } : {}) });
     if (wasQueued) emitQueue(ctx);
