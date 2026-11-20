@@ -2151,7 +2151,10 @@ export class AgentSessionWrapper {
               this.continuationGraceUntil = 0;
               notifyRunningChange();
             }
-            return ack?.agentInvoked === false ? ack : null;
+            if (ack?.agentInvoked !== false) return null;
+            // A command that ran beside a prompt which failed meanwhile is the last one out of a promptRunning nobody owns.
+            this.settleOrphanedPrompt(1);
+            return ack;
           }
           // Slash commands fully consumed by a builtin report agentInvoked:false
           // in the ack itself — no prompt_result frame follows.

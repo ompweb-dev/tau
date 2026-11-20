@@ -83,6 +83,14 @@ function hasHttpsCredentials(origin: string): boolean {
   }
 }
 
+/** Refuses a path that is, lies in, or would hold pi's agent directory or ~/.pi, as a preparation error. */
+function outsideAgentDir(path: string): void {
+  try { assertRemovableOutsideAgentDir(path); } catch (error) {
+    if (error instanceof HostOpError) throw new PreparationError(error.code, error.message, error.status);
+    throw error;
+  }
+}
+
 async function git(cwd: string, ...args: string[]): Promise<string> {
   const { stdout } = await exec("git", ["-C", cwd, ...args], {
     encoding: "utf8",
@@ -160,10 +168,7 @@ async function prepare(input: {
 
   if (!existingClone) {
     // A new root that would hold a missing agent directory or ~/.pi: a cloned `agent/` would become pi's configuration.
-    try { assertRemovableOutsideAgentDir(cloneRoot); } catch (error) {
-      if (error instanceof HostOpError) throw new PreparationError(error.code, error.message, error.status);
-      throw error;
-    }
+    outsideAgentDir(cloneRoot);
     // Clone into the helper's exclusively mkdir-acquired final root. A rename
     // cannot publish safely here: POSIX rename may replace somebody else's empty reservation.
     const cloned = await cloneRepository({ origin, target: cloneRoot });
@@ -225,6 +230,7 @@ async function prepare(input: {
     }
 
     // Fetch the remote ref itself, not a possibly unpublished local branch. Never reset or clean.
+    outsideAgentDir(cwd); // the session worktree is checked out at cwd: it must not land in or around the agent directory
     await fetchRemoteRef(cloneRoot, ref ?? "HEAD");
     const baseCommit = await git(cloneRoot, "rev-parse", "--verify", "FETCH_HEAD^{commit}");
     await mkdir(sessionRoot, { recursive: true });
