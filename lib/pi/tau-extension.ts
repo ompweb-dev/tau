@@ -226,6 +226,7 @@ export default function tauExtension(pi: PiExtensionAPI): void {
   //    announces it (`tau_message_identity`, ahead of pi's own event) and message_end journals it as tau's
   //    `client-message-entry`, which the session reader joins to show origin cards.
   interface Named { clientMessageId: string; text: string; origin?: unknown }
+  const MAX_PENDING_NAMES = 32;
   const named: Named[] = [];
   let starting: Named | null = null;
   let current: Named | null = null;
@@ -269,6 +270,8 @@ export default function tauExtension(pi: PiExtensionAPI): void {
       const reply = (data: unknown) => emitTau(ctx, { type: "tau_reply", replyId: cmd.replyId, data });
       if (cmd.action === "name" && typeof cmd.clientMessageId === "string" && typeof cmd.text === "string") {
         named.push({ clientMessageId: cmd.clientMessageId, text: cmd.text, ...(cmd.origin !== undefined ? { origin: cmd.origin } : {}) });
+        // A name pi never admitted (its prompt refused, its text rewritten by a hook) must not wait for a twin forever.
+        if (named.length > MAX_PENDING_NAMES) named.shift();
         return reply({ named: true });
       }
       if (cmd.action === "clear") {
