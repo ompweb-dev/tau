@@ -303,6 +303,8 @@ export default function tauExtension(pi: PiExtensionAPI): void {
   });
 
   pi.on("input", (event, ctx) => {
+    // A new prompt replaces one pi refused after its input handlers ran (no model or key), so that name never sticks.
+    if (!event.streamingBehavior) starting = null;
     const index = named.findIndex((item) => item.text === event.text);
     if (index === -1) return;
     const item = named.splice(index, 1)[0];
@@ -315,8 +317,11 @@ export default function tauExtension(pi: PiExtensionAPI): void {
   pi.on("message_start", (event, ctx) => {
     const message = event.message as { role?: string; content?: unknown } | undefined;
     if (message?.role !== "user") return;
-    const wasQueued = !starting;
-    current = starting ?? takeQueued(textOf(message.content));
+    const text = textOf(message.content);
+    // A skill or template expands a slash command, so only its text can differ from the name's.
+    const started = starting && (starting.text === text || starting.text.startsWith("/")) ? starting : null;
+    const wasQueued = !started;
+    current = started ?? takeQueued(text);
     starting = null;
     if (!current) return;
     emitTau(ctx, { type: "tau_message_identity", clientMessageId: current.clientMessageId, ...(current.origin !== undefined ? { origin: current.origin } : {}) });
