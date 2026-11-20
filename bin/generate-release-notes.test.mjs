@@ -40,10 +40,10 @@ Older release notes.
 
   it('cleans commit subjects and transforms PR links', () => {
     const raw = 'feat(composer): expand queued prompts (#12)';
-    const cleaned = cleanSubject(raw, 'ompweb-dev/ompweb');
+    const cleaned = cleanSubject(raw, 'ompweb-dev/tau');
     assert.equal(
       cleaned,
-      'Expand queued prompts ([#12](https://github.com/ompweb-dev/ompweb/pull/12))'
+      'Expand queued prompts ([#12](https://github.com/ompweb-dev/tau/pull/12))'
     );
   });
 
@@ -97,7 +97,7 @@ Older release notes.
       version: '0.4.0',
       commits,
       previousTag: 'v0.3.6',
-      repo: 'ompweb-dev/ompweb',
+      repo: 'ompweb-dev/tau',
     });
 
     assert.match(notes, /## Highlights/);
