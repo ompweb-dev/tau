@@ -17,7 +17,7 @@ import { isRecord } from "../type-guards";
 import type { GitOrigin, WorkspaceFileEvent, WorkspaceFileInfo, WorkspaceFileRequest, WorkspaceOps } from "../workspace-types";
 import { HostOpError } from "./link-protocol";
 import type { OpResult } from "./session-ops";
-import { assertOutsideAgentDir, authorizeWorkspaceDirectory, authorizeWritableDirectory, getWorkspaceRoots } from "./workspace-roots";
+import { assertOutsideAgentDir, assertRemovableOutsideAgentDir, authorizeWorkspaceDirectory, authorizeWritableDirectory, getWorkspaceRoots } from "./workspace-roots";
 import { WorkspaceReads } from "./workspace-reads";
 import { WorkspaceWatches } from "./workspace-watch";
 import { getGitFileDiff, getGitStatus } from "../git-changes";
@@ -230,7 +230,8 @@ export function createWorkspaceService(uploads: StagedUploads, emit: (id: string
       const trees = await listWorktrees(directory);
       const selected = trees.find((tree) => findCurrentWorktreePath([tree], requested) !== null);
       if (!selected || fs.lstatSync(selected.path).isSymbolicLink()) throw new HostOpError(400, "not_a_worktree", "Not a worktree of this repository");
-      assertOutsideAgentDir(await getRepoRoot(directory), selected.path);
+      assertOutsideAgentDir(await getRepoRoot(directory));
+      assertRemovableOutsideAgentDir(selected.path);
       await removeWorktree(directory, selected.path, force);
       invalidateSessionListCache(); invalidateWorkspaceRoots();
       return null;

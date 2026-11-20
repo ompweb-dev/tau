@@ -1,6 +1,6 @@
 import { realpathSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { getConfigAgentRoots, isFilePathAllowed, normalizeSlashes } from "../file-access";
 import { authorizeFileAccess } from "../file-authorization";
 import { filePathApiSegments } from "../file-paths";
@@ -68,30 +68,56 @@ export async function authorizeWorkspaceDirectory(directory: string, owner?: Wor
 
 const identityOf = (path: string) => { const stat = statSync(path, { bigint: true }); return `${stat.dev}:${stat.ino}`; };
 
+const READ_ONLY = () => new HostOpError(403, "agent_dir_read_only", "pi's agent directory is read-only here");
+
+/** `path` with its nearest existing ancestor canonicalized (symlinks, `..`) and the missing rest appended. Only a missing
+ *  component is walked past: any other failure (a loop, no access) cannot be checked, so it refuses. */
+function canonicalPath(path: string): string {
+  let existing = resolve(path);
+  const rest: string[] = [];
+  for (;;) {
+    try { return join(realpathSync(existing), ...rest.reverse()); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if ((code !== "ENOENT" && code !== "ENOTDIR") || dirname(existing) === existing) {
+        throw new HostOpError(403, "access_denied", "The destination cannot be checked");
+      }
+      rest.push(basename(existing));
+      existing = dirname(existing);
+    }
+  }
+}
+
+const within = (path: string, root: string) => path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+
 /**
  * The Files panel and other user-requested workspace writes never touch pi's agent directory or `~/.pi`: refuse when
- * any target is that directory or below it. Each target's nearest existing ancestor is canonicalized (symlinks, `..`)
- * and its ancestors compared by device and inode, so case or bind-mount aliases of the agent directory match too.
+ * any target is that directory or lies below it, also while it does not exist yet (a clone must not create `~/.pi`);
+ * `assertRemovableOutsideAgentDir` also refuses a target that holds it (removing a worktree that contains it). Paths are canonicalized (symlinks, `..`), and each existing ancestor
+ * is also compared by device and inode, so case or bind-mount aliases of the agent directory match too.
  * Internal writes (composer attachments into a session's `local/uploads/`) do not come through here.
  */
 export function assertOutsideAgentDir(...targets: string[]): void {
+  checkAgentDir(targets, false);
+}
+
+export function assertRemovableOutsideAgentDir(target: string): void {
+  checkAgentDir([target], true);
+}
+
+function checkAgentDir(targets: string[], removing: boolean): void {
+  const protectedPaths = [getAgentDir(), getConfigRoot()].map(canonicalPath);
   const protectedIds = new Set<string>();
-  for (const dir of [getAgentDir(), getConfigRoot()]) {
-    try { protectedIds.add(identityOf(realpathSync(dir))); } catch { /* A missing directory holds nothing to protect. */ }
+  for (const dir of protectedPaths) {
+    try { protectedIds.add(identityOf(dir)); } catch { /* Missing: compared by path only. */ }
   }
-  if (!protectedIds.size) return;
   for (const target of targets) {
-    let existing = resolve(target);
-    for (;;) {
-      try { existing = realpathSync(existing); break; }
-      catch {
-        const parent = dirname(existing);
-        if (parent === existing) throw new HostOpError(403, "agent_dir_read_only", "pi's agent directory is read-only here");
-        existing = parent;
-      }
-    }
-    for (let dir = existing; ; dir = dirname(dir)) {
-      if (protectedIds.has(identityOf(dir))) throw new HostOpError(403, "agent_dir_read_only", "pi's agent directory is read-only here");
+    const path = canonicalPath(target);
+    if (protectedPaths.some((dir) => within(path, dir) || (removing && within(dir, path)))) throw READ_ONLY();
+    for (let dir = path; ; dir = dirname(dir)) {
+      let id: string | null = null;
+      try { id = identityOf(dir); } catch { /* A missing component: its existing ancestors are checked next. */ }
+      if (id && protectedIds.has(id)) throw READ_ONLY();
       if (dirname(dir) === dir) break;
     }
   }
