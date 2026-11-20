@@ -88,7 +88,12 @@ function canonicalPath(path: string): string {
   }
 }
 
-const within = (path: string, root: string) => path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+// macOS and Windows filesystems ignore case by default: a missing `~/.PI` would be pi's `~/.pi`.
+const fold = (path: string) => process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
+const within = (path: string, root: string) => {
+  const [p, r] = [fold(path), fold(root)];
+  return p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
+};
 
 /**
  * The Files panel and other user-requested workspace writes never touch pi's agent directory or `~/.pi`: refuse when
