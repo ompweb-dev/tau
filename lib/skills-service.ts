@@ -1,5 +1,5 @@
 import { execFile } from "child_process";
-import { existsSync, promises as fs, readFileSync, type Dirent } from "fs";
+import { existsSync, promises as fs, readFileSync, realpathSync, type Dirent } from "fs";
 import { homedir } from "os";
 import * as path from "path";
 import { promisify } from "util";
@@ -181,19 +181,23 @@ async function installedPackages(cwd: string, piBin: string | null, diagnostics:
  * Whether a session tau starts in cwd loads the project's .pi and .agents resources: tau passes `--approve` inside a
  * registered workspace (lib/hosts/local-host.ts projectTrustArgs); elsewhere pi decides as it does in rpc mode, which
  * has no prompt: the nearest trust.json entry, else `defaultProjectTrust` "always" (pi's core/project-trust.js).
- * shortcut: trust.json keys are compared as exact strings (pi folds case on Windows), and a `project_trust`
- * extension handler is not consulted.
+ * Paths compare as pi's trust-manager compares them: JS `realpathSync` (on Windows it keeps 8.3 short names, unlike
+ * the native one), keys resolved and case-folded on Windows (utils/paths.js `pathsEqual`).
+ * shortcut: a `project_trust` extension handler is not consulted.
  */
 async function projectTrusted(cwd: string): Promise<boolean> {
   if (await registeredProjectFor(cwd)) return true;
   const read = (file: string): Record<string, unknown> => {
     try { return JSON.parse(readFileSync(path.join(getAgentDir(), file), "utf8")) ?? {}; } catch { return {}; }
   };
-  const trust = read("trust.json");
+  const key = (value: string) => process.platform === "win32" ? path.resolve(value).toLowerCase() : path.resolve(value);
+  const trust = new Map<string, boolean>();
+  for (const [entry, decision] of Object.entries(read("trust.json"))) if (typeof decision === "boolean" && !trust.has(key(entry))) trust.set(key(entry), decision);
   let dir = path.resolve(cwd);
-  try { dir = await fs.realpath(dir); } catch { /* pi falls back to the resolved path too */ }
+  try { dir = realpathSync(dir); } catch { /* pi falls back to the resolved path too */ }
   for (;; dir = path.dirname(dir)) {
-    if (typeof trust[dir] === "boolean") return trust[dir] as boolean;
+    const decision = trust.get(key(dir));
+    if (decision !== undefined) return decision;
     if (path.dirname(dir) === dir) break;
   }
   return read("settings.json").defaultProjectTrust === "always";
