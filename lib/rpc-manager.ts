@@ -2101,6 +2101,11 @@ export class AgentSessionWrapper {
     switch (type) {
       case "prompt": {
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+        // pi refuses a bare prompt while a run is active ("already processing"): that refusal must not end the run.
+        const runBefore = this.streaming || this.promptRunning
+          ? { streaming: this.streaming, awaitingAgentStart: this.awaitingAgentStart, awaitingAgentStartDeadline: this.awaitingAgentStartDeadline,
+            responseObserved: this.responseObserved, responseRunActive: this.responseRunActive }
+          : null;
         if (!streamingBehavior) {
           this.responseObserved = false;
           this.responseRunActive = false;
@@ -2142,6 +2147,23 @@ export class AgentSessionWrapper {
         } catch (error) {
           if (preserveUnknownDelivery && error instanceof RpcCommandTimeoutError) {
             throw new WebRpcError("The initial prompt may have reached its session; check that session before sending it again.", "host_offline", "unknown");
+          }
+          // Frames that arrived meanwhile win: a run that ended is reset below, one that started kept its own state.
+          if (runBefore && !streamingBehavior && !(error instanceof RpcCommandTimeoutError)) {
+            if (this.streaming) {
+              if (runBefore.streaming && !this.responseRunActive) {
+                this.responseObserved = runBefore.responseObserved;
+                this.responseRunActive = runBefore.responseRunActive;
+              }
+              throw error;
+            }
+            if (!runBefore.streaming && this.promptRunning) {
+              this.awaitingAgentStart = runBefore.awaitingAgentStart;
+              this.awaitingAgentStartDeadline = runBefore.awaitingAgentStartDeadline;
+              this.responseObserved = runBefore.responseObserved;
+              this.responseRunActive = runBefore.responseRunActive;
+              throw error;
+            }
           }
           this.promptRunning = false;
           this.awaitingAgentStart = false;
