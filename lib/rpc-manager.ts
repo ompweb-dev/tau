@@ -2066,6 +2066,11 @@ export class AgentSessionWrapper {
     if (!this.isAlive()) throw new Error("Session is no longer running");
     if (this.hostDown() || this.oldChildExiting) throw this.hostOfflineError("refused");
     if (command.origin !== undefined) throw new WebRpcError("Message origin is server-owned.", "origin_not_allowed");
+    // tau's extension commands are tau's own (callExtension): a message must not name, rewind or log in as tau.
+    if ((command.type === "prompt" || command.type === "steer" || command.type === "follow_up")
+      && typeof command.message === "string" && /^\s*\/tau_/.test(command.message)) {
+      throw new WebRpcError("Messages cannot run tau's own /tau_* commands.", "tau_command_not_allowed");
+    }
     const trustedCommand = options?.origin ? { ...command, origin: options.origin } : command;
     if (typeof command.type === "string" && command.type.startsWith("abort")) {
       console.info("[tau] cancellation-command", JSON.stringify({ sessionId: this._sessionId, type: command.type, at: new Date().toISOString() }));
