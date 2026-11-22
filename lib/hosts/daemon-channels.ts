@@ -5,7 +5,7 @@ import { readSessionHeaderSync } from "../pi/session-files";
 import { isValidSessionId } from "../session-file-references-core";
 import { isRecord } from "../type-guards";
 import type { DaemonLink } from "./daemon-link";
-import { CONFIG_VERSION_RE, CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, LINK_LIMITS, MESSAGE_COMMANDS, PEER_MESSAGE_FRAME, PEER_PROMPT_OUTCOME_FRAME, type HelloChannel, type OpenChannelRequest, type OpenChannelResult, type Unsequenced, type UpMessage } from "./link-protocol";
+import { CONFIG_VERSION_RE, CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, LINK_LIMITS, MESSAGE_COMMANDS, PEER_MESSAGE_FRAME, type HelloChannel, type OpenChannelRequest, type OpenChannelResult, type Unsequenced, type UpMessage } from "./link-protocol";
 import { idOf, parseWire, PendingRequests, wireEvent, type WireFrame } from "./pending-requests";
 import { StreamSnapshot } from "./stream-snapshot";
 import { ChannelLifecycle } from "./channel-lifecycle";
@@ -359,13 +359,6 @@ export class ChannelTable {
         channel.commands.delete(fid);
         const member = owner.link && channel.members.get(owner.link.id);
         if (member) this.deliver(channel, member, { type: "stdout", ch: channel.ch, line: JSON.stringify({ ...frame, id: owner.id }) }, true);
-        // pi refuses a message command only in its response: the other members hear it as a prompt_error, so the
-        // elected notifier reports the failure whichever server prompted.
-        if (MESSAGE_COMMANDS.has(owner.op) && frame.success === false) {
-          const outcome = { type: "prompt_error", command: frame.command, error: typeof frame.error === "string" ? frame.error : "Prompt failed" };
-          const peer = JSON.stringify({ type: PEER_PROMPT_OUTCOME_FRAME, outcome });
-          for (const other of channel.members.values()) if (other !== member) this.deliver(channel, other, { type: "stdout", ch: channel.ch, line: peer });
-        }
         return;
       }
       return;

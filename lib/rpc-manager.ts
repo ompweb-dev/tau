@@ -42,7 +42,7 @@ import type {
 import type { AgentConfirmPayload, AgentMessage, CrossSessionHostToolCall, CrossSessionHostToolEvent, ExitedRpcSession, ExtensionWidgetItem } from "./types";
 import { isLinkUp, type Host, type HostStatus, type SpawnRequest } from "./hosts/host";
 import { freezeHostLinks, getHost, hostOwnsLifecycle, isNotifier, lastUplinkAt, listHosts, orphanExit } from "./hosts/hub";
-import { CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, PEER_MESSAGE_FRAME, PEER_PROMPT_OUTCOME_FRAME } from "./hosts/link-protocol";
+import { CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, PEER_MESSAGE_FRAME } from "./hosts/link-protocol";
 import { LOCAL_HOST_ID } from "./hosts/registry";
 import type { OpResult } from "./hosts/session-ops";
 import { hostForSessionId, invalidateHostSessionList, listSessionsAllHosts, sessionSpawnTarget } from "./hosts/session-index";
@@ -909,12 +909,6 @@ export class AgentSessionWrapper {
     const event = frame;
     if (event.type === PEER_MESSAGE_FRAME) {
       this.peerMessageCommands += 1;
-      return;
-    }
-    if (event.type === PEER_PROMPT_OUTCOME_FRAME) {
-      // Another server's prompt ended: only the notification detector reads it (that server owns the prompt's state).
-      const outcome = isRecord(event.outcome) ? event.outcome : {};
-      if (outcome.type === "prompt_error") this.publishNotifications({ ...outcome, errorMessage: typeof outcome.error === "string" ? outcome.error : "Prompt failed" });
       return;
     }
     if (this.hostOwnedLifecycle && event.type === "host_tool_call" && typeof event.id === "string") {
