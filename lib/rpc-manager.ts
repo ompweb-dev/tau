@@ -913,7 +913,7 @@ export class AgentSessionWrapper {
     }
     if (event.type === PEER_PROMPT_OUTCOME_FRAME) {
       // Another server's prompt ended: only the notification detector reads it (that server owns the prompt's state).
-      const { t: type, ...outcome } = isRecord(event.outcome) ? event.outcome : {};
+      const { type, ...outcome } = isRecord(event.outcome) ? event.outcome : {};
       if (type === "prompt_result") this.publishNotifications({ ...outcome, type });
       else if (type === "prompt_error") this.publishNotifications({ ...outcome, type, errorMessage: typeof outcome.error === "string" ? outcome.error : "Prompt failed" });
       return;

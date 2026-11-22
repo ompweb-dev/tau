@@ -1388,7 +1388,7 @@ export class RemoteRpcTransport implements RpcTransport {
     if (!isRecord(frame)) return;
     const sessionId = frame.type === "response" && frame.command === "get_state" && frame.success === true && isRecord(frame.data)
       ? frame.data.sessionId
-      : (frame.type === "session" || frame.t === "hello" || frame.t === "session") ? frame.sessionId : undefined;
+      : frame.type === "session" ? frame.sessionId : undefined;
     if (typeof sessionId === "string" && isValidSessionId(sessionId)) {
       this.session = sessionId;
     }
