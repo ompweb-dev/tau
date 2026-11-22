@@ -356,25 +356,25 @@ export class ChannelTable {
       }
       const owner = channel.commands.get(fid);
       if (owner) {
-        if (!MESSAGE_COMMANDS.has(owner.op)) channel.commands.delete(fid);
+        channel.commands.delete(fid);
         const member = owner.link && channel.members.get(owner.link.id);
         if (member) this.deliver(channel, member, { type: "stdout", ch: channel.ch, line: JSON.stringify({ ...frame, id: owner.id }) }, true);
+        // pi refuses a message command only in its response: the other members hear it as a prompt_error, so the
+        // elected notifier reports the failure whichever server prompted.
+        if (MESSAGE_COMMANDS.has(owner.op) && frame.success === false) {
+          const outcome = { type: "prompt_error", command: frame.command, error: typeof frame.error === "string" ? frame.error : "Prompt failed" };
+          const peer = JSON.stringify({ type: PEER_PROMPT_OUTCOME_FRAME, outcome });
+          for (const other of channel.members.values()) if (other !== member) this.deliver(channel, other, { type: "stdout", ch: channel.ch, line: peer });
+        }
         return;
       }
       return;
     }
-    if ((frame.type === "prompt_result" || frame.type === "prompt_error" || frame.type === "bash_output" || frame.type === "bash_execution_update") && (typeof frame.id === "string" || typeof frame.id === "number")) {
-      const fid = String(frame.id);
-      const owner = channel.commands.get(fid);
+    if ((frame.type === "bash_output" || frame.type === "bash_execution_update") && (typeof frame.id === "string" || typeof frame.id === "number")) {
+      const owner = channel.commands.get(String(frame.id));
       if (owner) {
-        if (frame.type === "prompt_result" || frame.type === "prompt_error") channel.commands.delete(fid);
         const member = owner.link && channel.members.get(owner.link.id);
         if (member) this.deliver(channel, member, { type: "stdout", ch: channel.ch, line: JSON.stringify({ ...frame, id: owner.id }) });
-        if (frame.type === "prompt_result" || frame.type === "prompt_error") {
-          const outcome: WireFrame = { ...frame }; delete outcome.id;
-          const peer = JSON.stringify({ type: PEER_PROMPT_OUTCOME_FRAME, outcome });
-          for (const other of channel.members.values()) if (other !== member) this.deliver(channel, other, { type: "stdout", ch: channel.ch, line: peer });
-        }
         return;
       }
     }

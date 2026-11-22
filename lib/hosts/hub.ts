@@ -1347,7 +1347,7 @@ export class RemoteRpcTransport implements RpcTransport {
 
   deliverLine(line: string): void {
     if (this.closed) return;
-    if (line.includes('"command":"get_state"') || line.includes('"type":"session"') || line.includes('"t":"hello"') || line.includes('"t":"session"')) this.noteSession(line);
+    if (line.includes('"command":"get_state"') || line.includes('"type":"session"')) this.noteSession(line);
     if (this.lineListeners.length > 0) return notify(this.lineListeners, line);
     const bytes = this.holdable(line);
     if (bytes === null) return;
