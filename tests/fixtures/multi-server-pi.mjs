@@ -60,7 +60,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       persist(user, args.clientMessageId);
       out({ type: "message_end", messageId: `u${n}`, message: user, ...correlation });
       if (args.message === "ask") {
-        send({ type: "ui_request", id: n, method: "askDialog", args: [[{ id: "pick", question: "Pick one", options: [{ label: "A" }, { label: "B" }] }]] });
+        send({ type: "ui_request", id: `ask-${n}`, method: "askDialog", args: [[{ id: "pick", question: "Pick one", options: [{ label: "A" }, { label: "B" }] }]] });
         return;
       }
       const assistant = { role: "assistant", content: [{ type: "text", text: "" }], timestamp: Date.now() };

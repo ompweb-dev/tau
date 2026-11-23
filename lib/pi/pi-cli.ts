@@ -95,7 +95,9 @@ export function resolvePiBin(fresh = false): string | null {
 /** Return the installed CLI version, using file metadata to invalidate cached
  * results without launching pi on every visit. An expiry covers opaque
  * launchers; concurrent callers share a probe. */
-export function getPiVersion(): Promise<string | null> {
+export function getPiVersion(fresh = false): Promise<string | null> {
+  // fresh: a probe of its own, past the miss caches; one in flight may have looked before the binary arrived.
+  if (fresh) { binMissAt = 0; versionMiss = null; return probePiVersion(); }
   versionProbe ??= probePiVersion().finally(() => {
     versionProbe = null;
   });

@@ -1422,3 +1422,21 @@ test("a successful shell card exposes its outcome in its accessible name", () =>
   }));
   assert.ok(view.getByRole("button", { name: /true.*succeeded/i }));
 });
+
+test("a long text-only user message collapses to a one-line preview", () => {
+  const view = render(React.createElement(MessageView, { message: { role: "user", content: "first line\nsecond line\nthird line\n".repeat(50) } }));
+  const bubble = view.container.querySelector(".chat-message-card");
+  assert.ok(bubble, "no user bubble rendered");
+  assert.match(bubble.style.maxHeight, /calc\(/, "a long user message must collapse to one line, not the old 300px cap");
+  assert.ok(bubble.style.maxHeight.includes("--chat-user-font-size"), bubble.style.maxHeight);
+});
+
+test("a user message with images keeps the taller collapsed cap", () => {
+  const view = render(React.createElement(MessageView, { message: { role: "user", content: [
+    { type: "text", text: "see this" },
+    { type: "image", source: { type: "base64", data: "iVBORw0KGgo=", media_type: "image/png" } },
+  ] } }));
+  const bubble = view.container.querySelector(".chat-message-card");
+  assert.ok(bubble, "no user bubble rendered");
+  assert.equal(bubble.style.maxHeight, "300px");
+});

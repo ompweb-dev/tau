@@ -116,7 +116,8 @@ export interface WebSessionState {
   queuedMessages: QueuedMessages;
   supportsClientMessageIds?: boolean;
   contextUsage: ContextUsage | null;
-  systemPrompt: string;
+  /** Absent when the client asked for the prompt-less shape (`?systemPrompt=0`). */
+  systemPrompt?: string;
   thinkingLevel: string;
   autoRetryEnabled?: boolean;
   todoPhases: TodoPhase[];
@@ -202,6 +203,16 @@ export interface RpcAskDialogAnswer {
   selectedOptions: string[];
   customInput?: string;
 }
+
+/**
+ * One answer to a blocking dialog, from the web dialog or the notification
+ * answer endpoint. Exactly one variant is sent.
+ */
+export type ExtensionUiResponse =
+  | { value: string }
+  | { confirmed: boolean }
+  | { cancelled: true }
+  | { answers: RpcAskDialogAnswer[] };
 
 /**
  * tau's host-tool bridge: tau registers host tools (set_host_tools, which the

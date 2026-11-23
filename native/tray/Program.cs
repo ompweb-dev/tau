@@ -19,7 +19,7 @@ static class Program
         var portArg = 0;
         var hostnameArg = "";
         var modeArg = "";
-        var configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "web-service.json");
+        var configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pi", "agent", "web-service.json");
         var startup = false;
         var openBrowser = false;
 
@@ -124,7 +124,7 @@ class TrayApplication : IDisposable
         _icoPath = Path.Combine(_repoRoot, "public", "tau.ico");
         _pngPath = Path.Combine(_repoRoot, "public", "icon.png");
 
-        var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "logs");
+        var logDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pi", "agent", "logs");
         Directory.CreateDirectory(logDir);
         _logFile = Path.Combine(logDir, "tau-service.log");
         try
@@ -512,12 +512,12 @@ class TrayApplication : IDisposable
         _contextMenu.Items.Add(_menuToggle);
         _contextMenu.Items.Add(new ToolStripSeparator());
 
-        _menuViewLogs = new ToolStripMenuItem("View Logs", null, (s, e) => { try { Process.Start("notepad.exe", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "logs", "tau-service.log")}\""); } catch { } });
+        _menuViewLogs = new ToolStripMenuItem("View Logs", null, (s, e) => { try { Process.Start("notepad.exe", $"\"{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pi", "agent", "logs", "tau-service.log")}\""); } catch { } });
         _contextMenu.Items.Add(_menuViewLogs);
 
         _menuConfig = new ToolStripMenuItem("Edit Configuration", null, (s, e) =>
         {
-            var cfg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".omp", "agent", "web-service.json");
+            var cfg = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pi", "agent", "web-service.json");
             if (!File.Exists(cfg))
             {
                 // create via autostart check

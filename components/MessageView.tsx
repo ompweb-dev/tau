@@ -95,6 +95,10 @@ const MAX_MARKDOWN_CHARS = 100_000;
 // Cap the user "sent" bubble's height so an abnormally long message does not
 // push the conversation off screen; overflow scrolls inside the bubble.
 const USER_BUBBLE_MAX_HEIGHT = 300;
+// A text-only user message collapses to a single-line preview by default (the
+// existing "Show full input" toggle expands it). Messages with images keep the
+// taller cap so their thumbnails stay visible while collapsed.
+const USER_BUBBLE_COLLAPSED_HEIGHT = "calc(var(--chat-user-font-size) * var(--chat-line-height) + 16px)";
 
 function formatMessageSize(chars: number): string {
   return chars >= 1_000_000 ? `${(chars / 1_000_000).toFixed(1)} MB` : `${Math.round(chars / 1_000)} KB`;
@@ -427,7 +431,7 @@ function UserMessageView({ message, cwd, onOpenFile, sessionId, entryId, onFork,
             lineHeight: "var(--chat-line-height)",
             color: "var(--text)",
             wordBreak: "break-word",
-            maxHeight: expanded ? "none" : USER_BUBBLE_MAX_HEIGHT,
+            maxHeight: expanded ? "none" : imageBlocks.length > 0 ? USER_BUBBLE_MAX_HEIGHT : USER_BUBBLE_COLLAPSED_HEIGHT,
             overflowY: "auto",
           }}
         >

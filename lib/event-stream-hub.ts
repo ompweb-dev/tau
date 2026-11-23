@@ -24,7 +24,19 @@ import { isRecord } from "./type-guards";
 // the browser's shared worker.
 
 // Heartbeat keeps the socket alive through reverse proxies that drop silent connections.
+// A native client may ask for a longer one per connection (`/api/events?heartbeat=`).
 const HEARTBEAT_MS = 30_000;
+export const MIN_HEARTBEAT_SECONDS = 15;
+export const MAX_HEARTBEAT_SECONDS = 110;
+
+/** `?heartbeat=<seconds>` in [15, 110]; anything else keeps the 30 s default. */
+export function parseHeartbeatSeconds(value: string | null | undefined): number {
+  if (typeof value !== "string" || !/^\d{1,4}$/.test(value.trim())) return HEARTBEAT_MS / 1000;
+  const seconds = Number(value.trim());
+  if (seconds < MIN_HEARTBEAT_SECONDS || seconds > MAX_HEARTBEAT_SECONDS) return HEARTBEAT_MS / 1000;
+  return seconds;
+}
+
 const encoder = new TextEncoder();
 
 export type SubscribeResult =
@@ -33,14 +45,57 @@ export type SubscribeResult =
 
 const SUBSCRIBED: SubscribeResult = { ok: true };
 
+/**
+ * The floor between two `tool_execution_update` snapshots of one tool in one
+ * session subscription. pi sends the accumulated tool output on every update,
+ * so a bash run printing megabytes would otherwise forward the whole buffer
+ * many times per second. Each frame is a self-contained snapshot of one
+ * `toolCallId`, so holding the newest one per tool is lossless and concurrent
+ * tools never supersede each other; a boundary frame (`tool_execution_end`,
+ * `message_end`, …) always flushes them first, in emission order, so the final
+ * output is never delayed. Message deltas are not throttled: they are
+ * incremental since the delta protocol, and — because a held snapshot is not in
+ * the message queue — they neither wait for one nor release one.
+ */
+export const TOOL_UPDATE_FRAME_MIN_INTERVAL_MS = 1_000;
+
 class Subscription {
   active = true;
   detach: (() => void) | null = null;
-  // Session backpressure queue: message updates merge and consecutive outbox
-  // snapshots replace each other. Other frames flush it first to preserve order.
-  pendingUpdates: QueuedUpdate[] = [];
+  // Message and outbox updates plus boundary frames, in emission order: message
+  // updates merge and consecutive outbox snapshots replace each other. Tool
+  // snapshots are held OUTSIDE this queue (see `heldToolUpdates`), so a held
+  // snapshot can neither delay a queued frame nor be released by one.
+  pendingUpdates: QueuedFrame[] = [];
+  /**
+   * The newest snapshot of each tool, keyed by `toolCallId`, held until its
+   * window opens. It needs no position among the message frames: the browser
+   * fences a tool frame by the tool and lifecycle sequences, never by the
+   * message sequence (`hooks/useAgentSession-sync.ts`). `seq` is the emission
+   * counter of the frame it holds, so a boundary flush can merge it back into
+   * the queue in the order it was emitted.
+   */
+  heldToolUpdates = new Map<string, HeldToolUpdate>();
+  /** When the last snapshot of each tool was written (absent = never written). */
+  lastToolUpdateAt = new Map<string, number>();
+  /** Monotonic emission counter: orders held snapshots against queued frames. */
+  emitCount = 0;
+  /** The one timer that releases held frames once their window elapsed. */
+  drainTimer: NodeJS.Timeout | undefined = undefined;
+  /** Deadline of `drainTimer`; a newer frame may pull it forward. */
+  drainAt = 0;
 
-  constructor(readonly id: string, readonly coalescesMessageUpdates: boolean) {}
+  constructor(readonly id: string, readonly throttlesAgentUpdates: boolean) {}
+
+  /** Drop held frames and their timer (unsubscribe, end, close). */
+  clearUpdates(): void {
+    this.pendingUpdates = [];
+    this.heldToolUpdates.clear();
+    this.lastToolUpdateAt.clear();
+    clearTimeout(this.drainTimer);
+    this.drainTimer = undefined;
+    this.drainAt = 0;
+  }
 }
 
 /** What a channel opener may do with its subscription. */
@@ -78,11 +133,12 @@ export interface FrameSink {
 }
 
 class SseSink implements FrameSink {
-  readonly heartbeatMs = HEARTBEAT_MS;
+  readonly heartbeatMs: number;
   readonly stream: ReadableStream<Uint8Array>;
   private controller!: ReadableStreamDefaultController<Uint8Array>;
 
-  constructor(onPull: () => void, onCancel: () => void) {
+  constructor(onPull: () => void, onCancel: () => void, heartbeatMs = HEARTBEAT_MS) {
+    this.heartbeatMs = heartbeatMs;
     this.stream = new ReadableStream<Uint8Array>({
       start: (controller) => { this.controller = controller; },
       // A slow consumer resumed reading: deliver coalesced updates now rather
@@ -142,13 +198,14 @@ export class EventStreamConnection {
   private readonly subscriptions = new Map<string, Subscription>();
   private readonly signal: AbortSignal | undefined;
 
-  constructor(signal?: AbortSignal, sink?: FrameSink) {
+  /** `options.heartbeatMs` overrides the keep-alive for this connection's SSE sink. */
+  constructor(signal?: AbortSignal, sink?: FrameSink | { heartbeatMs?: number }) {
     this.signal = signal;
-    if (sink) {
+    if (sink && "write" in sink) {
       this.sink = sink;
       this.stream = null;
     } else {
-      const sse = new SseSink(() => this.resume(), () => this.close());
+      const sse = new SseSink(() => this.resume(), () => this.close(), sink?.heartbeatMs ?? HEARTBEAT_MS);
       this.sink = sse;
       this.stream = sse.stream;
     }
@@ -220,7 +277,7 @@ export class EventStreamConnection {
 
   private release(subscription: Subscription): void {
     subscription.active = false;
-    subscription.pendingUpdates = [];
+    subscription.clearUpdates();
     const detach = subscription.detach;
     subscription.detach = null;
     runDetach(detach);
@@ -257,47 +314,192 @@ export class EventStreamConnection {
     return this.write(subscription.id, text, at);
   }
 
-  private flush(subscription: Subscription, force = false): boolean {
-    if (!force && this.sink.backpressured()) return true;
-    const queued = subscription.pendingUpdates;
-    subscription.pendingUpdates = [];
-    for (let i = 0; i < queued.length; i++) {
-      if (!force && this.sink.backpressured()) {
-        subscription.pendingUpdates = queued.slice(i);
-        return true;
-      }
-      const { data, at } = queued[i];
-      if (!this.writeFrame(subscription, data, at)) return false;
-    }
-    return true;
-  }
-
-  /** The peer drained: deliver coalesced updates now rather than waiting for the next event or heartbeat. */
+  /** The peer drained: deliver queued frames now rather than waiting for the next event or heartbeat. */
   resume(): void {
     this.flushAll();
   }
 
   private flushAll(): boolean {
-    for (const subscription of this.subscriptions.values()) this.flush(subscription);
+    for (const subscription of this.subscriptions.values()) {
+      if (!this.drainAndReschedule(subscription)) return false;
+    }
     return !this.closed;
+  }
+
+  /**
+   * Write the message/outbox queue in emission order, then release every held
+   * tool snapshot whose window has opened. A held snapshot never blocks a
+   * queued frame and a queued frame never releases a held snapshot: the two are
+   * independent, which is what makes the throttle hold under a streaming turn
+   * (deltas arrive constantly) and keeps one tool's window from delaying
+   * another tool's snapshot.
+   *
+   * `force` (a boundary frame is waiting) writes the queued frames without
+   * regard to backpressure, because the frame that follows must not be delayed;
+   * a boundary flush merges the held snapshots into the queue first, in
+   * emission order, so the end frame never overtakes the output it ends. The
+   * heartbeat retries through the non-force path, so it never overrides
+   * backpressure; a snapshot released by its own window is written only while
+   * the sink has capacity.
+   *
+   * A tool snapshot is stamped with the time it is actually written, not the
+   * time it was emitted: the deliberate hold must not read as network latency.
+   */
+  private drain(subscription: Subscription, force = false): boolean {
+    // A stamp whose window elapsed is useless: a later snapshot is writable at once.
+    for (const [toolCallId, at] of subscription.lastToolUpdateAt) {
+      if (Date.now() - at >= TOOL_UPDATE_FRAME_MIN_INTERVAL_MS) subscription.lastToolUpdateAt.delete(toolCallId);
+    }
+    // Detach the queue before writing: `writeFrame` can release the peer
+    // synchronously (a stream pull calls `resume()`, which drains every
+    // subscription), and that re-entrant drain must see an empty queue rather
+    // than write the frames this loop still holds a second time.
+    const queue = subscription.pendingUpdates;
+    subscription.pendingUpdates = [];
+    let written = 0;
+    while (written < queue.length) {
+      if (!force && this.sink.backpressured()) break;
+      const frame = queue[written];
+      written += 1;
+      if (!this.writeFrame(subscription, frame.data, frame.tool ? Date.now() : frame.at)) return !this.closed;
+    }
+    // Frames appended while writing stay behind the ones still to write.
+    if (written < queue.length) subscription.pendingUpdates = queue.slice(written).concat(subscription.pendingUpdates);
+    if (this.sink.backpressured()) return !this.closed;
+    // Release what the windows allow. Ordering is required per tool, not across
+    // tools: two independent tools may be written in either order, so the emit
+    // order here is deterministic, not a consumer dependency.
+    const releasable = [...subscription.heldToolUpdates.entries()]
+      .filter(([toolCallId]) => Date.now() >= (subscription.lastToolUpdateAt.get(toolCallId) ?? 0) + TOOL_UPDATE_FRAME_MIN_INTERVAL_MS)
+      .sort(([, a], [, b]) => a.seq - b.seq);
+    for (const [toolCallId, held] of releasable) {
+      // Each write can fill the sink: the rest stay held for resume().
+      if (!force && this.sink.backpressured()) break;
+      // A sink whose write re-enters `drain()` may already have released and
+      // written this entry from the live map: stop at the current value, never
+      // write a stale iteration snapshot a second time.
+      if (subscription.heldToolUpdates.get(toolCallId) !== held) continue;
+      subscription.heldToolUpdates.delete(toolCallId);
+      const stamp = Date.now();
+      subscription.lastToolUpdateAt.set(toolCallId, stamp);
+      if (!this.writeFrame(subscription, held.data, stamp)) return !this.closed;
+    }
+    return !this.closed;
+  }
+
+  /** Drain what is ready, then arm the one timer for the next held snapshot. */
+  private drainAndReschedule(subscription: Subscription, force = false): boolean {
+    if (!this.drain(subscription, force)) return false;
+    if (!subscription.active || this.closed) return !this.closed;
+    if (subscription.heldToolUpdates.size === 0) {
+      clearTimeout(subscription.drainTimer);
+      subscription.drainTimer = undefined;
+      subscription.drainAt = 0;
+      return true;
+    }
+    // The sink's owner calls `resume()` once it has capacity again, and the
+    // heartbeat retries: a timer here would only spin while the peer is behind.
+    if (this.sink.backpressured()) return true;
+    let earliest = Infinity;
+    for (const toolCallId of subscription.heldToolUpdates.keys()) {
+      const at = subscription.lastToolUpdateAt.get(toolCallId) ?? 0;
+      earliest = Math.min(earliest, at + TOOL_UPDATE_FRAME_MIN_INTERVAL_MS);
+    }
+    this.scheduleDrain(subscription, Math.max(earliest - Date.now(), 1));
+    return true;
+  }
+
+  /**
+   * Arm the timer that releases held frames. A newer frame only pulls the
+   * deadline forward, never pushes it back.
+   */
+  private scheduleDrain(subscription: Subscription, delayMs: number): void {
+    if (!subscription.active || this.closed) return;
+    const deadline = Date.now() + delayMs;
+    if (subscription.drainTimer !== undefined && subscription.drainAt <= deadline) return;
+    clearTimeout(subscription.drainTimer);
+    subscription.drainAt = deadline;
+    subscription.drainTimer = setTimeout(() => {
+      subscription.drainTimer = undefined;
+      subscription.drainAt = 0;
+      if (!subscription.active || this.closed) return;
+      this.drainAndReschedule(subscription);
+    }, delayMs);
+    // A throttle window must not keep the process alive.
+    subscription.drainTimer.unref?.();
+  }
+
+  /**
+   * Move every held snapshot into the message queue, in the order it was
+   * emitted. Used when a boundary frame arrives: it must not overtake output
+   * that was emitted before it, and the queue is the one place a drain writes
+   * in order.
+   */
+  private releaseHeldToolUpdates(subscription: Subscription): void {
+    if (subscription.heldToolUpdates.size === 0) return;
+    const held = [...subscription.heldToolUpdates.entries()].sort(([, a], [, b]) => a.seq - b.seq);
+    subscription.heldToolUpdates.clear();
+    for (const [toolCallId, update] of held) {
+      // `tool: true` makes the drain stamp the write time, not this release time.
+      subscription.pendingUpdates.push({ data: update.data, at: Date.now(), tool: true });
+      subscription.lastToolUpdateAt.set(toolCallId, Date.now());
+    }
   }
 
   private deliver(subscription: Subscription, data: unknown): void {
     if (!subscription.active || this.closed) return;
-    if (
-      subscription.coalescesMessageUpdates
-      && isRecord(data)
-      && (data.type === "outbox_update" || (data.type === "message_update" && this.sink.backpressured()))
-    ) {
-      queueUpdate(subscription.pendingUpdates, data, Date.now());
-      if (data.type === "outbox_update") this.flush(subscription);
+    // Other channels never queue: their frames are neither throttled nor merged.
+    if (!subscription.throttlesAgentUpdates) {
+      this.writeFrame(subscription, data);
       return;
     }
-    if (this.flush(subscription, true)) this.writeFrame(subscription, data);
+    if (isRecord(data)) {
+      if (data.type === "tool_execution_update" && typeof data.toolCallId === "string" && data.toolCallId) {
+        // Held outside the message queue: the browser fences a tool frame by
+        // its tool/lifecycle sequences, never by `messageSequence`, so it needs
+        // no position among the deltas. The newest snapshot per tool wins.
+        subscription.heldToolUpdates.set(data.toolCallId, { data, seq: ++subscription.emitCount });
+        this.drainAndReschedule(subscription);
+        return;
+      }
+      if (data.type === "outbox_update" || data.type === "message_update") {
+        // Nothing waits: the frame goes out at once, and it never releases a
+        // held tool snapshot (that would defeat the throttle).
+        if (subscription.pendingUpdates.length === 0 && subscription.heldToolUpdates.size === 0 && !this.sink.backpressured()) {
+          this.writeFrame(subscription, data);
+          return;
+        }
+        queueUpdate(subscription.pendingUpdates, data, Date.now());
+        this.drainAndReschedule(subscription);
+        return;
+      }
+    }
+    // Every other frame is a boundary (`tool_execution_end`, `message_end`, …):
+    // everything emitted before it must reach the client first, in order. The
+    // held snapshots were emitted before it too, so they join the queue ahead
+    // of it — in their own emission order — and the forced drain writes all of
+    // it without regard to backpressure.
+    this.releaseHeldToolUpdates(subscription);
+    subscription.pendingUpdates.push({ data, at: Date.now() });
+    this.drainAndReschedule(subscription, true);
   }
 }
 
-type QueuedUpdate = { data: Record<string, unknown>; at: number };
+/**
+ * One queued frame. `at` is the emit time, so the stamp keeps measuring
+ * server-to-peer delay — except for a tool snapshot released by a boundary
+ * frame, which is stamped when it is written (`tool`): the deliberate hold must
+ * not read as network latency in Connection diagnostics.
+ */
+type QueuedFrame = { data: unknown; at: number; tool?: boolean };
+
+/**
+ * The newest snapshot of one tool, held until its window opens. Each frame
+ * carries the tool's whole accumulated output, so a newer snapshot supersedes
+ * the held one losslessly. `seq` orders it against the other held snapshots
+ * when a boundary frame flushes them all.
+ */
+type HeldToolUpdate = { data: Record<string, unknown>; seq: number };
 
 /**
  * Merge a `message_update` into a backpressure queue without losing anything:
@@ -309,10 +511,11 @@ type QueuedUpdate = { data: Record<string, unknown>; at: number };
  * joining a delta to an earlier entry would put it before frames it follows
  * and break the sequence fence the browser relies on.
  */
-function queueUpdate(queue: QueuedUpdate[], data: Record<string, unknown>, at: number): void {
+function queueUpdate(queue: QueuedFrame[], data: Record<string, unknown>, at: number): void {
+  const last = queue.at(-1);
+  const lastData = last && isRecord(last.data) ? last.data : null;
   if (data.type === "outbox_update") {
-    const last = queue.at(-1);
-    if (last?.data.type === "outbox_update") {
+    if (last && lastData?.type === "outbox_update") {
       last.data = data;
       last.at = at;
     } else {
@@ -322,14 +525,15 @@ function queueUpdate(queue: QueuedUpdate[], data: Record<string, unknown>, at: n
   }
   if (!isDeltaUpdate(data)) {
     for (let i = queue.length - 1; i >= 0; i--) {
-      if (queue[i].data.type === "outbox_update") break;
-      if (queue[i].data.messageId === data.messageId) queue.splice(i, 1);
+      const frame = queue[i];
+      if (!isRecord(frame.data)) continue;
+      if (frame.data.type === "outbox_update") break;
+      if (frame.data.messageId === data.messageId) queue.splice(i, 1);
     }
     queue.push({ data, at });
     return;
   }
-  const last = queue.at(-1);
-  const merged = last && isDeltaUpdate(last.data) ? mergeDeltaUpdates(last.data, data) : null;
+  const merged = lastData && isDeltaUpdate(lastData) ? mergeDeltaUpdates(lastData, data) : null;
   if (last && merged) {
     last.data = merged;
     last.at = at;
@@ -390,7 +594,15 @@ function openRunningChannel(handle: SubscriptionHandle): SubscribeResult {
 // as reachable for toasts and in-page system notifications while this is open.
 function openNotificationsChannel(clientId: string, handle: SubscriptionHandle): SubscribeResult {
   handle.open();
-  handle.setDetach(attachNotificationClient(clientId, (message) => handle.send({ type: "notification", ...message })));
+  handle.setDetach(attachNotificationClient(clientId, (message) => {
+    // A retraction is its own frame type: the client's notification branch
+    // accepts only the toast/os kinds, so a wrapped dismiss would be dropped.
+    if (message.kind === "dismiss") {
+      handle.send({ type: "notification-dismiss", tag: message.tag, sessionId: message.sessionId, requestId: message.requestId });
+      return;
+    }
+    handle.send({ type: "notification", ...message });
+  }));
   return SUBSCRIBED;
 }
 

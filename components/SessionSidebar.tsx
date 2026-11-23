@@ -8,7 +8,7 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { ProjectLaunchConfigDialog } from "./ProjectLaunchConfigDialog";
 import { Tooltip } from "./ui/primitives";
 import { toast } from "./ui/toast";
-import { clearLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
+import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { LOCAL_HOST_ID, foldedHostProjectKey, groupProjectsByHost, groupSessionsByProject, hostProjectKey, projectIdentity, projectTargetId, nextPinOrder, orderProjects, projectActivityCounts, remoteHostId, type ProjectSortMode } from "@/lib/project-ordering";
 import { isLinkUp } from "@/lib/hosts/host";
 import { useHostRows } from "@/hooks/useHostRows";
@@ -34,6 +34,7 @@ import {
   INITIAL_RESTORE_MAX_ATTEMPTS,
   INITIAL_RESTORE_RETRY_MS,
   MAX_PROJECT_SESSIONS,
+  UNREAD_SESSIONS_STORAGE_KEY,
   buildSessionTree,
   livePlace,
   loadExpandedProjects,
@@ -498,6 +499,14 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     };
   }, [loadSessions]);
 
+  // The green check ("finished in the background, not opened yet") comes from
+  // this running-to-idle comparison, per browser. Two known boundaries:
+  // - A run that starts and finishes while every tab of this browser is closed
+  //   is never seen leaving the running set, so it gets no check.
+  // - When a running conversation moves to a new session id, the running
+  //   channel lists only the new id, so (by reading the code) the old id can
+  //   read as finished here and its preserved file get a check. Telling a move
+  //   from a finish needs the channel to carry the move, which it does not.
   useEffect(() => {
     const previous = previousRunningSessionIdsRef.current;
     const allCompleted = [...previous].filter((id) => !runningSessionIds.has(id));
@@ -545,6 +554,21 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       next.delete(selectedSessionId);
       return next;
     });
+  }, [selectedSessionId]);
+  // Keep this browser's other tabs in step: opening a finished session in one
+  // tab clears its check everywhere. The session open in this tab counts as
+  // seen, so it never adopts a check (dropping it is written back).
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== UNREAD_SESSIONS_STORAGE_KEY) return;
+      const stored = loadUnreadSessionIds();
+      // Write the drop back here: when this tab's set already equals the rest,
+      // no state change would reach the persistence effect.
+      if (selectedSessionId && stored.delete(selectedSessionId)) saveUnreadSessionIds(stored);
+      setUnreadSessionIds((prev) => (prev.size === stored.size && [...stored].every((id) => prev.has(id)) ? prev : stored));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, [selectedSessionId]);
 
 
@@ -1448,16 +1472,9 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   // Stable callbacks for the session list so memoized children don't re-render
   // on every parent state change.
   const handleSessionDeleted = useCallback((id: string) => {
-    const deleted = allSessions.find((session) => session.id === id);
-    if (deleted) clearLastOpenSession(hostProjectKey(deleted.hostId, workspaceKeyOf(deleted)));
     onSessionDeleted?.(id);
     loadSessions();
-  }, [allSessions, onSessionDeleted, loadSessions]);
-
-  useEffect(() => {
-    const selected = allSessions.find((session) => session.id === selectedSessionId);
-    if (selected) setLastOpenSession(hostProjectKey(selected.hostId, workspaceKeyOf(selected)), selected.id);
-  }, [allSessions, selectedSessionId]);
+  }, [onSessionDeleted, loadSessions]);
 
   return (
     <div className="sidebar-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
@@ -1827,7 +1844,6 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
                   awaitingInputIds={awaitingInputIds}
                   unreadSessionIds={unreadSessionIds}
                   exitedSessions={exitedSessions}
-                  recentlyCompletedIds={effectiveRecentCompletedSet}
                   relativeTimeNow={relativeTimeNow}
                   onActivate={activateProject}
                   onToggleExpand={toggleProjectExpanded}

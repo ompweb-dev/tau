@@ -78,7 +78,7 @@ async function worktreeMutation<T>(action: () => Promise<T>): Promise<T> {
     const message = error instanceof Error ? error.message : String(error);
     const codes: Array<[string, string]> = [
       ["Branch name is required", "branch_required"], ["Invalid branch name", "invalid_branch_name"],
-      ["Directory already exists", "worktree_directory_exists"], ["Not a worktree", "not_a_worktree"],
+      ["Directory already exists", "worktree_directory_exists"], ["Worktree directory already exists", "worktree_directory_exists"], ["Not a worktree", "not_a_worktree"],
       ["Cannot remove the main worktree", "cannot_remove_main_worktree"],
     ];
     const dirty = /contains modified or untracked files|is dirty/i.test(message);

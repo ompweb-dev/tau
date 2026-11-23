@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { isLoopbackHost } from "@/lib/hosts/host-login";
 import { hostLinkSocket, type LinkSocketData } from "@/lib/hosts/hub";
 import { maintenanceSocket, type MaintenanceSocketData } from "@/lib/hosts/maintenance-hub";
 import { proxy } from "@/proxy";
@@ -38,6 +39,19 @@ function decodable(pathname: string): boolean {
   }
 }
 
+/** The browser's page is on a loopback address (Origin, else on a GET the Referer); false when it sends neither. */
+export function pageIsLoopback(request: Request): boolean {
+  // Browsers send Origin on every non-GET request; only a GET falls back to Referer.
+  const origin = request.headers.get("origin");
+  const page = origin ?? (request.method === "GET" || request.method === "HEAD" ? request.headers.get("referer") : null);
+  if (!page || page === "null") return false;
+  try {
+    return isLoopbackHost(new URL(page).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The gate, then the 400 for malformed `%` encoding, then `respond`; every answer but a 400 for an unparsable URL goes
  * through finalizeResponse. Bun's idle timeout also cuts a handler that is still working, so an authenticated API
@@ -48,10 +62,11 @@ function decodable(pathname: string): boolean {
  * the throw: `dispatch` (routes.ts) already turns a handler's throw into a 500, so the `finally` only guards a
  * `respond` that throws later.
  */
+
 async function handle(
   request: Request,
   server: Bun.Server<ServerSocketData>,
-  respond: (context: { gate: "public" | "authenticated"; disableIdleTimeout: () => void }) => Response | undefined | Promise<Response | undefined>,
+  respond: (context: { gate: "public" | "authenticated"; disableIdleTimeout: () => void; localPeer: boolean }) => Response | undefined | Promise<Response | undefined>,
 ): Promise<Response | undefined> {
   let pathname: string;
   try {
@@ -62,6 +77,12 @@ async function handle(
   }
   const gate = proxy(request);
   if (gate instanceof Response) return finalizeResponse(request, gate);
+  // Locality for routes that act on this desktop: the accepted socket, never request.url's host, which the
+  // client writes through its Host header. Behind a reverse proxy on this machine every socket is loopback, so the
+  // page's own address must be too: the Origin (or, on a GET, the Referer) the browser sends, which page scripts
+  // cannot set.
+  const address = server.requestIP(request)?.address;
+  const localPeer = address !== undefined && isLoopbackHost(address) && pageIsLoopback(request);
   if (!decodable(pathname)) return finalizeResponse(request, text("Bad Request", 400));
   const lifted = gate === "authenticated" && pathname.startsWith("/api/");
   if (lifted) server.timeout(request, 0);
@@ -71,6 +92,7 @@ async function handle(
   try {
     response = await respond({
       gate,
+      localPeer,
       disableIdleTimeout: () => {
         keepOpen = true;
         server.timeout(request, 0);
@@ -128,7 +150,7 @@ export function startServer(options: { port: number; hostname: string; dev: bool
   for (const [key, mod] of Object.entries(ROUTE_MODULES)) {
     const { pattern, rest } = routePattern(key);
     const matcher = new URLPattern({ pathname: pattern });
-    routes[pattern] = (request, server) => handle(request, server, ({ disableIdleTimeout }) => {
+    routes[pattern] = (request, server) => handle(request, server, ({ disableIdleTimeout, localPeer }) => {
       // Bun's router matched the raw path, but the gate and the handler read request.url, where `..` and `%2e%2e`
       // are resolved. Answer only when that path is still this route, so no gated route runs under an ungated path.
       const { pathname } = new URL(request.url);
@@ -139,7 +161,7 @@ export function startServer(options: { port: number; hostname: string; dev: bool
         if (name !== "0" && value !== undefined) params[name] = decodeURIComponent(value);
       }
       if (rest) params[rest.name] = pathname.split("/").slice(rest.index).filter(Boolean).map(decodeURIComponent);
-      return dispatch(mod, request, params, disableIdleTimeout, (data) => server.upgrade(request, { data }));
+      return dispatch(mod, request, params, disableIdleTimeout, (data) => server.upgrade(request, { data }), localPeer);
     });
   }
   if (html) routes[DEV_INDEX] = html;

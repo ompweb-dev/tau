@@ -94,7 +94,11 @@ export interface HostDaemon {
   started: Promise<void>;
   control(command: HostControlCommand): HostControlStatus;
 }
-type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[] };
+type DaemonOptions = { allowHttp: boolean; url?: string; token?: string; links?: HostLink[];
+  /** Tests. */ piVersionRetryMs?: number };
+/** A daemon whose pi version read found nothing reads it again after this, doubling up to PI_VERSION_RETRY_MAX_MS. */
+const PI_VERSION_RETRY_MS = 30_000;
+const PI_VERSION_RETRY_MAX_MS = 5 * 60_000;
 /**
  * `path` under `route` (`/api/hosts/<name>/`) on a linked server, with that link's token; null when dot segments
  * (also encoded) would climb out of `route`, which the route's own allow-list cannot see.
@@ -126,6 +130,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   let stopping: Promise<void> | undefined;
   let updateStateWarningLogged = false;
   let reloadTimer: NodeJS.Timeout | undefined;
+  let versionRetry: NodeJS.Timeout | undefined, versionRetryMs = options.piVersionRetryMs ?? PI_VERSION_RETRY_MS;
   let drained = process.env.TAU_HOST_DRAINED === "1";
   let preparationsInFlight = 0, operationsInFlight = 0, nativeUpdatesInFlight = 0;
   const executable = realpathSync(process.execPath);
@@ -507,7 +512,7 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
   }
   function shutdown(code: number): Promise<void> {
     if (stopping) return stopping;
-    stopped = true; watcher.close(); clearTimeout(reloadTimer); clearInterval(sweepTimer); clearInterval(capacityTimer); uploadRetention.stop();
+    stopped = true; watcher.close(); clearTimeout(reloadTimer); clearInterval(sweepTimer); clearInterval(capacityTimer); clearTimeout(versionRetry); uploadRetention.stop();
     clearTimeout(recoveryTimer);
     // Freeze before exit handlers observe children stopping.
     resume.freeze();
@@ -546,7 +551,34 @@ export function runHostDaemon(options: DaemonOptions): HostDaemon {
     .finally(() => {
       operationsInFlight--;
       if (!stopped) for (const link of links.values()) link.start();
+      if (!stopped && piVersion === null) void refreshPiVersion();
     });
+  // A null version in the hello marks this host "pi not installed" and its sessions refused. pi installed after the
+  // daemon started, or a first start Windows' antivirus holds past the probe, misses the startup read: read again until pi answers,
+  // then tell every server (a link made later says it in its hello). One read at a time.
+  let refreshing: Promise<void> | undefined;
+  function scheduleVersionRetry(): void {
+    clearTimeout(versionRetry);
+    versionRetry = setTimeout(() => void refreshPiVersion(), versionRetryMs);
+    versionRetry.unref?.();
+    versionRetryMs = Math.min(versionRetryMs * 2, PI_VERSION_RETRY_MAX_MS);
+  }
+  async function readVersionAgain(): Promise<void> {
+    await versionRead;
+    if (stopped || piVersion !== null) return;
+    clearTimeout(versionRetry); // this read is the retry; a miss arms the next one
+    const version = await getPiVersion(true).catch(error => { log("could not read pi version: " + reason(error)); return null; });
+    if (stopped || piVersion !== null) return;
+    if (version === null) {
+      scheduleVersionRetry();
+      return;
+    }
+    piVersion = version;
+    for (const link of links.values()) link.queue({ type: "pi_version", piVersion: version }, "pi_version");
+  }
+  function refreshPiVersion(): Promise<void> {
+    return refreshing ??= readVersionAgain().finally(() => { refreshing = undefined; });
+  }
   const started = Promise.all([startupSweep, startupRecovery, versionRead]).then(() => {});
   return { stop: () => shutdown(0), done, control, started };
 }
