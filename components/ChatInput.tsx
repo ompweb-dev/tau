@@ -1926,6 +1926,17 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     [isMobile, isStreaming, onSteer, onFollowUp, onAbort, onMinimize, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, sendQueued, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, toggleDictation, setValue]
   );
 
+  // The fullscreen editor submits like Enter in the composer: during a run it queues or steers.
+  const submitFromEditor = () => {
+    setEditorFullscreen(false);
+    if (isStreaming && (onSteer || onFollowUp)) {
+      if (getSubmitDuringRunBehavior() === "steer" && onSteer) sendQueued("steer");
+      else sendQueued("followup");
+    } else {
+      void handleSend();
+    }
+  };
+
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? []);
@@ -3728,7 +3739,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") { e.stopPropagation(); setEditorFullscreen(false); }
-              else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); setEditorFullscreen(false); void handleSend(); }
+              else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitFromEditor(); }
             }}
             placeholder={t("chatInput.placeholder")}
             aria-label={t("chatInput.fullscreenEditor")}
@@ -3758,7 +3769,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             </button>
             <button
               type="button"
-              onClick={() => { setEditorFullscreen(false); void handleSend(); }}
+              onClick={submitFromEditor}
               disabled={submissionBlocked || !(value.trim() || hasAttachments)}
               style={{
                 display: "flex", alignItems: "center", height: 32, padding: "0 14px",

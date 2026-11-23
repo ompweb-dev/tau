@@ -72,3 +72,19 @@ test("Escape closes the full-screen editor without sending", async (t) => {
   assert.equal(view.queryByRole("dialog"), null);
   assert.deepEqual(sent, []);
 });
+
+test("during a run the full-screen editor queues its draft as a follow-up instead of dropping it", async (t) => {
+  const followUps = [];
+  const { view, sent } = await renderComposer(t, {
+    isStreaming: true,
+    async onFollowUp(message) { followUps.push(message); return { status: "accepted" }; },
+    async onSteer() { return { status: "accepted" }; },
+  });
+  fireEvent.click(expandButton(view));
+  const editor = view.getByRole("dialog").querySelector("textarea");
+  fireEvent.change(editor, { target: { value: "after this run" } });
+  fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  assert.deepEqual(sent, []);
+  assert.deepEqual(followUps, ["after this run"]);
+});
