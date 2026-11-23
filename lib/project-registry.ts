@@ -184,10 +184,32 @@ export function upsertProject(
   const key = comparableProjectPath(canonical);
   const existing = registry.projects.find((p) => comparableProjectPath(p.path) === key);
   const projects = registry.projects.filter((p) => comparableProjectPath(p.path) !== key);
-  // An omitted launchConfig preserves the stored one: re-adding a workspace
-  // (e.g. un-hiding) without config must not wipe it. Explicit clear goes
-  // through PATCH with null.
-  projects.push({ path: canonical, addedAt: now, hidden: false, launchConfig: launchConfig ?? existing?.launchConfig, ...(discovered ? { discovered: true as const } : {}) });
+  // Re-adding a workspace (e.g. un-hiding) must not wipe its stored display
+  // data: alias, sort order, pin order, and launch config all carry over
+  // from the existing entry. An omitted launchConfig preserves the stored
+  // one; explicit clear goes through PATCH with null. Display fields have no
+  // POST parameter, so carrying them over is unconditional — PATCH applies
+  // its own updates on top afterwards.
+  // Pin-order collision: while this project was hidden, another project may
+  // have taken its pinOrder (fresh pins take max+1 over the visible list,
+  // which never counted the hidden entry). Keeping the duplicate would make
+  // the pinned order ambiguous — orderProjects only stable-sorts ties — so
+  // a colliding pin moves to the end of the pinned list instead of
+  // unpinning: the project stays pinned, just last.
+  let pinOrder = existing?.pinOrder;
+  if (pinOrder !== undefined && projects.some((p) => !p.hidden && p.pinOrder === pinOrder)) {
+    pinOrder = Math.max(-1, ...projects.filter((p) => !p.hidden).map((p) => p.pinOrder ?? -1)) + 1;
+  }
+  projects.push({
+    path: canonical,
+    addedAt: now,
+    hidden: false,
+    alias: existing?.alias,
+    sortOrder: existing?.sortOrder,
+    pinOrder,
+    launchConfig: launchConfig ?? existing?.launchConfig,
+    ...(discovered ? { discovered: true as const } : {}),
+  });
   return { version: 1, projects };
 }
 

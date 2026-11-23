@@ -1,63 +1,18 @@
-
-const STORAGE_KEY = "tau:last-open-by-project";
-
-interface StorageLike {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
-}
-
-function browserStorage(): StorageLike | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
-
-function readEntries(storage: StorageLike): Record<string, string> {
-  try {
-    const raw = storage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const value: unknown = JSON.parse(raw);
-    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter(([, id]) => typeof id === "string" && id.length > 0)) as Record<string, string>;
-  } catch {
-    return {};
-  }
-}
+// NOTE: this module used to also record the last-open session per project
+// (get/set/clearLastOpenSession, localStorage key "tau:last-open-by-project").
+// No caller ever read the recorded value back — project activation is
+// deliberately selection-only (see activateProject in SessionSidebar: it sets
+// the selected workspace, it never opens a session) — so the helpers were
+// dead writes on every selection and were removed rather than wired into a
+// behavior change. Any value already stored under that key is orphaned and
+// never read.
 
 export function workspaceKeyOf(workspace: { cwd?: string; path?: string; projectRoot?: string; projectKey?: string; poolId?: string; projectId?: string }): string {
-  if (workspace.poolId && workspace.projectId) return workspace.projectKey ?? `pool:${workspace.poolId}:${workspace.projectId}`;
-  return workspace.projectKey ?? workspace.projectRoot ?? workspace.cwd ?? workspace.path ?? "";
-}
-
-export function getLastOpenSession(workspace: string, storage: StorageLike | null = browserStorage()): string | null {
-  if (!storage) return null;
-  return readEntries(storage)[workspace] ?? null;
-}
-
-export function setLastOpenSession(workspace: string, sessionId: string, storage: StorageLike | null = browserStorage()): void {
-  if (!storage) return;
-  try {
-    const entries = readEntries(storage);
-    entries[workspace] = sessionId;
-    storage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // Workspace restoration is a best-effort convenience.
+  if (workspace.poolId && workspace.projectId) {
+    // Empty strings count as missing, not as a key: hand-edited or partially
+    // written session headers can carry "" where a field is absent, and ??
+    // would keep the empty string, grouping the session under no project.
+    return workspace.projectKey || `pool:${workspace.poolId}:${workspace.projectId}`;
   }
-}
-
-export function clearLastOpenSession(workspace: string, storage: StorageLike | null = browserStorage()): void {
-  if (!storage) return;
-  try {
-    const entries = readEntries(storage);
-    if (!(workspace in entries)) return;
-    delete entries[workspace];
-    if (Object.keys(entries).length === 0) storage.removeItem(STORAGE_KEY);
-    else storage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // Workspace restoration is a best-effort convenience.
-  }
+  return workspace.projectKey || workspace.projectRoot || workspace.cwd || workspace.path || "";
 }

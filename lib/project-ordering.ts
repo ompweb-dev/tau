@@ -169,7 +169,14 @@ export function projectActivityCounts(
 
 /** Group sessions by logical project identity, or by host-bound physical path.
  * Every managed project gets a bucket, including empty projects. Physical paths
- * compare case-insensitively on Windows; logical IDs stay case-sensitive. */
+ * compare case-insensitively on Windows; logical IDs stay case-sensitive.
+ * Sessions with no workspace key at all are skipped, deliberately: the
+ * sidebar renders one row per project (it iterates projects, never this
+ * map's keys), so there is no row a key-less session could appear under —
+ * an "unknown workspace" bucket here would be unreachable dead data. The
+ * empty-string fallthrough in workspaceKeyOf already rescues any session
+ * that carries a key in any field; only a header with no location at all
+ * is left, and grouping cannot place it under any project. */
 export function groupSessionsByProject(
   projects: ManagedProject[],
   sessions: SessionInfo[],

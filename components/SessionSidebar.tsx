@@ -8,7 +8,7 @@ import { DirectoryPicker } from "./DirectoryPicker";
 import { ProjectLaunchConfigDialog } from "./ProjectLaunchConfigDialog";
 import { Tooltip } from "./ui/primitives";
 import { toast } from "./ui/toast";
-import { clearLastOpenSession, setLastOpenSession, workspaceKeyOf } from "@/lib/workspace-memory";
+import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { LOCAL_HOST_ID, foldedHostProjectKey, groupProjectsByHost, groupSessionsByProject, hostProjectKey, projectIdentity, projectTargetId, nextPinOrder, orderProjects, projectActivityCounts, remoteHostId, type ProjectSortMode } from "@/lib/project-ordering";
 import { isLinkUp } from "@/lib/hosts/host";
 import { useHostRows } from "@/hooks/useHostRows";
@@ -1472,16 +1472,9 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   // Stable callbacks for the session list so memoized children don't re-render
   // on every parent state change.
   const handleSessionDeleted = useCallback((id: string) => {
-    const deleted = allSessions.find((session) => session.id === id);
-    if (deleted) clearLastOpenSession(hostProjectKey(deleted.hostId, workspaceKeyOf(deleted)));
     onSessionDeleted?.(id);
     loadSessions();
-  }, [allSessions, onSessionDeleted, loadSessions]);
-
-  useEffect(() => {
-    const selected = allSessions.find((session) => session.id === selectedSessionId);
-    if (selected) setLastOpenSession(hostProjectKey(selected.hostId, workspaceKeyOf(selected)), selected.id);
-  }, [allSessions, selectedSessionId]);
+  }, [onSessionDeleted, loadSessions]);
 
   return (
     <div className="sidebar-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
