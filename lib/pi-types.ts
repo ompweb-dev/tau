@@ -116,7 +116,8 @@ export interface WebSessionState {
   queuedMessages: QueuedMessages;
   supportsClientMessageIds?: boolean;
   contextUsage: ContextUsage | null;
-  systemPrompt: string;
+  /** Absent when the client asked for the prompt-less shape (`?systemPrompt=0`). */
+  systemPrompt?: string;
   thinkingLevel: string;
   autoRetryEnabled?: boolean;
   todoPhases: TodoPhase[];
