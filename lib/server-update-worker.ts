@@ -490,7 +490,8 @@ export async function runServerUpdateWorker(descriptorPath: string, deps: Server
     }
     // shortcut: a scheduled task can restart the host during the rename; hold that task across the swap if that race shows up.
     // TerminateProcess stops only the descriptor pid, so a bun child whose command line references the install is still running.
-    await deps.releaseLocks(d.installDir, [process.pid], "all");
+    // Only the stopped processes' own trees: a sharer that started after the check above is refused below, never stopped.
+    await deps.releaseLocks(d.installDir, [process.pid], "all", owned);
     const leftover = await deps.sharedInstall(d.installDir, [process.pid, ...trays]); // the tray's cmd.exe wrapper may still be exiting
     if (leftover) throw new Error(leftover);
 

@@ -1132,16 +1132,26 @@ export function cwdOutsideInstall(installDir: string, home = homedir(), temporar
 
 
 /** Stops install-locking processes one by one; `onlyTreesOf` limits that to those pids and their descendants. Never `taskkill /T`: a tree kill ends a worker that still descends from the target. */
-export async function stopInstallLockingProcesses(installDir: string, sparePids: number[], phase: "tray" | "all", onlyTreesOf?: number[]): Promise<void> {
+export async function stopInstallLockingProcesses(installDir: string, sparePids: number[], phase: "tray" | "all", onlyTreesOf?: number[],
+  io: { listProcesses: typeof listProcesses; signalProcess: typeof signalProcess; waitStopped: typeof waitStopped } = { listProcesses, signalProcess, waitStopped }): Promise<void> {
   if (phase === "tray" && process.platform !== "win32") return;
-  const rows = (await listProcesses()).map((row) => ({ pid: row.pid, ppid: row.ppid, exe: row.exe, command: [row.exe, ...row.args].join("\0") }));
+  const listed = await io.listProcesses();
+  const rows = listed.map((row) => ({ pid: row.pid, ppid: row.ppid, exe: row.exe, command: [row.exe, ...row.args].join("\0") }));
   const selection = selectInstallLockingProcesses(rows, installDir, sparePids, [process.pid], onlyTreesOf);
   const inPhase = (hit: InstallLockHit) => phase === "all" || hit.kind === "tray";
   const blocked = selection.blocked.filter(inPhase);
   if (blocked.length) fail(`Refusing to stop process ${blocked.map((hit) => hit.pid).join(", ")}: the update worker descends from it, and stopping it would end the update`);
-  for (const hit of selection.stop.filter(inPhase)) {
-    await signalProcess(hit.pid, "SIGTERM");
-    await waitStopped(hit.pid);
+  // A process's identity: its command line and, where the platform reports it, its start time.
+  const identity = (row: ProcessInfo) => `${[row.exe, ...row.args].join("\0")}\0${row.created ?? ""}`;
+  const identityOf = new Map(listed.map((row) => [row.pid, identity(row)]));
+  for (const [index, hit] of selection.stop.filter(inPhase).entries()) {
+    // Stopping the previous one took time: its pid list may be stale, and a reused pid is someone else's process.
+    if (index > 0) {
+      const current = (await io.listProcesses()).find((row) => row.pid === hit.pid);
+      if (!current || identity(current) !== identityOf.get(hit.pid)) continue;
+    }
+    await io.signalProcess(hit.pid, "SIGTERM");
+    await io.waitStopped(hit.pid);
   }
 }
 
