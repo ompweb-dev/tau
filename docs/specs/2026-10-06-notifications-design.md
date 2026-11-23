@@ -154,7 +154,7 @@ push: iOS Safari revokes push permission for pushes that show nothing.
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/events` (`notifications` channel, `POST /api/events {kind: "notifications", clientId}`) | GET | the multiplexed SSE stream; the channel carries `{type: "notification", kind, event}` and `{type: "notification-dismiss", tag, sessionId, requestId}` |
+| `/api/events` (`notifications` channel, subscribed with `POST /api/events {connectionId, subscribe: {id, channel: {kind: "notifications", clientId}}}`) | GET | the multiplexed SSE stream; the channel carries `{type: "notification", kind, event}` and `{type: "notification-dismiss", tag, sessionId, requestId}` |
 | `/api/notifications/presence` | POST | presence report |
 | `/api/notifications/devices?deviceId=` | GET | VAPID public key, whether this device has a subscription |
 | `/api/notifications/devices` | PUT | `{deviceId, prefs, subscription?}`; an omitted subscription keeps the stored one |
