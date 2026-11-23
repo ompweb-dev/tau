@@ -198,6 +198,22 @@ function isRetracted(sessionId: string, requestId: string, now: number): boolean
   return at !== undefined && now - at <= PUSH_RETRACTION_TTL_MS;
 }
 
+/** RFC 8291: a 4096-byte encrypted push carries at most 3993 bytes of plaintext. */
+const MAX_PUSH_PAYLOAD_BYTES = 3993;
+
+/** The push body; a dialog that would push it past the limit is left out (the notification then only opens the session). */
+function pushPayload(event: NotificationEvent, locale: string): string {
+  const encode = (shown: NotificationEvent) => JSON.stringify({
+    ...renderFor(shown, locale),
+    type: shown.type,
+    ...(shown.requestId ? { requestId: shown.requestId } : {}),
+    ...(shown.dialog ? { dialog: shown.dialog } : {}),
+  });
+  const full = encode(event);
+  if (!event.dialog || Buffer.byteLength(full) <= MAX_PUSH_PAYLOAD_BYTES) return full;
+  return encode({ ...event, dialog: undefined });
+}
+
 async function sendPush(device: NotificationDevice, event: NotificationEvent, retryDelaysMs: readonly number[] = []): Promise<{ ok: true } | { ok: false; error: string }> {
   const subscription = device.subscription;
   if (!subscription) return { ok: false, error: "no push subscription" };
@@ -211,12 +227,7 @@ async function sendPush(device: NotificationDevice, event: NotificationEvent, re
       const { publicKey, privateKey } = getVapidKeys(webpush.generateVAPIDKeys);
       // `type` lets the service worker tell open tabs which kind of entry to list;
       // `requestId`/`dialog` let the app answer without opening the session.
-      await webpush.sendNotification(subscription, JSON.stringify({
-        ...renderFor(event, device.prefs.locale),
-        type: event.type,
-        ...(event.requestId ? { requestId: event.requestId } : {}),
-        ...(event.dialog ? { dialog: event.dialog } : {}),
-      }), {
+      await webpush.sendNotification(subscription, pushPayload(event, device.prefs.locale), {
         TTL: PUSH_TTL_SECONDS,
         urgency: event.type === "input" || event.type === "error" ? "high" : "normal",
         timeout: PUSH_TIMEOUT_MS,
@@ -251,7 +262,13 @@ export function publishNotification(event: NotificationEvent): void {
   // A replayed dialog (resync after a lost link) restores a request a resync
   // had temporarily retracted: it is pending again, so its notification and
   // its pushes must go out as for any other question.
-  if (event.type === "input" && event.requestId) state.temporaryRetractions.delete(`${event.sessionId}:${event.requestId}`);
+  if (event.type === "input" && event.requestId) {
+    const key = `${event.sessionId}:${event.requestId}`;
+    // A request settled for good is never announced again within the retraction window.
+    const settledAt = state.retractions.get(key);
+    if (settledAt !== undefined && Date.now() - settledAt <= PUSH_RETRACTION_TTL_MS) return;
+    state.temporaryRetractions.delete(key);
+  }
   let devices: NotificationDevice[] = [];
   try {
     devices = listDevices();

@@ -1271,6 +1271,12 @@ export class AgentSessionWrapper {
   async answerExtensionUiRequest(id: string, response: ExtensionUiResponse): Promise<"answered" | "alreadySettled"> {
     const pending = this.pendingUiRequests.get(id);
     if (!pending) return "alreadySettled";
+    // A deadline that passed while its timer could not run (a suspended process) already expired the dialog.
+    const expiresAt = pending.expiresAt as number | undefined;
+    if (expiresAt !== undefined && expiresAt <= Date.now()) {
+      this.settlePendingUiRequest(id);
+      return "alreadySettled";
+    }
     const method = typeof pending.method === "string" ? pending.method : "";
     // Some requests are stored as pending only so they are replayed; pi
     // registers no resolver for them, so an "answer" would be dropped there
