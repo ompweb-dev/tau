@@ -418,7 +418,8 @@ export function createNotificationDetector(): Detect {
         const event: NotificationEvent = { ...base, type: "input", detail };
         // Carried even without a dialog (an oversized payload) so the
         // matching retraction can still close this notification.
-        if (frame.id !== undefined) event.requestId = String(frame.id);
+        // An id past the dialog id limit is not carried: it could push the payload past what a push takes.
+        if (frame.id !== undefined && String(frame.id).length <= DIALOG_ID_CHARS) event.requestId = String(frame.id);
         const mapped = notificationDialogFrame(frame);
         const dialog = mapped ? buildNotificationDialog(mapped) : undefined;
         if (dialog) event.dialog = dialog;
