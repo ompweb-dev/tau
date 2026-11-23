@@ -149,6 +149,37 @@ test("a snapshot no field takes still completes deltas that arrived without thei
   assert.equal(pipe.shown.at(-1), "abcd");
 });
 
+test("a tool snapshot older than a newer message delta is accepted, not stale", () => {
+  // Tool frames are fenced per tool and by the lifecycle/tool-snapshot floors,
+  // never by messageSequence: the catch-up sequence domains are separate. A
+  // mutation that adds messageSequence to the tool floor rejects tool@2 here.
+  const catchUp = createSessionCatchUp({ sessionId: () => "s1", scope: () => "run", history() {}, subscribe: () => false, live() {} });
+  catchUp.observe({ type: "connected", web: { streamId: "s", sequence: 0 } });
+  assert.equal(
+    catchUp.observe({
+      type: "message_update", messageId: "m1", message: { role: "assistant" },
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x" }, web: { streamId: "s", sequence: 3 },
+    }),
+    null,
+    "the message delta at 3 is applied",
+  );
+  assert.equal(
+    catchUp.observe({ type: "tool_execution_update", toolCallId: "t1", web: { streamId: "s", sequence: 2 } }),
+    null,
+    "tool@2 is accepted after message-delta@3: tool and message floors are separate",
+  );
+  assert.equal(
+    catchUp.observe({ type: "tool_execution_update", toolCallId: "t1", web: { streamId: "s", sequence: 1 } }),
+    "stale",
+    "per-tool monotonicity still rejects an older snapshot of the same tool",
+  );
+  assert.equal(
+    catchUp.observe({ type: "tool_execution_update", toolCallId: "t2", web: { streamId: "s", sequence: 1 } }),
+    null,
+    "another tool has its own floor",
+  );
+});
+
 // Base-less deltas through the coalescer into catch-up, reads failing at once, on a clock the test moves (performance.now and timers).
 function missingBasePipeline(t) {
   t.mock.timers.enable({ apis: ["setTimeout"] });
