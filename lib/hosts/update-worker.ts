@@ -1,7 +1,7 @@
 // Old daemons copy only this file. Keep its startup Node-only and load lifecycle code before any swap, from private copies or the descriptor's verified installation.
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmodSync, closeSync, createReadStream, createWriteStream, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, constants, createReadStream, createWriteStream, existsSync, fstatSync, ftruncateSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createGunzip, inflateRawSync } from "node:zlib";
@@ -198,39 +198,96 @@ export function requireHostUpdateRecovery(id: string, error: string): void {
   });
 }
 
-async function readHostUpdate(url: string, maxBytes: number, timeout: number, onChunk: (chunk: Uint8Array) => void): Promise<void> {
+/** A refusal that a new request would only repeat (an HTTP error, a size or destination check): never resumed. */
+class ReleaseRefusal extends Error {}
+/** `from` > 0 asks for the bytes after `from`; `onStart(resumed, total)` reports whether the server sent only those (206,
+ * with the file's whole size when its Content-Range names it) or the whole file again, before the first chunk. `idle`
+ * aborts a response that sends nothing for that long. */
+async function readHostUpdate(url: string, maxBytes: number, timeout: number, onChunk: (chunk: Uint8Array) => void, from = 0, onStart?: (resumed: boolean, total?: number) => void, idle = timeout): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
+  const stall = setTimeout(() => controller.abort(), idle);
   try {
-    const response = await fetch(url, { signal: controller.signal, cache: "no-store", headers: { "User-Agent": "tau-host-updater" } });
-    if (!response.ok || !response.body) throw new Error(`Release request failed (${response.status})`);
-    if (response.url && (!response.url.startsWith("https://") || !["raw.githubusercontent.com", "api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "registry.npmjs.org"].includes(new URL(response.url).hostname))) throw new Error("Unexpected release download destination");
-    if (Number(response.headers.get("content-length")) > maxBytes) throw new Error("Release response is too large");
+    const response = await fetch(url, { signal: controller.signal, cache: "no-store", headers: { "User-Agent": "tau-host-updater", ...(from > 0 ? { Range: `bytes=${from}-` } : {}) } });
+    // 416: nothing lies after `from`; the caller's digest check decides whether what it holds is the file.
+    if (from > 0 && response.status === 416) { onStart?.(true); return; }
+    const range = /^bytes (\d+)-\d+\/(\d+|\*)$/.exec(response.headers.get("content-range") ?? "");
+    const resumed = from > 0 && response.status === 206 && Number(range?.[1]) === from;
+    // A server error, 408 or 429 is worth another request; any other refusal is not.
+    if (!response.ok || !response.body) throw new (response.status >= 500 || [408, 429].includes(response.status) ? Error : ReleaseRefusal)(`Release request failed (${response.status})`);
+    if (response.status === 206 && !resumed) throw new ReleaseRefusal(`Release request failed (${response.status})`);
+    if (response.url && (!response.url.startsWith("https://") || !["raw.githubusercontent.com", "api.github.com", "github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "registry.npmjs.org"].includes(new URL(response.url).hostname))) throw new ReleaseRefusal("Unexpected release download destination");
+    const limit = resumed ? maxBytes - from : maxBytes;
+    if (Number(response.headers.get("content-length")) > limit) throw new ReleaseRefusal("Release response is too large");
+    onStart?.(resumed, resumed && range?.[2] !== "*" ? Number(range![2]) : undefined);
     const reader = response.body.getReader();
     let size = 0;
     try {
       while (true) {
+        stall.refresh();
         const item = await reader.read();
         if (item.done) break;
         size += item.value.byteLength;
-        if (size > maxBytes) throw new Error("Release response is too large");
+        if (size > limit) throw new ReleaseRefusal("Release response is too large");
         onChunk(item.value);
       }
     } catch (error) { await reader.cancel().catch(() => {}); throw error; }
-  } finally { clearTimeout(timer); }
+  } finally {
+    clearTimeout(timer);
+    clearTimeout(stall);
+    controller.abort(); // a refused response's body is never read: release its connection
+  }
 }
 export async function fetchHostUpdateBytes(url: string, maxBytes: number, timeout = 5000): Promise<Buffer> {
   const chunks: Uint8Array[] = [];
   await readHostUpdate(url, maxBytes, timeout, (chunk) => { chunks.push(chunk); });
   return Buffer.concat(chunks);
 }
-/** Streams the response into a new `file` (never whole in memory); returns its `sha256:<hex>` digest. */
-export async function downloadHostUpdateFile(url: string, file: string, maxBytes: number, timeout = DOWNLOAD_TIMEOUT_MS): Promise<string> {
-  const hash = createHash("sha256");
-  const fd = openSync(file, "wx", 0o600);
-  try { await readHostUpdate(url, maxBytes, timeout, (chunk) => { writeSync(fd, chunk); hash.update(chunk); }); }
-  finally { closeSync(fd); }
-  return `sha256:${hash.digest("hex")}`;
+/** A download request that receives nothing for this long is dropped and resumed. */
+const DOWNLOAD_STALL_MS = 60_000;
+/** Consecutive resumed requests that may fail without receiving a byte before the download gives up. */
+const DOWNLOAD_RETRIES = 3;
+/**
+ * Streams the response into `file` (never whole in memory); returns its `sha256:<hex>` digest. A request that drops or
+ * stalls is resumed with an HTTP `Range` request where it stopped, within `timeout` for the whole call. With `resume`,
+ * `file` may already hold the start of the download (an earlier call's bytes), which is continued the same way, and the
+ * digest is then that of the whole file as it is on disk once complete, whoever else wrote to it.
+ */
+export async function downloadHostUpdateFile(url: string, file: string, maxBytes: number, timeout = DOWNLOAD_TIMEOUT_MS, resume = false): Promise<string> {
+  const deadline = Date.now() + timeout;
+  // Read-write without O_APPEND: Windows refuses to truncate a file opened for appending. Writes are positional.
+  const fd = openSync(file, constants.O_RDWR | constants.O_CREAT | (resume ? 0 : constants.O_EXCL), 0o600);
+  try {
+    let hash = createHash("sha256");
+    let size = 0;
+    const buffer = Buffer.alloc(1024 * 1024);
+    for (let read; (read = readSync(fd, buffer, 0, buffer.length, size)) > 0; size += read) hash.update(buffer.subarray(0, read));
+    if (size > maxBytes) { ftruncateSync(fd, 0); hash = createHash("sha256"); size = 0; }
+    for (let failures = 0; ;) {
+      const before = size;
+      let total: number | undefined;
+      try {
+        await readHostUpdate(url, maxBytes, Math.max(1, deadline - Date.now()), (chunk) => { writeSync(fd, chunk, 0, chunk.byteLength, size); hash.update(chunk); size += chunk.byteLength; }, size, (resumed, whole) => {
+          total = whole;
+          if (!resumed && size > 0) { ftruncateSync(fd, 0); hash = createHash("sha256"); size = 0; }
+        }, Math.min(DOWNLOAD_STALL_MS, timeout));
+        // A server may send less of a range than asked for: ask for the rest.
+        if (total !== undefined && size < total) {
+          failures = size > before ? 0 : failures + 1;
+          if (failures > DOWNLOAD_RETRIES || Date.now() >= deadline) throw new ReleaseRefusal("Release download stopped short of its size");
+          continue;
+        }
+        if (!resume) return `sha256:${hash.digest("hex")}`;
+        const disk = createHash("sha256");
+        for (let read, at = 0; (read = readSync(fd, buffer, 0, buffer.length, at)) > 0; at += read) disk.update(buffer.subarray(0, read));
+        return `sha256:${disk.digest("hex")}`;
+      } catch (error) {
+        failures = size > before ? 0 : failures + 1;
+        if (error instanceof ReleaseRefusal || failures > DOWNLOAD_RETRIES || Date.now() >= deadline) throw error;
+        await pause(Math.min(2000, Math.max(0, deadline - Date.now())));
+      }
+    }
+  } finally { closeSync(fd); }
 }
 export function hostReleaseName(platform = process.platform, arch = process.arch): string {
   if (!["linux", "darwin", "win32"].includes(platform) || !["x64", "arm64"].includes(arch) || (platform === "win32" && arch !== "x64")) throw new Error(`Host updates are unsupported on ${platform}/${arch}`);

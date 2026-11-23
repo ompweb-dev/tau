@@ -35,6 +35,12 @@ jobs:
 
       - run: npm install --global npm@^11.5.1
       - run: npm ci
+      # The package's Windows tray, built from this tag's native/tray rather than the committed copy (ompweb-dev/ompweb#530).
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: 8.0.x
+      - name: Build the Windows tray
+        run: sh scripts/build-tray.sh
       # The pi tau drives (`pi --mode rpc`), on PATH for the tests' live sessions, the smoke tests and preflight.
       - name: Install pi
         run: npm install --global "@earendil-works/pi-coding-agent@$PI_VERSION"
