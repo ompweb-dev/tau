@@ -6,6 +6,15 @@ All notable changes to **tau** (`@ompweb-dev/tau`) are documented in this file. 
 
 ## [Unreleased]
 
+### Added
+
+- **Answer a waiting question from the notification itself.** A notification for a blocking dialog (confirm, select, input, editor, or the ask tool's questions) carries the dialog when it fits a push in full, so a phone or a native client can answer without opening the session: `POST /api/notifications/answer` takes the session id, the dialog's request id and one response. The answer goes through the same path as the web dialog and is checked against the pending dialog first; a settled dialog's notification is retracted on every open tab. (ompweb-dev/ompweb#414)
+- **Native clients can read a session without its transcript.** `GET /api/sessions/[id]?meta=1` answers only the message tree and current leaf, `?includeState=alive` splits liveness into `running` and `alive`, `GET /api/agent/[id]?systemPrompt=0` drops the system prompt from the state poll, and `GET /api/sessions/[id]/context` answers a strong ETag and 304. (ompweb-dev/ompweb#415)
+- **`GET /api/app-info` and a per-connection heartbeat.** Native clients read the package identity and capabilities, and `GET /api/events?heartbeat=<15..110>` chooses that stream's keep-alive interval. (ompweb-dev/ompweb#407)
+- **Browse… opens the OS folder dialog** in the directory picker when the page is opened on the server's own desktop. (ompweb-dev/ompweb#544)
+- **Fullscreen composer and collapsed long messages.** The composer opens a fullscreen editor for long prompts, and a long sent message collapses to one line. (ompweb-dev/ompweb#556)
+- **`svg` code fences render inline**, sanitized and themed. (ompweb-dev/ompweb#455)
+
 ### Changed
 
 - **tau runs sessions on pi.** Every session is a `pi --mode rpc` child (`@earendil-works/pi-coding-agent`, found on `PATH` or through `TAU_PI_BIN`) loaded with tau's companion extension (`lib/pi/tau-extension.ts`), which adds host tools, the `ask` dialog, message origins, `/btw`, history Edit and per-host provider logins. The ompweb omp runner, its pinned release and `fetch-omp` are gone. tau keeps pi's state in `~/.pi/agent` (sessions, `settings.json`, `models.json`), lists and installs pi packages and skills instead of omp plugins, and mirrors pi's configuration to cluster members. The host link starts again at protocol v1, and host software updates go through a separately versioned maintenance API. tau shares no state with ompweb: hosts, settings and sessions are set up anew. The routes `/api/omp-settings` and `/api/omp-version` are now `/api/pi-settings` and `/api/pi-version`, a host without pi reports `pi-missing`, and the unused `/api/omp-update` route is removed.
@@ -15,6 +24,19 @@ All notable changes to **tau** (`@ompweb-dev/tau`) are documented in this file. 
 
 ### Fixed
 
+- **In-app updates can replace an npm-global Windows install started by the tray.** The update stops the tray and any process still using that install and runs the install from outside the package, so Windows can rename it. (ompweb-dev/ompweb#519)
+- **A host update's failed candidate is stopped on Windows even when it got the old daemon's pid.** (ompweb-dev/ompweb#526)
+- **In-app updates work on a Windows install without administrator rights.** Task Scheduler's service host is recognized without reading its executable path. (ompweb-dev/ompweb#539)
+- **The Windows tray in the npm package is built from the release's sources.** The committed `bin/tau-tray.exe` was still the ompweb build; releases now build it from `native/tray` (`scripts/build-tray.sh`) and refuse one that does not carry the tagged commit. Host update downloads resume with an HTTP `Range` request after a drop or stall. (ompweb-dev/ompweb#532)
+- **A host no longer stays "pi not installed" once pi is there.** The daemon reads the pi version again (30 s, doubling to 5 min) while it found none and tells its servers, so pi installed after the daemon started is picked up without a restart. (ompweb-dev/ompweb#542)
+- **The sidebar's green check clears once you open the conversation.** (ompweb-dev/ompweb#336)
+- **The subagents header counts only completed subagents.** (ompweb-dev/ompweb#440)
+- **Live tool output no longer floods a slow connection.** The newest snapshot of each running tool is sent at most once per second, and the final output at once. (ompweb-dev/ompweb#418)
+- **A rename falls back to the session file only when pi refused it or the child is gone**, so a slow or busy session is retried instead of written behind pi's back. (ompweb-dev/ompweb#415)
+- **Re-adding a workspace keeps its alias, order and pin**, and new worktrees no longer collide on a sanitized path. (ompweb-dev/ompweb#554)
+- **File-panel tabs no longer clip under a horizontal scrollbar.** (ompweb-dev/ompweb#547)
+- **Delivered outbox rows are pruned inside the add's write transaction.** (ompweb-dev/ompweb#535)
+- **Session responses drop provider-internal assistant fields** (thinking and text signatures, request controls), which the UI never reads. (ompweb-dev/ompweb#454)
 - **Windows updates no longer fail when the update status is read while it is written.** Host update state, the server worker's status and upgrade plans retry their atomic replacement for a moment when a concurrent reader holds the file, as the server's own update state already did.
 - **GitHub workflow watches no longer regress to stale run states.** Workflow updates retain GitHub's run timestamp and ignore older snapshots for the same or an earlier attempt, so a delayed `queued` response cannot follow a newer `in_progress` delivery.
 - **Keep sidebar transcript results aligned with expandable hits on every linked host.** Each daemon now searches its own active conversations, ignoring abandoned branches and pre-compaction messages.
