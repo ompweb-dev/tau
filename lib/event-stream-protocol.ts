@@ -12,6 +12,17 @@
 // Every frame also carries `id: <server ms at emit>`, read as `lastEventId`.
 // Subscriptions are added/removed with POST /api/events (EventStreamRequest).
 //
+// Keep-alive: the server writes a comment frame (`:\n\n`) on an idle stream,
+// 30 s by default. A native client may ask for another interval with
+// `GET /api/events?heartbeat=<seconds>`; the value belongs to that connection
+// only, must be an integer in [15, 110], and anything else (absent, malformed,
+// out of range) falls back to the 30 s default rather than being clamped.
+// A longer interval needs a reverse-proxy read timeout above it: nginx's
+// default `proxy_read_timeout` is 60 s, so `heartbeat=110` disconnects an idle
+// stream there before its first keep-alive. Keep the proxy timeout above the
+// requested interval (e.g. 120 s for 110 s) or request a shorter one.
+// `GET /api/app-info` advertises `capabilities.heartbeatParam` for this query.
+//
 // Agent commands go as POST /api/agent/[id] and uploads over /api/uploads, from the tab.
 //
 // lib/event-stream-worker.ts imports this module (bundled by server/client-env.ts).

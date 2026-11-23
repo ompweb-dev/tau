@@ -152,6 +152,12 @@ VPN, and keep tau itself bound to `127.0.0.1`. The proxy must pass WebSocket upg
 on the paths that hosts authenticate with their token: `/api/hosts/link`, `/api/hosts/maintenance` and
 `/api/hosts/cluster-config/…`.
 
+A server-sent-events client keeps its stream alive with a comment frame every 30 s by default; `GET /api/events?heartbeat=<seconds>`
+(15 to 110) chooses another interval for that connection. A value outside that range falls back to the 30 s default. The proxy's
+read timeout must stay above the interval the client asks for: nginx's default `proxy_read_timeout` is 60 s, so a client selecting
+110 s needs a timeout above 110 s (for example `proxy_read_timeout 120s;`), or the proxy drops the idle stream before its first
+keep-alive. `GET /api/app-info` tells a native client whether the server supports the query.
+
 #### Skipping the password behind a trusted proxy
 
 tau cannot see client addresses itself, so a reverse proxy can vouch for requests instead. The proxy sends a secret in
