@@ -917,6 +917,9 @@ function applyUp(link: Link, message: UpMessage | UnknownMessage, whole?: UpMess
       return link.channels.get(message.ch)?.deliverLine(message.line);
     case "stderr":
       return link.channels.get(message.ch)?.deliverStderr(message.chunk);
+    case "pi_version":
+      link.piVersion = message.piVersion;
+      return setStatus(link, link.status === "pi-missing" ? "online" : link.status);
     case "resync":
       return link.channels.get(message.ch)?.deliverResync();
     case "exit": {
