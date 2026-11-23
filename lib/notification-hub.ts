@@ -203,15 +203,14 @@ const MAX_PUSH_PAYLOAD_BYTES = 3993;
 
 /** The push body; a dialog that would push it past the limit is left out (the notification then only opens the session). */
 function pushPayload(event: NotificationEvent, locale: string): string {
-  const encode = (shown: NotificationEvent) => JSON.stringify({
-    ...renderFor(shown, locale),
-    type: shown.type,
-    ...(shown.requestId ? { requestId: shown.requestId } : {}),
-    ...(shown.dialog ? { dialog: shown.dialog } : {}),
-  });
-  const full = encode(event);
-  if (!event.dialog || Buffer.byteLength(full) <= MAX_PUSH_PAYLOAD_BYTES) return full;
-  return encode({ ...event, dialog: undefined });
+  const base = {
+    ...renderFor(event, locale),
+    type: event.type,
+    ...(event.requestId ? { requestId: event.requestId } : {}),
+  };
+  const full = JSON.stringify(event.dialog ? { ...base, dialog: event.dialog } : base);
+  // Without the dialog the body still shows the question; only the answer buttons are lost.
+  return !event.dialog || Buffer.byteLength(full) <= MAX_PUSH_PAYLOAD_BYTES ? full : JSON.stringify(base);
 }
 
 async function sendPush(device: NotificationDevice, event: NotificationEvent, retryDelaysMs: readonly number[] = []): Promise<{ ok: true } | { ok: false; error: string }> {

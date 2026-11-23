@@ -1246,6 +1246,12 @@ export class AgentSessionWrapper {
    * temporary, so a replay of that request announces and pushes it again
    * instead of being suppressed for the retraction TTL.
    */
+  /** A dialog past its deadline: settled, and closed in every attached tab (the browser does not time it out itself). */
+  private expirePendingUiRequest(id: string): void {
+    const event = this.pendingUiRequests.get(id);
+    if (event && this.settlePendingUiRequest(id)) this.emit({ type: "ui_end", id: event.id });
+  }
+
   private settlePendingUiRequest(id: string, reason: "settled" | "forgotten" = "settled"): boolean {
     if (!this.pendingUiRequests.has(id)) return false;
     // Read before forgetting: the tag is the one the notification went out with.
@@ -1274,7 +1280,7 @@ export class AgentSessionWrapper {
     // A deadline that passed while its timer could not run (a suspended process) already expired the dialog.
     const expiresAt = pending.expiresAt as number | undefined;
     if (expiresAt !== undefined && expiresAt <= Date.now()) {
-      this.settlePendingUiRequest(id);
+      this.expirePendingUiRequest(id);
       return "alreadySettled";
     }
     const method = typeof pending.method === "string" ? pending.method : "";
@@ -1354,7 +1360,7 @@ export class AgentSessionWrapper {
     const timeout = isRecord(options) && typeof options.timeout === "number" ? options.timeout : undefined;
     if (timeout && timeout > 0) {
       event.expiresAt = Date.now() + timeout;
-      const timer = setTimeout(() => this.settlePendingUiRequest(id), timeout);
+      const timer = setTimeout(() => this.expirePendingUiRequest(id), timeout);
       timer.unref?.();
       this.uiExpiryTimers.set(id, timer);
     }
@@ -1677,7 +1683,7 @@ export class AgentSessionWrapper {
     for (const [id, event] of this.pendingUiRequests) {
       const expiresAt = event.expiresAt as number | undefined;
       if (expiresAt !== undefined && expiresAt <= now) {
-        this.settlePendingUiRequest(id);
+        this.expirePendingUiRequest(id);
         continue;
       }
       listener({ ...event, web: { streamId: this.streamId, sequence: ++this.streamSequence } });
