@@ -1288,13 +1288,16 @@ export class AgentSessionWrapper {
     return "answered";
   }
 
-  private clearPendingUiRequests(): void {
+  private clearPendingUiRequests(reason: "settled" | "forgotten" = "settled"): void {
     this.dropServerUiRequests();
     for (const timer of this.uiExpiryTimers.values()) clearTimeout(timer);
     this.uiExpiryTimers.clear();
     // The child is going away (restart, destroy, process exit): every dialog it
-    // waited on is settled, and its notification must not outlive it.
-    for (const id of [...this.pendingUiRequests.keys()]) this.settlePendingUiRequest(id);
+    // waited on is settled, and its notification must not outlive it. When this
+    // server only leaves a shared child that keeps running, its dialogs are
+    // still waiting there: forgotten, so the next server to hold them announces
+    // them again instead of finding them suppressed.
+    for (const id of [...this.pendingUiRequests.keys()]) this.settlePendingUiRequest(id, reason);
   }
 
   /** Settle every server dialog as declined and close it in attached tabs. */
@@ -2726,7 +2729,7 @@ export class AgentSessionWrapper {
     this.unsubscribeFrames?.();
     this.unsubscribeHostStatus?.();
     this.unsubscribeHostStatus = null;
-    this.clearPendingUiRequests();
+    this.clearPendingUiRequests(this.hostOwnedLifecycle && !stopShared ? "forgotten" : "settled");
     this.promptDispatchPendingCount = 0;
     this.awaitingAgentStart = false;
     this.awaitingAgentStartDeadline = 0;
