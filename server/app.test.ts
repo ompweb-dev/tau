@@ -391,4 +391,6 @@ test("the folder dialog counts as local only for a page on a loopback address", 
   assert.equal(page({ origin: "https://tau.example.com", referer: "http://127.0.0.1/" }), false, "Origin wins over Referer");
   assert.equal(page({}), false);
   assert.equal(page({ origin: "null" }), false);
+  // A POST without Origin is no browser page: a Referer alone does not make it local.
+  assert.equal(pageIsLoopback(new Request("http://127.0.0.1/api/cwd/pick", { method: "POST", headers: { referer: "http://localhost/" } })), false);
 });

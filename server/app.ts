@@ -39,9 +39,11 @@ function decodable(pathname: string): boolean {
   }
 }
 
-/** The browser's page is on a loopback address (Origin, else Referer); false when it sends neither. */
+/** The browser's page is on a loopback address (Origin, else on a GET the Referer); false when it sends neither. */
 export function pageIsLoopback(request: Request): boolean {
-  const page = request.headers.get("origin") ?? request.headers.get("referer");
+  // Browsers send Origin on every non-GET request; only a GET falls back to Referer.
+  const origin = request.headers.get("origin");
+  const page = origin ?? (request.method === "GET" || request.method === "HEAD" ? request.headers.get("referer") : null);
   if (!page || page === "null") return false;
   try {
     return isLoopbackHost(new URL(page).hostname);

@@ -19,6 +19,8 @@ export function pickerCommand(platform: NodeJS.Platform = process.platform): { f
         "-Command",
         [
           "Add-Type -AssemblyName System.Windows.Forms | Out-Null",
+          // stdout is read as UTF-8; the console code page would mangle a non-ASCII path.
+          "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false",
           "$d = New-Object System.Windows.Forms.FolderBrowserDialog",
           "$d.Description = 'Select a folder'",
           "$d.SelectedPath = $env:USERPROFILE",
