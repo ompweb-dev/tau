@@ -112,3 +112,25 @@ test("markdown code renderer dispatches svg to SvgBlock and leaves mermaid and j
   assert.match(jsonHtml, /markdown-code-block/);
   assert.match(jsonHtml, />json</);
 });
+
+test("parseSvgMarkup closes scheme, animation, prefix and HTML re-parse bypasses", () => {
+  const markup = parseSvgMarkup(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">
+    <a href="java&#9;script:alert(1)"><rect width="10" height="10"/></a>
+    <a href=" &#10;JaVa&#13;Script:alert(2)"><rect width="1" height="1"/></a>
+    <a x:href="javascript:alert(3)"><circle r="1"/></a>
+    <a><set attributeName="href" to="javascript:alert(4)"/><animate attributeName="href" values="javascript:alert(5)"/></a>
+    <title><![CDATA[</title><img src=x onerror=alert(6)>]]></title>
+    <?x </svg><img src=x onerror=alert(7)>?>
+    <img xmlns="http://www.w3.org/1999/xhtml" src="x"/>
+  </svg>`);
+  assert.ok(markup);
+  assert.doesNotMatch(markup, /script:/i);
+  assert.doesNotMatch(markup, /<set|<animate|<img|CDATA|<\?/);
+  assert.match(markup, /&lt;\/title&gt;&lt;img/, "CDATA text stays escaped text");
+  assert.match(markup, /<rect/);
+  // What the browser builds from the markup holds no element outside the svg.
+  const host = document.createElement("div");
+  host.innerHTML = markup;
+  assert.equal(host.querySelectorAll("img").length, 0);
+  assert.equal(host.children.length, 1);
+});
