@@ -1214,7 +1214,7 @@ export function interactiveTrayTask(choice: Pick<Extract<ServerRestartChoice, { 
   const { command: exe, cwd } = choice;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(operationId)) fail("Invalid tray relaunch operation id");
   if (!cwd || cwd.includes("\0")) fail("The tray working directory is empty");
-  const taskName = `ompweb-tray-${operationId}`;
+  const taskName = `tau-tray-${operationId}`;
   const args = choice.args.map(winArg).join(" ");
   const encoded = encodePowershell(`Start-Process -FilePath ${psLiteral(exe)}${args ? ` -ArgumentList ${psLiteral(args)}` : ""} -WorkingDirectory ${psLiteral(cwd)}`);
   const script = [

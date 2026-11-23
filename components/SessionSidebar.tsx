@@ -503,7 +503,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   // this running-to-idle comparison, per browser. Two known boundaries:
   // - A run that starts and finishes while every tab of this browser is closed
   //   is never seen leaving the running set, so it gets no check.
-  // - When omp moves a running conversation to a new session id, the running
+  // - When a running conversation moves to a new session id, the running
   //   channel lists only the new id, so (by reading the code) the old id can
   //   read as finished here and its preserved file get a check. Telling a move
   //   from a finish needs the channel to carry the move, which it does not.

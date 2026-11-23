@@ -8,7 +8,7 @@ interface SvgBlockProps {
   isStreaming?: boolean;
 }
 
-// omp/ompweb theme variable aliases. The TUI-facing svg conventions use
+// TUI theme variable aliases. The TUI-facing svg conventions use
 // --fg / --muted / --surface / --c1..--c6, which do not exist in the web
 // theme; without aliases those fills resolve to nothing and the drawing
 // turns black on a dark background. --c1..--c6 map to status colours as an
