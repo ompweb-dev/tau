@@ -373,6 +373,8 @@ export class EventStreamConnection {
       .filter(([toolCallId]) => Date.now() >= (subscription.lastToolUpdateAt.get(toolCallId) ?? 0) + TOOL_UPDATE_FRAME_MIN_INTERVAL_MS)
       .sort(([, a], [, b]) => a.seq - b.seq);
     for (const [toolCallId, held] of releasable) {
+      // Each write can fill the sink: the rest stay held for resume().
+      if (!force && this.sink.backpressured()) break;
       // A sink whose write re-enters `drain()` may already have released and
       // written this entry from the live map: stop at the current value, never
       // write a stale iteration snapshot a second time.
