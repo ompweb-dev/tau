@@ -37,8 +37,10 @@ export function hasPicker(platform: NodeJS.Platform = process.platform): boolean
   const command = pickerCommand(platform);
   if (!command) return false;
   if (platform !== "linux") return true;
-  return spawnSync("which", [command.file], { stdio: "ignore" }).status === 0;
+  // Checked once: spawnSync blocks the server's event loop.
+  return zenityInstalled ??= spawnSync("which", [command.file], { stdio: "ignore" }).status === 0;
 }
+let zenityInstalled: boolean | undefined;
 
 /** Both the Browse button and the pick request need this: a chooser on the machine the browser is on. */
 export function pickerAvailable(localPeer: boolean, platform: NodeJS.Platform = process.platform): boolean {

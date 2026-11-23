@@ -23,7 +23,7 @@ const saved = Object.fromEntries([...UNSET, ...Object.keys(ENV)].map((name) => [
 for (const name of UNSET) delete process.env[name];
 Object.assign(process.env, ENV);
 // Imported after the environment is set, so no module sees the real home or agent dir.
-const { startServer } = await import("./app");
+const { startServer, pageIsLoopback } = await import("./app");
 const server = startServer({ port: 0, hostname: "127.0.0.1", dev: false, root });
 const { linkLocalDaemon } = await import("../lib/hosts/link-driver.test-helper.mjs");
 const { flushLinkSamples } = await import("../lib/hosts/hub");
@@ -379,4 +379,16 @@ test("the host link refuses an unauthenticated upgrade with 401 and answers 426 
   assert.match(events[0], /^error .*\b401\b/);
 
   assert.equal((await fetch(url("/api/hosts/link"), { headers: bearer })).status, 426);
+});
+
+test("the folder dialog counts as local only for a page on a loopback address", () => {
+  const page = (headers: Record<string, string>) => pageIsLoopback(new Request("http://127.0.0.1/api/cwd/pick", { headers }));
+  assert.equal(page({ origin: "http://127.0.0.1:30187" }), true);
+  assert.equal(page({ referer: "http://localhost:30187/" }), true);
+  assert.equal(page({ origin: "http://[::1]:30187" }), true);
+  // A reverse proxy on this machine connects from loopback, but the browser's page is elsewhere.
+  assert.equal(page({ origin: "https://tau.example.com" }), false);
+  assert.equal(page({ origin: "https://tau.example.com", referer: "http://127.0.0.1/" }), false, "Origin wins over Referer");
+  assert.equal(page({}), false);
+  assert.equal(page({ origin: "null" }), false);
 });

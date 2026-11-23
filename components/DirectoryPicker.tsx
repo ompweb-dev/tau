@@ -88,8 +88,10 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   const browseAbortRef = useRef<AbortController | null>(null);
   const cloning = cloneId !== null;
   const locked = busy || cloning || nativePickerBusy;
+  // A native dialog may open where nobody sees it (behind the browser, a service session): closing stays possible.
+  const closeLocked = busy || cloning;
   const dialogRef = useModalDialog<HTMLDivElement>({
-    onClose: () => { if (!locked) onCancel(); },
+    onClose: () => { if (!closeLocked) onCancel(); },
     active: portalTarget !== null,
   });
 
@@ -126,7 +128,7 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
   useEffect(() => {
     if (pool || host.id !== LOCAL_HOST_ID) return;
     let active = true;
-    void fetch("/api/cwd/picker")
+    void fetch("/api/cwd/picker", { referrerPolicy: "same-origin" })
       .then(async (response) => (await response.json()) as { available?: boolean })
       .then((data) => { if (active) setNativePickerAvailable(Boolean(data.available)); })
       .catch(() => {});
@@ -269,7 +271,7 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
     <div
       className="directory-picker-backdrop animate-fade-in"
       onClick={(event) => {
-        if (event.target === event.currentTarget && !locked) onCancel();
+        if (event.target === event.currentTarget && !closeLocked) onCancel();
       }}
       style={{ position: "fixed", inset: 0, zIndex: 1002, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--overlay-backdrop)" }}
     >
@@ -282,11 +284,11 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error, host,
           <button
             type="button"
             onClick={onCancel}
-            disabled={locked}
+            disabled={closeLocked}
             title={t("directoryPicker.close")}
             aria-label={t("directoryPicker.close")}
-            style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: 20, lineHeight: 1, cursor: locked ? "default" : "pointer", opacity: locked ? 0.5 : 1, transition: "color var(--dur-fast) var(--ease-out-warm), opacity var(--dur-fast) var(--ease-out-warm)" }}
-            onMouseEnter={(e) => { if (!locked) e.currentTarget.style.color = "var(--text)"; }}
+            style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: 20, lineHeight: 1, cursor: closeLocked ? "default" : "pointer", opacity: closeLocked ? 0.5 : 1, transition: "color var(--dur-fast) var(--ease-out-warm), opacity var(--dur-fast) var(--ease-out-warm)" }}
+            onMouseEnter={(e) => { if (!closeLocked) e.currentTarget.style.color = "var(--text)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
           >
             ×

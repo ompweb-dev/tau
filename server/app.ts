@@ -49,6 +49,17 @@ function decodable(pathname: string): boolean {
  * the throw: `dispatch` (routes.ts) already turns a handler's throw into a 500, so the `finally` only guards a
  * `respond` that throws later.
  */
+/** The browser's page is on a loopback address (Origin, else Referer); false when it sends neither. */
+export function pageIsLoopback(request: Request): boolean {
+  const page = request.headers.get("origin") ?? request.headers.get("referer");
+  if (!page || page === "null") return false;
+  try {
+    return isLoopbackHost(new URL(page).hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function handle(
   request: Request,
   server: Bun.Server<ServerSocketData>,
@@ -64,9 +75,11 @@ async function handle(
   const gate = proxy(request);
   if (gate instanceof Response) return finalizeResponse(request, gate);
   // Locality for routes that act on this desktop: the accepted socket, never request.url's host, which the
-  // client writes through its Host header.
+  // client writes through its Host header. Behind a reverse proxy on this machine every socket is loopback, so the
+  // page's own address must be too: the Origin (or, on a GET, the Referer) the browser sends, which page scripts
+  // cannot set.
   const address = server.requestIP(request)?.address;
-  const localPeer = address !== undefined && isLoopbackHost(address);
+  const localPeer = address !== undefined && isLoopbackHost(address) && pageIsLoopback(request);
   if (!decodable(pathname)) return finalizeResponse(request, text("Bad Request", 400));
   const lifted = gate === "authenticated" && pathname.startsWith("/api/");
   if (lifted) server.timeout(request, 0);
