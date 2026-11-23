@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmodSync, closeSync, createReadStream, createWriteStream, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createGunzip, inflateRawSync } from "node:zlib";
 import { pipeline } from "node:stream/promises";
@@ -446,7 +446,8 @@ export async function stagePackage(d: HostPackageSource, staging: string): Promi
   const windows = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
   // `/s /c` strips one outer pair of quotes; verbatim so Node does not escape the inner ones (as Node's `shell: true`).
   const line = [command, ...args].map((arg) => `"${arg.replaceAll('"', '')}"`).join(" ");
-  await exec(windows ? process.env.ComSpec || "cmd.exe" : command, windows ? ["/d", "/s", "/c", `"${line}"`] : args, { timeout: DOWNLOAD_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: workerEnvironment(), windowsHide: true, windowsVerbatimArguments: windows });
+  // Windows refuses to rename a directory that is any live process's working directory, including this install child.
+  await exec(windows ? process.env.ComSpec || "cmd.exe" : command, windows ? ["/d", "/s", "/c", `"${line}"`] : args, { cwd: tmpdir(), timeout: DOWNLOAD_TIMEOUT_MS, maxBuffer: 1024 * 1024, env: workerEnvironment(), windowsHide: true, windowsVerbatimArguments: windows });
   const modules = join(prefix, "node_modules");
   const packageDir = join(modules, "@ompweb-dev", "tau");
   const metadata = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8"));
