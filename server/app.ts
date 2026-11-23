@@ -39,16 +39,6 @@ function decodable(pathname: string): boolean {
   }
 }
 
-/**
- * The gate, then the 400 for malformed `%` encoding, then `respond`; every answer but a 400 for an unparsable URL goes
- * through finalizeResponse. Bun's idle timeout also cuts a handler that is still working, so an authenticated API
- * request runs without it. The setting outlives the response on a keep-alive socket, so it is put back once the
- * handler returns or throws, or, when the handler keeps its response open (a stream) with `disableIdleTimeout`, once
- * that stream ends or is cancelled. Public requests keep it, so no unauthenticated caller can hold a socket open. A
- * handler that upgraded the request to a WebSocket answers undefined, returned as is: Bun has answered. No test reaches
- * the throw: `dispatch` (routes.ts) already turns a handler's throw into a 500, so the `finally` only guards a
- * `respond` that throws later.
- */
 /** The browser's page is on a loopback address (Origin, else Referer); false when it sends neither. */
 export function pageIsLoopback(request: Request): boolean {
   const page = request.headers.get("origin") ?? request.headers.get("referer");
@@ -59,6 +49,17 @@ export function pageIsLoopback(request: Request): boolean {
     return false;
   }
 }
+
+/**
+ * The gate, then the 400 for malformed `%` encoding, then `respond`; every answer but a 400 for an unparsable URL goes
+ * through finalizeResponse. Bun's idle timeout also cuts a handler that is still working, so an authenticated API
+ * request runs without it. The setting outlives the response on a keep-alive socket, so it is put back once the
+ * handler returns or throws, or, when the handler keeps its response open (a stream) with `disableIdleTimeout`, once
+ * that stream ends or is cancelled. Public requests keep it, so no unauthenticated caller can hold a socket open. A
+ * handler that upgraded the request to a WebSocket answers undefined, returned as is: Bun has answered. No test reaches
+ * the throw: `dispatch` (routes.ts) already turns a handler's throw into a 500, so the `finally` only guards a
+ * `respond` that throws later.
+ */
 
 async function handle(
   request: Request,

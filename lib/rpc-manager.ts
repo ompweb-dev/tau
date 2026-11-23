@@ -2556,6 +2556,8 @@ export class AgentSessionWrapper {
         if (typeof id !== "number" && typeof id !== "string") throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const key = String(id);
         const serverRequest = this.serverUiRequests.get(key);
+        // A host tool call is answered with host_tool_result: its bookkeeping must see the answer.
+        if (!serverRequest && this.pendingHostTools.has(key)) throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const pending = this.pendingUiRequests.get(key);
         const method = pending?.method;
         // A malformed answer would drop the dialog from reconnect replay while pi rejects it.
@@ -2727,7 +2729,7 @@ export class AgentSessionWrapper {
     this.unsubscribeFrames?.();
     this.unsubscribeHostStatus?.();
     this.unsubscribeHostStatus = null;
-    this.clearPendingUiRequests(this.hostOwnedLifecycle && !stopShared ? "forgotten" : "settled");
+    this.clearPendingUiRequests(this.hostOwnedLifecycle && !stopShared && this.proc.isAlive ? "forgotten" : "settled");
     this.promptDispatchPendingCount = 0;
     this.awaitingAgentStart = false;
     this.awaitingAgentStartDeadline = 0;

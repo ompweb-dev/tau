@@ -154,10 +154,19 @@ export function spawnPiTransport(options: RpcProcessOptions): RpcTransport {
  * The ask tool's questions (`{id?, question, options: string[], multiSelect?}`) in the dialog's shape
  * (`RpcAskDialogQuestion`: an id, option objects, `multi`). The answer goes back to the tool as the dialog sends it.
  */
+function uniqueId(used: Set<string>, index: number): string {
+  let id = `q${index + 1}`;
+  while (used.has(id)) id += "_";
+  used.add(id);
+  return id;
+}
+
 function askQuestions(raw: unknown): Array<{ id: string; question: string; options: Array<{ label: string }>; multi: boolean }> {
   if (!Array.isArray(raw)) return [];
+  const used = new Set<string>();
   return raw.filter(isRecord).map((question, index) => ({
-    id: typeof question.id === "string" && question.id ? question.id : `q${index + 1}`,
+    // Ids must stay distinct: the answers name their question by id.
+    id: typeof question.id === "string" && question.id && !used.has(question.id) ? (used.add(question.id), question.id) : uniqueId(used, index),
     question: typeof question.question === "string" ? question.question : "",
     options: (Array.isArray(question.options) ? question.options : []).flatMap((option: unknown) =>
       typeof option === "string" ? [{ label: option }] : isRecord(option) && typeof option.label === "string" ? [{ label: option.label }] : []),
