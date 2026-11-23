@@ -122,6 +122,8 @@ test("parseSvgMarkup closes scheme, animation, prefix and HTML re-parse bypasses
     <title><![CDATA[</title><img src=x onerror=alert(6)>]]></title>
     <?x </svg><img src=x onerror=alert(7)>?>
     <img xmlns="http://www.w3.org/1999/xhtml" src="x"/>
+    <desc><iframe srcdoc="&lt;script&gt;parent.alert(8)&lt;/script&gt;"/></desc>
+    <FOREIGNOBJECT><iframe srcdoc="x"/></FOREIGNOBJECT><STYLE>body{display:none}</STYLE>
   </svg>`);
   assert.ok(markup);
   assert.doesNotMatch(markup, /script:/i);
@@ -131,6 +133,6 @@ test("parseSvgMarkup closes scheme, animation, prefix and HTML re-parse bypasses
   // What the browser builds from the markup holds no element outside the svg.
   const host = document.createElement("div");
   host.innerHTML = markup;
-  assert.equal(host.querySelectorAll("img").length, 0);
+  assert.equal(host.querySelectorAll("img, iframe, style").length, 0);
   assert.equal(host.children.length, 1);
 });

@@ -2556,9 +2556,6 @@ export class AgentSessionWrapper {
         if (typeof id !== "number" && typeof id !== "string") throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const key = String(id);
         const serverRequest = this.serverUiRequests.get(key);
-        // The runner numbers its dialogs and ignores any other id; only tau's own confirms keep string ids.
-        const runnerId = serverRequest ? undefined : /^\d+$/.test(key) ? Number(key) : NaN;
-        if (runnerId !== undefined && !Number.isSafeInteger(runnerId)) throw new WebRpcError("Invalid dialog id", "invalid_ui_response");
         const pending = this.pendingUiRequests.get(key);
         const method = pending?.method;
         // A malformed answer would drop the dialog from reconnect replay while pi rejects it.
@@ -2578,7 +2575,8 @@ export class AgentSessionWrapper {
           this.serverUiRequests.delete(key);
           serverRequest(value === true);
         } else {
-          this.proc.sendFrame({ type: "ui_response", id: runnerId, value });
+          // pi names its dialogs with UUIDs; RpcProcess answers by that string id.
+          this.proc.sendFrame({ type: "ui_response", id: key, value });
         }
         // pi sends no ui_end for a dialog the host answered; other tabs on this
         // session would keep showing it, so settle it for them here.
