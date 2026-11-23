@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { isLoopbackHost } from "@/lib/hosts/host-login";
 import { hostLinkSocket, type LinkSocketData } from "@/lib/hosts/hub";
 import { maintenanceSocket, type MaintenanceSocketData } from "@/lib/hosts/maintenance-hub";
 import { proxy } from "@/proxy";
@@ -51,7 +52,7 @@ function decodable(pathname: string): boolean {
 async function handle(
   request: Request,
   server: Bun.Server<ServerSocketData>,
-  respond: (context: { gate: "public" | "authenticated"; disableIdleTimeout: () => void }) => Response | undefined | Promise<Response | undefined>,
+  respond: (context: { gate: "public" | "authenticated"; disableIdleTimeout: () => void; localPeer: boolean }) => Response | undefined | Promise<Response | undefined>,
 ): Promise<Response | undefined> {
   let pathname: string;
   try {
@@ -62,6 +63,10 @@ async function handle(
   }
   const gate = proxy(request);
   if (gate instanceof Response) return finalizeResponse(request, gate);
+  // Locality for routes that act on this desktop: the accepted socket, never request.url's host, which the
+  // client writes through its Host header.
+  const address = server.requestIP(request)?.address;
+  const localPeer = address !== undefined && isLoopbackHost(address);
   if (!decodable(pathname)) return finalizeResponse(request, text("Bad Request", 400));
   const lifted = gate === "authenticated" && pathname.startsWith("/api/");
   if (lifted) server.timeout(request, 0);
@@ -71,6 +76,7 @@ async function handle(
   try {
     response = await respond({
       gate,
+      localPeer,
       disableIdleTimeout: () => {
         keepOpen = true;
         server.timeout(request, 0);
@@ -128,7 +134,7 @@ export function startServer(options: { port: number; hostname: string; dev: bool
   for (const [key, mod] of Object.entries(ROUTE_MODULES)) {
     const { pattern, rest } = routePattern(key);
     const matcher = new URLPattern({ pathname: pattern });
-    routes[pattern] = (request, server) => handle(request, server, ({ disableIdleTimeout }) => {
+    routes[pattern] = (request, server) => handle(request, server, ({ disableIdleTimeout, localPeer }) => {
       // Bun's router matched the raw path, but the gate and the handler read request.url, where `..` and `%2e%2e`
       // are resolved. Answer only when that path is still this route, so no gated route runs under an ungated path.
       const { pathname } = new URL(request.url);
@@ -139,7 +145,7 @@ export function startServer(options: { port: number; hostname: string; dev: bool
         if (name !== "0" && value !== undefined) params[name] = decodeURIComponent(value);
       }
       if (rest) params[rest.name] = pathname.split("/").slice(rest.index).filter(Boolean).map(decodeURIComponent);
-      return dispatch(mod, request, params, disableIdleTimeout, (data) => server.upgrade(request, { data }));
+      return dispatch(mod, request, params, disableIdleTimeout, (data) => server.upgrade(request, { data }), localPeer);
     });
   }
   if (html) routes[DEV_INDEX] = html;
