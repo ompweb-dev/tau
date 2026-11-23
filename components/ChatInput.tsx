@@ -3737,7 +3737,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             autoFocus
             value={value}
             onChange={(e) => setValue(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(e) => {
+              // A key that confirms or cancels an IME candidate belongs to the IME.
+              if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
               if (e.key === "Escape") { e.stopPropagation(); setEditorFullscreen(false); }
               else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submitFromEditor(); }
             }}

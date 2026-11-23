@@ -88,3 +88,15 @@ test("during a run the full-screen editor queues its draft as a follow-up instea
   assert.deepEqual(sent, []);
   assert.deepEqual(followUps, ["after this run"]);
 });
+
+test("Ctrl+Enter that confirms an IME candidate does not send from the full-screen editor", async (t) => {
+  const { view, sent } = await renderComposer(t);
+  fireEvent.click(expandButton(view));
+  const editor = view.getByRole("dialog").querySelector("textarea");
+  fireEvent.change(editor, { target: { value: "にほん" } });
+  fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true, keyCode: 229 });
+  fireEvent.keyDown(editor, { key: "Escape", keyCode: 229 });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  assert.deepEqual(sent, []);
+  assert.ok(view.queryByRole("dialog"), "the editor stays open");
+});
