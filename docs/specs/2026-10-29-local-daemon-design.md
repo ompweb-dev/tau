@@ -93,8 +93,9 @@ on the web server:
 missed would block the run forever. The daemon already sees every line, so it
 keeps, per channel, the raw lines of each blocking request still open:
 
-- opened by a `host_tool_call` or an `extension_ui_request` whose method is in
-  `BLOCKING_UI_METHODS` (decoded with `RpcFrameDecoder`, so chunked frames are
+- opened by a `host_tool_call` or an `extension_ui_request` whose method is a
+  blocking dialog (`select`, `confirm`, `input`, `editor`, `askDialog`,
+  `formDialog` or `approve`; decoded with `RpcFrameDecoder`, so chunked frames are
   kept whole);
 - closed by the matching `host_tool_result` / `extension_ui_response` written to
   stdin, or a `host_tool_cancel` / UI cancel from omp.

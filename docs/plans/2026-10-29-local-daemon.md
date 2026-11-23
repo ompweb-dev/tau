@@ -53,7 +53,7 @@
   }
   // hello: channels: { ch: string; sessionId: string | null; pending: string[] | null }[]
   ```
-  Opened by `host_tool_call` and `extension_ui_request` with a method in `BLOCKING_UI_METHODS` (import from `lib/notification-events.ts` if it has no next/@ imports, else move the constant to a shared module). Closed by `host_tool_result`/`extension_ui_response` with the same id on stdin, or `host_tool_cancel` (`targetId`) / an `extension_ui_request` cancel frame from omp. A chunked frame's raw `rpc_chunk` lines are kept together.
+  Opened by `host_tool_call` and `extension_ui_request` with a blocking dialog method (`select`, `confirm`, `input`, `editor`, `askDialog`, `formDialog` or `approve`). Closed by `host_tool_result`/`extension_ui_response` with the same id on stdin, or `host_tool_cancel` (`targetId`) / an `extension_ui_request` cancel frame from omp. A chunked frame's raw `rpc_chunk` lines are kept together.
 - [ ] **Step 1: Failing tests** — `pending-requests.test.mjs`: an `ask` request then its `extension_ui_response` → `lines()` is `[]`; an open `host_tool_call` → `lines()` holds its raw line; a request split into three `rpc_chunk` lines → `lines()` holds all three in order; `host_tool_cancel` with `targetId` closes the call; past `limitBytes` → `null`; a non-blocking `notify` UI request is not kept. `daemon.test.mjs`: after a link drop the next `hello` carries the open request's line for its channel.
 - [ ] **Step 2: Run** `node --experimental-strip-types --test lib/hosts/pending-requests.test.mjs lib/hosts/daemon.test.mjs` → FAIL.
 - [ ] **Step 3: Implement**; bump `LINK_PROTOCOL_VERSION` to 3 and update `decodeUp` for the new hello field.

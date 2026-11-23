@@ -205,6 +205,16 @@ export interface RpcAskDialogAnswer {
 }
 
 /**
+ * One answer to a blocking dialog, from the web dialog or the notification
+ * answer endpoint. Exactly one variant is sent.
+ */
+export type ExtensionUiResponse =
+  | { value: string }
+  | { confirmed: boolean }
+  | { cancelled: true }
+  | { answers: RpcAskDialogAnswer[] };
+
+/**
  * tau's host-tool bridge: tau registers host tools (set_host_tools, which the
  * daemon hands to the extension's `/tau_host_tools`) that the agent can call;
  * the server emits host_tool_call frames the UI executes, and the UI answers
