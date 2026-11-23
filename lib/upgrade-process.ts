@@ -647,7 +647,7 @@ function assertPlan(plan: UpgradeProcess): void {
   if (typeof plan.installDir !== "string" || !isAbsolute(plan.installDir)) bad("installDir");
   const current = plan.current;
   if (!current || typeof current !== "object" || (current.pid === null) !== (current.identity === null) || (current.pid !== null && (!Number.isSafeInteger(current.pid) || current.pid <= 1 || typeof current.identity !== "string"))) bad("current instance");
-  if (current.pid === plan.pid && current.identity !== plan.identity) bad("current instance does not match the inspected process");
+  // `current` follows restarts and is checked against the live process when a stop acts on it; Windows may give the restarted instance the inspected pid, so the pid alone says nothing about identity.
   const s = plan.supervisor;
   const text = (value: unknown) => typeof value === "string" && value.length > 0 && value.length <= 4096 && !/[\0-\x1f]/.test(value);
   if (!s || typeof s !== "object") bad("supervisor");
