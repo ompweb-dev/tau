@@ -315,7 +315,7 @@ export function buildNotificationDialog(frame: Record<string, unknown>): Notific
 /**
  * tau's `ui_request` carries the dialog's fields positionally in `args`;
  * the notification contract names them. Methods that cannot be answered from a
- * notification (a whole-form ask, an approval) map to undefined.
+ * notification (`open_url`) map to undefined.
  */
 function notificationDialogFrame(frame: Record<string, unknown>): Record<string, unknown> | undefined {
   const method = typeof frame.method === "string" ? frame.method : "";
@@ -354,8 +354,8 @@ function notificationDialogFrame(frame: Record<string, unknown>): Record<string,
 /**
  * Whether a pending wire dialog is one the notification could actually carry.
  * The answer route refuses anything else, so a request the notification had to
- * omit (unrepresentable text, an oversized payload, a whole-form dialog, an
- * approval or `open_url`) is not answerable from a notification either.
+ * omit (unrepresentable text, an oversized payload or `open_url`) is not
+ * answerable from a notification either.
  */
 export function isNotificationAnswerable(frame: Record<string, unknown>): boolean {
   const mapped = notificationDialogFrame(frame);
@@ -416,7 +416,7 @@ export function createNotificationDetector(): Detect {
           ?? (Array.isArray(first) && isRecord(first[0]) ? str(first[0].question) : undefined)
           ?? str(args[1]);
         const event: NotificationEvent = { ...base, type: "input", detail };
-        // Carried even without a dialog (form/approve/oversized payload) so the
+        // Carried even without a dialog (an oversized payload) so the
         // matching retraction can still close this notification.
         if (frame.id !== undefined) event.requestId = String(frame.id);
         const mapped = notificationDialogFrame(frame);

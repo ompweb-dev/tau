@@ -38,8 +38,7 @@ function parseResponse(value: unknown): ExtensionUiResponse | null {
 
 /**
  * POST /api/notifications/answer — answer a pending blocking extension dialog
- * from a notification action. Looks up the live wrapper (also through moved-
- * session aliases) and never spawns pi. Behind the normal auth gate.
+ * from a notification action. Looks up the live wrapper and never spawns pi. Behind the normal auth gate.
  *
  * 200 {status:"answered"}      routed through the shared extension_ui_response command
  * 200 {status:"alreadySettled"} the request id is not pending
