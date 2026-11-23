@@ -48,7 +48,7 @@ pi child ──frames──▶ AgentSessionWrapper.handleFrame (lib/rpc-manager.
                           ▼
                  publishNotification() (lib/notification-hub.ts: presence-aware routing)
                     │                                   │
-     {kind: toast|os} on /api/agent/running/events   Web Push (web-push)
+     {kind: toast|os} on /api/events (notifications)   Web Push (web-push)
                     │                                   │
      SessionSidebar → window event → useNotifications   public/sw.js
 ```
@@ -154,7 +154,7 @@ push: iOS Safari revokes push permission for pushes that show nothing.
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/agent/running/events?clientId=` | GET | existing SSE stream, now also `{type: "notification", kind, event}` and `{type: "notification-dismiss", tag, sessionId, requestId}` |
+| `/api/events` (`notifications` channel, `POST /api/events {kind: "notifications", clientId}`) | GET | the multiplexed SSE stream; the channel carries `{type: "notification", kind, event}` and `{type: "notification-dismiss", tag, sessionId, requestId}` |
 | `/api/notifications/presence` | POST | presence report |
 | `/api/notifications/devices?deviceId=` | GET | VAPID public key, whether this device has a subscription |
 | `/api/notifications/devices` | PUT | `{deviceId, prefs, subscription?}`; an omitted subscription keeps the stored one |
