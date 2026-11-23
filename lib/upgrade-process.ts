@@ -1147,8 +1147,8 @@ export async function stopInstallLockingProcesses(installDir: string, sparePids:
   for (const [index, hit] of selection.stop.filter(inPhase).entries()) {
     // Stopping the previous one took time: its pid list may be stale, and a reused pid is someone else's process.
     if (index > 0) {
-      // A listing that fails skips the hit: the leftover check after the stop refuses what is still running.
-      const current = (await io.listProcesses().catch(() => [] as ProcessInfo[])).find((row) => row.pid === hit.pid);
+      // A listing that fails throws: a caller such as rollback must not take an unfinished cleanup as done.
+      const current = (await io.listProcesses()).find((row) => row.pid === hit.pid);
       if (!current || identity(current) !== identityOf.get(hit.pid)) continue;
     }
     await io.signalProcess(hit.pid, "SIGTERM");
