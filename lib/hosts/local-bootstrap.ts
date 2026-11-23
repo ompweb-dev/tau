@@ -9,7 +9,8 @@ export function localLinkUrl(env: NodeJS.ProcessEnv = process.env): { url: strin
   if (!port) return { skip: "TAU_PORT is not set (the dev server does not link the daemon)" };
   const bind = env.TAU_HOSTNAME || "127.0.0.1";
   // A wildcard bind also answers on 127.0.0.1; "localhost" is dialed by name, so it matches whichever family the server bound.
-  const host = ["0.0.0.0", "::", "[::]"].includes(bind) ? "127.0.0.1" : bind === "::1" ? "[::1]" : bind;
+  // Any other IPv6 literal is bracketed, so it is checked (and dialed) as a URL host.
+  const host = ["0.0.0.0", "::", "[::]"].includes(bind) ? "127.0.0.1" : bind.includes(":") && !bind.startsWith("[") ? `[${bind}]` : bind;
   if (!isLoopbackHost(host)) return { skip: `TAU_HOSTNAME=${bind} is not loopback, so the local daemon cannot link to it over http` };
   return { url: `http://${host}:${port}` };
 }
