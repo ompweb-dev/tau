@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Warm-paper form field primitives + confirmation dialog.
+ * Form field primitives + confirmation dialog.
  *
  * Tokens come from app/globals.css (--bg, --bg-panel, --border, --accent,
  * --accent-strong, --accent-hover, --text, --text-muted, --text-dim,

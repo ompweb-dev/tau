@@ -411,7 +411,7 @@ function UserMessageView({ message, cwd, onOpenFile, sessionId, entryId, onFork,
     <div
       style={{ marginBottom: 18, display: "flex", flexDirection: "column", alignItems: "flex-end", paddingRight: 6 }}
     >
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", maxWidth: "85%", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", maxWidth: "min(85%, 640px)", minWidth: 0 }}>
         <div
           className="chat-message-card"
           ref={bodyRef}
@@ -422,8 +422,7 @@ function UserMessageView({ message, cwd, onOpenFile, sessionId, entryId, onFork,
             maxWidth: "100%",
             minWidth: 0,
             background: "var(--user-bg)",
-            border: "none",
-            borderLeft: "3px solid var(--accent)",
+            border: "1px solid color-mix(in srgb, var(--accent) 18%, var(--border))",
             borderRadius: "var(--radius-card)",
             boxShadow: "none",
             padding: "8px 12px",
@@ -562,11 +561,11 @@ export function HeldMessageView({ held, hostLabel, onDelete, onRetry }: {
   const time = formatTime(held.createdAt, locale);
   return (
     <div data-held-message={held.state} style={{ marginBottom: 18, display: "flex", flexDirection: "column", alignItems: "flex-end", paddingRight: 6 }}>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", maxWidth: "85%", minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", maxWidth: "min(85%, 640px)", minWidth: 0 }}>
         <div
           className="chat-message-card"
           style={{
-            maxWidth: "100%", minWidth: 0, background: "var(--user-bg)", border: "none", borderLeft: "3px solid var(--accent)",
+            maxWidth: "100%", minWidth: 0, background: "var(--user-bg)", border: "1px solid color-mix(in srgb, var(--accent) 18%, var(--border))",
             borderRadius: "var(--radius-card)", padding: "8px 12px", fontSize: "var(--chat-user-font-size)",
             lineHeight: "var(--chat-line-height)", color: "var(--text-muted)", opacity: 0.7, wordBreak: "break-word",
             maxHeight: USER_BUBBLE_MAX_HEIGHT, overflowY: "auto",

@@ -197,7 +197,6 @@ export const RightPanel = memo(function RightPanel({
         style={{
           display: "flex",
           flexDirection: "column",
-          borderLeft: "1px solid var(--border)",
           background: "var(--bg)",
           zIndex: isCompactOverlay ? 210 : undefined,
           ...(!isMobile && rightPanelWidth !== null ? { "--right-panel-width": `${rightPanelWidth}px` } : {}),

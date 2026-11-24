@@ -2135,7 +2135,7 @@ export function AppShell({ appName }: { appName: string }) {
     `}
     </style>
     <a href="#main-content" className="skip-link">{t("appShell.skipToContent")}</a>
-    <div style={{ display: "flex", height: "100%", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden", background: "var(--bg)" }}>
+    <div className="app-frame" style={{ display: "flex", height: "100%", flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden", background: "var(--bg)" }}>
       {/* Left sidebar: hidden on full-page Settings */}
       {!settingsTab && (
         <>
@@ -2151,7 +2151,6 @@ export function AppShell({ appName }: { appName: string }) {
         inert={mobileSidebarReady && (!sidebarOpen || rightPanelIsModal) ? true : undefined}
         style={{
           background: "var(--bg-panel)",
-          borderRight: isMobile ? "none" : "1px solid var(--border)",
           display: "flex",
           flexDirection: "column",
           flexShrink: 0,

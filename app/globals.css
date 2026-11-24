@@ -182,29 +182,30 @@
   --font-serif-display: var(--font-serif);
 }
 
-/* Warm-paper palette (light). All text/background pairs verified WCAG AA
-   (≥4.5:1 for small text) — measured values noted per token. */
+/* Neutral palette (light): grey surfaces, blue accent. All text/background pairs verified
+   WCAG AA (≥4.5:1 for small text) — measured values noted per token. */
 :root {
-  --bg: #FAF9F6;
-  --bg-panel: #F2F0EA;
-  --bg-hover: #EAE7DF;
-  --bg-selected: #E5E0D4;
-  --border: #E2DDD2;
-  /* 13.94:1 on --bg, 12.88:1 on --bg-panel */
-  --text: #2B2823;
-  /* 5.65:1 on --bg, 5.22:1 on --bg-panel, 4.81:1 on --bg-hover */
-  --text-muted: #69635A;
-  /* 5.58:1 on --bg, 5.15:1 on --bg-panel, 4.75:1 on --bg-hover (darker than
-     muted by design — mirrors the previous palette's dim<muted relationship) */
-  --text-dim: #6A6458;
-  /* Terracotta. 5.61:1 as link on --bg, 5.18:1 on --bg-panel, 5.08:1 on --user-bg */
-  --accent: #B03E22;
-  /* White-on-fill button: 5.90:1 (passes AA for small text) */
-  --accent-strong: #B03E22;
-  --accent-hover: #96331B;
-  --user-bg: #F5EDE1;
-  --tool-bg: #F6F3ED;
-  --bg-subtle: rgba(60,50,35,0.04);
+  --bg: #FBFBFB;
+  --bg-panel: #F1F1F2;
+  --bg-hover: #E8E8EA;
+  --bg-selected: #E1E3E8;
+  --border: #DCDDE1;
+  /* 15.74:1 on --bg, 14.43:1 on --bg-panel, 12.69:1 on --bg-selected */
+  --text: #1F2023;
+  /* 6.36:1 on --bg, 5.83:1 on --bg-panel, 5.13:1 on --bg-selected */
+  --text-muted: #5B5D63;
+  /* 5.98:1 on --bg, 5.48:1 on --bg-panel, 4.82:1 on --bg-selected */
+  --text-dim: #5F6167;
+  /* Blue. 5.62:1 as link on --bg, 5.15:1 on --bg-panel, 4.95:1 on --user-bg, 4.53:1 on --bg-selected */
+  --accent: #2B5FCC;
+  /* White-on-fill button: 5.81:1 (passes AA for small text) */
+  --accent-strong: #2B5FCC;
+  --accent-hover: #234FAD;
+  --user-bg: #E8EDF5;
+  --tool-bg: #F4F4F5;
+  --bg-subtle: rgba(20,22,28,0.04);
+  /* The desktop frame the panels sit on as cards (no text on it). */
+  --bg-frame: #E4E5E8;
   --status-error: #B42318;
   --status-success: #18794E;
   --status-warning: #8A5A00;
@@ -320,32 +321,32 @@ html.midnight .tau-wordmark {
   18%, to { text-shadow: none; background-position: 0 0; }
 }
 
-/* Warm-ember palette (dark). Same AA verification as light. */
+/* Neutral palette (dark). Same AA verification as light. */
 html.dark:not([data-theme]):not(.midnight),
 html[data-theme="dark"],
 html.theme-dark {
   color-scheme: dark;
-  --bg: #1B1916;
-  --bg-panel: #231F1B;
-  --bg-hover: #2B2721;
-  --bg-selected: #332E26;
-  --border: #38322B;
-  /* 14.10:1 on --bg, 13.16:1 on --bg-panel */
-  --text: #EBE6DC;
-  /* 6.38:1 on --bg, 5.95:1 on --bg-panel, 5.40:1 on --bg-hover */
-  --text-muted: #A39B8E;
-  /* 5.27:1 on --bg, 4.92:1 on --bg-panel */
-  --text-dim: #938C81;
-  /* Lifted terracotta for dark surfaces: 5.96:1 as link on --bg.
-     As a white-text button fill it would fail AA, so filled buttons use
-     --accent-strong below (same split as the previous palette). */
-  --accent: #E07B54;
-  /* White-on-fill: 4.56:1 (passes AA) */
-  --accent-strong: #C2542E;
-  --accent-hover: #E89371;
-  --user-bg: #2C2721;
-  --tool-bg: #26221D;
-  --bg-subtle: rgba(235,225,210,0.05);
+  --bg: #1C1D20;
+  --bg-panel: #232427;
+  --bg-hover: #2B2D31;
+  --bg-selected: #33363B;
+  --border: #36383D;
+  /* 13.63:1 on --bg, 12.55:1 on --bg-panel, 9.81:1 on --bg-selected */
+  --text: #E6E7EA;
+  /* 7.16:1 on --bg, 6.59:1 on --bg-panel, 5.15:1 on --bg-selected */
+  --text-muted: #A6A9B0;
+  /* 6.51:1 on --bg, 6.00:1 on --bg-panel, 4.69:1 on --bg-selected */
+  --text-dim: #9EA1A8;
+  /* Lifted blue for dark surfaces: 7.04:1 as link on --bg, 5.07:1 on --bg-selected.
+     As a white-text button fill it would fail AA, so filled buttons use --accent-strong. */
+  --accent: #7AA8F7;
+  /* White-on-fill: 5.36:1 (passes AA) */
+  --accent-strong: #2F64D6;
+  --accent-hover: #99BCF9;
+  --user-bg: #2A2F38;
+  --tool-bg: #25272B;
+  --bg-subtle: rgba(230,232,240,0.05);
+  --bg-frame: #141518;
   --status-error: #FF8A80;
   --status-success: #69D5A5;
   --status-warning: #F0C36A;
@@ -854,17 +855,16 @@ html, body {
 
 :root {
   --font-mono: "Symbols Nerd Font Mono", var(--font-noto-mono), 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, 'PingFang SC', 'Microsoft YaHei', monospace;
-  /* Display serif for headings / session titles / modal titles / empty states.
-     Latin: Source Serif 4; CJK: the bundled Noto Serif SC subset, then system
-     CJK serifs for characters outside it or if a webfont fails. */
-  --font-serif: "Symbols Nerd Font Mono", var(--font-source-serif), 'Noto Serif SC', Georgia, 'Songti SC', 'Noto Serif CJK SC', 'Source Han Serif SC', 'SimSun', serif;
+  /* Display face for headings / session titles / modal titles / empty states: the UI's own
+     system sans (the name is historical: it was a serif). */
+  --font-serif: "Symbols Nerd Font Mono", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 pre, code {
   font-family: var(--font-mono);
 }
 
-/* Serif display utility: opt-in via class on headings, titles, empty states. */
+/* Display utility: opt-in via class on headings, titles, empty states. */
 .display-serif {
   font-family: var(--font-serif);
   font-weight: 600;
@@ -2330,6 +2330,15 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
   min-height: 28px;
   padding: 4px 10px;
   line-height: 20px;
+}
+/* Idle Send: a round icon button. Its border radius is here, not inline, so the labelled
+   primary actions (Queue, Steer, Stop, uploads pending) keep their rounded rectangle. */
+.composer-primary-action { border-radius: 8px; }
+.composer-primary-action.composer-send-icon {
+  min-width: 28px;
+  width: 28px;
+  padding: 0;
+  border-radius: 999px;
 }
 @container (max-width: 400px) {
   .composer-thinking-control > button > svg,
@@ -5100,4 +5109,31 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
 }
 .session-search-match:hover:not(:disabled) {
   background: var(--bg-hover);
+}
+
+/* Desktop workbench frame: the sidebar, the chat and the docked right panel are rounded cards
+   on a darker frame. Phones keep the full-bleed layout (the sidebar is a drawer there), and the
+   compact right panel is an overlay dialog, never a card. */
+.app-frame > .sidebar-container { border-right: 1px solid var(--border); }
+.right-panel-container { border-left: 1px solid var(--border); }
+@media (max-width: 640px) {
+  .app-frame > .sidebar-container { border-right: none; }
+}
+@media (min-width: 641px) {
+  .app-frame {
+    background: var(--bg-frame, var(--bg-panel)) !important;
+    padding: 6px;
+  }
+  .app-frame > .sidebar-container,
+  .app-frame > main,
+  .app-frame > .right-panel-container:not([role="dialog"]) {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .app-frame > main { background: var(--bg); }
+  .app-frame > .sidebar-container.sidebar-open { margin-right: 6px; }
+  .app-frame > .right-panel-container.right-panel-open:not([role="dialog"]) { margin-left: 6px; }
+  .app-frame > .sidebar-container.sidebar-closed,
+  .app-frame > .right-panel-container.right-panel-closed { border-width: 0; }
 }

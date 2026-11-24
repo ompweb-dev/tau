@@ -30,7 +30,7 @@ export type ThemeDefinition = {
 };
 
 export const LIGHT_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "light", name: "Light (default)", mode: "light", bg: "#FAF9F6", panel: "#F2F0EA", accent: "#B03E22" },
+  { id: "light", name: "Light (default)", mode: "light", bg: "#FBFBFB", panel: "#F1F1F2", accent: "#2B5FCC" },
   { id: "one-light", name: "One Light", mode: "light", bg: "#FAFAFA", panel: "#F0F0F0", accent: "#2F65D9" },
   { id: "catppuccin-latte", name: "Catppuccin Latte", mode: "light", bg: "#EFF1F5", panel: "#E6E9EF", accent: "#1E66F5" },
   { id: "rose-pine-dawn", name: "Rosé Pine Dawn", mode: "light", bg: "#FAF4ED", panel: "#FFFAF3", accent: "#286983" },
@@ -38,7 +38,7 @@ export const LIGHT_THEMES: ReadonlyArray<ThemeDefinition> = [
 
 export const DARK_THEMES: ReadonlyArray<ThemeDefinition> = [
   { id: "midnight", name: "Midnight", mode: "dark", bg: "#000000", panel: "#0A0A0C", accent: "#EC5BAB" },
-  { id: "dark", name: "Dark", mode: "dark", bg: "#1B1916", panel: "#231F1B", accent: "#E07B54" },
+  { id: "dark", name: "Dark", mode: "dark", bg: "#1C1D20", panel: "#232427", accent: "#7AA8F7" },
   { id: "dracula", name: "Dracula", mode: "dark", bg: "#282A36", panel: "#21222C", accent: "#FF79C6" },
   { id: "harbor", name: "Harbor", mode: "dark", bg: "#1B1B1B", panel: "#242424", accent: "#E75A50" },
   { id: "one-dark-pro", name: "One Dark Pro", mode: "dark", bg: "#282C34", panel: "#21252B", accent: "#61AFEF" },

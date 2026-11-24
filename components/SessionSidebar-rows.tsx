@@ -855,26 +855,13 @@ const SessionItem = memo(function SessionItem({
         position: "relative",
         overflow: "hidden",
         background: rowBackground,
+        borderRadius: "var(--radius-control)",
+        boxShadow: isSelected ? "inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent)" : "none",
         opacity: deleting ? 0.5 : 1,
         cursor: renaming ? "default" : "pointer",
         transition: "background var(--dur-fast) var(--ease-out-warm), opacity var(--dur-fast) var(--ease-out-warm)",
       }}
     >
-      {isSelected && (
-        <span
-          aria-hidden="true"
-          style={{
-            position: "absolute",
-            left: 20 + depth * 14,
-            top: 0,
-            bottom: 0,
-            width: 2,
-            borderRadius: 1,
-            background: "var(--accent)",
-            pointerEvents: "none",
-          }}
-        />
-      )}
       {onToggleMatches && !renaming && (
         <button
           type="button"
