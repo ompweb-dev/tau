@@ -98,7 +98,8 @@ const USER_BUBBLE_MAX_HEIGHT = 300;
 // A text-only user message collapses to a single-line preview by default (the
 // existing "Show full input" toggle expands it). Messages with images keep the
 // taller cap so their thumbnails stay visible while collapsed.
-const USER_BUBBLE_COLLAPSED_HEIGHT = "calc(var(--chat-user-font-size) * var(--chat-line-height) + 16px)";
+// One line plus the 8px top and bottom padding and the 1px top and bottom border (border-box sizing).
+const USER_BUBBLE_COLLAPSED_HEIGHT = "calc(var(--chat-user-font-size) * var(--chat-line-height) + 18px)";
 
 function formatMessageSize(chars: number): string {
   return chars >= 1_000_000 ? `${(chars / 1_000_000).toFixed(1)} MB` : `${Math.round(chars / 1_000)} KB`;
