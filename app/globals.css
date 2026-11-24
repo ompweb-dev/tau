@@ -204,8 +204,6 @@
   --user-bg: #E8EDF5;
   --tool-bg: #F4F4F5;
   --bg-subtle: rgba(20,22,28,0.04);
-  /* The desktop frame the panels sit on as cards (no text on it). */
-  --bg-frame: #E4E5E8;
   --status-error: #B42318;
   --status-success: #18794E;
   --status-warning: #8A5A00;
@@ -214,6 +212,10 @@
   --on-accent: #FFFFFF;
   --overlay-backdrop: color-mix(in srgb, var(--text) 24%, transparent);
 }
+
+/* The desktop frame the panels sit on as cards (no text on it): only the neutral light theme sets
+   it here, so the other themes, which inherit :root, fall back to their --bg-panel. */
+html.theme-light, html[data-theme="light"] { --bg-frame: #E4E5E8; }
 
 /* Midnight theme (dark). Pure-black terminal look with a magenta/cyan
    dual accent, ported from https://omp.sh. Text/background pairs verified
@@ -276,6 +278,7 @@ html.midnight body {
 }
 html.midnight {
   --font-mono: "Symbols Nerd Font Mono", var(--font-jb-mono), "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-serif: "Symbols Nerd Font Mono", var(--font-geist), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* Midnight link sweep: underline draws itself left-to-right on hover/focus. */
@@ -5124,6 +5127,16 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
     background: var(--bg-frame, var(--bg-panel)) !important;
     padding: 6px;
   }
+  /* The gap and border change with the width, not before it (resizing stays instant). */
+  .app-frame > .sidebar-container:not(.sidebar-resizing),
+  .app-frame > .right-panel-container:not(.right-panel-resizing) {
+    transition-property: width, min-width, margin, border-width;
+  }
+  /* The card's two borders come out of the sidebar's width: its content is that much narrower. */
+  .app-frame > .sidebar-container > * {
+    width: calc(var(--sidebar-width, 260px) - 2px);
+    min-width: calc(var(--sidebar-width, 260px) - 2px);
+  }
   .app-frame > .sidebar-container,
   .app-frame > main,
   .app-frame > .right-panel-container:not([role="dialog"]) {
@@ -5136,4 +5149,14 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   .app-frame > .right-panel-container.right-panel-open:not([role="dialog"]) { margin-left: 6px; }
   .app-frame > .sidebar-container.sidebar-closed,
   .app-frame > .right-panel-container.right-panel-closed { border-width: 0; }
+}
+@media (min-width: 641px) and (max-width: 959px) {
+  /* The overlay file panel starts below the top bar, which the frame's inset and the chat card's border push down. */
+  .app-frame > .right-panel-container.right-panel-open { top: calc(var(--shell-topbar-height) + 7px); }
+}
+@media (max-width: 640px) and (pointer: coarse) and (hover: none) {
+  html:not([data-touch-targets="compact"]):not([data-touch-targets="accessible"]) .composer-primary-action.composer-send-icon {
+    width: 40px;
+    min-width: 40px;
+  }
 }

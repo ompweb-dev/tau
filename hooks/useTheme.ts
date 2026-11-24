@@ -81,16 +81,17 @@ function subscribe(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
+/** No stored choice follows the system's light or dark setting (the neutral palettes). */
 function storedPreference(): ThemePreference {
-  if (typeof window === "undefined") return "midnight";
+  if (typeof window === "undefined") return "system";
   try {
     const value = localStorage.getItem(STORAGE_KEY);
     if (value && VALID_PREFERENCES[value]) {
       return value as ThemePreference;
     }
-    return "midnight";
+    return "system";
   } catch {
-    return "midnight";
+    return "system";
   }
 }
 
