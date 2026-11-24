@@ -5130,7 +5130,7 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   /* The gap and border change with the width, not before it (resizing stays instant). */
   .app-frame > .sidebar-container:not(.sidebar-resizing),
   .app-frame > .right-panel-container:not(.right-panel-resizing) {
-    transition-property: width, min-width, margin, border-width;
+    transition-property: width, min-width, margin;
   }
   /* The card's two borders come out of the sidebar's width: its content is that much narrower. */
   .app-frame > .sidebar-container > * {
@@ -5152,7 +5152,11 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
 }
 @media (min-width: 641px) and (max-width: 959px) {
   /* The overlay file panel starts below the top bar, which the frame's inset and the chat card's border push down. */
-  .app-frame > .right-panel-container.right-panel-open { top: calc(var(--shell-topbar-height) + 7px); }
+  .app-frame > .right-panel-container.right-panel-open {
+    top: calc(var(--shell-topbar-height) + 7px);
+    right: 6px;
+    bottom: 6px;
+  }
 }
 @media (max-width: 640px) and (pointer: coarse) and (hover: none) {
   html:not([data-touch-targets="compact"]):not([data-touch-targets="accessible"]) .composer-primary-action.composer-send-icon {

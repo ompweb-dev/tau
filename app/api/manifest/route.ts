@@ -16,8 +16,8 @@ const manifest = {
   start_url: "/",
   scope: "/",
   display: "standalone",
-  background_color: "#000000",
-  theme_color: "#000000",
+  background_color: "#F1F1F2",
+  theme_color: "#F1F1F2",
   icons: [
     { src: pngDataUrl("icon-192.png"), sizes: "192x192", type: "image/png" },
     { src: pngDataUrl("icon.png"), sizes: "512x512", type: "image/png" },

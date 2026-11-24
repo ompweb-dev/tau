@@ -30,7 +30,7 @@ export type ThemeDefinition = {
 };
 
 export const LIGHT_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "light", name: "Light (default)", mode: "light", bg: "#FBFBFB", panel: "#F1F1F2", accent: "#2B5FCC" },
+  { id: "light", name: "Light", mode: "light", bg: "#FBFBFB", panel: "#F1F1F2", accent: "#2B5FCC" },
   { id: "one-light", name: "One Light", mode: "light", bg: "#FAFAFA", panel: "#F0F0F0", accent: "#2F65D9" },
   { id: "catppuccin-latte", name: "Catppuccin Latte", mode: "light", bg: "#EFF1F5", panel: "#E6E9EF", accent: "#1E66F5" },
   { id: "rose-pine-dawn", name: "Rosé Pine Dawn", mode: "light", bg: "#FAF4ED", panel: "#FFFAF3", accent: "#286983" },
@@ -150,7 +150,7 @@ function applyTheme(preference: ThemePreference): void {
 }
 
 function getServerSnapshot(): ThemePreference {
-  return "midnight";
+  return "system";
 }
 
 type ToggleOrigin = { x: number; y: number };
@@ -170,11 +170,9 @@ function motionDurationMs(variable: string, fallback: number): number {
 
 export function useTheme() {
   const preference = useSyncExternalStore(subscribe, storedPreference, getServerSnapshot);
-  // The OS preference is browser-only. Deferring it until after hydration keeps
-  // the initial client tree identical to the server's `"midnight"` (Midnight) snapshot.
-  const [hydrated, setHydrated] = useState(false);
-  const [osDark, setOsDark] = useState(false);
-  useEffect(() => { setHydrated(true); }, []);
+  // Read the OS preference in the first render: the client renders with createRoot (no hydration to match), and a
+  // dark-OS user on the System default must not get a light first frame in every isDark consumer.
+  const [osDark, setOsDark] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches);
   // Track the OS color scheme in state so an OS light/dark flip changes the
   // snapshot and re-renders isDark consumers, even when the stored preference
   // itself ("system") is unchanged. Registered unconditionally at subscription
@@ -188,8 +186,7 @@ export function useTheme() {
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, []);
-  const prefersDark = hydrated && osDark;
-  const theme = resolveTheme(preference, prefersDark);
+  const theme = resolveTheme(preference, osDark);
   // Heal the DOM class on mount: stored preferences can predate the current
   // default, and pre-paint only runs on full page loads —
   // without this, hot-reloaded windows keep stale classes until restarted.

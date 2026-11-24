@@ -140,3 +140,20 @@ test("browser chrome follows the selected theme and only follows OS changes in s
   hook = renderHook(() => useTheme());
   assertTheme("light", "#F1F1F2", false, ["theme-light"], "system");
 });
+
+test("with no stored choice the theme follows the OS from the first render", (t) => {
+  const originalPreference = localStorage.getItem("tau-theme");
+  const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
+  localStorage.removeItem("tau-theme");
+  const media = Object.assign(new window.EventTarget(), { matches: true });
+  Object.defineProperty(window, "matchMedia", { configurable: true, writable: true, value: () => media });
+  t.after(() => {
+    cleanup();
+    if (originalPreference !== null) localStorage.setItem("tau-theme", originalPreference);
+    if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
+    else delete window.matchMedia;
+  });
+  const seen = [];
+  renderHook(() => { const value = useTheme(); seen.push([value.preference, value.theme, value.isDark]); return value; });
+  assert.deepEqual(seen[0], ["system", "dark", true], "a dark OS gets dark on the very first render, not a light frame");
+});
