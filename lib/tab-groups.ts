@@ -149,11 +149,13 @@ export function resizeSplit(layout: TabLayout, splitId: string, sizes: number[])
 
 /**
  * Moves the boundary after child `index` of a split by `delta` (a share),
- * leaving either side at least MIN_SHARE; a side already narrower never shrinks.
+ * leaving either side at least MIN_SHARE. A side already narrower never
+ * shrinks, except toward the middle of a pair narrower than two minimums.
+ * The floors come from `sizes`: a drag passes its starting sizes.
  */
 export function moveBoundary(sizes: readonly number[], index: number, delta: number): number[] {
   const pair = sizes[index] + sizes[index + 1];
-  const floor = (size: number) => Math.min(MIN_SHARE, size);
+  const floor = (size: number) => Math.min(MIN_SHARE, size, pair / 2);
   const left = Math.min(pair - floor(sizes[index + 1]), Math.max(floor(sizes[index]), sizes[index] + delta));
   const next = [...sizes];
   next[index] = left;
@@ -182,8 +184,9 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
   const keys = Object.fromEntries(Object.entries(prev.keys).filter(([id]) => openIds.includes(id)));
   if (selected) {
     if (prev.sessionKey === sessionKey) {
-      // The key comes from before the filter: the previous identity's tab may be gone already.
-      keys[selected] = prev.selected ? prev.keys[prev.selected] ?? prev.selected : `${selected}~${sessionKey}`;
+      // A chat with a key keeps it. Otherwise it carries the previous identity's
+      // key, read before the filter: that tab may be gone already.
+      keys[selected] ??= prev.selected ? prev.keys[prev.selected] ?? prev.selected : `${selected}~${sessionKey}`;
     } else if (prev.selected === selected || !shownIds.has(selected)) {
       keys[selected] = `${selected}~${sessionKey}`;
     }

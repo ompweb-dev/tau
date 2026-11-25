@@ -2066,8 +2066,11 @@ export function AppShell({ appName }: { appName: string }) {
         const candidates = [next, ...rest.slice(index), ...rest.slice(0, index).reverse(), ...otherShownChats, ...stripIds];
         selected = candidates.map((candidate) => candidate ? chatTabById(candidate) : undefined)
           .find((candidate) => candidate && !sameSessionTarget(candidate, session));
-        // A chat its group keeps behind another tab is brought to the front there.
-        if (selected && !rest.includes(chatTabId(selected)) && !otherShownChats.includes(chatTabId(selected))) {
+        // A chat its group keeps behind another chat is brought to the front
+        // there, so the strip names the chat the group shows (behind a file it
+        // stays behind).
+        const behind = selected && groupOfTab(tabLayout, chatTabId(selected));
+        if (selected && behind && behind !== group && behind.active && !fileTabIds.has(behind.active) && behind.active !== chatTabId(selected)) {
           const front = chatTabId(selected);
           setTabLayout((layout) => activateTab(layout, front));
         }
@@ -2785,9 +2788,10 @@ export function AppShell({ appName }: { appName: string }) {
               : backgroundChat ? chatTabLabel(backgroundChat) : undefined;
             const groupIndex = tabGroups.indexOf(group);
             // Pointing at another group, or typing in it, shows its tab (not a
-            // chat's own programmatic focus, nor a tab's close button).
-            const focusGroup = (event: { target: EventTarget }) => {
-              if (focused || !group.active) return;
+            // chat's own programmatic focus, nor a tab's close button, nor Esc,
+            // which the global Esc then ignores there).
+            const focusGroup = (event: { target: EventTarget; key?: string }) => {
+              if (focused || !group.active || event.key === "Escape") return;
               if (event.target instanceof Element && event.target.closest('[role="tab"] button')) return;
               selectStripTab(group.active);
             };
