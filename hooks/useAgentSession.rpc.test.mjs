@@ -5577,7 +5577,7 @@ test("a retained foreign-source tab cannot mention its path into the selected wo
   const foreignMention = view.queryByRole("button", { name: translate("appShell.mentionFileInChat") });
   if (foreignMention) await act(async () => { fireEvent.click(foreignMention); });
   // The file tab covers the chat, which stays mounted (hidden) behind it.
-  assert.equal(view.container.querySelector("#workspace-chat textarea").value, "Worker two draft", "a source-relative path must not be inserted into another worker's composer");
+  assert.equal(view.container.querySelector('[id^="workspace-chat-"] textarea').value, "Worker two draft", "a source-relative path must not be inserted into another worker's composer");
   assert.equal(foreignMention === null || foreignMention.disabled, true, "the foreign-source action is unavailable");
   await act(async () => { fireEvent.click(view.getByRole("tab", { name: "Worker one conversation" })); await sleep(60); });
   // Its chat tab shows the chat; the file tab shows the file again.
@@ -5585,7 +5585,7 @@ test("a retained foreign-source tab cannot mention its path into the selected wo
   const sourceMention = view.getByRole("button", { name: translate("appShell.mentionFileInChat") });
   assert.equal(sourceMention.disabled, false, "returning to the source session restores the action");
   await act(async () => {
-    const composer = view.container.querySelector("#workspace-chat textarea");
+    const composer = view.container.querySelector('[id^="workspace-chat-"] textarea');
     composer.focus();
     composer.setSelectionRange(composer.value.length, composer.value.length);
     fireEvent.click(sourceMention);
@@ -5612,13 +5612,69 @@ test("closing the shown chat under a file tab keeps the file and shows the neigh
     await sleep(60);
   });
   await until(() => view.queryByText("SECOND OWNER CONTENT"), "the file opens over the chat");
-  assert.equal(view.container.querySelector("#workspace-chat").hasAttribute("inert"), true, "the covered chat is inert");
+  assert.equal(view.container.querySelector('[id^="workspace-chat-"]').hasAttribute("inert"), true, "the covered chat is inert");
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(60); });
   assert.equal(view.queryByRole("tab", { name: "Worker two conversation" }), null);
   assert.equal(view.getByRole("tab", { name: /report\.txt/ }).getAttribute("aria-selected"), "true", "the file stays shown");
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "report.txt" }) })); await sleep(60); });
   assert.equal(view.getByRole("tab", { name: "Worker one conversation" }).getAttribute("aria-selected"), "true");
   assert.equal(view.getByRole("textbox").value, "Worker one draft", "the neighbouring conversation is the chat behind it");
+  view.unmount();
+});
+
+test("a split shows two chats side by side; focusing either remounts neither, and closing one merges the groups", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.change(view.getByRole("textbox"), { target: { value: "Worker one draft" } }); });
+  await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
+  const shownComposer = view.container.querySelector("textarea");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  const shownSession = () => new URLSearchParams(window.location.search).get("session");
+
+  const groupOf = (name) => view.getByRole("tab", { name }).closest("[data-group-id]");
+  const one = groupOf("Worker one conversation");
+  const two = groupOf("Worker two conversation");
+  assert.notEqual(one, two, "the shown chat moved into a group of its own");
+  assert.equal(view.getAllByRole("separator", { name: translate("appShell.resizeTabGroups") }).length, 1);
+  const composerOne = one.querySelector("textarea");
+  const composerTwo = two.querySelector("textarea");
+  assert.equal(composerTwo, shownComposer, "splitting does not remount the shown chat");
+  assert.equal(composerOne.value, "Worker one draft", "the other group shows the other chat");
+  assert.equal(shownSession(), "worker-two");
+
+  await act(async () => { fireEvent.pointerDown(composerOne); await sleep(60); });
+  assert.equal(shownSession(), "worker-one", "pointing at a group shows its chat");
+  assert.equal(one.querySelector("textarea"), composerOne, "focusing a group does not remount its chat");
+  assert.equal(two.querySelector("textarea"), composerTwo, "nor the chat it leaves");
+  await act(async () => { composerTwo.focus(); await sleep(60); });
+  assert.equal(shownSession(), "worker-one", "a chat's own focus call does not switch groups");
+  await act(async () => { fireEvent.keyDown(composerTwo, { key: "a" }); await sleep(60); });
+  assert.equal(shownSession(), "worker-two", "typing in a group shows its chat");
+
+  // A file shown over a group's chat keeps that chat mounted when another group takes focus.
+  await act(async () => { fireEvent.pointerDown(composerOne); await sleep(60); });
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "group-open", sessionId: "worker-one", hostId: "h1", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(60);
+  });
+  await until(() => view.queryByText("FIRST OWNER CONTENT"), "the file opens over the focused group's chat");
+  assert.ok(one.contains(view.getByRole("tab", { name: /report\.txt/ })), "in the focused group");
+  await act(async () => { fireEvent.pointerDown(composerTwo); await sleep(60); });
+  assert.equal(shownSession(), "worker-two");
+  assert.equal(one.querySelector("textarea"), composerOne, "the chat under the file stays mounted");
+  assert.equal(composerOne.closest('[id^="workspace-chat-"]').hasAttribute("inert"), true, "and inert while covered");
+
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(60); });
+  assert.equal(view.queryByRole("separator", { name: translate("appShell.resizeTabGroups") }), null, "the emptied group is gone");
+  assert.equal(view.getAllByRole("tablist", { name: translate("appShell.openTabs") }).length, 1);
+  assert.equal(shownSession(), "worker-one", "closing a group's shown last tab selects the chat the other group keeps");
+  assert.equal(one.querySelector("textarea"), composerOne, "without remounting it");
   view.unmount();
 });
 

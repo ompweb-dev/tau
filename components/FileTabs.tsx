@@ -96,19 +96,24 @@ export const FileTabToolbar = memo(function FileTabToolbar({ activeFileTab, file
 });
 
 /** Every open file's viewer, kept mounted so switching tabs preserves scroll and preview state. */
-export const FileTabViews = memo(function FileTabViews({ fileTabs, activeFileTab, active, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile }: {
+export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabIds, activeFileTab, focused, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile }: {
+  panelId: string;
   fileTabs: Tab[];
+  /** The group's tabs: its files are the views. */
+  tabIds: string[];
+  /** The group's shown file, if a file (not a chat) is its shown tab: the views then cover the chat. */
   activeFileTab: Tab | null;
-  /** A file tab, not a chat, is the shown tab: the views cover the chat. */
-  active: boolean;
+  /** The views' group is the focused one: only there can lines be mentioned. */
+  focused: boolean;
   activeFileMatchesSource: boolean;
   explorerRefreshKey: number;
   onMentionLines: (relativePath: string, startLine: number, endLine: number) => void;
   onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource) => void;
 }) {
+  const active = activeFileTab !== null;
   return (
-    <div id="workspace-file-tabs" role="tabpanel" aria-label={activeFileTab?.filePath} style={{ display: active ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}>
-      {fileTabs.map((tab) => (
+    <div id={panelId} role="tabpanel" aria-label={activeFileTab?.filePath} style={{ display: active ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}>
+      {fileTabs.filter((tab) => tabIds.includes(tab.id)).map((tab) => (
         <div key={tab.id} style={{ display: tab.id === activeFileTab?.id ? "block" : "none", height: "100%" }}>
           <FileViewer
             filePath={tab.filePath}
@@ -117,7 +122,7 @@ export const FileTabViews = memo(function FileTabViews({ fileTabs, activeFileTab
             sourceSessionId={tab.sourceSessionId}
             gitRefreshKey={explorerRefreshKey}
             active={tab.id === activeFileTab?.id && active}
-            onMentionLines={tab.id === activeFileTab?.id && active && activeFileMatchesSource ? onMentionLines : undefined}
+            onMentionLines={tab.id === activeFileTab?.id && active && focused && activeFileMatchesSource ? onMentionLines : undefined}
             onOpenFile={(filePath) => onOpenFile(
               filePath,
               getFileName(filePath),
