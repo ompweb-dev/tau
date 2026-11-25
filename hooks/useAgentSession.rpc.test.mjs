@@ -5779,6 +5779,15 @@ test("the strips and groups come back after a reload, and a tab whose session we
   await settle();
   await until(() => new URLSearchParams(window.location.search).get("session") === "worker-two", "the focused group's chat is selected");
   view.unmount();
+
+  // An address naming another conversation wins over the restored focus.
+  window.history.replaceState(null, "", "?session=worker-one");
+  view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" })?.getAttribute("aria-selected") === "true", "the address's conversation is shown");
+  await act(async () => { window.dispatchEvent(new Event("online")); await sleep(80); });
+  assert.equal(new URLSearchParams(window.location.search).get("session"), "worker-one", "and stays in the address");
+  view.unmount();
 });
 
 test("a file opened over the focused composer takes focus, and closing it gives focus back", async (t) => {

@@ -218,6 +218,9 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
  * current). A tab never listed yet (a session newer than the list) stays. The
  * same array when nothing changed.
  */
+/** What a chat tab uses of its session (label, where it runs); counters and timestamps alone change no tab. */
+const TAB_SESSION_FIELDS = ["name", "firstMessage", "cwd", "path", "hostId", "projectRoot", "projectKey", "poolId", "projectId", "worktreeBranch"];
+
 export function syncChatTabs<T extends { name?: string; firstMessage: string; modified?: string }>(
   tabs: T[], keyOf: (tab: T) => string, listed: ReadonlyMap<string, T>, before: ReadonlySet<string>,
   keep: (tab: T) => boolean, live: (tab: T) => boolean,
@@ -231,7 +234,7 @@ export function syncChatTabs<T extends { name?: string; firstMessage: string; mo
       changed = true;
       return [];
     }
-    if (JSON.stringify(found) === JSON.stringify(tab)) return [tab];
+    if (TAB_SESSION_FIELDS.every((field) => (found as Record<string, unknown>)[field] === (tab as Record<string, unknown>)[field])) return [tab];
     if (live(tab) && !(Date.parse(found.modified ?? "") > Date.parse(tab.modified ?? ""))) return [tab];
     changed = true;
     return [found];
