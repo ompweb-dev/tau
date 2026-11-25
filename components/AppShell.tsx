@@ -20,7 +20,7 @@ import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
 import { TabBar, type StripTab, type Tab } from "./TabBar";
 import { TabLayoutView } from "./TabLayoutView";
-import { activateTab, groupOfTab, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
+import { activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
 import { FileTabToolbar, FileTabViews } from "./FileTabs";
 import { getFileIcon } from "./FileIcons";
 import { type FileExplorerHandle } from "./FileExplorer";
@@ -2022,27 +2022,11 @@ export function AppShell({ appName }: { appName: string }) {
   // Chats the groups show (as of their last activation).
   const shownChatIds = new Set(tabGroups.flatMap((group) => group.active && !fileTabIds.has(group.active) ? [group.active] : []));
 
-  // Mount keys of the chats the groups show. A chat keeps its key while it
-  // turns from the selected chat into another group's and back, so focusing a
-  // group remounts nothing. A sessionKey bump remounts the selected chat (a
-  // switch to a chat another group already shows keeps that mount), and the
-  // selected chat changing identity without one (a new chat's first send, an
-  // Edit move) keeps its mount, as the single chat keyed by sessionKey did.
-  const [chatMounts, setChatMounts] = useState({ selected: selectedChatId, sessionKey, keys: {} as Record<string, string> });
-  let chatMountKeys = chatMounts.keys;
-  if (chatMounts.selected !== selectedChatId || chatMounts.sessionKey !== sessionKey) {
-    // Only open chats keep a key.
-    chatMountKeys = Object.fromEntries(Object.entries(chatMounts.keys).filter(([id]) => stripIds.includes(id)));
-    if (selectedChatId) {
-      if (chatMounts.sessionKey === sessionKey) {
-        chatMountKeys[selectedChatId] = chatMounts.selected ? chatMountKeys[chatMounts.selected] ?? chatMounts.selected : `${selectedChatId}~${sessionKey}`;
-      } else if (chatMounts.selected === selectedChatId || !shownChatIds.has(selectedChatId)) {
-        chatMountKeys[selectedChatId] = `${selectedChatId}~${sessionKey}`;
-      }
-    }
-    setChatMounts({ selected: selectedChatId, sessionKey, keys: chatMountKeys });
-  }
-  const chatMountKey = (id: string) => chatMountKeys[id] ?? id;
+  // Mount keys of the chats the groups show: stable across group focus (see nextChatMounts).
+  const [chatMounts, setChatMounts] = useState<ChatMounts>({ selected: selectedChatId, sessionKey, keys: {} });
+  const currentChatMounts = nextChatMounts(chatMounts, selectedChatId, sessionKey, stripIds, shownChatIds);
+  if (currentChatMounts !== chatMounts) setChatMounts(currentChatMounts);
+  const chatMountKey = (id: string) => currentChatMounts.keys[id] ?? id;
 
   const chatIcon = <MessageSquare size={13} strokeWidth={2} aria-hidden="true" />;
   const stripTabInfo = new Map<string, Omit<StripTab, "panelId"> & { file: boolean }>([
@@ -2079,9 +2063,14 @@ export function AppShell({ appName }: { appName: string }) {
         // The selected conversation closed: select the tab taking its place,
         // else the nearest conversation of its group, else any; else a new
         // chat in its workspace. A file shown over it stays shown.
-        const candidates = [next, ...rest.slice(index), ...rest.slice(0, index).reverse(), ...otherShownChats];
+        const candidates = [next, ...rest.slice(index), ...rest.slice(0, index).reverse(), ...otherShownChats, ...stripIds];
         selected = candidates.map((candidate) => candidate ? chatTabById(candidate) : undefined)
           .find((candidate) => candidate && !sameSessionTarget(candidate, session));
+        // A chat its group keeps behind another tab is brought to the front there.
+        if (selected && !rest.includes(chatTabId(selected)) && !otherShownChats.includes(chatTabId(selected))) {
+          const front = chatTabId(selected);
+          setTabLayout((layout) => activateTab(layout, front));
+        }
         if (selected) handleSelectSession(selected);
         else handleNewSession(randomUUID(), session.poolId ? null : session.cwd, session.hostId, poolProjectOf(session));
         // Both of those show the chat; batched, this wins.
@@ -2818,7 +2807,7 @@ export function AppShell({ appName }: { appName: string }) {
               );
             };
             return (
-              <div onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div data-group-focused={focused} onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 {groupTabs.length > 0 && (
                   <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", filter: focused || tabGroups.length === 1 ? undefined : "grayscale(1)" }}>
                     {isMobile && tabGroups.length > 1 && (

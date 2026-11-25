@@ -15,6 +15,14 @@ test("Esc stops the chat in front even after another chat's handler is cleared",
   clearBehind();
   document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   assert.deepEqual(stopped, ["front"]);
+  // Esc in a tab group that is not the shown one is not for the shown chat.
+  const otherGroup = document.createElement("div");
+  otherGroup.dataset.groupFocused = "false";
+  otherGroup.append(document.createElement("button"));
+  document.body.append(otherGroup);
+  otherGroup.firstChild.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.deepEqual(stopped, ["front"]);
+  otherGroup.remove();
   clearFront();
   view.unmount();
   cleanup();

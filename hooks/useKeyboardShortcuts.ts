@@ -220,6 +220,8 @@ export function useGlobalKeyboardShortcuts(
       // ---- Esc: stop agent ----
       if (e.key === "Escape") {
         if (!globalAbortHandler) return;
+        // The handler is the shown chat's; Esc in another tab group is not for it.
+        if (e.target instanceof Element && e.target.closest('[data-group-focused="false"]')) return;
 
         const tag = (e.target as HTMLElement)?.tagName;
         // Let textarea/input handle Esc internally (ChatInput menus / stop).

@@ -149,14 +149,44 @@ export function resizeSplit(layout: TabLayout, splitId: string, sizes: number[])
 
 /**
  * Moves the boundary after child `index` of a split by `delta` (a share),
- * leaving either side at least MIN_SHARE (or half the pair, when the pair is narrower).
+ * leaving either side at least MIN_SHARE; a side already narrower never shrinks.
  */
 export function moveBoundary(sizes: readonly number[], index: number, delta: number): number[] {
   const pair = sizes[index] + sizes[index + 1];
-  const min = Math.min(MIN_SHARE, pair / 2);
-  const left = Math.min(pair - min, Math.max(min, sizes[index] + delta));
+  const floor = (size: number) => Math.min(MIN_SHARE, size);
+  const left = Math.min(pair - floor(sizes[index + 1]), Math.max(floor(sizes[index]), sizes[index] + delta));
   const next = [...sizes];
   next[index] = left;
   next[index + 1] = pair - left;
   return next;
+}
+
+/** The React keys of the chats the groups show, and what they were worked out for. */
+export interface ChatMounts {
+  selected: string | null;
+  sessionKey: number;
+  keys: Record<string, string>;
+}
+
+/**
+ * Mount keys after a change of the selected chat or of AppShell's sessionKey.
+ * A chat keeps its key while it turns from the selected chat into another
+ * group's and back, so focusing a group remounts nothing. A sessionKey bump
+ * remounts the selected chat, unless the bump comes with switching to a chat
+ * a group already shows (`shownIds`). The selected chat changing identity
+ * without a bump (a new chat's first send, an Edit move) keeps its mount.
+ * Only open chats (`openIds`) keep a key.
+ */
+export function nextChatMounts(prev: ChatMounts, selected: string | null, sessionKey: number, openIds: readonly string[], shownIds: ReadonlySet<string>): ChatMounts {
+  if (prev.selected === selected && prev.sessionKey === sessionKey) return prev;
+  const keys = Object.fromEntries(Object.entries(prev.keys).filter(([id]) => openIds.includes(id)));
+  if (selected) {
+    if (prev.sessionKey === sessionKey) {
+      // The key comes from before the filter: the previous identity's tab may be gone already.
+      keys[selected] = prev.selected ? prev.keys[prev.selected] ?? prev.selected : `${selected}~${sessionKey}`;
+    } else if (prev.selected === selected || !shownIds.has(selected)) {
+      keys[selected] = `${selected}~${sessionKey}`;
+    }
+  }
+  return { selected, sessionKey, keys };
 }
