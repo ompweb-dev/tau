@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Warm-paper toast system on @base-ui/react Toast.
+ * Toast system on @base-ui/react Toast.
  *
  * Usage anywhere (React or not):
  *   import { toast } from "./ui/toast";

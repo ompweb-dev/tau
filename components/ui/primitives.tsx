@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Warm-paper UI primitives on top of @base-ui/react.
+ * UI primitives on top of @base-ui/react.
  * Theming contract: CSS variables from globals.css (--bg, --accent, --radius-*,
  * --shadow-*, --dur-*, --ease-out-warm). No hardcoded colors here.
  */

@@ -124,19 +124,36 @@ test("browser chrome follows the selected theme and only follows OS changes in s
   await act(() => hook.result.current.setTheme("catppuccin-latte"));
   assertTheme("catppuccin-latte", "#E6E9EF", false, ["theme-catppuccin-latte"]);
   await act(() => hook.result.current.setTheme("system"));
-  assertTheme("dark", "#231F1B", true, ["dark", "theme-dark"], "system");
+  assertTheme("dark", "#232427", true, ["dark", "theme-dark"], "system");
   await changeOS(false);
-  assertTheme("light", "#F2F0EA", false, ["theme-light"], "system");
+  assertTheme("light", "#F1F1F2", false, ["theme-light"], "system");
   await act(() => hook.result.current.setTheme("midnight"));
   await changeOS(true);
   assertTheme("midnight", "#0A0A0C", true, ["midnight"]);
 
   await act(() => hook.result.current.setTheme("system"));
-  assertTheme("dark", "#231F1B", true, ["dark", "theme-dark"], "system");
+  assertTheme("dark", "#232427", true, ["dark", "theme-dark"], "system");
   hook.unmount();
   await changeOS(false);
   assert.equal(root.getAttribute("data-theme"), "dark", "unmounted consumers no longer update browser chrome");
-  assert.equal(meta.getAttribute("content"), "#231F1B");
+  assert.equal(meta.getAttribute("content"), "#232427");
   hook = renderHook(() => useTheme());
-  assertTheme("light", "#F2F0EA", false, ["theme-light"], "system");
+  assertTheme("light", "#F1F1F2", false, ["theme-light"], "system");
+});
+
+test("with no stored choice the theme follows the OS from the first render", (t) => {
+  const originalPreference = localStorage.getItem("tau-theme");
+  const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
+  localStorage.removeItem("tau-theme");
+  const media = Object.assign(new window.EventTarget(), { matches: true });
+  Object.defineProperty(window, "matchMedia", { configurable: true, writable: true, value: () => media });
+  t.after(() => {
+    cleanup();
+    if (originalPreference !== null) localStorage.setItem("tau-theme", originalPreference);
+    if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
+    else delete window.matchMedia;
+  });
+  const seen = [];
+  renderHook(() => { const value = useTheme(); seen.push([value.preference, value.theme, value.isDark]); return value; });
+  assert.deepEqual(seen[0], ["system", "dark", true], "a dark OS gets dark on the very first render, not a light frame");
 });

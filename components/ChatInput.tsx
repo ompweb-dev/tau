@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useImperativeHandle, forwardRef, memo, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Maximize2, Mic, Paperclip, Plus, RotateCw, Shrink, Terminal, Wrench, X } from "lucide-react";
+import { ArrowUp, ChevronDown, ClipboardPaste, CornerDownRight, ListChecks, Loader2, Maximize2, Mic, Paperclip, Plus, RotateCw, Shrink, Terminal, Wrench, X } from "lucide-react";
 import { getSubmitDuringRunBehavior } from "@/lib/composer-prefs";
 import type { BuiltinSlashCommandResult, CompactResultInfo, PromptSendOptions, PromptSubmissionResult, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { ActiveGoal, ActivePlan } from "@/lib/web-mode-state";
@@ -3660,7 +3660,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             ) : (
               <button
                 type="button"
-                className="composer-primary-action"
+                className={`composer-primary-action${!btwMode && uploadingCount > 0 ? "" : " composer-send-icon"}`}
+                aria-label={!btwMode && uploadingCount > 0 ? undefined : isRecording || isPaused || isReviewing ? t("chatInput.sendDictation") : t("chatInput.send")}
                 onClick={isRecording || isPaused || isReviewing ? () => stopAndFinishDictation("send") : () => void handleSend()}
                 disabled={submissionBlocked || isTranscribing || (!btwMode && uploadsBlockSend) || !(isRecording || isPaused || isReviewing || value.trim() || hasAttachments)}
                 title={!btwMode && uploadsBlockSend
@@ -3670,7 +3671,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                   display: "flex", alignItems: "center", gap: 6,
                   background: (isRecording || isPaused || isReviewing || isTranscribing || value.trim() || hasAttachments) ? "var(--accent-strong)" : "var(--bg-panel)",
                   border: "none",
-                  borderRadius: 8,
                   color: (isRecording || isPaused || isReviewing || isTranscribing || value.trim() || hasAttachments) ? "var(--on-accent)" : "var(--text-dim)",
                   cursor: submissionBlocked || (!btwMode && uploadsBlockSend) ? "not-allowed" : isTranscribing ? "wait" : (isRecording || isPaused || isReviewing || value.trim() || hasAttachments) ? "pointer" : "not-allowed",
                   fontSize: 12,
@@ -3682,12 +3682,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                 {isTranscribing || (!btwMode && uploadingCount > 0) ? (
                   <Loader2 size={12} strokeWidth={2} className="animate-spin" aria-hidden="true" />
                 ) : (
-                  <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <line x1="2" y1="7" x2="11" y2="7" />
-                    <polyline points="7.5 3 12 7 7.5 11" />
-                  </svg>
+                  <ArrowUp size={15} strokeWidth={2.2} aria-hidden="true" />
                 )}
-                {!btwMode && uploadingCount > 0 ? t("chatInput.uploadsPending", { count: uploadingCount }) : t("chatInput.send")}
+                {!btwMode && uploadingCount > 0 ? t("chatInput.uploadsPending", { count: uploadingCount }) : null}
               </button>
             )}
           </div>
