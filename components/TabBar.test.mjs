@@ -124,3 +124,17 @@ test("Alt+Shift+arrows move the focused tab along its strip and to another strip
   assert.deepEqual(drops, [["b", "a"], ["b", null]]);
   assert.deepEqual(moves, [["b", 1]]);
 });
+
+test("the strip marks the ends that have tabs scrolled out of view", () => {
+  const tabs = ["a", "b", "c"].map((id) => ({ id, label: `${id}.ts`, title: id, icon: null }));
+  render(React.createElement(TabBar, { tabs, activeTabId: "a", onSelectTab() {}, onCloseTab() {}, ariaLabel: "Open tabs" }));
+  const list = screen.getByRole("tablist", { name: "Open tabs" });
+  Object.defineProperty(list, "clientWidth", { configurable: true, value: 200 });
+  Object.defineProperty(list, "scrollWidth", { configurable: true, value: 500 });
+  const at = (left) => { list.scrollLeft = left; fireEvent.scroll(list); return list.getAttribute("data-overflow"); };
+  assert.equal(at(0), "end");
+  assert.equal(at(100), "both");
+  assert.equal(at(300), "start");
+  Object.defineProperty(list, "scrollWidth", { configurable: true, value: 200 });
+  assert.equal(at(0), null, "a strip that fits has no cue");
+});

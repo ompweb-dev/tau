@@ -488,7 +488,7 @@ The todo plan (`TodoList`) and subagent roster sit pinned above the input, each 
 - `cacheSessionPath` (`session-reader.ts`) on main is filled by main's scans and local wrappers and only serves main-side readers.
 
 ### Session list caching — new sessions must appear immediately
-- `listSessionsAllHosts()` (`lib/hosts/session-index.ts`) calls each host's `listSessions` op and caches it 30 s per host (`LIST_TTL_MS`). This machine's list is its daemon's; an offline host keeps its last list.
+- `listSessionsAllHosts()` (`lib/hosts/session-index.ts`) calls each host's `listSessions` op and caches it 30 s per host (`LIST_TTL_MS`). This machine's list is its daemon's; an offline host keeps its last list. `GET /api/sessions` also answers `unavailableHosts` (`unavailableSessionHosts()`: link down, never read since a restart, or the last read failed): a session missing from the list on those hosts is not gone, and the browser's chat tabs never close on it.
 - **A lookup miss is not deletion while any host's list is unavailable.** `hostForSessionId()` returns no host only after successful current discovery across all registered hosts; otherwise retryable 503. Never guess a local owner or trust a caller's host hint.
 - The daemon's `listAllSessions()` uses a 30 s list cache plus an mtime-keyed walk (`listSessionFiles`) keyed on the sessions root mtime, which NTFS does not bump for a new file in an existing subdirectory: `invalidateSessionListCache()` must also call `invalidateSessionFileListCache()` (regression test `lib/session-reader.test.mjs`).
 - A mutation main triggers calls `invalidateLocalSessionLists()` (main's entry plus the daemon's `invalidateSessionLists` op); a route that changes session files without it leaves the sidebar stale for up to 30 s.

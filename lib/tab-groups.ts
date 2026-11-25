@@ -205,3 +205,33 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
   }
   return { selected, sessionKey, keys };
 }
+
+/**
+ * Chat tabs after a session list loads: a listed session's title replaces the
+ * tab's (a `live` tab's only from a copy modified later than its own, since its
+ * own may be newer than a cached list), and
+ * a tab whose session was in the previous list (`before`) but is no longer
+ * listed closes, unless `keep` holds it (shown, or its host's list is not
+ * current). A tab never listed yet (a session newer than the list) stays. The
+ * same array when nothing changed.
+ */
+export function syncChatTabs<T extends { name?: string; firstMessage: string; modified?: string }>(
+  tabs: T[], keyOf: (tab: T) => string, listed: ReadonlyMap<string, T>, before: ReadonlySet<string>,
+  keep: (tab: T) => boolean, live: (tab: T) => boolean,
+): T[] {
+  let changed = false;
+  const next = tabs.flatMap((tab) => {
+    const key = keyOf(tab);
+    const found = listed.get(key);
+    if (!found) {
+      if (!before.has(key) || keep(tab)) return [tab];
+      changed = true;
+      return [];
+    }
+    if (found.name === tab.name && found.firstMessage === tab.firstMessage) return [tab];
+    if (live(tab) && !(Date.parse(found.modified ?? "") > Date.parse(tab.modified ?? ""))) return [tab];
+    changed = true;
+    return [{ ...tab, name: found.name, firstMessage: found.firstMessage, modified: found.modified }];
+  });
+  return changed ? next : tabs;
+}

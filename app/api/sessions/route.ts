@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { listSessionsAllHosts } from "@/lib/hosts/session-index";
+import { listSessionsAllHosts, unavailableSessionHosts } from "@/lib/hosts/session-index";
 import { getRunningRpcSessions } from "@/lib/rpc-manager";
 
 // The session list mixes on-disk sessions with the live runningSessionIds set,
@@ -29,7 +29,8 @@ export async function GET(req: Request) {
       });
     }
 
-    const body = { sessions, runningSessionIds, runningSessions };
+    // Hosts whose sessions may be missing from the list: a browser must not take a missing one as deleted.
+    const body = { sessions, runningSessionIds, runningSessions, unavailableHosts: unavailableSessionHosts() };
     const bodyJson = JSON.stringify(body);
     const etag = `"${createHash("sha1").update(bodyJson).digest("hex").slice(0, 16)}"`;
 

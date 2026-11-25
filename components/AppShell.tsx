@@ -20,7 +20,7 @@ import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
 import { TabBar, type StripTab, type Tab } from "./TabBar";
 import { TabLayoutView } from "./TabLayoutView";
-import { activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
+import { syncChatTabs, activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
 import { FileTabToolbar, FileTabViews } from "./FileTabs";
 import { getFileIcon } from "./FileIcons";
 import { type FileExplorerHandle } from "./FileExplorer";
@@ -48,7 +48,7 @@ import { foldedHostProjectKey, hostProjectKey, LOCAL_HOST_ID, remoteHostId, proj
 import { isClusterTarget } from "@/lib/hosts/cluster";
 import { useHostRows } from "@/hooks/useHostRows";
 import { LocalDaemonBanner } from "./LocalDaemonBanner";
-import { hostName } from "./host-status";
+import { hostName, hostUnavailableReason } from "./host-status";
 import { clearDraft } from "@/lib/draft-store";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
@@ -1884,9 +1884,33 @@ export function AppShell({ appName }: { appName: string }) {
   }, [activeFileTab]);
 
   const handleCloseAllFileTabs = useCallback((groupTabIds: readonly string[]) => {
+    stripActionRef.current = Date.now();
     setFileTabs((tabs) => tabs.filter((tab) => !groupTabIds.includes(tab.id)));
     setActiveFileTabId(null);
     setFileShown(false);
+  }, []);
+
+  // The sidebar's lists keep chat tabs current (see syncChatTabs): a renamed
+  // session relabels its tab, and one that left the list since the last load
+  // (deleted or archived elsewhere) loses its tab, unless it is selected, a
+  // group shows it, or its host's list is not current.
+  const listedTabKeysRef = useRef(new Set<string>());
+  const shownChatIdsRef = useRef(new Set<string>());
+  const handleSessionsLoaded = useCallback((sessions: SessionInfo[], unavailableHosts: string[] | null) => {
+    const listed = new Map(sessions.map((session) => [chatTabId(session), session]));
+    const before = listedTabKeysRef.current;
+    // Unknown (an older server): nothing is taken as gone.
+    const unavailable = unavailableHosts && new Set(unavailableHosts);
+    const selected = activeSessionTargetRef.current;
+    setChatTabs((tabs) => {
+      const next = syncChatTabs(tabs, chatTabId, listed, before,
+        (tab) => !unavailable || unavailable.has(remoteHostId(tab.hostId) ?? LOCAL_HOST_ID) || shownChatIdsRef.current.has(chatTabId(tab))
+          || Boolean(selected && sameSessionTarget(tab, selected)),
+        (tab) => Boolean(selected && sameSessionTarget(tab, selected)));
+      // A tab kept although unlisted (selected, shown, or its host unavailable) is still gone-if-missing next time.
+      listedTabKeysRef.current = new Set([...listed.keys(), ...next.map(chatTabId).filter((key) => before.has(key) && !listed.has(key))]);
+      return next;
+    });
   }, []);
 
   // Every conversation shown gets a chat tab, kept until closed; a newer copy
@@ -2033,6 +2057,44 @@ export function AppShell({ appName }: { appName: string }) {
   // The chat a group shows: its shown tab when that is a chat, else the chat under its file.
   const groupChat = (group: TabGroup) => group.active && !fileTabIds.has(group.active) ? group.active : group.chat ?? null;
   const shownChatIds = new Set(tabGroups.flatMap((group) => groupChat(group) ?? []));
+  shownChatIdsRef.current = shownChatIds;
+
+  // Focus around a file covering the focused group's chat. The chat goes inert under the file, so
+  // focus in it is lost: it moves to the file, and back to where it was in the chat once the
+  // file is closed or hidden. Focus elsewhere (the sidebar, the file panel) is left alone.
+  const focusedFileId = fileTabIds.has(focusedGroup.active ?? "") ? focusedGroup.active : null;
+  const lastChatFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const record = (event: FocusEvent) => {
+      if (event.target instanceof HTMLElement && event.target.closest('[id^="workspace-chat-"]')) lastChatFocusRef.current = event.target;
+    };
+    document.addEventListener("focusin", record);
+    return () => document.removeEventListener("focusin", record);
+  }, []);
+  // A click or key on a tab strip: only then is a chat uncovered by the user's own action (focus is not pulled
+  // into the chat from elsewhere).
+  const stripActionRef = useRef(0);
+  const coveredKey = focusedFileId ? `${focusedGroup.id}:${focusedFileId}` : null;
+  const coveredKeyRef = useRef(coveredKey);
+  useEffect(() => {
+    if (coveredKeyRef.current === coveredKey) return;
+    coveredKeyRef.current = coveredKey;
+    const byStrip = Date.now() - stripActionRef.current < 1000;
+    // On a touch screen focusing the composer would open the keyboard.
+    if (!coveredKey && (!byStrip || window.matchMedia?.("(pointer: coarse)").matches)) return;
+    // After the browser's own fix-up of focus in what just went inert.
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      // Lost: on the body, or still inside the chat that went inert (browsers fix focus up at different times).
+      if (active && active !== document.body && !active.closest("[inert]")) return;
+      const last = lastChatFocusRef.current;
+      const target = coveredKey
+        ? document.getElementById(`workspace-file-tabs-${focusedGroup.id}`)
+        : last?.isConnected && last.closest(`#workspace-chat-${CSS.escape(focusedGroup.id)}`) ? last : null;
+      target?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [coveredKey, focusedGroup.id]);
 
   // Mount keys of the chats the groups show: stable across group focus (see nextChatMounts).
   const [chatMounts, setChatMounts] = useState<ChatMounts>({ selected: selectedChatId, sessionKey, keys: {} });
@@ -2049,13 +2111,21 @@ export function AppShell({ appName }: { appName: string }) {
     ...(draftTabShown ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false, file: false }] as const] : []),
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
+  const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
+  // A chat a group already shows stays reachable from the strip, whatever its host.
+  const reachable = (session: SessionInfo) => shownChatIds.has(chatTabId(session)) || !unreachableReason(session);
   const selectStripTab = (id: string) => {
+    stripActionRef.current = Date.now();
     if (id === NEW_CHAT_TAB_ID) { setFileShown(false); return; }
     const session = chatTabById(id);
-    if (session) handleSelectSession(session);
-    else handleSelectFileTab(id);
+    if (!session) { handleSelectFileTab(id); return; }
+    // As in the sidebar: an unreachable host's conversation cannot be opened (one already shown still can be).
+    const unavailable = shownChatIds.has(id) ? null : unreachableReason(session);
+    if (unavailable) { toast.info(unavailable); return; }
+    handleSelectSession(session);
   };
   const closeStripTab = (id: string) => {
+    stripActionRef.current = Date.now();
     const group = groupOfTab(tabLayout, id);
     const order = group?.tabs ?? [];
     const index = order.indexOf(id);
@@ -2077,7 +2147,7 @@ export function AppShell({ appName }: { appName: string }) {
         // chat in its workspace. A file shown over it stays shown.
         const candidates = [next, ...rest.slice(index), ...rest.slice(0, index).reverse(), ...otherShownChats, ...stripIds];
         selected = candidates.map((candidate) => candidate ? chatTabById(candidate) : undefined)
-          .find((candidate) => candidate && !sameSessionTarget(candidate, session));
+          .find((candidate) => candidate && !sameSessionTarget(candidate, session) && reachable(candidate));
         // A chat its group keeps behind another chat is brought to the front
         // there, so the strip names the chat the group shows (behind a file it
         // stays behind).
@@ -2098,7 +2168,7 @@ export function AppShell({ appName }: { appName: string }) {
     if (nextGroup && nextGroup !== group) setLastFocusedGroupId(nextGroup.id);
     const nextSession = chatTabById(next);
     if (next === NEW_CHAT_TAB_ID) setFileShown(false);
-    else if (nextSession) { if (nextSession !== selected) handleSelectSession(nextSession); }
+    else if (nextSession) { if (nextSession !== selected && reachable(nextSession)) handleSelectSession(nextSession); }
     else handleSelectFileTab(next);
   };
   const dropStripTab = (tabId: string, groupId: string, beforeId: string | null) => {
@@ -2167,6 +2237,7 @@ export function AppShell({ appName }: { appName: string }) {
 
   const sidebarContent = (
     <SessionSidebar
+      onSessionsLoaded={handleSessionsLoaded}
       selectedSessionId={selectedSession?.id ?? null}
       optimisticSession={selectedSession?.path === "" ? selectedSession : null}
       onSelectSession={handleSelectSession}

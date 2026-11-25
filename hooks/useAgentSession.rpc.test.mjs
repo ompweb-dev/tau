@@ -525,10 +525,12 @@ function servePooledWorkspace() {
     projects: [{ id: "app", name: "Pool app", origin: "git@example.invalid:app.git", clonePaths: { h1: "/shared", h2: "/shared" }, addedAt: "2026-11-10T00:00:00.000Z" }],
   }];
   for (const session of sessions) primeSession(session.id, [userMsg(`${session.id}-u`, `Question for ${session.name}`)]);
+  // Hosts whose sessions may be missing from the list (the server's `unavailableHosts`).
+  const unavailableHosts = [];
   world.respond = (method, raw) => {
     if (method !== "GET") return null;
     const url = new URL(raw, "https://omp.test");
-    if (url.pathname === "/api/sessions") return jsonResponse(200, { sessions, runningSessionIds: [], runningSessions: [] });
+    if (url.pathname === "/api/sessions") return jsonResponse(200, { sessions, runningSessionIds: [], runningSessions: [], unavailableHosts });
     if (url.pathname === "/api/projects") return jsonResponse(200, { projects });
     if (url.pathname === "/api/hosts") return jsonResponse(200, { hosts, pools });
     if (url.pathname === "/api/worktrees") return jsonResponse(200, { isGit: false, isTopLevel: false, worktrees: [] });
@@ -543,7 +545,7 @@ function servePooledWorkspace() {
     return null;
   };
   localStorage.setItem("tau:expanded-projects", JSON.stringify(["pool:workers:app", "h1:/legacy", "/shared"]));
-  return { sessions, projects, hosts, pools };
+  return { sessions, projects, hosts, pools, unavailableHosts };
 }
 
 function primeSession(sid, messages) {
@@ -5675,6 +5677,125 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   assert.equal(view.getAllByRole("tablist", { name: translate("appShell.openTabs") }).length, 1);
   assert.equal(shownSession(), "worker-one", "closing a group's shown last tab selects the chat the other group keeps");
   assert.equal(one.querySelector("textarea"), composerOne, "without remounting it");
+  view.unmount();
+});
+
+test("chat tabs follow the session list: a rename relabels, a session gone elsewhere closes, shown or unlisted-host chats stay", async (t) => {
+  resetWorld();
+  const { sessions, unavailableHosts } = servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation")); await sleep(60); });
+  await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
+  await until(() => view.queryByRole("tab", { name: "Worker two conversation" }), "the third conversation gets a tab");
+  const reload = async () => { await act(async () => { window.dispatchEvent(new Event("online")); await sleep(80); }); };
+  const without = (id) => sessions.splice(sessions.findIndex((session) => session.id === id), 1);
+
+  // A background tab (not the shown chat) takes the list's title.
+  const renamed = sessions.findIndex((session) => session.id === "worker-one");
+  sessions[renamed] = { ...sessions[renamed], name: "Worker one renamed" };
+  await reload();
+  await until(() => view.queryByRole("tab", { name: "Worker one renamed" }), "a renamed session relabels its tab");
+
+  // Missing while its host's list is not current: not gone.
+  unavailableHosts.push("h1");
+  without("worker-one");
+  await reload();
+  assert.ok(view.getByRole("tab", { name: "Worker one renamed" }), "a host whose list is unavailable keeps its tabs");
+  unavailableHosts.length = 0;
+  await reload();
+  assert.equal(view.queryByRole("tab", { name: "Worker one renamed" }), null, "once its host's list is current, a missing session loses its tab");
+
+  // The chat a split group shows keeps its tab.
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  await act(async () => { fireEvent.pointerDown(view.getByRole("tab", { name: "Worker legacy conversation" })); await sleep(60); });
+  without("worker-two");
+  await reload();
+  assert.ok(view.getByRole("tab", { name: "Worker two conversation" }), "a chat shown in another group keeps its tab");
+  without("legacy");
+  await reload();
+  assert.ok(view.getByRole("tab", { name: "Worker legacy conversation" }), "the selected chat keeps its tab");
+  view.unmount();
+});
+
+test("a file opened over the chat never takes focus from elsewhere", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  const elsewhere = view.getByRole("button", { name: translate("appShell.showFilePanel") });
+  await act(async () => { elsewhere.focus(); });
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "focus-elsewhere", sessionId: "worker-one", hostId: "h1", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(80);
+  });
+  await until(() => view.queryByText("FIRST OWNER CONTENT"), "the file opens over the chat");
+  assert.equal(document.activeElement, elsewhere, "focus outside the chat stays where it is");
+  view.unmount();
+});
+
+test("a file opened over the focused composer takes focus, and closing it gives focus back", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  const composer = view.getByRole("textbox");
+  await act(async () => { composer.focus(); });
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "focus-open", sessionId: "worker-one", hostId: "h1", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(80);
+  });
+  await until(() => view.queryByText("FIRST OWNER CONTENT"), "the file opens over the chat");
+  assert.match(document.activeElement.id, /^workspace-file-tabs-/, "focus moves from the inert chat to the file");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "report.txt" }) })); await sleep(80); });
+  assert.equal(document.activeElement, composer, "and back to the composer once the file closes");
+  view.unmount();
+});
+
+test("closing the last chat tab opens a new chat in its workspace", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=legacy");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker legacy conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker legacy conversation" }) })); await sleep(80); });
+  assert.equal(view.queryByRole("tab", { name: "Worker legacy conversation" }), null);
+  assert.equal(new URLSearchParams(window.location.search).get("session"), null, "no conversation is selected");
+  assert.equal(view.getByRole("tab", { name: translate("appShell.newSession") }).getAttribute("aria-selected"), "true", "a new chat takes its place");
+  view.unmount();
+});
+
+test("a chat tab on an offline host says so instead of opening", async (t) => {
+  resetWorld();
+  toastCalls.length = 0;
+  const { hosts, pools } = servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
+  const offline = hosts.map((host) => host.id === "h1" ? { ...host, status: "offline" } : host);
+  await act(async () => {
+    for (const stream of world.esInstances.filter(({ channel }) => channel.kind === "hosts")) stream.emit({ hosts: offline, pools });
+    await sleep(60);
+  });
+  await act(async () => { fireEvent.click(view.getByRole("tab", { name: "Worker one conversation" })); await sleep(60); });
+  assert.equal(new URLSearchParams(window.location.search).get("session"), "worker-two", "the chat stays");
+  assert.ok(toastCalls.some((call) => JSON.stringify(call).includes("Worker 1")), "the toast names the host");
   view.unmount();
 });
 

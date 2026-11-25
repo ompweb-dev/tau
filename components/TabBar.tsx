@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Activity, Bell, Folder, GitBranch, GitFork, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
@@ -67,6 +67,8 @@ interface Props {
   connectionSelected?: boolean;
   onSelectConnection?: () => void;
 }
+/** Width of the fade at a strip end with tabs scrolled out of view (globals.css `.tabbar-scroll[data-overflow]`). */
+const TAB_FADE_PX = 28;
 const badgeStyle = (color: string) => ({
   display: "inline-flex",
   alignItems: "center",
@@ -243,20 +245,52 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     onDropTab(tabId, beforeId);
   };
 
-  // Keep the active tab visible when the bar overflows horizontally.
+  // Keeps the active tab in view, clear of the faded ends when it fits between them (scrolling stops at the
+  // strip's own ends).
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const revealActive = useCallback(() => {
+    const list = listRef.current;
+    const active = list?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabIdRef.current)}"]`);
+    if (!list || !active) return;
+    const listRect = list.getBoundingClientRect();
+    const tabRect = active.getBoundingClientRect();
+    const inset = listRect.width >= tabRect.width + 2 * TAB_FADE_PX ? TAB_FADE_PX : 0;
+    if (tabRect.left < listRect.left + inset) {
+      list.scrollLeft -= listRect.left + inset - tabRect.left;
+    } else if (tabRect.right > listRect.right - inset) {
+      list.scrollLeft += tabRect.right - (listRect.right - inset);
+    }
+  }, []);
+
+  // Which ends have tabs scrolled out of view: those ends fade, so tabs there do not look closed.
+  const [overflow, setOverflow] = useState<"start" | "end" | "both" | null>(null);
+  // Labels change the strip's width as much as tabs coming and going.
+  const labels = tabs.map((tab) => tab.label).join("\0");
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const active = list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`);
-    if (!active) return;
-    const listRect = list.getBoundingClientRect();
-    const tabRect = active.getBoundingClientRect();
-    if (tabRect.left < listRect.left) {
-      list.scrollLeft -= listRect.left - tabRect.left;
-    } else if (tabRect.right > listRect.right) {
-      list.scrollLeft += tabRect.right - listRect.right;
-    }
-  }, [activeTabId, tabs]);
+    const measure = () => {
+      const start = list.scrollLeft > 1;
+      const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+      setOverflow(start && end ? "both" : start ? "start" : end ? "end" : null);
+    };
+    measure();
+    list.addEventListener("scroll", measure, { passive: true });
+    // A strip that narrows (a split, a resized window or panel) brings the active tab back into view.
+    let width = list.clientWidth;
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+      if (list.clientWidth !== width) { width = list.clientWidth; revealActive(); }
+      measure();
+    }) : null;
+    observer?.observe(list);
+    return () => { list.removeEventListener("scroll", measure); observer?.disconnect(); };
+  }, [labels, revealActive]);
+
+  // Not on every render, nor on another tab's relabel: a strip the user scrolled stays where it is.
+  const activeLabel = tabs.find((tab) => tab.id === activeTabId)?.label;
+  const order = tabs.map((tab) => tab.id).join("\0");
+  useEffect(revealActive, [activeTabId, activeLabel, order, revealActive]);
 
   return (
     <div
@@ -265,6 +299,7 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
       aria-label={ariaLabel ?? t("appShell.filePanel")}
       aria-orientation="horizontal"
       className="tabbar-scroll"
+      data-overflow={overflow ?? undefined}
       onDragOver={allowTabDrop}
       onDrop={(event) => dropTab(event, null)}
       style={{

@@ -103,6 +103,11 @@ export async function listSessionsAllHosts(): Promise<SessionInfo[]> {
   return merged;
 }
 
+/** Hosts whose list is not current (link down, never loaded since a restart, or the last read failed): a session missing from them is not gone. */
+export function unavailableSessionHosts(): string[] {
+  return hostIds().filter((id) => !hostLists(id).loaded);
+}
+
 /** Search each host in sidebar order. One host settles before the next starts,
  * so cancelling the consumer starts no later host work. */
 export async function* searchSessionsAllHosts(query: string): AsyncGenerator<Record<string, number>> {
