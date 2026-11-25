@@ -155,7 +155,7 @@ export function resizeSplit(layout: TabLayout, splitId: string, sizes: number[])
  */
 export function moveBoundary(sizes: readonly number[], index: number, delta: number): number[] {
   const pair = sizes[index] + sizes[index + 1];
-  const floor = (size: number) => Math.min(MIN_SHARE, size, pair / 2);
+  const floor = (size: number) => size < MIN_SHARE ? Math.min(size, pair / 2) : MIN_SHARE;
   const left = Math.min(pair - floor(sizes[index + 1]), Math.max(floor(sizes[index]), sizes[index] + delta));
   const next = [...sizes];
   next[index] = left;
@@ -176,7 +176,8 @@ export interface ChatMounts {
  * group's and back, so focusing a group remounts nothing. A sessionKey bump
  * remounts the selected chat, unless the bump comes with switching to a chat
  * a group already shows (`shownIds`). The selected chat changing identity
- * without a bump (a new chat's first send, an Edit move) keeps its mount.
+ * without a bump (a new chat's first send, an Edit move) keeps its mount,
+ * unless the new identity already has a key of its own (no current path).
  * Only open chats (`openIds`) keep a key.
  */
 export function nextChatMounts(prev: ChatMounts, selected: string | null, sessionKey: number, openIds: readonly string[], shownIds: ReadonlySet<string>): ChatMounts {

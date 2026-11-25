@@ -2070,7 +2070,7 @@ export function AppShell({ appName }: { appName: string }) {
         // there, so the strip names the chat the group shows (behind a file it
         // stays behind).
         const behind = selected && groupOfTab(tabLayout, chatTabId(selected));
-        if (selected && behind && behind !== group && behind.active && !fileTabIds.has(behind.active) && behind.active !== chatTabId(selected)) {
+        if (selected && behind && behind !== group && (!behind.active || (!fileTabIds.has(behind.active) && behind.active !== chatTabId(selected)))) {
           const front = chatTabId(selected);
           setTabLayout((layout) => activateTab(layout, front));
         }
@@ -2788,10 +2788,12 @@ export function AppShell({ appName }: { appName: string }) {
               : backgroundChat ? chatTabLabel(backgroundChat) : undefined;
             const groupIndex = tabGroups.indexOf(group);
             // Pointing at another group, or typing in it, shows its tab (not a
-            // chat's own programmatic focus, nor a tab's close button, nor Esc,
-            // which the global Esc then ignores there).
-            const focusGroup = (event: { target: EventTarget; key?: string }) => {
-              if (focused || !group.active || event.key === "Escape") return;
+            // chat's own programmatic focus, nor a tab's close button; Esc
+            // there is ignored by the global Esc too).
+            const focusGroup = (event: { target: EventTarget; key?: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean }) => {
+              if (focused || !group.active) return;
+              // Only typing counts: not Esc, modifiers, Tab or shortcut chords.
+              if (event.key !== undefined && (event.key.length !== 1 || event.metaKey || event.ctrlKey || event.altKey)) return;
               if (event.target instanceof Element && event.target.closest('[role="tab"] button')) return;
               selectStripTab(group.active);
             };
