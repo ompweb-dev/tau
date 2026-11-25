@@ -1931,23 +1931,21 @@ export function AppShell({ appName }: { appName: string }) {
   // (deleted or archived elsewhere) loses its tab, unless it is selected, a
   // group shows it, or its host's list is not current.
   const listedTabKeysRef = useRef(new Set<string>());
-  // Restored tabs (trimmed copies, as saved) until the first list after the restore.
+  // Restored tabs (trimmed copies, as saved) until a list where their host's list is current.
   const restoredChatsRef = useRef(new Set<SessionInfo>(restored?.chats ?? []));
-  // With nothing asked for by the address and nothing chosen since, the first list holding it selects what the
-  // focused group showed: as a restore (no keyboard on a phone, no history entry), then with the address set.
+  // With nothing asked for by the address and nothing chosen since, the first list selects what the focused
+  // group showed: as a restore (no keyboard on a phone, no history entry), then with the address set.
   const restoreSelectionPendingRef = useRef(restored !== null && !initialNavigation.sessionId && !initialNavigation.requestedCwd);
   const untouchedView = !selectedSession && newSessionCwd === null && !newSessionPoolProject && !settingsTab && !fileShown;
   const restoreSelectionRef = useRef<(listed: ReadonlyMap<string, SessionInfo>) => void>(() => {});
   restoreSelectionRef.current = (listed) => {
     if (!restoreSelectionPendingRef.current) return;
-    const group = restored && groupsOf(restored.layout).find((candidate) => candidate.id === restored.focused);
-    if (!restored || !group?.active || !untouchedView) { restoreSelectionPendingRef.current = false; return; }
-    // A file: the chat behind it, then the file over it. A chat not listed yet waits for a later list.
-    const file = restored.files.some((tab) => tab.id === group.active);
-    const chatId = file ? group.chat : group.active;
-    const session = chatId ? listed.get(chatId) : undefined;
-    if (chatId && !session) return;
     restoreSelectionPendingRef.current = false;
+    const group = restored && groupsOf(restored.layout).find((candidate) => candidate.id === restored.focused);
+    if (!restored || !group?.active || !untouchedView) return;
+    // A file: the chat behind it (when listed), then the file over it.
+    const file = restored.files.some((tab) => tab.id === group.active);
+    const session = listed.get(file ? group.chat ?? "" : group.active);
     if (session) {
       handleSelectSession(session, true);
       router.replace(sessionNavigationUrl(session));
@@ -1959,7 +1957,6 @@ export function AppShell({ appName }: { appName: string }) {
     const listed = new Map(sessions.map((session) => [chatTabId(session), session]));
     const before = listedTabKeysRef.current;
     const restoredChats = restoredChatsRef.current;
-    restoredChatsRef.current = new Set();
     // Unknown (an older server): nothing is taken as gone.
     const unavailable = unavailableHosts && new Set(unavailableHosts);
     const hostUnavailable = (chat: SessionInfo) => !unavailable || unavailable.has(remoteHostId(chat.hostId) ?? LOCAL_HOST_ID);
@@ -1977,6 +1974,8 @@ export function AppShell({ appName }: { appName: string }) {
     if (restoredChats.size) setSelectedSession((current) => current && restoredChats.has(current) ? listed.get(chatTabId(current)) ?? current : current);
     // A restored chat the list lacks may be newer than the list: only the server, which reads every host again on
     // a miss, can say it is gone (404). Any other answer keeps the tab.
+    // Chats on a host whose list is not current wait for a list where it is.
+    restoredChatsRef.current = new Set([...restoredChats].filter((chat) => !listed.has(chatTabId(chat)) && hostUnavailable(chat)));
     for (const chat of restoredChats) {
       if (listed.has(chatTabId(chat)) || hostUnavailable(chat)) continue;
       void fetch(`/api/sessions/${encodeURIComponent(chat.id)}?meta=1`).then((response) => {

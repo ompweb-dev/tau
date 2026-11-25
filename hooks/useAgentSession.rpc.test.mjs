@@ -5743,7 +5743,7 @@ test("a file opened over the chat never takes focus from elsewhere", async (t) =
 
 test("the strips and groups come back after a reload, and a tab whose session went meanwhile closes", async (t) => {
   resetWorld();
-  const { sessions } = servePooledWorkspace();
+  const { sessions, unavailableHosts } = servePooledWorkspace();
   window.history.replaceState(null, "", "?session=worker-one");
   t.after(() => window.history.replaceState(null, "", "/"));
   let view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
@@ -5774,6 +5774,7 @@ test("the strips and groups come back after a reload, and a tab whose session we
   const groupOf = (name) => view.getByRole("tab", { name }).closest("[data-group-id]");
   assert.notEqual(groupOf("Worker one conversation"), groupOf("Worker two conversation"), "each chat in its own group again");
   await until(() => !view.queryByRole("tab", { name: "Worker legacy conversation" }), "a session gone meanwhile loses its tab after the first list, shown or not");
+  await settle();
   assert.ok(view.getByRole("tab", { name: "Worker one conversation" }), "one the list only lacks keeps its tab");
   view.unmount();
   sessions.push(workerOne);
@@ -5792,6 +5793,19 @@ test("the strips and groups come back after a reload, and a tab whose session we
   await until(() => view.queryByRole("tab", { name: "Worker one conversation" })?.getAttribute("aria-selected") === "true", "the address's conversation is shown");
   await act(async () => { window.dispatchEvent(new Event("online")); await sleep(80); });
   assert.equal(new URLSearchParams(window.location.search).get("session"), "worker-one", "and stays in the address");
+  view.unmount();
+
+  // Gone while its host's list is not current: kept until a list where it is, then the server's 404 closes it.
+  unavailableHosts.push("h2");
+  sessions.splice(sessions.findIndex((session) => session.id === "worker-two"), 1);
+  world.sessions.delete("worker-two");
+  view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored strips are back");
+  assert.ok(view.getByRole("tab", { name: "Worker two conversation" }), "a host whose list is not current keeps its restored tabs");
+  unavailableHosts.length = 0;
+  await act(async () => { window.dispatchEvent(new Event("online")); await sleep(80); });
+  await until(() => !view.queryByRole("tab", { name: "Worker two conversation" }), "once its host's list is current, the server's 404 closes the tab");
   view.unmount();
 });
 
