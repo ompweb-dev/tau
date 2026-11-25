@@ -14,6 +14,8 @@ interface Props {
   sourceSessionId?: string | null;
   /** Bumped by the panel's refresh: the shown search runs again. */
   refreshKey: number;
+  /** Names the panel to the host: its newer search stops its older one, other panels' are left alone. */
+  client: string;
   /** `cwd`: the directory searched (the session's own when there is one). */
   onOpenMatch: (filePath: string, line: number, cwd: string) => void;
 }
@@ -35,15 +37,13 @@ async function fetchSearch(cwd: string, hostId: string, sourceSessionId: string 
 }
 
 /** Literal text search across the workspace's files, grouped by file. */
-export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMatch }: Props) {
+export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, client, onOpenMatch }: Props) {
   const { t, tn } = useI18n();
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [state, setState] = useState<State>({ status: "idle" });
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
-  // This panel's newer search stops its older one on the host; other panels' searches are left alone.
-  const [client] = useState(() => Math.random().toString(36).slice(2, 12) + Date.now().toString(36));
 
   useEffect(() => {
     if (!query) { setState({ status: "idle" }); return; }

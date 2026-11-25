@@ -145,6 +145,8 @@ export const RightPanel = memo(function RightPanel({
   }, [onOpenFile, hostId, sourceSessionId]);
   const gitBadge = explorerIsRepo ? explorerGitCount : 0;
   const unreadNotifications = useUnreadNotificationCount();
+  // Outlives the Search panel's remounts (one per workspace), so a search still scanning after a switch is stopped too.
+  const [searchClient] = useState(() => Math.random().toString(36).slice(2, 12) + Date.now().toString(36));
   const [visitedViews, setVisitedViews] = useState<Set<RightPanelView>>(() => new Set(["explorer"]));
   useEffect(() => {
     setVisitedViews((previous) => {
@@ -367,6 +369,7 @@ export const RightPanel = memo(function RightPanel({
               cwd={explorerCwd}
               sourceSessionId={sourceSessionId}
               refreshKey={explorerRefreshKey}
+              client={searchClient}
               onOpenMatch={openSearchMatch}
             />
           ) : (

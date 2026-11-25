@@ -20,7 +20,7 @@ test("results group by file, open at their line, and follow the case toggle", as
     ] });
   };
   const opened = [];
-  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", sourceSessionId: "s1", refreshKey: 0, onOpenMatch: (...args) => opened.push(args) }));
+  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", sourceSessionId: "s1", refreshKey: 0, client: "panel1", onOpenMatch: (...args) => opened.push(args) }));
   for (const value of ["n", "ne", "needle"]) {
     fireEvent.change(screen.getByRole("searchbox"), { target: { value } });
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -29,7 +29,7 @@ test("results group by file, open at their line, and follow the case toggle", as
   assert.equal(requests.length, 1, "typing is debounced into one request");
   const { client, ...sent } = Object.fromEntries(requests[0].searchParams);
   assert.deepEqual(sent, { cwd: "/w", hostId: "local", q: "needle", sessionId: "s1" });
-  assert.match(client, /^[a-z0-9]{8,}$/, "the panel names itself so only its own older search is stopped");
+  assert.equal(client, "panel1", "the panel names itself so only its own older search is stopped");
   assert.ok(screen.getByRole("status").textContent.includes("2 files"));
   assert.deepEqual([...document.querySelectorAll("mark")].map((mark) => mark.textContent), ["needle", "needle", "Needle"]);
 
@@ -48,7 +48,7 @@ test("results group by file, open at their line, and follow the case toggle", as
 
 test("a failed search shows the server's error", async () => {
   globalThis.fetch = async () => Response.json({ error: "Access denied", code: "access_denied" }, { status: 403 });
-  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", refreshKey: 0, onOpenMatch() {} }));
+  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", refreshKey: 0, client: "panel1", onOpenMatch() {} }));
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "x" } });
   await waitFor(() => assert.ok(screen.getByRole("status").textContent.length > 0 && !screen.getByRole("status").textContent.includes("Searching")));
   assert.equal(document.querySelectorAll(".search-panel-match").length, 0);
@@ -60,7 +60,7 @@ test("an older answer arriving last never replaces the newer one", async () => {
     const q = new URL(String(input), "http://localhost").searchParams.get("q");
     pending.push(() => resolve(Response.json({ cwd: "/w", truncated: false, matches: [{ path: `${q}.ts`, line: 1, text: q, column: 0, length: q.length }] })));
   });
-  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", refreshKey: 0, onOpenMatch() {} }));
+  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", refreshKey: 0, client: "panel1", onOpenMatch() {} }));
   const box = screen.getByRole("searchbox");
   fireEvent.change(box, { target: { value: "old" } });
   await waitFor(() => assert.equal(pending.length, 1));

@@ -288,8 +288,9 @@ export function createWorkspaceService(uploads: StagedUploads, emit: (id: string
     }),
     searchText: (cwd, query, caseSensitive, client, owner) => result(async () => {
       if (typeof query !== "string" || query.length === 0 || query.length > 500 || typeof caseSensitive !== "boolean"
-        || typeof client !== "string" || client.length > 64) throw invalid();
-      return searchWorkspaceText(await indexedDirectory(cwd, owner), query, caseSensitive, client);
+        || !(client === undefined || typeof client === "string" && client.length <= 64)) throw invalid();
+      // A server that predates `client` sends none: its searches stop nothing.
+      return searchWorkspaceText(await indexedDirectory(cwd, owner), query, caseSensitive, client ?? "");
     }),
     readBashOutput: (id, requested) => result(async () => {
       const read = await readUtf8FileWithinLimit(await bashPath(id, requested));
