@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { AtSign, Copy, Download, FileX, LocateFixed } from "lucide-react";
 import { FileViewer } from "./FileViewer";
 import type { Tab } from "./TabBar";
@@ -8,7 +9,9 @@ import { getFileName } from "@/lib/file-paths";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 
 /** Actions on the open file tab, shown at the end of the main tab strip. */
-export function FileTabToolbar({ activeFileTab, fileTabs, activeFileMatchesSource, revealPath, onMentionActiveFile, onCopyActiveFilePath, onRevealActiveFile, onDownloadActiveFile, onCloseOtherFileTabs, onCloseAllFileTabs }: {
+// Memoized like RightPanel was for these: AppShell re-renders on every
+// streaming tick, and its callbacks are useCallback-stable.
+export const FileTabToolbar = memo(function FileTabToolbar({ activeFileTab, fileTabs, activeFileMatchesSource, revealPath, onMentionActiveFile, onCopyActiveFilePath, onRevealActiveFile, onDownloadActiveFile, onCloseOtherFileTabs, onCloseAllFileTabs }: {
   activeFileTab: Tab;
   fileTabs: Tab[];
   /** The file belongs to the shown conversation's workspace: mention and reveal work. */
@@ -90,13 +93,13 @@ export function FileTabToolbar({ activeFileTab, fileTabs, activeFileMatchesSourc
       </button>
     </div>
   );
-}
+});
 
 /** Every open file's viewer, kept mounted so switching tabs preserves scroll and preview state. */
-export function FileTabViews({ fileTabs, activeFileTabId, active, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile }: {
+export const FileTabViews = memo(function FileTabViews({ fileTabs, activeFileTab, active, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile }: {
   fileTabs: Tab[];
-  activeFileTabId: string | null;
-  /** A file tab, not a chat, is the shown tab. */
+  activeFileTab: Tab | null;
+  /** A file tab, not a chat, is the shown tab: the views cover the chat. */
   active: boolean;
   activeFileMatchesSource: boolean;
   explorerRefreshKey: number;
@@ -104,17 +107,17 @@ export function FileTabViews({ fileTabs, activeFileTabId, active, activeFileMatc
   onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource) => void;
 }) {
   return (
-    <div id="workspace-file-tabs" role="tabpanel" aria-label={fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath} style={{ display: active ? "block" : "none", height: "100%", overflow: "hidden" }}>
+    <div id="workspace-file-tabs" role="tabpanel" aria-label={activeFileTab?.filePath} style={{ display: active ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}>
       {fileTabs.map((tab) => (
-        <div key={tab.id} style={{ display: tab.id === activeFileTabId ? "block" : "none", height: "100%" }}>
+        <div key={tab.id} style={{ display: tab.id === activeFileTab?.id ? "block" : "none", height: "100%" }}>
           <FileViewer
             filePath={tab.filePath}
             hostId={tab.hostId}
             cwd={tab.sourceCwd ?? undefined}
             sourceSessionId={tab.sourceSessionId}
             gitRefreshKey={explorerRefreshKey}
-            active={tab.id === activeFileTabId && active}
-            onMentionLines={tab.id === activeFileTabId && active && activeFileMatchesSource ? onMentionLines : undefined}
+            active={tab.id === activeFileTab?.id && active}
+            onMentionLines={tab.id === activeFileTab?.id && active && activeFileMatchesSource ? onMentionLines : undefined}
             onOpenFile={(filePath) => onOpenFile(
               filePath,
               getFileName(filePath),
@@ -125,4 +128,4 @@ export function FileTabViews({ fileTabs, activeFileTabId, active, activeFileMatc
       ))}
     </div>
   );
-}
+});

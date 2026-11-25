@@ -40,7 +40,7 @@ const sseDiagnostics = {
 
 function rightPanelProps(overrides) {
   return {
-    activeFileTab: null,
+    activeFilePath: null,
     rightPanelOpen: true,
     onClose: () => {},
     rightPanelWidth: null,

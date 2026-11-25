@@ -23,6 +23,8 @@ export interface StripTab {
   icon: ReactNode;
   /** False hides the close button (the transient New chat tab). */
   closable?: boolean;
+  /** The panel the tab shows (aria-controls). */
+  panelId?: string;
 }
 
 interface Props {
@@ -30,9 +32,10 @@ interface Props {
   activeTabId?: string;
   onSelectTab?: (id: string) => void;
   onCloseTab?: (id: string) => void;
-  /** The tablist's accessible name and the panel its tabs control. */
+  /** The tablist's accessible name. */
   ariaLabel?: string;
-  panelId?: string;
+  /** Arrows only move focus; Enter or Space shows the tab (for tabs that are costly to show). */
+  manualActivation?: boolean;
   /** Pinned Explorer tab rendered after Notifications, before the file tabs (right-panel tab redesign). */
   explorerSelected?: boolean;
   onSelectExplorer?: () => void;
@@ -142,7 +145,7 @@ function PinnedTab({ id, panelId, label, title, icon, selected, badge, badgeColo
   );
 }
 
-export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, panelId, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
+export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -190,7 +193,7 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     if (nextIndex !== null) {
       event.preventDefault();
       const nextId = orderedTabIds[nextIndex];
-      selectTabById(nextId);
+      if (!manualActivation) selectTabById(nextId);
       focusTabById(nextId);
       return;
     }
@@ -301,8 +304,10 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
           onKeyDown={handleTabKeyDown}
         />
       )}
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const isActive = tab.id === activeTabId;
+        // With nothing selected, the first tab keeps the tablist reachable by keyboard.
+        const focusable = isActive || (index === 0 && !orderedTabIds.includes(activeTabId));
         return (
           <div
             key={tab.id}
@@ -310,10 +315,10 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
             className="tabbar-tab ui-focus-ring"
             onClick={() => onSelectTab?.(tab.id)}
             role="tab"
-            tabIndex={isActive ? 0 : -1}
+            tabIndex={focusable ? 0 : -1}
             aria-selected={isActive}
             aria-label={tab.title}
-            aria-controls={panelId}
+            aria-controls={tab.panelId}
             onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();

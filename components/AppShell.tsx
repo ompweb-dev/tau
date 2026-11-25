@@ -124,6 +124,7 @@ const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 /** The transient tab of a chat not yet sent (no session yet). */
 const NEW_CHAT_TAB_ID = "chat:new";
 const chatTabId = (session: SessionInfo) => `chat:${remoteHostId(session.hostId) ?? LOCAL_HOST_ID}:${session.id}`;
+const chatTabLabel = (session: SessionInfo) => session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
 
 
 type AutoNameStatus =
@@ -1186,11 +1187,14 @@ export function AppShell({ appName }: { appName: string }) {
   // read tool resolves it the same way (it strips the @ prefix).
   const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
     chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
+    // A mention shows the chat it went into.
+    setFileShown(false);
   }, []);
 
   const handleAtMentions = useCallback((relativePaths: string[]) => {
     const mentions = buildFileAtMentionsText(relativePaths);
     if (mentions) chatInputRef.current?.insertText(mentions);
+    setFileShown(false);
   }, []);
 
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
@@ -1529,7 +1533,7 @@ export function AppShell({ appName }: { appName: string }) {
   }, [handleSelectSession, isCompactOverlay]);
 
   // Full-page Settings hides the chat, so its session counts as not viewed.
-  useNotifications({ sessionId: settingsTab ? null : selectedSession?.id ?? null, locale, onOpenSession: openSessionById });
+  useNotifications({ sessionId: settingsTab || fileShown ? null : selectedSession?.id ?? null, locale, onOpenSession: openSessionById });
 
   const handleAutoName = useCallback(async () => {
     if (!activeSelectedSessionId || autoNameStatus.kind === "naming") return;
@@ -1594,6 +1598,11 @@ export function AppShell({ appName }: { appName: string }) {
     router.replace(sessionNavigationUrl({ id: newSessionId, hostId }));
   }, [router, hydrateSelectedSession, activeSelectedSessionHostId]);
 
+  // The managed pool project a pool session belongs to.
+  const poolProjectOf = useCallback((session: SessionInfo) => session.poolId
+    ? workspaceOptions.projects.find((project) => project.poolId === session.poolId && project.projectId === session.projectId)
+    : undefined, [workspaceOptions.projects]);
+
   const handleSessionDeleted = useCallback((sessionId: string) => {
     // The composer for this session can never be reopened, so its draft would
     // otherwise keep the exit guard armed for unreachable content.
@@ -1605,7 +1614,7 @@ export function AppShell({ appName }: { appName: string }) {
       setSelectedSession(null);
       setNewSessionCwd(selectedSession.poolId ? null : cwd ?? null);
       setNewSessionCreation({ id: randomUUID() });
-      setNewSessionPoolProject(selectedSession.poolId ? workspaceOptions.projects.find((project) => project.poolId === selectedSession.poolId && project.projectId === selectedSession.projectId) ?? null : null);
+      setNewSessionPoolProject(poolProjectOf(selectedSession) ?? null);
       setNewSessionHostId(remoteHostId(selectedSession.hostId));
       setSessionKey((k) => k + 1);
       setBranchTree([]);
@@ -1614,7 +1623,7 @@ export function AppShell({ appName }: { appName: string }) {
       setActiveTopPanel(null);
       router.replace("/");
     }
-  }, [selectedSession, router, workspaceOptions.projects]);
+  }, [selectedSession, router, poolProjectOf]);
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
   }, []);
@@ -1892,17 +1901,12 @@ export function AppShell({ appName }: { appName: string }) {
     if (!selectedSession || !sameSessionTarget(selectedSession, session)) return;
     // Closing the shown conversation shows its neighbour, else a new chat in
     // its workspace; a file shown over it stays shown.
-    const keepFile = fileShown;
     const neighbour = rest[Math.min(index, rest.length - 1)];
     if (neighbour) handleSelectSession(neighbour);
-    else handleNewSession(
-      randomUUID(),
-      session.poolId ? null : session.cwd,
-      session.hostId,
-      session.poolId ? workspaceOptions.projects.find((project) => project.poolId === session.poolId && project.projectId === session.projectId) : undefined,
-    );
-    if (keepFile) setFileShown(true);
-  }, [chatTabs, selectedSession, fileShown, handleSelectSession, handleNewSession, workspaceOptions.projects]);
+    else handleNewSession(randomUUID(), session.poolId ? null : session.cwd, session.hostId, poolProjectOf(session));
+    // Both of those show the chat; batched, this wins.
+    if (fileShown) setFileShown(true);
+  }, [chatTabs, selectedSession, fileShown, handleSelectSession, handleNewSession, poolProjectOf]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -2006,11 +2010,11 @@ export function AppShell({ appName }: { appName: string }) {
   const chatIcon = <MessageSquare size={13} strokeWidth={2} aria-hidden="true" />;
   const stripTabs: StripTab[] = [
     ...chatTabs.map((session) => {
-      const label = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-      return { id: chatTabId(session), label, title: session.name || session.firstMessage || label, icon: chatIcon };
+      const label = chatTabLabel(session);
+      return { id: chatTabId(session), label, title: session.name || session.firstMessage || label, icon: chatIcon, panelId: "workspace-chat" };
     }),
-    ...(showChat && !selectedSession ? [{ id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false }] : []),
-    ...fileTabs.map((tab) => ({ id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13) })),
+    ...(showChat && !selectedSession ? [{ id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false, panelId: "workspace-chat" }] : []),
+    ...fileTabs.map((tab) => ({ id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), panelId: "workspace-file-tabs" })),
   ];
   const stripPosition = (id: string) => {
     const index = stripOrder.indexOf(id);
@@ -2018,14 +2022,17 @@ export function AppShell({ appName }: { appName: string }) {
   };
   stripTabs.sort((a, b) => stripPosition(a.id) - stripPosition(b.id));
   const activeStripTabId = fileTabShown ? activeFileTabId ?? "" : selectedSession ? chatTabId(selectedSession) : showChat ? NEW_CHAT_TAB_ID : "";
+  const chatPanelLabel = stripTabs.find((tab) => tab.panelId === "workspace-chat" && tab.id === activeStripTabId)?.title
+    ?? (selectedSession ? chatTabLabel(selectedSession) : t("appShell.newSession"));
+  const chatTabById = (id: string) => chatTabs.find((tab) => chatTabId(tab) === id);
   const selectStripTab = (id: string) => {
     if (id === NEW_CHAT_TAB_ID) { setFileShown(false); return; }
-    const session = chatTabs.find((tab) => chatTabId(tab) === id);
+    const session = chatTabById(id);
     if (session) handleSelectSession(session);
     else handleSelectFileTab(id);
   };
   const closeStripTab = (id: string) => {
-    const session = chatTabs.find((tab) => chatTabId(tab) === id);
+    const session = chatTabById(id);
     if (session) handleCloseChatTab(session);
     else handleCloseFileTab(id);
   };
@@ -2694,7 +2701,7 @@ export function AppShell({ appName }: { appName: string }) {
 
         {/* Main tab strip: open conversations and files */}
         {stripTabs.length > 0 && (
-          <div className="main-tab-strip" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
             <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
               <TabBar
                 tabs={stripTabs}
@@ -2702,10 +2709,10 @@ export function AppShell({ appName }: { appName: string }) {
                 onSelectTab={selectStripTab}
                 onCloseTab={closeStripTab}
                 ariaLabel={t("appShell.openTabs")}
-                panelId={fileTabShown ? "workspace-file-tabs" : "workspace-chat"}
+                manualActivation
               />
             </div>
-            {fileTabShown && activeFileTab && (
+            {fileTabShown && (
               <FileTabToolbar
                 activeFileTab={activeFileTab}
                 fileTabs={fileTabs}
@@ -2721,22 +2728,22 @@ export function AppShell({ appName }: { appName: string }) {
             )}
           </div>
         )}
-        {fileTabs.length > 0 && (
-          <div style={{ flex: fileTabShown ? 1 : undefined, minHeight: 0, display: fileTabShown ? "block" : "none" }}>
-            <FileTabViews
-              fileTabs={fileTabs}
-              activeFileTabId={activeFileTabId}
-              active={fileTabShown}
-              activeFileMatchesSource={activeFileMatchesSource}
-              explorerRefreshKey={explorerRefreshKey}
-              onMentionLines={handleFileLineMention}
-              onOpenFile={handleOpenFile}
-            />
-          </div>
-        )}
-
         {/* Chat content */}
-        <div id="workspace-chat" role={stripTabs.length > 0 ? "tabpanel" : undefined} style={{ flex: 1, overflow: "hidden", position: "relative", display: fileTabShown ? "none" : undefined }}>
+        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+        {/* A shown file covers the chat, which keeps its layout (and so its
+            scroll position) underneath, inert. */}
+        {fileTabs.length > 0 && (
+          <FileTabViews
+            fileTabs={fileTabs}
+            activeFileTab={activeFileTab}
+            active={fileTabShown}
+            activeFileMatchesSource={activeFileMatchesSource}
+            explorerRefreshKey={explorerRefreshKey}
+            onMentionLines={handleFileLineMention}
+            onOpenFile={handleOpenFile}
+          />
+        )}
+        <div id="workspace-chat" role={stripTabs.length > 0 ? "tabpanel" : undefined} aria-label={stripTabs.length > 0 ? chatPanelLabel : undefined} inert={fileTabShown ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
           {showChat ? (
             <ChatWindow
               key={sessionKey}
@@ -2872,6 +2879,7 @@ export function AppShell({ appName }: { appName: string }) {
               searchQuery={chatSearchQuery}
               searchTarget={searchMatchTarget && searchMatchTarget.sessionId === selectedSession?.id ? searchMatchTarget : null}
               onSearchTargetHandled={clearSearchMatchTarget}
+              covered={fileTabShown}
             />
           ) : initialCwdStatus === "validating" ? (
             <WorkspaceState
@@ -2933,6 +2941,7 @@ export function AppShell({ appName }: { appName: string }) {
               </div>
           )}
         </div>
+        </div>
           </>
         )}
       </main>
@@ -2945,7 +2954,7 @@ export function AppShell({ appName }: { appName: string }) {
       )}
       {!settingsTab && rightPanelHasOpened && (
         <RightPanel
-        activeFileTab={activeFileTab}
+        activeFilePath={activeFileMatchesSource ? activeFileTab?.filePath ?? null : null}
         rightView={rightView}
         onSelectView={handleSelectRightView}
         rightPanelOpen={rightPanelOpen}

@@ -72,6 +72,8 @@ interface Props {
   hideThinkingBlock?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
+  /** A file tab covers this chat: Esc must not stop a run the user cannot see. */
+  covered?: boolean;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
@@ -390,7 +392,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
   );
 });
 
-export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
   const { t, tn } = useI18n();
   const fileSource = useMemo<WorkspaceFileSource>(() => ({
     hostId: session?.hostId ?? newSessionHostId ?? "local",
@@ -518,9 +520,9 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   // matters: unmounting mid-run must not leave the module-global handler
   // pointing at this (now unmounted) instance's handleAbort.
   useEffect(() => {
-    registerAbortHandler(sessionBusy ? handleAbort : null);
+    registerAbortHandler(sessionBusy && !covered ? handleAbort : null);
     return () => registerAbortHandler(null);
-  }, [sessionBusy, handleAbort]);
+  }, [sessionBusy, handleAbort, covered]);
 
   // Cycle model / thinking level via ⌘/Ctrl+Alt+M and ⌘/Ctrl+Alt+T (RPC
   // cycle_model / cycle_thinking_level). Meta/Alt combos avoid clashing with

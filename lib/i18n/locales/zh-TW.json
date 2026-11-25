@@ -253,8 +253,6 @@
   "appShell.newSession": "新對話",
   "appShell.newSessionTitle": "今天想進行什麼工作？",
   "appShell.newSessionDescription": "選取工作區，然後描述您想要進行的變更。",
-  "appShell.noFileOpen": "未開啟檔案",
-  "appShell.noFileOpenHint": "從檔案總管開啟檔案 — 便可在聊天中以 @提及、複製路徑，或與 HEAD 進行比較。",
   "appShell.mentionFileInChat": "在聊天中提及檔案 (@)",
   "appShell.revealInExplorer": "在檔案總管中顯示",
   "appShell.revealSourceSession": "請先選取此檔案的來源對話，再於檔案總管中顯示。",

@@ -10,7 +10,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { TabBar, type Tab } from "./TabBar";
+import { TabBar } from "./TabBar";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { GitChangesPanel } from "./GitChangesPanel";
 import { NotificationActions, NotificationList } from "./NotificationList";
@@ -25,8 +25,8 @@ import type { WorkspaceFileSource } from "@/lib/workspace-types";
 export type RightPanelView = "explorer" | "git" | "notifications" | "worktrees" | "connection";
 
 interface Props {
-  /** The open file tab, highlighted in the Explorer when it belongs to the Explorer's workspace. */
-  activeFileTab: Tab | null;
+  /** The open file, highlighted in the Explorer (null when it is another workspace's). */
+  activeFilePath: string | null;
   rightView: RightPanelView;
   onSelectView: (view: RightPanelView) => void;
   rightPanelOpen: boolean;
@@ -72,7 +72,7 @@ interface Props {
 // this component only re-renders when one of its own props actually changes
 // (all callbacks are useCallback-stable in AppShell for the same reason).
 export const RightPanel = memo(function RightPanel({
-  activeFileTab,
+  activeFilePath,
   rightView,
   onSelectView,
   rightPanelOpen,
@@ -113,7 +113,6 @@ export const RightPanel = memo(function RightPanel({
   const openWorkspaceFile = useCallback((filePath: string, fileName: string) => {
     onOpenFile(filePath, fileName, { hostId, sessionId: sourceSessionId ?? null, cwd: explorerCwd });
   }, [onOpenFile, hostId, sourceSessionId, explorerCwd]);
-  const activeFileMatchesSource = activeFileTab?.hostId === hostId && (activeFileTab?.sourceSessionId ?? null) === (sourceSessionId ?? null);
   const gitBadge = explorerIsRepo ? explorerGitCount : 0;
   const unreadNotifications = useUnreadNotificationCount();
   const [visitedViews, setVisitedViews] = useState<Set<RightPanelView>>(() => new Set(["explorer"]));
@@ -328,7 +327,7 @@ export const RightPanel = memo(function RightPanel({
                   onRefreshDone={onExplorerRefreshDone}
                   fileSearchOpen={fileSearchOpen}
                   onFileSearchOpenChange={onFileSearchOpenChange}
-                  activeFilePath={activeFileMatchesSource ? activeFileTab?.filePath ?? null : null}
+                  activeFilePath={activeFilePath}
                   revealPath={revealPath}
                   onRevealDone={onRevealDone}
                   onGitStatusChange={onExplorerGitStatus}

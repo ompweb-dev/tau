@@ -5596,6 +5596,32 @@ test("a retained foreign-source tab cannot mention its path into the selected wo
   view.unmount();
 });
 
+test("closing the shown chat under a file tab keeps the file and shows the neighbouring chat after it", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  const stream = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.change(view.getByRole("textbox"), { target: { value: "Worker one draft" } }); });
+  await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
+  await act(async () => {
+    stream.emit({ type: "host_tool_call", id: "close-open", sessionId: "worker-two", hostId: "h2", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(60);
+  });
+  await until(() => view.queryByText("SECOND OWNER CONTENT"), "the file opens over the chat");
+  assert.equal(view.container.querySelector("#workspace-chat").hasAttribute("inert"), true, "the covered chat is inert");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(60); });
+  assert.equal(view.queryByRole("tab", { name: "Worker two conversation" }), null);
+  assert.equal(view.getByRole("tab", { name: /report\.txt/ }).getAttribute("aria-selected"), "true", "the file stays shown");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "report.txt" }) })); await sleep(60); });
+  assert.equal(view.getByRole("tab", { name: "Worker one conversation" }).getAttribute("aria-selected"), "true");
+  assert.equal(view.getByRole("textbox").value, "Worker one draft", "the neighbouring conversation is the chat behind it");
+  view.unmount();
+});
+
 test("a populated local pool member keeps legacy access without a physical add-workspace control", async () => {
   for (const localMember of [false, true]) {
     resetWorld();
