@@ -525,10 +525,12 @@ function servePooledWorkspace() {
     projects: [{ id: "app", name: "Pool app", origin: "git@example.invalid:app.git", clonePaths: { h1: "/shared", h2: "/shared" }, addedAt: "2026-11-10T00:00:00.000Z" }],
   }];
   for (const session of sessions) primeSession(session.id, [userMsg(`${session.id}-u`, `Question for ${session.name}`)]);
+  // Hosts whose sessions may be missing from the list (the server's `unavailableHosts`).
+  const unavailableHosts = [];
   world.respond = (method, raw) => {
     if (method !== "GET") return null;
     const url = new URL(raw, "https://omp.test");
-    if (url.pathname === "/api/sessions") return jsonResponse(200, { sessions, runningSessionIds: [], runningSessions: [] });
+    if (url.pathname === "/api/sessions") return jsonResponse(200, { sessions, runningSessionIds: [], runningSessions: [], unavailableHosts });
     if (url.pathname === "/api/projects") return jsonResponse(200, { projects });
     if (url.pathname === "/api/hosts") return jsonResponse(200, { hosts, pools });
     if (url.pathname === "/api/worktrees") return jsonResponse(200, { isGit: false, isTopLevel: false, worktrees: [] });
@@ -543,7 +545,7 @@ function servePooledWorkspace() {
     return null;
   };
   localStorage.setItem("tau:expanded-projects", JSON.stringify(["pool:workers:app", "h1:/legacy", "/shared"]));
-  return { sessions, projects, hosts, pools };
+  return { sessions, projects, hosts, pools, unavailableHosts };
 }
 
 function primeSession(sid, messages) {
@@ -5678,27 +5680,64 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   view.unmount();
 });
 
-test("chat tabs follow the session list: a rename relabels, a session gone elsewhere closes, the shown chat stays", async (t) => {
+test("chat tabs follow the session list: a rename relabels, a session gone elsewhere closes, shown or unlisted-host chats stay", async (t) => {
   resetWorld();
-  const { sessions } = servePooledWorkspace();
+  const { sessions, unavailableHosts } = servePooledWorkspace();
   window.history.replaceState(null, "", "?session=worker-one");
   t.after(() => window.history.replaceState(null, "", "/"));
   const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
   await settle();
   await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation")); await sleep(60); });
   await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
-  await until(() => view.queryByRole("tab", { name: "Worker two conversation" }), "the second conversation gets a tab");
+  await until(() => view.queryByRole("tab", { name: "Worker two conversation" }), "the third conversation gets a tab");
   const reload = async () => { await act(async () => { window.dispatchEvent(new Event("online")); await sleep(80); }); };
+  const without = (id) => sessions.splice(sessions.findIndex((session) => session.id === id), 1);
 
-  sessions[1].name = "Worker two renamed";
-  sessions.splice(0, 1);
+  // A background tab (not the shown chat) takes the list's title.
+  const renamed = sessions.findIndex((session) => session.id === "worker-one");
+  sessions[renamed] = { ...sessions[renamed], name: "Worker one renamed" };
   await reload();
-  await until(() => view.queryByRole("tab", { name: "Worker two renamed" }), "a renamed session relabels its tab");
-  assert.equal(view.queryByRole("tab", { name: "Worker one conversation" }), null, "a session gone from the list loses its tab");
+  await until(() => view.queryByRole("tab", { name: "Worker one renamed" }), "a renamed session relabels its tab");
 
-  sessions.splice(0, 1);
+  // Missing while its host's list is not current: not gone.
+  unavailableHosts.push("h1");
+  without("worker-one");
   await reload();
-  assert.ok(view.getByRole("tab", { name: "Worker two renamed" }), "the shown chat keeps its tab");
+  assert.ok(view.getByRole("tab", { name: "Worker one renamed" }), "a host whose list is unavailable keeps its tabs");
+  unavailableHosts.length = 0;
+  await reload();
+  assert.equal(view.queryByRole("tab", { name: "Worker one renamed" }), null, "once its host's list is current, a missing session loses its tab");
+
+  // The chat a split group shows keeps its tab.
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  await act(async () => { fireEvent.pointerDown(view.getByRole("tab", { name: "Worker legacy conversation" })); await sleep(60); });
+  without("worker-two");
+  await reload();
+  assert.ok(view.getByRole("tab", { name: "Worker two conversation" }), "a chat shown in another group keeps its tab");
+  without("legacy");
+  await reload();
+  assert.ok(view.getByRole("tab", { name: "Worker legacy conversation" }), "the selected chat keeps its tab");
+  view.unmount();
+});
+
+test("a file opened over the chat never takes focus from elsewhere", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  const elsewhere = view.getByRole("button", { name: translate("appShell.showFilePanel") });
+  await act(async () => { elsewhere.focus(); });
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "focus-elsewhere", sessionId: "worker-one", hostId: "h1", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(80);
+  });
+  await until(() => view.queryByText("FIRST OWNER CONTENT"), "the file opens over the chat");
+  assert.equal(document.activeElement, elsewhere, "focus outside the chat stays where it is");
   view.unmount();
 });
 

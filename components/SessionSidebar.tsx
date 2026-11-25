@@ -10,9 +10,8 @@ import { Tooltip } from "./ui/primitives";
 import { toast } from "./ui/toast";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { LOCAL_HOST_ID, foldedHostProjectKey, groupProjectsByHost, groupSessionsByProject, hostProjectKey, projectIdentity, projectTargetId, nextPinOrder, orderProjects, projectActivityCounts, remoteHostId, type ProjectSortMode } from "@/lib/project-ordering";
-import { isLinkUp } from "@/lib/hosts/host";
 import { useHostRows } from "@/hooks/useHostRows";
-import { HOST_STATUS_COLOR, hostName, hostStatusText } from "./host-status";
+import { HOST_STATUS_COLOR, hostName, hostStatusText, hostUnavailableReason as unavailableReasonOf } from "./host-status";
 import { comparableProjectPath } from "@/lib/comparable-path";
 import { initialSessionMatches } from "@/lib/initial-navigation";
 import type { SearchMatchTarget } from "./SessionSearchMatches";
@@ -73,8 +72,8 @@ interface Props {
   /** The active session can exist in memory before its JSONL file is flushed. */
   optimisticSession?: SessionInfo | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
-  /** Every session list the sidebar loads (not a 304). */
-  onSessionsLoaded?: (sessions: SessionInfo[]) => void;
+  /** Every session list the sidebar loads (not a 304), with the hosts whose sessions may be missing from it (null: unknown). */
+  onSessionsLoaded?: (sessions: SessionInfo[], unavailableHosts: string[] | null) => void;
   onNewSession?: (sessionId: string, cwd: string | null, hostId?: string, project?: ManagedProject) => void;
   initialSessionId?: string | null;
   initialSessionHostId?: string;
@@ -179,11 +178,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     });
   }, []);
   // Why a host's sessions cannot be opened or started right now (null when they can).
-  const hostUnavailableReason = useCallback((hostId: string): string | null => {
-    const row = hosts?.find((host) => host.id === hostId);
-    if (!row || isLinkUp(row.status)) return null;
-    return t("hosts.unavailableReason", { host: hostName(t, row), status: hostStatusText(t, row) });
-  }, [hosts, t]);
+  const hostUnavailableReason = useCallback((hostId: string): string | null => unavailableReasonOf(t, hosts, hostId), [hosts, t]);
   // Managed + session-discovered projects (server-merged, hidden excluded).
   const [projects, setProjects] = useState<ManagedProject[]>([]);
   const selectedPoolProject = projects.find((project) => project.poolId && projectIdentity(project) === selectedPoolKey);
@@ -265,8 +260,6 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sessionsEtagRef = useRef<string | null>(null);
-  const onSessionsLoadedRef = useRef(onSessionsLoaded);
-  onSessionsLoadedRef.current = onSessionsLoaded;
   const sessionsAbortRef = useRef<AbortController | null>(null);
   // Set once the first /api/sessions fetch settles (success OR failure) so the
   // initial-restore effect can stop waiting on a load that never yields rows.
@@ -290,9 +283,9 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const etag = res.headers.get("ETag");
       if (etag) sessionsEtagRef.current = etag;
-      const data = await res.json() as { sessions: SessionInfo[]; runningSessionIds?: string[]; runningSessions?: Array<LivePlace & { id: string }> };
+      const data = await res.json() as { sessions: SessionInfo[]; runningSessionIds?: string[]; runningSessions?: Array<LivePlace & { id: string }>; unavailableHosts?: string[] };
       setAllSessions(data.sessions);
-      onSessionsLoadedRef.current?.(data.sessions);
+      onSessionsLoaded?.(data.sessions, data.unavailableHosts ?? null);
       if (data.runningSessions) {
         for (const rs of data.runningSessions) {
           if (rs.id && rs.cwd) knownRunningPlacesRef.current.set(rs.id, rs);
@@ -331,7 +324,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       initialLoadedRef.current = true;
       if (showLoading) setLoading(false);
     }
-  }, [t]);
+  }, [t, onSessionsLoaded]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {

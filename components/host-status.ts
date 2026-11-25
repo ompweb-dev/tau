@@ -1,4 +1,5 @@
 import type { HostRow, LocalHostRow } from "@/lib/hosts/hub";
+import { isLinkUp } from "@/lib/hosts/host";
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -28,4 +29,11 @@ export function hostStatusText(t: Translate, host: HostRow): string {
     default:
       return t("hostsConfig.statusOffline");
   }
+}
+
+/** Why a host's sessions cannot be opened or started right now (null when they can, or the host is unknown). */
+export function hostUnavailableReason(t: Translate, hosts: readonly HostRow[] | null, hostId: string): string | null {
+  const row = hosts?.find((host) => host.id === hostId);
+  if (!row || isLinkUp(row.status)) return null;
+  return t("hosts.unavailableReason", { host: hostName(t, row), status: hostStatusText(t, row) });
 }

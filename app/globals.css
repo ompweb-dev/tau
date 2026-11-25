@@ -3908,12 +3908,15 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
 }
 /* Tabs scrolled out of view at an end: that end fades. */
 .tabbar-scroll[data-overflow="start"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px);
   mask-image: linear-gradient(to right, transparent, #000 28px);
 }
 .tabbar-scroll[data-overflow="end"] {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 28px);
   mask-image: linear-gradient(to left, transparent, #000 28px);
 }
 .tabbar-scroll[data-overflow="both"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
   mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
 /* Tab groups: split, switch and resize controls. */

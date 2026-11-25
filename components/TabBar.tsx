@@ -67,6 +67,8 @@ interface Props {
   connectionSelected?: boolean;
   onSelectConnection?: () => void;
 }
+/** Width of the fade at a strip end with tabs scrolled out of view (globals.css `.tabbar-scroll[data-overflow]`). */
+const TAB_FADE_PX = 28;
 const badgeStyle = (color: string) => ({
   display: "inline-flex",
   alignItems: "center",
@@ -245,6 +247,8 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
 
   // Which ends have tabs scrolled out of view: those ends fade, so tabs there do not look closed.
   const [overflow, setOverflow] = useState<"start" | "end" | "both" | null>(null);
+  // Labels change the strip's width as much as tabs coming and going.
+  const labels = tabs.map((tab) => tab.label).join("\0");
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
@@ -258,7 +262,7 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
     observer?.observe(list);
     return () => { list.removeEventListener("scroll", measure); observer?.disconnect(); };
-  }, [tabs.length]);
+  }, [labels]);
 
   // Keep the active tab visible when the bar overflows horizontally.
   useEffect(() => {
@@ -266,12 +270,13 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     if (!list) return;
     const active = list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`);
     if (!active) return;
+    // Clear of the faded ends (scrolling stops at the strip's own ends).
     const listRect = list.getBoundingClientRect();
     const tabRect = active.getBoundingClientRect();
-    if (tabRect.left < listRect.left) {
-      list.scrollLeft -= listRect.left - tabRect.left;
-    } else if (tabRect.right > listRect.right) {
-      list.scrollLeft += tabRect.right - listRect.right;
+    if (tabRect.left < listRect.left + TAB_FADE_PX) {
+      list.scrollLeft -= listRect.left + TAB_FADE_PX - tabRect.left;
+    } else if (tabRect.right > listRect.right - TAB_FADE_PX) {
+      list.scrollLeft += tabRect.right - (listRect.right - TAB_FADE_PX);
     }
   }, [activeTabId, tabs]);
 
