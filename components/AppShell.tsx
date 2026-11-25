@@ -2157,8 +2157,6 @@ export function AppShell({ appName }: { appName: string }) {
           setTabLayout((layout) => activateTab(layout, front));
         }
         if (selected) handleSelectSession(selected);
-        // Never a new chat on an unreachable host: one with no workspace then.
-        else if (unreachableReason(session)) handleNewSession(randomUUID(), null);
         else handleNewSession(randomUUID(), session.poolId ? null : session.cwd, session.hostId, poolProjectOf(session));
         // Both of those show the chat; batched, this wins.
         if (!shown && fileTabShown) setFileShown(true);

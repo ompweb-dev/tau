@@ -289,7 +289,8 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
 
   // Not on every render, nor on another tab's relabel: a strip the user scrolled stays where it is.
   const activeLabel = tabs.find((tab) => tab.id === activeTabId)?.label;
-  useEffect(revealActive, [activeTabId, activeLabel, tabs.length, revealActive]);
+  const order = tabs.map((tab) => tab.id).join("\0");
+  useEffect(revealActive, [activeTabId, activeLabel, order, revealActive]);
 
   return (
     <div
