@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import test, { afterEach } from "node:test";
 const { act, cleanup, renderHook } = await import("@testing-library/react/pure.js");
 
-const { resolveTheme, isDarkTheme, THEME_PANEL, useTheme } = await import("./useTheme.ts");
+const { resolveTheme, isDarkTheme, THEME_PANEL, RETIRED_LIGHT_THEMES, RETIRED_DARK_THEMES, useTheme } = await import("./useTheme.ts");
 const vm = await import("node:vm");
 
 afterEach(cleanup);
@@ -161,8 +161,7 @@ test("the pre-paint script picks the theme the hook will", async (t) => {
     else delete window.matchMedia;
   });
   const stored = [null, "", "system", "light", "dark", "bogus", "constructor", "__proto__", "toString",
-    "one-light", "catppuccin-latte", "rose-pine-dawn", "midnight", "dracula", "harbor", "one-dark-pro", "rose-pine",
-    "catppuccin-mocha", "gruvbox-dark", "nord", "tokyo-night"];
+    ...RETIRED_LIGHT_THEMES, ...RETIRED_DARK_THEMES];
   for (const value of stored) {
     for (const osDark of [false, true]) {
       if (value === null) localStorage.removeItem("tau-theme");

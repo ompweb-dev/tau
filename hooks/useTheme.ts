@@ -15,8 +15,8 @@ export function isDarkTheme(theme: Theme): boolean {
 
 /** Themes tau no longer ships keep their light or dark side. The pre-paint script in app/index.html carries the same
  * lists (it must be inline); useTheme.test.mjs checks they agree. */
-const RETIRED_LIGHT_THEMES = new Set(["one-light", "catppuccin-latte", "rose-pine-dawn"]);
-const RETIRED_DARK_THEMES = new Set(["midnight", "dracula", "harbor", "one-dark-pro", "rose-pine", "catppuccin-mocha", "gruvbox-dark", "nord", "tokyo-night"]);
+export const RETIRED_LIGHT_THEMES = new Set(["one-light", "catppuccin-latte", "rose-pine-dawn"]);
+export const RETIRED_DARK_THEMES = new Set(["midnight", "dracula", "harbor", "one-dark-pro", "rose-pine", "catppuccin-mocha", "gruvbox-dark", "nord", "tokyo-night"]);
 
 const STORAGE_KEY = "tau-theme";
 const listeners = new Set<() => void>();

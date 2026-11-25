@@ -2841,7 +2841,7 @@ button.provider-grid-card:hover {
 
 .settings-toggle.on,
 .settings-toggle[aria-checked="true"] {
-  background: var(--accent-strong);
+  background: var(--accent);
 }
 
 .settings-toggle-knob {
@@ -2858,6 +2858,8 @@ button.provider-grid-card:hover {
 .settings-toggle.on .settings-toggle-knob,
 .settings-toggle[aria-checked="true"] .settings-toggle-knob {
   transform: translateX(18px);
+  /* The page colour keeps the knob clear of the bright dark-theme accent (7:1), where white is 2.4:1. */
+  background: var(--bg);
 }
 
 .settings-badge {
