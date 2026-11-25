@@ -3906,6 +3906,43 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+/* Tab groups: split, switch and resize controls. */
+.tab-group-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tab-group-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.tab-group-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tab-group-switch {
+  margin: 0 2px 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.tab-group-sash-line {
+  background: var(--border);
+  transition: background var(--dur-fast) var(--ease-out-warm);
+}
+.tab-group-sash:hover > .tab-group-sash-line,
+.tab-group-sash:focus-visible > .tab-group-sash-line {
+  background: var(--accent);
+}
 .tabbar-tab {
   transition: background var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm);
 }

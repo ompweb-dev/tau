@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Activity, Bell, Folder, GitBranch, GitFork, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
@@ -36,6 +36,8 @@ interface Props {
   ariaLabel?: string;
   /** Arrows only move focus; Enter or Space shows the tab (for tabs that are costly to show). */
   manualActivation?: boolean;
+  /** Tabs can be dragged, within this strip and between strips: a drop lands before `beforeId` (at the end without one). */
+  onDropTab?: (tabId: string, beforeId: string | null) => void;
   /** Pinned Explorer tab rendered after Notifications, before the file tabs (right-panel tab redesign). */
   explorerSelected?: boolean;
   onSelectExplorer?: () => void;
@@ -145,7 +147,10 @@ function PinnedTab({ id, panelId, label, title, icon, selected, badge, badgeColo
   );
 }
 
-export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
+/** Drag data type of a strip tab being moved. */
+const TAB_DRAG_TYPE = "application/x-tau-tab";
+
+export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, onDropTab, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -207,6 +212,21 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     }
   };
 
+  // ponytail: no drop indicator; the tab lands before the one under the pointer.
+  const allowTabDrop = (event: DragEvent<HTMLElement>) => {
+    if (!onDropTab || !event.dataTransfer.types.includes(TAB_DRAG_TYPE)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  };
+  const dropTab = (event: DragEvent<HTMLElement>, beforeId: string | null) => {
+    if (!onDropTab) return;
+    const tabId = event.dataTransfer.getData(TAB_DRAG_TYPE);
+    if (!tabId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onDropTab(tabId, beforeId);
+  };
+
   // Keep the active tab visible when the bar overflows horizontally.
   useEffect(() => {
     const list = listRef.current;
@@ -229,8 +249,11 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
       aria-label={ariaLabel ?? t("appShell.filePanel")}
       aria-orientation="horizontal"
       className="tabbar-scroll"
+      onDragOver={allowTabDrop}
+      onDrop={(event) => dropTab(event, null)}
       style={{
         display: "flex",
+        minWidth: onDropTab ? "100%" : undefined,
         background: "var(--bg-panel)",
         // Let a classic horizontal scrollbar take space below the tabs.
         overflowX: "auto",
@@ -322,6 +345,12 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
             aria-selected={isActive}
             aria-label={tab.title}
             aria-controls={tab.panelId}
+            draggable={onDropTab ? true : undefined}
+            onDragStart={onDropTab ? (event) => {
+              event.dataTransfer.setData(TAB_DRAG_TYPE, tab.id);
+              event.dataTransfer.effectAllowed = "move";
+            } : undefined}
+            onDrop={(event) => dropTab(event, tab.id)}
             onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();

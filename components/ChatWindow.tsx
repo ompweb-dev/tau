@@ -520,8 +520,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   // matters: unmounting mid-run must not leave the module-global handler
   // pointing at this (now unmounted) instance's handleAbort.
   useEffect(() => {
-    registerAbortHandler(sessionBusy && !covered ? handleAbort : null);
-    return () => registerAbortHandler(null);
+    if (!sessionBusy || covered) return;
+    return registerAbortHandler(handleAbort);
   }, [sessionBusy, handleAbort, covered]);
 
   // Cycle model / thinking level via ⌘/Ctrl+Alt+M and ⌘/Ctrl+Alt+T (RPC

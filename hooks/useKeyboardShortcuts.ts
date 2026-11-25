@@ -10,11 +10,15 @@ import { isMacPlatform, navigateShortcutDirection } from "@/lib/navigation-histo
 let globalAbortHandler: (() => void) | null = null;
 
 /**
- * Register (or clear) the abort handler for the global Esc shortcut.
- * Call this from ChatWindow whenever agentRunning or handleAbort changes.
+ * Register the abort handler for the global Esc shortcut; the returned
+ * function clears it unless another chat registered since (several chats can
+ * be mounted side by side, and only the one in front registers).
  */
-export function registerAbortHandler(handler: (() => void) | null): void {
+export function registerAbortHandler(handler: () => void): () => void {
   globalAbortHandler = handler;
+  return () => {
+    if (globalAbortHandler === handler) globalAbortHandler = null;
+  };
 }
 
 // ---------------------------------------------------------------------------
