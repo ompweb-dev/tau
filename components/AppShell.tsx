@@ -1890,10 +1890,10 @@ export function AppShell({ appName }: { appName: string }) {
     setFileShown(false);
   }, []);
 
-  // The sidebar's lists keep chat tabs current: a renamed session relabels its
-  // tab, and one that left the list since the last load (deleted or archived
-  // elsewhere) loses its tab, unless it is the chat shown. A tab never listed
-  // yet (a new session) stays.
+  // The sidebar's lists keep chat tabs current (see syncChatTabs): a renamed
+  // session relabels its tab, and one that left the list since the last load
+  // (deleted or archived elsewhere) loses its tab, unless it is selected, a
+  // group shows it, or its host's list is not current.
   const listedTabKeysRef = useRef(new Set<string>());
   const shownChatIdsRef = useRef(new Set<string>());
   const handleSessionsLoaded = useCallback((sessions: SessionInfo[], unavailableHosts: string[] | null) => {
@@ -1907,7 +1907,7 @@ export function AppShell({ appName }: { appName: string }) {
         (tab) => !unavailable || unavailable.has(remoteHostId(tab.hostId) ?? LOCAL_HOST_ID) || shownChatIdsRef.current.has(chatTabId(tab))
           || Boolean(selected && sameSessionTarget(tab, selected)),
         (tab) => Boolean(selected && sameSessionTarget(tab, selected)));
-      // A tab kept although unlisted (shown, or its host unavailable) is still gone-if-missing next time.
+      // A tab kept although unlisted (selected, shown, or its host unavailable) is still gone-if-missing next time.
       listedTabKeysRef.current = new Set([...listed.keys(), ...next.map(chatTabId).filter((key) => before.has(key) && !listed.has(key))]);
       return next;
     });
@@ -2157,8 +2157,8 @@ export function AppShell({ appName }: { appName: string }) {
           setTabLayout((layout) => activateTab(layout, front));
         }
         if (selected) handleSelectSession(selected);
-        // Never a new chat on an unreachable host: the sidebar's workspace then.
-        else if (unreachableReason(session)) handleNewSession(randomUUID(), activeCwd, activeHostId);
+        // Never a new chat on an unreachable host: one with no workspace then.
+        else if (unreachableReason(session)) handleNewSession(randomUUID(), null);
         else handleNewSession(randomUUID(), session.poolId ? null : session.cwd, session.hostId, poolProjectOf(session));
         // Both of those show the chat; batched, this wins.
         if (!shown && fileTabShown) setFileShown(true);

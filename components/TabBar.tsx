@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Activity, Bell, Folder, GitBranch, GitFork, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
@@ -245,6 +245,24 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     onDropTab(tabId, beforeId);
   };
 
+  // Keeps the active tab in view, clear of the faded ends when it fits between them (scrolling stops at the
+  // strip's own ends).
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+  const revealActive = useCallback(() => {
+    const list = listRef.current;
+    const active = list?.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabIdRef.current)}"]`);
+    if (!list || !active) return;
+    const listRect = list.getBoundingClientRect();
+    const tabRect = active.getBoundingClientRect();
+    const inset = listRect.width >= tabRect.width + 2 * TAB_FADE_PX ? TAB_FADE_PX : 0;
+    if (tabRect.left < listRect.left + inset) {
+      list.scrollLeft -= listRect.left + inset - tabRect.left;
+    } else if (tabRect.right > listRect.right - inset) {
+      list.scrollLeft += tabRect.right - (listRect.right - inset);
+    }
+  }, []);
+
   // Which ends have tabs scrolled out of view: those ends fade, so tabs there do not look closed.
   const [overflow, setOverflow] = useState<"start" | "end" | "both" | null>(null);
   // Labels change the strip's width as much as tabs coming and going.
@@ -259,28 +277,19 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     };
     measure();
     list.addEventListener("scroll", measure, { passive: true });
-    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    // A strip that narrows (a split, a resized window or panel) brings the active tab back into view.
+    let width = list.clientWidth;
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(() => {
+      if (list.clientWidth !== width) { width = list.clientWidth; revealActive(); }
+      measure();
+    }) : null;
     observer?.observe(list);
     return () => { list.removeEventListener("scroll", measure); observer?.disconnect(); };
-  }, [labels]);
+  }, [labels, revealActive]);
 
-  // Keep the active tab visible when the bar overflows horizontally.
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    const active = list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`);
-    if (!active) return;
-    // Clear of the faded ends when it fits between them (scrolling stops at the strip's own ends).
-    const listRect = list.getBoundingClientRect();
-    const tabRect = active.getBoundingClientRect();
-    const inset = list.clientWidth >= tabRect.width + 2 * TAB_FADE_PX ? TAB_FADE_PX : 0;
-    if (tabRect.left < listRect.left + inset) {
-      list.scrollLeft -= listRect.left + inset - tabRect.left;
-    } else if (tabRect.right > listRect.right - inset) {
-      list.scrollLeft += tabRect.right - (listRect.right - inset);
-    }
-    // Not on every render: a strip the user scrolled stays where it is.
-  }, [activeTabId, labels]);
+  // Not on every render, nor on another tab's relabel: a strip the user scrolled stays where it is.
+  const activeLabel = tabs.find((tab) => tab.id === activeTabId)?.label;
+  useEffect(revealActive, [activeTabId, activeLabel, tabs.length, revealActive]);
 
   return (
     <div

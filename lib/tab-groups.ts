@@ -208,13 +208,14 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
 
 /**
  * Chat tabs after a session list loads: a listed session's title replaces the
- * tab's (except a `live` one's, whose own copy is newer than a cached list), and
+ * tab's (a `live` tab's only from a copy modified later than its own, since its
+ * own may be newer than a cached list), and
  * a tab whose session was in the previous list (`before`) but is no longer
  * listed closes, unless `keep` holds it (shown, or its host's list is not
  * current). A tab never listed yet (a session newer than the list) stays. The
  * same array when nothing changed.
  */
-export function syncChatTabs<T extends { name?: string; firstMessage: string }>(
+export function syncChatTabs<T extends { name?: string; firstMessage: string; modified?: string }>(
   tabs: T[], keyOf: (tab: T) => string, listed: ReadonlyMap<string, T>, before: ReadonlySet<string>,
   keep: (tab: T) => boolean, live: (tab: T) => boolean,
 ): T[] {
@@ -227,10 +228,10 @@ export function syncChatTabs<T extends { name?: string; firstMessage: string }>(
       changed = true;
       return [];
     }
-    // A live tab's own title may be newer than a cached list's: it takes only a name the list has (a rename).
-    if ((live(tab) && !found.name) || (found.name === tab.name && found.firstMessage === tab.firstMessage)) return [tab];
+    if (found.name === tab.name && found.firstMessage === tab.firstMessage) return [tab];
+    if (live(tab) && !(Date.parse(found.modified ?? "") > Date.parse(tab.modified ?? ""))) return [tab];
     changed = true;
-    return [{ ...tab, name: found.name, firstMessage: found.firstMessage }];
+    return [{ ...tab, name: found.name, firstMessage: found.firstMessage, modified: found.modified }];
   });
   return changed ? next : tabs;
 }
