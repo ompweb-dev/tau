@@ -243,6 +243,23 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     onDropTab(tabId, beforeId);
   };
 
+  // Which ends have tabs scrolled out of view: those ends fade, so tabs there do not look closed.
+  const [overflow, setOverflow] = useState<"start" | "end" | "both" | null>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const measure = () => {
+      const start = list.scrollLeft > 1;
+      const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+      setOverflow(start && end ? "both" : start ? "start" : end ? "end" : null);
+    };
+    measure();
+    list.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(list);
+    return () => { list.removeEventListener("scroll", measure); observer?.disconnect(); };
+  }, [tabs.length]);
+
   // Keep the active tab visible when the bar overflows horizontally.
   useEffect(() => {
     const list = listRef.current;
@@ -265,6 +282,7 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
       aria-label={ariaLabel ?? t("appShell.filePanel")}
       aria-orientation="horizontal"
       className="tabbar-scroll"
+      data-overflow={overflow ?? undefined}
       onDragOver={allowTabDrop}
       onDrop={(event) => dropTab(event, null)}
       style={{

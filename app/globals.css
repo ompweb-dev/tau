@@ -3906,6 +3906,16 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+/* Tabs scrolled out of view at an end: that end fades. */
+.tabbar-scroll[data-overflow="start"] {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+.tabbar-scroll[data-overflow="end"] {
+  mask-image: linear-gradient(to left, transparent, #000 28px);
+}
+.tabbar-scroll[data-overflow="both"] {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
 /* Tab groups: split, switch and resize controls. */
 .tab-group-action {
   display: flex;

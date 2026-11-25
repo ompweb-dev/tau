@@ -73,6 +73,8 @@ interface Props {
   /** The active session can exist in memory before its JSONL file is flushed. */
   optimisticSession?: SessionInfo | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
+  /** Every session list the sidebar loads (not a 304). */
+  onSessionsLoaded?: (sessions: SessionInfo[]) => void;
   onNewSession?: (sessionId: string, cwd: string | null, hostId?: string, project?: ManagedProject) => void;
   initialSessionId?: string | null;
   initialSessionHostId?: string;
@@ -141,7 +143,7 @@ function loadCollapsedHosts(): Set<string> {
   }
 }
 
-export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, optimisticSession, onSelectSession, onNewSession, initialSessionId, initialSessionHostId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, selectedHostId: selectedHostIdProp, selectedLogicalProjectKey, onCwdChange, onWorkspaceOptionsChange, onWorktreeContextChange, addProjectOpen, addProjectHostId = LOCAL_HOST_ID, setAddProjectOpen, onOpenSettings, onOpenArchive, navigation, updateAvailable, settingsOpen = false, onClose, onSearchQueryChange, onOpenSearchMatch }: Props) {
+export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, optimisticSession, onSelectSession, onNewSession, initialSessionId, initialSessionHostId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, selectedHostId: selectedHostIdProp, selectedLogicalProjectKey, onCwdChange, onWorkspaceOptionsChange, onWorktreeContextChange, addProjectOpen, addProjectHostId = LOCAL_HOST_ID, setAddProjectOpen, onOpenSettings, onOpenArchive, navigation, updateAvailable, settingsOpen = false, onClose, onSearchQueryChange, onOpenSearchMatch, onSessionsLoaded }: Props) {
 
 
   const { t } = useI18n();
@@ -263,6 +265,8 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sessionsEtagRef = useRef<string | null>(null);
+  const onSessionsLoadedRef = useRef(onSessionsLoaded);
+  onSessionsLoadedRef.current = onSessionsLoaded;
   const sessionsAbortRef = useRef<AbortController | null>(null);
   // Set once the first /api/sessions fetch settles (success OR failure) so the
   // initial-restore effect can stop waiting on a load that never yields rows.
@@ -288,6 +292,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       if (etag) sessionsEtagRef.current = etag;
       const data = await res.json() as { sessions: SessionInfo[]; runningSessionIds?: string[]; runningSessions?: Array<LivePlace & { id: string }> };
       setAllSessions(data.sessions);
+      onSessionsLoadedRef.current?.(data.sessions);
       if (data.runningSessions) {
         for (const rs of data.runningSessions) {
           if (rs.id && rs.cwd) knownRunningPlacesRef.current.set(rs.id, rs);

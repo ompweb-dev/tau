@@ -113,7 +113,7 @@ export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabI
 }) {
   const active = activeFileTab !== null;
   return (
-    <div id={panelId} role="tabpanel" aria-label={activeFileTab?.filePath} style={{ display: active ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}>
+    <div id={panelId} role="tabpanel" tabIndex={-1} aria-label={activeFileTab?.filePath} className="ui-focus-ring" style={{ outline: "none", display: active ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}>
       {fileTabs.filter((tab) => tabIds.includes(tab.id)).map((tab) => (
         <div key={tab.id} style={{ display: tab.id === activeFileTab?.id ? "block" : "none", height: "100%" }}>
           <FileViewer
