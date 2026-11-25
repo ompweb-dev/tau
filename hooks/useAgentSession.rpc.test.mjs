@@ -5760,8 +5760,11 @@ test("the strips and groups come back after a reload, and a tab whose session we
   await until(() => view.queryByRole("tab", { name: /report\.txt/ }), "a file tab opens");
   view.unmount();
 
-  // Worker legacy, the chat its group showed, went while the page was closed.
+  // Worker legacy, the chat its group showed, went while the page was closed. Worker one only lags: the list
+  // lacks it, but the server still has it.
   sessions.splice(sessions.findIndex((session) => session.id === "legacy"), 1);
+  world.sessions.delete("legacy");
+  const workerOne = sessions.splice(sessions.findIndex((session) => session.id === "worker-one"), 1)[0];
   window.history.replaceState(null, "", "?session=worker-two");
   view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
   await settle();
@@ -5770,8 +5773,10 @@ test("the strips and groups come back after a reload, and a tab whose session we
   assert.equal(view.getAllByRole("separator", { name: translate("appShell.resizeTabGroups") }).length, 1, "the split comes back");
   const groupOf = (name) => view.getByRole("tab", { name }).closest("[data-group-id]");
   assert.notEqual(groupOf("Worker one conversation"), groupOf("Worker two conversation"), "each chat in its own group again");
-  await until(() => !view.queryByRole("tab", { name: "Worker legacy conversation" }), "a session gone meanwhile loses its tab on the first list, shown or not");
+  await until(() => !view.queryByRole("tab", { name: "Worker legacy conversation" }), "a session gone meanwhile loses its tab after the first list, shown or not");
+  assert.ok(view.getByRole("tab", { name: "Worker one conversation" }), "one the list only lacks keeps its tab");
   view.unmount();
+  sessions.push(workerOne);
 
   // Reloaded without a conversation in the URL: the focused group's tab is shown again.
   window.history.replaceState(null, "", "/");

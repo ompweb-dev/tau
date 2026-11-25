@@ -1930,53 +1930,63 @@ export function AppShell({ appName }: { appName: string }) {
   // session relabels its tab, and one that left the list since the last load
   // (deleted or archived elsewhere) loses its tab, unless it is selected, a
   // group shows it, or its host's list is not current.
-  // Restored tabs count as listed: a session deleted while the page was closed loses its tab on the first load.
-  // Not the address's session nor the chat the focused group showed: the freshest ones, which a lagging first
-  // list may still lack (they close once a list has had them).
-  const [listedTabKeysRef] = useState(() => {
-    const focusedGroup = restored && groupsOf(restored.layout).find((group) => group.id === restored.focused);
-    const fresh = new Set([focusedGroup?.active, focusedGroup?.chat]);
-    return { current: new Set((restored?.chats ?? []).filter((chat) => !fresh.has(chatTabId(chat))
-      && !(initialNavigation.sessionId && sameSessionTarget(chat, { id: initialNavigation.sessionId, hostId: initialNavigation.hostId }))).map(chatTabId)) };
-  });
-  // Until the first list after a restore: what the restored groups show was not shown in this page load yet.
-  const restorePendingRef = useRef(restored !== null);
-  // With nothing asked for by the address and nothing chosen since, the first list selects what the focused
-  // group showed: as a restore (no keyboard on a phone, no history entry), then with the address set.
+  const listedTabKeysRef = useRef(new Set<string>());
+  // Restored tabs (trimmed copies, as saved) until the first list after the restore.
+  const restoredChatsRef = useRef(new Set<SessionInfo>(restored?.chats ?? []));
+  // With nothing asked for by the address and nothing chosen since, the first list holding it selects what the
+  // focused group showed: as a restore (no keyboard on a phone, no history entry), then with the address set.
+  const restoreSelectionPendingRef = useRef(restored !== null && !initialNavigation.sessionId && !initialNavigation.requestedCwd);
+  const untouchedView = !selectedSession && newSessionCwd === null && !newSessionPoolProject && !settingsTab && !fileShown;
   const restoreSelectionRef = useRef<(listed: ReadonlyMap<string, SessionInfo>) => void>(() => {});
-  const untouchedView = !selectedSession && newSessionCwd === null && !settingsTab && !initialNavigation.sessionId && !initialNavigation.requestedCwd;
   restoreSelectionRef.current = (listed) => {
+    if (!restoreSelectionPendingRef.current) return;
     const group = restored && groupsOf(restored.layout).find((candidate) => candidate.id === restored.focused);
-    if (!restored || !group?.active || !untouchedView) return;
-    // A file: the chat behind it, then the file over it.
-    const session = listed.get(group.active) ?? (group.chat ? listed.get(group.chat) : undefined);
+    if (!restored || !group?.active || !untouchedView) { restoreSelectionPendingRef.current = false; return; }
+    // A file: the chat behind it, then the file over it. A chat not listed yet waits for a later list.
+    const file = restored.files.some((tab) => tab.id === group.active);
+    const chatId = file ? group.chat : group.active;
+    const session = chatId ? listed.get(chatId) : undefined;
+    if (chatId && !session) return;
+    restoreSelectionPendingRef.current = false;
     if (session) {
       handleSelectSession(session, true);
       router.replace(sessionNavigationUrl(session));
     }
-    if (restored.files.some((file) => file.id === group.active)) handleSelectFileTab(group.active);
+    if (file) handleSelectFileTab(group.active);
   };
   const shownChatIdsRef = useRef(new Set<string>());
   const handleSessionsLoaded = useCallback((sessions: SessionInfo[], unavailableHosts: string[] | null) => {
     const listed = new Map(sessions.map((session) => [chatTabId(session), session]));
     const before = listedTabKeysRef.current;
-    const firstAfterRestore = restorePendingRef.current;
-    restorePendingRef.current = false;
+    const restoredChats = restoredChatsRef.current;
+    restoredChatsRef.current = new Set();
     // Unknown (an older server): nothing is taken as gone.
     const unavailable = unavailableHosts && new Set(unavailableHosts);
+    const hostUnavailable = (chat: SessionInfo) => !unavailable || unavailable.has(remoteHostId(chat.hostId) ?? LOCAL_HOST_ID);
     const selected = activeSessionTargetRef.current;
+    const isSelected = (chat: SessionInfo) => Boolean(selected && sameSessionTarget(chat, selected));
     setChatTabs((tabs) => {
-      const next = syncChatTabs(tabs, chatTabId, listed, before,
-        (tab) => !unavailable || unavailable.has(remoteHostId(tab.hostId) ?? LOCAL_HOST_ID) || (!firstAfterRestore && shownChatIdsRef.current.has(chatTabId(tab)))
-          || Boolean(selected && sameSessionTarget(tab, selected)),
-        // A selected tab restored from storage is a trimmed copy: the first list replaces it.
-        (tab) => !firstAfterRestore && Boolean(selected && sameSessionTarget(tab, selected)));
+      // A restored tab takes the listed copy whatever it differs in: its own is trimmed.
+      const current = restoredChats.size ? tabs.map((tab) => restoredChats.has(tab) ? listed.get(chatTabId(tab)) ?? tab : tab) : tabs;
+      const next = syncChatTabs(current, chatTabId, listed, before,
+        (tab) => hostUnavailable(tab) || shownChatIdsRef.current.has(chatTabId(tab)) || isSelected(tab), isSelected);
       // A tab kept although unlisted (selected, shown, or its host unavailable) is still gone-if-missing next time.
       listedTabKeysRef.current = new Set([...listed.keys(), ...next.map(chatTabId).filter((key) => before.has(key) && !listed.has(key))]);
       return next;
     });
-    if (firstAfterRestore && !selected) restoreSelectionRef.current(listed);
-  }, [listedTabKeysRef]);
+    if (restoredChats.size) setSelectedSession((current) => current && restoredChats.has(current) ? listed.get(chatTabId(current)) ?? current : current);
+    // A restored chat the list lacks may be newer than the list: only the server, which reads every host again on
+    // a miss, can say it is gone (404). Any other answer keeps the tab.
+    for (const chat of restoredChats) {
+      if (listed.has(chatTabId(chat)) || hostUnavailable(chat)) continue;
+      void fetch(`/api/sessions/${encodeURIComponent(chat.id)}?meta=1`).then((response) => {
+        if (response.status !== 404) return;
+        const now = activeSessionTargetRef.current;
+        setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, chat) || Boolean(now && sameSessionTarget(tab, now))));
+      }, () => {});
+    }
+    restoreSelectionRef.current(listed);
+  }, []);
 
   // Every conversation shown gets a chat tab, kept until closed; a newer copy
   // of its session (title, hydrated root) replaces the stored one.
