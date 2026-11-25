@@ -67,8 +67,8 @@ export interface WorkspaceOps {
   cancelClone(id: string): Promise<OpResult<CloneProgress>>;
   /** One answer per requested path, in order; at most 500 paths. */
   gitOrigins(paths: string[]): Promise<OpResult<{ origins: GitOrigin[] }>>;
-  /** A literal search of the cwd's text files; `path` is relative to the cwd. */
-  searchText(cwd: string, query: string, caseSensitive: boolean, owner?: WorkspaceOwner): Promise<OpResult<WorkspaceTextSearch>>;
+  /** A literal search of the cwd's text files; `path` is relative to the cwd. A newer search with the same `client` stops this one. */
+  searchText(cwd: string, query: string, caseSensitive: boolean, client: string, owner?: WorkspaceOwner): Promise<OpResult<WorkspaceTextSearch>>;
 }
 
 export const WORKSPACE_OP_PARAMS: { readonly [K in keyof WorkspaceOps]: readonly string[] } = {
@@ -84,7 +84,7 @@ export const WORKSPACE_OP_PARAMS: { readonly [K in keyof WorkspaceOps]: readonly
   // Older peers cap the advertised prefix before filtering unknown capabilities.
   listFilesInRoot: ["input", "root"],
   gitOrigins: ["paths"],
-  searchText: ["cwd", "query", "caseSensitive", "owner"],
+  searchText: ["cwd", "query", "caseSensitive", "client", "owner"],
 };
 
 export function isWorkspaceOp(value: string): value is keyof WorkspaceOps {

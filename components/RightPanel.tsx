@@ -140,9 +140,9 @@ export const RightPanel = memo(function RightPanel({
   const openWorkspaceFile = useCallback((filePath: string, fileName: string) => {
     onOpenFile(filePath, fileName, { hostId, sessionId: sourceSessionId ?? null, cwd: explorerCwd });
   }, [onOpenFile, hostId, sourceSessionId, explorerCwd]);
-  const openSearchMatch = useCallback((filePath: string, line: number) => {
-    onOpenFile(filePath, getFileName(filePath), { hostId, sessionId: sourceSessionId ?? null, cwd: explorerCwd }, line);
-  }, [onOpenFile, hostId, sourceSessionId, explorerCwd]);
+  const openSearchMatch = useCallback((filePath: string, line: number, cwd: string) => {
+    onOpenFile(filePath, getFileName(filePath), { hostId, sessionId: sourceSessionId ?? null, cwd }, line);
+  }, [onOpenFile, hostId, sourceSessionId]);
   const gitBadge = explorerIsRepo ? explorerGitCount : 0;
   const unreadNotifications = useUnreadNotificationCount();
   const [visitedViews, setVisitedViews] = useState<Set<RightPanelView>>(() => new Set(["explorer"]));

@@ -12,26 +12,29 @@ test("results group by file, open at their line, and follow the case toggle", as
   globalThis.fetch = async (input) => {
     const url = new URL(String(input), "http://localhost");
     requests.push(url);
-    return Response.json({ cwd: "/w", truncated: false, matches: [
+    // The session's own cwd, searched instead of the panel's.
+    return Response.json({ cwd: "/session", truncated: false, matches: [
       { path: "src/a.ts", line: 3, text: "  const needle = 1;", column: 8, length: 6 },
       { path: "src/a.ts", line: 9, text: "needle()", column: 0, length: 6 },
       { path: "README.md", line: 1, text: "# Needle", column: 2, length: 6 },
     ] });
   };
   const opened = [];
-  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", sourceSessionId: "s1", refreshKey: 0, onOpenMatch: (path, line) => opened.push([path, line]) }));
+  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", sourceSessionId: "s1", refreshKey: 0, onOpenMatch: (...args) => opened.push(args) }));
   for (const value of ["n", "ne", "needle"]) {
     fireEvent.change(screen.getByRole("searchbox"), { target: { value } });
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   await waitFor(() => assert.ok(screen.getByRole("status").textContent.includes("3 results")));
   assert.equal(requests.length, 1, "typing is debounced into one request");
-  assert.deepEqual(Object.fromEntries(requests[0].searchParams), { cwd: "/w", hostId: "local", q: "needle", sessionId: "s1" });
+  const { client, ...sent } = Object.fromEntries(requests[0].searchParams);
+  assert.deepEqual(sent, { cwd: "/w", hostId: "local", q: "needle", sessionId: "s1" });
+  assert.match(client, /^[a-z0-9]{8,}$/, "the panel names itself so only its own older search is stopped");
   assert.ok(screen.getByRole("status").textContent.includes("2 files"));
   assert.deepEqual([...document.querySelectorAll("mark")].map((mark) => mark.textContent), ["needle", "needle", "Needle"]);
 
   fireEvent.click(screen.getByRole("button", { name: /9\s*needle\(\)/ }));
-  assert.deepEqual(opened, [["/w/src/a.ts", 9]], "a result opens against the directory searched");
+  assert.deepEqual(opened, [["/session/src/a.ts", 9, "/session"]], "a result opens against the directory searched");
 
   const file = screen.getByRole("button", { name: /a\.ts/, expanded: true });
   fireEvent.click(file);

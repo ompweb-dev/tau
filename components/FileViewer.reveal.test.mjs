@@ -69,3 +69,10 @@ test("a reveal on a tab shown again waits for the reloaded content", async () =>
   await waitFor(() => assert.deepEqual(marked(view), ["3"]), "the mark is on the lines rendered after the reload");
   assert.deepEqual(scrolled, ["3"]);
 });
+
+test("an image view consumes a reveal it cannot show", async () => {
+  setup();
+  const done = [];
+  render(React.createElement(FileViewer, { ...props, filePath: "/w/logo.svg", revealLine: { line: 2, seq: 7 }, onRevealDone: (seq) => done.push(seq) }));
+  await waitFor(() => assert.deepEqual(done, [7]));
+});

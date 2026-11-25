@@ -6,7 +6,8 @@ export async function GET(req: Request) {
     const resolved = await resolveWorkspaceHost(params.get("hostId") ?? undefined, params.get("sessionId"));
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.workspaceOps.searchText(
-      resolved.cwd ?? params.get("cwd")?.trim() ?? "", params.get("q") ?? "", params.get("case") === "1", resolved.owner,
+      resolved.cwd ?? params.get("cwd")?.trim() ?? "", params.get("q") ?? "", params.get("case") === "1",
+      (params.get("client") ?? "").slice(0, 64), resolved.owner,
     );
     return result.ok ? Response.json(result.value) : opErrorResponse(result);
   } catch (error) {

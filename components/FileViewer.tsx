@@ -792,6 +792,11 @@ function DocumentViewer({ filePath, hostId, sourceSessionId, active = true }: Pr
 }
 
 export function FileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine, onRevealDone }: Props) {
+  const textual = !isImagePath(filePath) && !isAudioPath(filePath) && !isDocumentPreviewPath(filePath);
+  // Image, audio and document views have no lines (a search hit in an SVG opens its image): consume the request.
+  useEffect(() => {
+    if (!textual && revealLine) onRevealDone?.(revealLine.seq);
+  }, [textual, revealLine, onRevealDone]);
   if (isImagePath(filePath)) {
     return <ImageViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
@@ -885,10 +890,10 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
     }
   }, [cwd, hostId, sourceSessionId]);
 
-  // Waits for this activation's content in the highlighted source, then reveals the line, or
-  // just consumes the request when the file no longer has it.
+  // Waits for this activation's content in the source, then reveals the line, or just
+  // consumes the request when the file no longer has it.
   useEffect(() => {
-    if (!revealLine || revealLine.seq === revealedSeqRef.current || !data || !active || !highlightReady) return;
+    if (!revealLine || revealLine.seq === revealedSeqRef.current || !data || !active) return;
     if (displayMode !== "source") { setDisplayMode("source"); return; }
     const root = contentRef.current;
     if (!root) return;
@@ -898,12 +903,7 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
     line?.classList.add("is-revealed");
     line?.scrollIntoView({ block: "center" });
     onRevealDone?.(revealLine.seq);
-  }, [revealLine, data, active, displayMode, highlightReady, onRevealDone]);
-
-  // Reset per file, not per activation: switching tabs back keeps the user's pick.
-  useEffect(() => {
-    setLanguageOverride(null);
-  }, [filePath]);
+  }, [revealLine, data, active, displayMode, onRevealDone]);
 
   // Reset per file, not per activation: switching tabs back keeps the user's pick.
   useEffect(() => {

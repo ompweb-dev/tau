@@ -14,7 +14,8 @@ interface Props {
   sourceSessionId?: string | null;
   /** Bumped by the panel's refresh: the shown search runs again. */
   refreshKey: number;
-  onOpenMatch: (filePath: string, line: number) => void;
+  /** `cwd`: the directory searched (the session's own when there is one). */
+  onOpenMatch: (filePath: string, line: number, cwd: string) => void;
 }
 
 type State =
@@ -23,8 +24,8 @@ type State =
   | { status: "done"; result: WorkspaceTextSearch }
   | { status: "failed"; error: string };
 
-async function fetchSearch(cwd: string, hostId: string, sourceSessionId: string | null | undefined, query: string, caseSensitive: boolean, signal: AbortSignal): Promise<WorkspaceTextSearch> {
-  const params = new URLSearchParams({ cwd, hostId, q: query });
+async function fetchSearch(cwd: string, hostId: string, sourceSessionId: string | null | undefined, query: string, caseSensitive: boolean, client: string, signal: AbortSignal): Promise<WorkspaceTextSearch> {
+  const params = new URLSearchParams({ cwd, hostId, q: query, client });
   if (caseSensitive) params.set("case", "1");
   if (sourceSessionId) params.set("sessionId", sourceSessionId);
   const res = await fetch(`/api/file-search?${params}`, { signal });
@@ -41,6 +42,8 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
   const [state, setState] = useState<State>({ status: "idle" });
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+  // This panel's newer search stops its older one on the host; other panels' searches are left alone.
+  const [client] = useState(() => Math.random().toString(36).slice(2, 12) + Date.now().toString(36));
 
   useEffect(() => {
     if (!query) { setState({ status: "idle" }); return; }
@@ -48,7 +51,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
     setState({ status: "searching" });
     // Each run reads every text file: wait for a pause in typing.
     const timer = setTimeout(() => {
-      fetchSearch(cwd, hostId, sourceSessionId, query, caseSensitive, controller.signal)
+      fetchSearch(cwd, hostId, sourceSessionId, query, caseSensitive, client, controller.signal)
         .then((result) => {
           if (controller.signal.aborted) return;
           setCollapsed(new Set());
@@ -59,7 +62,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
         });
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [cwd, hostId, sourceSessionId, query, caseSensitive, refreshKey]);
+  }, [cwd, hostId, sourceSessionId, query, caseSensitive, refreshKey, client]);
 
   const files = useMemo(() => {
     const grouped = new Map<string, WorkspaceTextMatch[]>();
@@ -134,7 +137,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
                   key={match.line}
                   className="search-panel-match ui-focus-ring"
                   title={`${file}:${match.line}`}
-                  onClick={() => state.status === "done" && onOpenMatch(joinFilePath(state.result.cwd, file), match.line)}
+                  onClick={() => state.status === "done" && onOpenMatch(joinFilePath(state.result.cwd, file), match.line, state.result.cwd)}
                 >
                   <span className="search-panel-line">{match.line}</span>
                   <span className="search-panel-text">

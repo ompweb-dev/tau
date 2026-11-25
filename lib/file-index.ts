@@ -198,7 +198,7 @@ export const MAX_TEXT_MATCHES = 500;
 const TEXT_MATCH_EXCERPT = 240;
 /** Tests shorten the budget. */
 export const textSearchLimits = { budgetMs: 10_000 };
-/** The newest search per cwd: an older one still scanning stops. */
+/** The newest search per cwd and client (a search panel): its older one still scanning stops. */
 const latestSearch = new Map<string, object>();
 
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
@@ -224,12 +224,13 @@ function excerpt(line: string, index: number, matched: number): Omit<WorkspaceTe
  * respected) for a literal string. Reads only regular files whose real path
  * stays inside the cwd, up to the preview size (what a result can open), and
  * skips binary files (a NUL in the first 8 KiB) and pi's credential files.
- * `truncated`: the match cap, the time budget, a newer search of the cwd or
- * the listing's cap stopped it.
+ * `truncated`: the match cap, the time budget, a newer search by the same
+ * client (`""`: none) or the listing's cap stopped it.
  */
-export async function searchWorkspaceText(cwd: string, query: string, caseSensitive: boolean): Promise<WorkspaceTextSearch> {
+export async function searchWorkspaceText(cwd: string, query: string, caseSensitive: boolean, client = ""): Promise<WorkspaceTextSearch> {
   const token = {};
-  latestSearch.set(cwd, token);
+  const key = client ? `${cwd}\0${client}` : null;
+  if (key) latestSearch.set(key, token);
   try {
     // Fresh: a search must see files written a moment ago.
     const { listing } = await cachedListing(cwd, true);
@@ -241,7 +242,7 @@ export async function searchWorkspaceText(cwd: string, query: string, caseSensit
     const deadline = Date.now() + textSearchLimits.budgetMs;
     for (const rel of listing.files) {
       if (matches.length > MAX_TEXT_MATCHES) break;
-      if (Date.now() > deadline || latestSearch.get(cwd) !== token) return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: true };
+      if (Date.now() > deadline || (key && latestSearch.get(key) !== token)) return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: true };
       const absolute = path.join(cwd, rel);
       let content: Buffer;
       try {
@@ -264,6 +265,6 @@ export async function searchWorkspaceText(cwd: string, query: string, caseSensit
     }
     return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: matches.length > MAX_TEXT_MATCHES || listing.hardTruncated };
   } finally {
-    if (latestSearch.get(cwd) === token) latestSearch.delete(cwd);
+    if (key && latestSearch.get(key) === token) latestSearch.delete(key);
   }
 }
