@@ -7,7 +7,7 @@ import { useFixedMenuPosition } from "@/hooks/useFixedMenuPosition";
 import { type ThemePreference, useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/lib/i18n";
 
-const OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; fallback: string; Icon: typeof Sun }> = [
+export const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; fallback: string; Icon: typeof Sun }> = [
   { value: "light", label: "appShell.lightThemes", fallback: "Light", Icon: Sun },
   { value: "dark", label: "appShell.darkThemes", fallback: "Dark", Icon: Moon },
   { value: "system", label: "appShell.themeSystem", fallback: "System", Icon: Monitor },
@@ -33,7 +33,7 @@ export function ThemeSwitcher() {
   const baseId = useId();
   const menuId = `${baseId}-menu`;
 
-  const index = Math.max(0, OPTIONS.findIndex((o) => o.value === preference));
+  const index = Math.max(0, THEME_OPTIONS.findIndex((o) => o.value === preference));
   // Keep the highlighted item in sync with the chosen theme when closed.
   useEffect(() => {
     if (!open) setActiveIndex(index);
@@ -68,7 +68,7 @@ export function ThemeSwitcher() {
     if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " " || e.key === "ArrowUp") {
       e.preventDefault();
       setOpen(true);
-      setActiveIndex(e.key === "ArrowUp" ? OPTIONS.length - 1 : index);
+      setActiveIndex(e.key === "ArrowUp" ? THEME_OPTIONS.length - 1 : index);
     }
   };
 
@@ -76,11 +76,11 @@ export function ThemeSwitcher() {
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setActiveIndex((i + 1) % OPTIONS.length);
+        setActiveIndex((i + 1) % THEME_OPTIONS.length);
         break;
       case "ArrowUp":
         e.preventDefault();
-        setActiveIndex((i - 1 + OPTIONS.length) % OPTIONS.length);
+        setActiveIndex((i - 1 + THEME_OPTIONS.length) % THEME_OPTIONS.length);
         break;
       case "Home":
         e.preventDefault();
@@ -88,12 +88,12 @@ export function ThemeSwitcher() {
         break;
       case "End":
         e.preventDefault();
-        setActiveIndex(OPTIONS.length - 1);
+        setActiveIndex(THEME_OPTIONS.length - 1);
         break;
       case "Enter":
       case " ":
         e.preventDefault();
-        choose(OPTIONS[i].value);
+        choose(THEME_OPTIONS[i].value);
         break;
       case "Escape":
         e.preventDefault();
@@ -174,7 +174,7 @@ export function ThemeSwitcher() {
             boxShadow: "var(--shadow-pop)",
           }}
         >
-          {OPTIONS.map(({ value, label, fallback, Icon }, i) => {
+          {THEME_OPTIONS.map(({ value, label, fallback, Icon }, i) => {
             const selected = preference === value;
             return (
               <button

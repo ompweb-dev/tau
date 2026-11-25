@@ -4,15 +4,10 @@ import { readFile } from "node:fs/promises";
 import test, { afterEach } from "node:test";
 const { act, cleanup, renderHook } = await import("@testing-library/react/pure.js");
 
-const { nextThemePreference, resolveTheme, isDarkTheme, LIGHT_THEMES, DARK_THEMES, ALL_THEMES, useTheme } = await import("./useTheme.ts");
+const { resolveTheme, isDarkTheme, THEME_PANEL, useTheme } = await import("./useTheme.ts");
+const vm = await import("node:vm");
 
 afterEach(cleanup);
-
-test("cycles explicit and system theme preferences", () => {
-  assert.equal(nextThemePreference("light"), "dark");
-  assert.equal(nextThemePreference("dark"), "system");
-  assert.equal(nextThemePreference("system"), "light");
-});
 
 test("resolves system theme from the operating system preference", () => {
   assert.equal(resolveTheme("system", true), "dark");
@@ -22,8 +17,7 @@ test("resolves system theme from the operating system preference", () => {
 });
 
 test("ships one light and one dark theme", () => {
-  assert.deepEqual(LIGHT_THEMES.map((theme) => theme.id), ["light"]);
-  assert.deepEqual(DARK_THEMES.map((theme) => theme.id), ["dark"]);
+  assert.deepEqual(Object.keys(THEME_PANEL), ["light", "dark"]);
   assert.equal(isDarkTheme("light"), false);
   assert.equal(isDarkTheme("dark"), true);
 });
@@ -32,7 +26,7 @@ test("each theme's browser chrome color is its CSS --bg-panel, the top bar's col
   // The pre-paint script reads the CSS and the hook reads the table: a mismatch
   // flickers the status bar after hydration and sends a stale manifest color.
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-  for (const { id, panel } of ALL_THEMES) {
+  for (const [id, panel] of Object.entries(THEME_PANEL)) {
     const selector = id === "light" ? ":root" : `html.theme-${id}`;
     // The first `:root` block holds the self-hosted font variables; take the one that sets --bg-panel.
     const match = css.match(new RegExp(`(^|, )${selector.replace(".", "\\.")} \\{[^}]*--bg-panel:\\s*(#[0-9A-Fa-f]{6})`, "m"));
@@ -151,4 +145,44 @@ test("a retired light theme reads as Light", (t) => {
   const { result } = renderHook(() => useTheme());
   assert.equal(result.current.preference, "light");
   assert.equal(result.current.theme, "light");
+});
+
+test("the pre-paint script picks the theme the hook will", async (t) => {
+  // The script runs before the bundle, so it keeps its own copy of the retired-theme lists.
+  const html = await readFile(new URL("../app/index.html", import.meta.url), "utf8");
+  const script = html.match(/<script>(\(function\(\)\{try\{var t;[\s\S]*?)<\/script>/)[1];
+  const originalPreference = localStorage.getItem("tau-theme");
+  const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
+  t.after(() => {
+    cleanup();
+    if (originalPreference === null) localStorage.removeItem("tau-theme");
+    else localStorage.setItem("tau-theme", originalPreference);
+    if (originalMatchMedia) Object.defineProperty(window, "matchMedia", originalMatchMedia);
+    else delete window.matchMedia;
+  });
+  const stored = [null, "", "system", "light", "dark", "bogus", "constructor", "__proto__", "toString",
+    "one-light", "catppuccin-latte", "rose-pine-dawn", "midnight", "dracula", "harbor", "one-dark-pro", "rose-pine",
+    "catppuccin-mocha", "gruvbox-dark", "nord", "tokyo-night"];
+  for (const value of stored) {
+    for (const osDark of [false, true]) {
+      if (value === null) localStorage.removeItem("tau-theme");
+      else localStorage.setItem("tau-theme", value);
+      const media = Object.assign(new window.EventTarget(), { matches: osDark });
+      Object.defineProperty(window, "matchMedia", { configurable: true, writable: true, value: () => media });
+      const classes = new Set();
+      const attributes = {};
+      const documentElement = { classList: { add: (name) => classes.add(name) }, setAttribute: (name, v) => { attributes[name] = v; } };
+      vm.runInNewContext(script, {
+        localStorage: { getItem: (key) => localStorage.getItem(key) },
+        matchMedia: () => ({ matches: osDark }),
+        document: { documentElement, querySelector: () => null },
+        getComputedStyle: () => ({ getPropertyValue: () => "" }),
+      });
+      const { result, unmount } = renderHook(() => useTheme());
+      const label = `${value} on a ${osDark ? "dark" : "light"} OS`;
+      assert.equal(attributes["data-theme"], result.current.theme, label);
+      assert.equal(classes.has("dark"), result.current.isDark, label);
+      unmount();
+    }
+  }
 });

@@ -6,31 +6,15 @@ import { manifestHref, THEME_COLOR_COOKIE } from "@/lib/manifest-theme";
 export type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 
-export type ThemeDefinition = {
-  id: Theme;
-  name: string;
-  mode: "light" | "dark";
-  bg: string;
-  /** `--bg-panel`, the top bar's color: browser and Android system bars blend into it. */
-  panel: string;
-  accent: string;
-};
-
-export const LIGHT_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "light", name: "Light", mode: "light", bg: "#F8F5EF", panel: "#F1F0EA", accent: "#3A5C8C" },
-];
-
-export const DARK_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "dark", name: "Dark", mode: "dark", bg: "#1A1C1E", panel: "#232526", accent: "#8EA8DA" },
-];
-
-export const ALL_THEMES: ReadonlyArray<ThemeDefinition> = [...LIGHT_THEMES, ...DARK_THEMES];
+/** Each theme's `--bg-panel`, the top bar's color: browser and Android system bars blend into it. */
+export const THEME_PANEL: Readonly<Record<Theme, string>> = { light: "#F1F0EA", dark: "#232526" };
 
 export function isDarkTheme(theme: Theme): boolean {
   return theme === "dark";
 }
 
-/** Themes tau no longer ships keep their light or dark side: an earlier light theme reads as Light, any other as Dark. */
+/** Themes tau no longer ships keep their light or dark side. The pre-paint script in app/index.html carries the same
+ * lists (it must be inline); useTheme.test.mjs checks they agree. */
 const RETIRED_LIGHT_THEMES = new Set(["one-light", "catppuccin-latte", "rose-pine-dawn"]);
 const RETIRED_DARK_THEMES = new Set(["midnight", "dracula", "harbor", "one-dark-pro", "rose-pine", "catppuccin-mocha", "gruvbox-dark", "nord", "tokyo-night"]);
 
@@ -61,12 +45,6 @@ export function resolveTheme(preference: ThemePreference, prefersDark = false): 
   return preference;
 }
 
-export function nextThemePreference(preference: ThemePreference): ThemePreference {
-  if (preference === "light") return "dark";
-  if (preference === "dark") return "system";
-  return "light";
-}
-
 export function applyDomTheme(theme: Theme): void {
   if (typeof document === "undefined") return;
   const dark = isDarkTheme(theme);
@@ -76,14 +54,14 @@ export function applyDomTheme(theme: Theme): void {
     if (cls.startsWith("theme-")) toRemove.push(cls);
   });
   toRemove.forEach((cls) => cl.remove(cls));
+  cl.remove("midnight"); // a window opened before Midnight was retired
 
   cl.toggle("dark", dark);
   cl.add(`theme-${theme}`);
   document.documentElement.setAttribute("data-theme", theme);
-  const color = ALL_THEMES.find((definition) => definition.id === theme)?.panel;
+  const color = THEME_PANEL[theme];
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta && color) meta.setAttribute("content", color);
-  if (!color) return;
+  if (meta) meta.setAttribute("content", color);
   // The installed app's system bars use the manifest's color (lib/manifest-theme.ts):
   // the cookie lets the server render it into the link on the next load, and a
   // new href makes Chrome drop the manifest it cached for this page.
@@ -187,7 +165,8 @@ export function useTheme() {
     transition.finished?.catch(() => {});
   }, []);
 
-  const toggleTheme = useCallback((origin?: ToggleOrigin) => setTheme(nextThemePreference(preference), origin), [preference, setTheme]);
+  // Flip what is on screen: stepping through System could land on the theme already shown.
+  const toggleTheme = useCallback((origin?: ToggleOrigin) => setTheme(theme === "dark" ? "light" : "dark", origin), [theme, setTheme]);
 
   return { theme, preference, isDark: isDarkTheme(theme), setTheme, toggleTheme };
 }

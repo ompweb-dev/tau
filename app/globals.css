@@ -145,10 +145,11 @@
   --tool-bg: #F3F1EC;
   --bg-subtle: rgba(40,36,28,0.045);
   --status-error: #B42318;
-  --status-success: #18794E;
-  --status-warning: #8A5A00;
-  --status-modified: #A87B1F;
-  --status-renamed: #2563EB;
+  /* Status text sits on selected and hovered rows too: each is ≥4.6:1 on --bg-selected. */
+  --status-success: #156B45;
+  --status-warning: #7A5000;
+  --status-modified: #80591A;
+  --status-renamed: #1F52C4;
   --on-accent: #FFFFFF;
   --overlay-backdrop: color-mix(in srgb, var(--text) 24%, transparent);
 }
@@ -184,11 +185,6 @@ html.theme-dark {
   --status-warning: #F0C36A;
   --status-modified: #E0B24D;
   --status-renamed: #7CA8FF;
-  --on-accent: #FFFFFF;
-  --overlay-backdrop: color-mix(in srgb, var(--text) 24%, transparent);
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04);
-  --shadow-pop: 0 2px 8px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
-  --shadow-modal: 0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.07);
 }
 
 /* Shape / elevation / motion tokens (warm-humanistic system). */
@@ -2785,9 +2781,9 @@ html.dark .dropdown-surface :is(select, option) {
 }
 
 .providers-segmented-btn.active .providers-count-badge {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
+  background: var(--accent-strong);
+  color: var(--on-accent);
+  border-color: var(--accent-strong);
 }
 
 .provider-grid {
@@ -2845,7 +2841,7 @@ button.provider-grid-card:hover {
 
 .settings-toggle.on,
 .settings-toggle[aria-checked="true"] {
-  background: var(--accent);
+  background: var(--accent-strong);
 }
 
 .settings-toggle-knob {
@@ -4646,7 +4642,7 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
 }
 @media (min-width: 641px) {
   .app-frame {
-    background: var(--bg-frame, var(--bg-panel)) !important;
+    background: var(--bg-frame) !important;
     padding: 6px;
   }
   /* The gap and border change with the width, not before it (resizing stays instant). */

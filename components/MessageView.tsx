@@ -68,19 +68,19 @@ function ToolCategoryIcon({
     case "read":
       return <FileText size={size} strokeWidth={1.8} className={className} style={{ color: "var(--status-renamed, #7CA8FF)", ...style }} />;
     case "search":
-      return <Search size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent, #EC5BAB)", ...style }} />;
+      return <Search size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "edit":
       return <FileEdit size={size} strokeWidth={1.8} className={className} style={{ color: "var(--status-modified, #E0B24D)", ...style }} />;
     case "terminal":
       return <Terminal size={size} strokeWidth={1.8} className={className} style={{ color: "var(--status-success, #7DD8A8)", ...style }} />;
     case "todo":
-      return <CheckSquare size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent, #EC5BAB)", ...style }} />;
+      return <CheckSquare size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "task":
       return <Bot size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "hub":
       return <MessagesSquare size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "code":
-      return <Code2 size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent, #EC5BAB)", ...style }} />;
+      return <Code2 size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "web":
       return <Globe size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     default:
