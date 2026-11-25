@@ -1782,5 +1782,6 @@
   "searchPanel.files.other": "{count} files",
   "searchPanel.truncated": "first results only, refine the search",
   "searchPanel.failed": "Search failed (HTTP {status})",
-  "searchPanel.refresh": "Search again"
+  "searchPanel.refresh": "Search again",
+  "searchPanel.incomplete": "Search stopped before finishing"
 }

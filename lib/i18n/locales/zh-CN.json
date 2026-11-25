@@ -1745,5 +1745,6 @@
   "searchPanel.files.other": "{count} 个文件",
   "searchPanel.truncated": "仅显示前面的结果，请缩小搜索范围",
   "searchPanel.failed": "搜索失败 (HTTP {status})",
-  "searchPanel.refresh": "重新搜索"
+  "searchPanel.refresh": "重新搜索",
+  "searchPanel.incomplete": "搜索在完成前已停止"
 }

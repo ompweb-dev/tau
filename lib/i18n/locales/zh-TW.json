@@ -1782,5 +1782,6 @@
   "searchPanel.files.other": "{count} 個檔案",
   "searchPanel.truncated": "僅顯示前面的結果，請縮小搜尋範圍",
   "searchPanel.failed": "搜尋失敗 (HTTP {status})",
-  "searchPanel.refresh": "重新搜尋"
+  "searchPanel.refresh": "重新搜尋",
+  "searchPanel.incomplete": "搜尋在完成前已停止"
 }

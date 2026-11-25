@@ -81,7 +81,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, client, 
     if (state.status !== "done") return null;
     const { matches, truncated } = state.result;
     // An empty search that stopped early did not look everywhere.
-    if (matches.length === 0) return truncated ? `${t("searchPanel.noResults")} · ${t("searchPanel.truncated")}` : t("searchPanel.noResults");
+    if (matches.length === 0) return t(truncated ? "searchPanel.incomplete" : "searchPanel.noResults");
     return `${tn("searchPanel.results", matches.length)} · ${tn("searchPanel.files", files.length)}${truncated ? ` · ${t("searchPanel.truncated")}` : ""}`;
   };
 

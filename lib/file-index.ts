@@ -1,9 +1,8 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Dirent } from "fs";
-import { readdirSync, realpathSync } from "node:fs";
-import { readdir, realpath, stat } from "node:fs/promises";
-import { openRegularFileNoFollow } from "./bash-output";
+import { constants, readdirSync, statSync, type Stats } from "node:fs";
+import { open, readdir, stat, type FileHandle } from "node:fs/promises";
 import path from "path";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
@@ -206,13 +205,17 @@ const latestSearch = new Map<string, object>();
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
 const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
 
+const NO_FOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const NON_BLOCK = typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0;
+const missing = (error: unknown) => ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "");
+
 /**
- * Whether a file (by its real path) needs the full credential check, which reads pi's agent
- * directories on every call: a hard link, a file under an agent or tau state directory, or the
- * target of an entry there (a symlinked `auth.json`). Unreadable directories or entries send
- * every file through the full check.
+ * Whether a file needs the full credential check, which reads pi's agent directories on every
+ * call: a hard link, a file under an agent or tau state directory, or the file an entry there
+ * points to (a symlinked `auth.json`), matched by device and inode. Unreadable directories or
+ * entries send every file through the full check.
  */
-function credentialCandidates(): (real: string, nlink: number) => boolean {
+function credentialCandidates(): (filePath: string, info: Stats) => boolean {
   const agentDirs = [getAgentDir(), path.join(getConfigRoot(), "agent")];
   const dirs = [...agentDirs, ...agentDirs.map((dir) => path.join(dir, "tau"))];
   const inDirs = existingPathWithinRootsChecker(new Set(dirs));
@@ -221,16 +224,13 @@ function credentialCandidates(): (real: string, nlink: number) => boolean {
   for (const dir of dirs) {
     let names: string[];
     try { names = readdirSync(dir); }
-    catch (error) {
-      if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) unknown = true;
-      continue;
-    }
+    catch (error) { if (!missing(error)) unknown = true; continue; }
     for (const name of names) {
-      try { targets.add(realpathSync(path.join(dir, name))); }
-      catch { unknown = true; }
+      try { const target = statSync(path.join(dir, name)); targets.add(`${target.dev}:${target.ino}`); }
+      catch (error) { if (!missing(error)) unknown = true; }
     }
   }
-  return (real, nlink) => unknown || nlink > 1 || targets.has(real) || inDirs(real);
+  return (filePath, info) => unknown || info.nlink > 1 || targets.has(`${info.dev}:${info.ino}`) || inDirs(filePath);
 }
 
 /** An excerpt of a long line (minified files) around its match, keeping the whole match where it fits. */
@@ -276,26 +276,30 @@ export async function searchWorkspaceText(cwd: string, query: string, caseSensit
       if (Date.now() > deadline || (key && latestSearch.get(key) !== token)) return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: true };
       const absolute = path.join(cwd, rel);
       let content: Buffer;
-      let opened: Awaited<ReturnType<typeof openRegularFileNoFollow>> | null = null;
+      let handle: FileHandle | null = null;
       try {
-        // Checked and read through one handle: a pathname swapped after the open cannot pass.
-        opened = await openRegularFileNoFollow(absolute);
-        const { fileInfo } = opened;
-        if (fileInfo.size > TEXT_PREVIEW_MAX_BYTES) continue;
-        const real = await realpath(absolute);
-        const atReal = await stat(real);
-        if (atReal.dev !== fileInfo.dev || atReal.ino !== fileInfo.ino || !inCwd(real)) continue;
-        if (mayBeCredential(real, fileInfo.nlink) && isPiSecretFile(absolute)) continue;
+        // Checked and read through one handle. Non-blocking, so a FIFO swapped in cannot hang the open.
+        handle = await open(absolute, constants.O_RDONLY | NO_FOLLOW | NON_BLOCK);
+        const info = await handle.stat();
+        if (!info.isFile() || info.size > TEXT_PREVIEW_MAX_BYTES) continue;
+        // The path still names the opened file, and its real path is inside the cwd.
+        const now = await stat(absolute);
+        if (now.dev !== info.dev || now.ino !== info.ino || !inCwd(absolute)) continue;
+        if (mayBeCredential(absolute, info) && isPiSecretFile(absolute)) continue;
         // A file grown since the stat is still read only up to the preview size.
-        const { bytesRead } = await opened.handle.read(buffer, 0, buffer.length, 0);
-        if (bytesRead > TEXT_PREVIEW_MAX_BYTES) continue;
-        content = buffer.subarray(0, bytesRead);
+        let length = 0;
+        for (let read = -1; read !== 0 && length < buffer.length;) {
+          ({ bytesRead: read } = await handle.read(buffer, length, buffer.length - length, length));
+          length += read;
+        }
+        if (length > TEXT_PREVIEW_MAX_BYTES) continue;
+        content = buffer.subarray(0, length);
       } catch (error) {
         // Unreadable credential metadata fails closed; any other unreadable path is skipped.
         if (error instanceof HostOpError && error.status === 503) throw error;
         continue;
       } finally {
-        await opened?.handle.close();
+        await handle?.close();
       }
       if (content.subarray(0, 8192).includes(0)) continue;
       const lines = content.toString("utf8").split(/\r?\n/);

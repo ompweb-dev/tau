@@ -78,6 +78,5 @@ test("an empty search that stopped early says so", async () => {
   globalThis.fetch = async () => Response.json({ cwd: "/w", truncated: true, matches: [] });
   render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", refreshKey: 0, client: "panel1", onOpenMatch() {} }));
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "x" } });
-  await waitFor(() => assert.ok(screen.getByRole("status").textContent.includes("No results")));
-  assert.ok(screen.getByRole("status").textContent.includes("first results only"));
+  await waitFor(() => assert.equal(screen.getByRole("status").textContent, "Search stopped before finishing"));
 });

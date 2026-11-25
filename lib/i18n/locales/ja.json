@@ -1745,5 +1745,6 @@
   "searchPanel.files.other": "{count} ファイル",
   "searchPanel.truncated": "最初の結果のみ表示しています。検索語を絞り込んでください",
   "searchPanel.failed": "検索に失敗しました (HTTP {status})",
-  "searchPanel.refresh": "再検索"
+  "searchPanel.refresh": "再検索",
+  "searchPanel.incomplete": "検索は完了前に停止しました"
 }
