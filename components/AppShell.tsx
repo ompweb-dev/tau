@@ -1187,15 +1187,17 @@ export function AppShell({ appName }: { appName: string }) {
   // read tool resolves it the same way (it strips the @ prefix).
   const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
     chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
-    // A mention shows the chat it went into.
+    // A mention shows the chat it went into, closing the compact panel over it.
     setFileShown(false);
-  }, []);
+    if (isCompactOverlay) setRightPanelOpen(false);
+  }, [isCompactOverlay]);
 
   const handleAtMentions = useCallback((relativePaths: string[]) => {
     const mentions = buildFileAtMentionsText(relativePaths);
     if (mentions) chatInputRef.current?.insertText(mentions);
     setFileShown(false);
-  }, []);
+    if (isCompactOverlay) setRightPanelOpen(false);
+  }, [isCompactOverlay]);
 
   const handleFileLineMention = useCallback((relativePath: string, startLine: number, endLine: number) => {
     chatInputRef.current?.insertText(buildFileLineMentionText(relativePath, startLine, endLine));
@@ -1886,16 +1888,6 @@ export function AppShell({ appName }: { appName: string }) {
     });
   }, [selectedSession]);
 
-  // Chats and files share one strip, in the order they were opened.
-  const [stripOrder, setStripOrder] = useState<string[]>([]);
-  useEffect(() => {
-    const ids = [...chatTabs.map(chatTabId), ...fileTabs.map((tab) => tab.id)];
-    setStripOrder((order) => {
-      const kept = order.filter((id) => ids.includes(id));
-      const added = ids.filter((id) => !kept.includes(id));
-      return added.length > 0 || kept.length !== order.length ? [...kept, ...added] : order;
-    });
-  }, [chatTabs, fileTabs]);
 
   const handleCloseChatTab = useCallback((session: SessionInfo) => {
     const index = chatTabs.findIndex((tab) => sameSessionTarget(tab, session));
@@ -2007,6 +1999,18 @@ export function AppShell({ appName }: { appName: string }) {
   }, [isMobile, locale, settingsTab, showChat]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
+  const draftTabShown = showChat && !selectedSession;
+  // Chats and files share one strip, in the order they were opened
+  // (the unsent chat's tab from when it appears).
+  const [stripOrder, setStripOrder] = useState<string[]>([]);
+  useEffect(() => {
+    const ids = [...chatTabs.map(chatTabId), ...(draftTabShown ? [NEW_CHAT_TAB_ID] : []), ...fileTabs.map((tab) => tab.id)];
+    setStripOrder((order) => {
+      const kept = order.filter((id) => ids.includes(id));
+      const added = ids.filter((id) => !kept.includes(id));
+      return added.length > 0 || kept.length !== order.length ? [...kept, ...added] : order;
+    });
+  }, [chatTabs, fileTabs, draftTabShown]);
 
   const activeFileMatchesSource = activeFileTab?.hostId === workspaceHostId && (activeFileTab?.sourceSessionId ?? null) === (selectedSession?.id ?? null);
   const fileTabShown = fileShown && activeFileTab !== null;
@@ -2016,7 +2020,7 @@ export function AppShell({ appName }: { appName: string }) {
       const label = chatTabLabel(session);
       return { id: chatTabId(session), label, title: session.name || session.firstMessage || label, icon: chatIcon, panelId: "workspace-chat" };
     }),
-    ...(showChat && !selectedSession ? [{ id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false, panelId: "workspace-chat" }] : []),
+    ...(draftTabShown ? [{ id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false, panelId: "workspace-chat" }] : []),
     ...fileTabs.map((tab) => ({ id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), panelId: "workspace-file-tabs" })),
   ];
   const stripPosition = (id: string) => {

@@ -2125,10 +2125,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       }
     }
   }, [contextOpen, contextContainer]);
-  // A file tab covering the chat closes its context panel: on mobile the panel
-  // lives in the header, outside the covered area, and would float over the file.
+  // A file tab covering the chat closes what the chat shows outside its own
+  // area: the context panel (in the header on mobile) and the fullscreen editor
+  // (portaled to the body; its text stays in the composer).
   useEffect(() => {
-    if (covered) setContextOpen(false);
+    if (!covered) return;
+    setContextOpen(false);
+    setEditorFullscreen(false);
   }, [covered]);
   useEffect(() => {
     if (!contextOpen || covered) return;
