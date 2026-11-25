@@ -5741,6 +5741,32 @@ test("a file opened over the chat never takes focus from elsewhere", async (t) =
   view.unmount();
 });
 
+test("the strips and groups come back after a reload, and a tab whose session went meanwhile closes", async (t) => {
+  resetWorld();
+  const { sessions } = servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  let view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation")); await sleep(60); });
+  await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  view.unmount();
+
+  // Worker one (behind legacy in its group) went while the page was closed.
+  sessions.splice(sessions.findIndex((session) => session.id === "worker-one"), 1);
+  window.history.replaceState(null, "", "?session=worker-two");
+  view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker legacy conversation" }), "a background tab comes back");
+  assert.equal(view.getAllByRole("separator", { name: translate("appShell.resizeTabGroups") }).length, 1, "the split comes back");
+  const groupOf = (name) => view.getByRole("tab", { name }).closest("[data-group-id]");
+  assert.notEqual(groupOf("Worker legacy conversation"), groupOf("Worker two conversation"), "each chat in its own group again");
+  await until(() => !view.queryByRole("tab", { name: "Worker one conversation" }), "a session gone meanwhile loses its tab on the first list");
+  view.unmount();
+});
+
 test("a file opened over the focused composer takes focus, and closing it gives focus back", async (t) => {
   resetWorld();
   servePooledWorkspace();

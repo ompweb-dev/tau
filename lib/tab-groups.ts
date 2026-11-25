@@ -235,3 +235,33 @@ export function syncChatTabs<T extends { name?: string; firstMessage: string; mo
   });
   return changed ? next : tabs;
 }
+
+const isLayout = (node: unknown): node is TabLayout => {
+  if (typeof node !== "object" || node === null) return false;
+  const value = node as Record<string, unknown>;
+  if (typeof value.id !== "string") return false;
+  if (value.kind === "group") {
+    return Array.isArray(value.tabs) && value.tabs.every((tab) => typeof tab === "string")
+      && (value.active === null || typeof value.active === "string")
+      && (value.chat === undefined || value.chat === null || typeof value.chat === "string");
+  }
+  return value.kind === "split" && (value.dir === "row" || value.dir === "column")
+    && Array.isArray(value.children) && value.children.length >= 2 && value.children.every(isLayout)
+    && Array.isArray(value.sizes) && value.sizes.length === value.children.length
+    && value.sizes.every((size) => typeof size === "number" && Number.isFinite(size) && size > 0);
+};
+
+/**
+ * A layout read back from storage, or null when it is not one. Its ids are
+ * reserved, so groups and splits made afterwards never take one of them.
+ */
+export function restoredLayout(value: unknown): TabLayout | null {
+  if (!isLayout(value)) return null;
+  const visit = (node: TabLayout) => {
+    const n = Number(node.id.slice(1));
+    if (Number.isSafeInteger(n)) nextId = Math.max(nextId, n);
+    if (node.kind === "split") node.children.forEach(visit);
+  };
+  visit(value);
+  return value;
+}

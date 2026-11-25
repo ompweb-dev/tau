@@ -20,7 +20,7 @@ import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
 import { TabBar, type StripTab, type Tab } from "./TabBar";
 import { TabLayoutView } from "./TabLayoutView";
-import { syncChatTabs, activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
+import { restoredLayout, syncChatTabs, activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
 import { FileTabToolbar, FileTabViews } from "./FileTabs";
 import { getFileIcon } from "./FileIcons";
 import { type FileExplorerHandle } from "./FileExplorer";
@@ -47,6 +47,7 @@ import { comparableProjectPath } from "@/lib/comparable-path";
 import { foldedHostProjectKey, hostProjectKey, LOCAL_HOST_ID, remoteHostId, projectIdentity, projectTargetId } from "@/lib/project-ordering";
 import { isClusterTarget } from "@/lib/hosts/cluster";
 import { useHostRows } from "@/hooks/useHostRows";
+import { isRecord } from "@/lib/type-guards";
 import { LocalDaemonBanner } from "./LocalDaemonBanner";
 import { hostName, hostUnavailableReason } from "./host-status";
 import { clearDraft } from "@/lib/draft-store";
@@ -126,6 +127,30 @@ const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 /** The transient tab of a chat not yet sent (no session yet). */
 const NEW_CHAT_TAB_ID = "chat:new";
 const chatTabId = (session: SessionInfo) => `chat:${remoteHostId(session.hostId) ?? LOCAL_HOST_ID}:${session.id}`;
+/** The strips kept across page loads, per browser (localStorage). */
+const WORKBENCH_STORAGE_KEY = "tau:workbench";
+interface SavedWorkbench { chats: SessionInfo[]; files: Tab[]; layout: TabLayout; focused: string }
+function loadWorkbench(): SavedWorkbench | null {
+  try {
+    const saved: unknown = JSON.parse(window.localStorage.getItem(WORKBENCH_STORAGE_KEY) ?? "null");
+    if (!isRecord(saved) || !Array.isArray(saved.chats) || !Array.isArray(saved.files) || typeof saved.focused !== "string") return null;
+    const layout = restoredLayout(saved.layout);
+    if (!layout) return null;
+    const text = (value: unknown) => typeof value === "string";
+    const chats = saved.chats.filter((chat): chat is SessionInfo => isRecord(chat) && text(chat.id) && text(chat.firstMessage)
+      && (chat.hostId === undefined || text(chat.hostId)));
+    const files = saved.files.filter((file): file is Tab => isRecord(file) && text(file.id) && text(file.label) && text(file.filePath)
+      && text(file.hostId) && (file.sourceCwd === null || text(file.sourceCwd)));
+    return { chats, files, layout, focused: saved.focused };
+  } catch {
+    // Storage blocked or a malformed record: start with empty strips.
+    return null;
+  }
+}
+function saveWorkbench(workbench: SavedWorkbench) {
+  try { window.localStorage.setItem(WORKBENCH_STORAGE_KEY, JSON.stringify(workbench)); }
+  catch { /* Storage blocked or full: the strips are a convenience. */ }
+}
 const chatTabLabel = (session: SessionInfo) => session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
 
 
@@ -1064,12 +1089,14 @@ export function AppShell({ appName }: { appName: string }) {
     };
   }, [activeTopPanel]);
 
+  // The strips as the last page load left them (chats, files, groups), in this browser.
+  const [restored] = useState(loadWorkbench);
   // Right panel tabs: Explorer | Git changes | open files (Tauri parity).
-  const [fileTabs, setFileTabs] = useState<Tab[]>([]);
+  const [fileTabs, setFileTabs] = useState<Tab[]>(() => restored?.files ?? []);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
   // The main tab strip: open conversations beside the open files. A file tab
   // shown (fileShown) covers the chat, which stays mounted behind it.
-  const [chatTabs, setChatTabs] = useState<SessionInfo[]>([]);
+  const [chatTabs, setChatTabs] = useState<SessionInfo[]>(() => restored?.chats ?? []);
   const [fileShown, setFileShown] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const closeRightPanel = useCallback(() => {
@@ -1894,7 +1921,8 @@ export function AppShell({ appName }: { appName: string }) {
   // session relabels its tab, and one that left the list since the last load
   // (deleted or archived elsewhere) loses its tab, unless it is selected, a
   // group shows it, or its host's list is not current.
-  const listedTabKeysRef = useRef(new Set<string>());
+  // Restored tabs count as listed: a session deleted while the page was closed loses its tab on the first load.
+  const listedTabKeysRef = useRef(new Set<string>((restored?.chats ?? []).map(chatTabId)));
   const shownChatIdsRef = useRef(new Set<string>());
   const handleSessionsLoaded = useCallback((sessions: SessionInfo[], unavailableHosts: string[] | null) => {
     const listed = new Map(sessions.map((session) => [chatTabId(session), session]));
@@ -2028,8 +2056,11 @@ export function AppShell({ appName }: { appName: string }) {
   // tabs in the order they were opened or dropped there (the unsent chat's
   // tab from when it appears). The focused group is the one showing the app's
   // shown tab; new tabs open there.
-  const [tabLayout, setTabLayout] = useState<TabLayout>(initialLayout);
-  const [lastFocusedGroupId, setLastFocusedGroupId] = useState("g0");
+  const [tabLayout, setTabLayout] = useState<TabLayout>(() => restored?.layout ?? initialLayout());
+  const [lastFocusedGroupId, setLastFocusedGroupId] = useState(() => restored?.focused ?? "g0");
+  useEffect(() => {
+    saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout: tabLayout, focused: lastFocusedGroupId });
+  }, [chatTabs, fileTabs, tabLayout, lastFocusedGroupId]);
   const stripIds = useMemo(
     () => [...chatTabs.map(chatTabId), ...(draftTabShown ? [NEW_CHAT_TAB_ID] : []), ...fileTabs.map((tab) => tab.id)],
     [chatTabs, fileTabs, draftTabShown],
