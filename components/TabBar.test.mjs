@@ -29,6 +29,7 @@ test("tabs support roving arrows, Home/End, and keyboard close", async () => {
     onCloseTab: (id) => closed.push(id),
     explorerSelected: true,
     onSelectExplorer: () => selected.push("explorer"),
+    onSelectSearch: () => selected.push("search"),
     gitSelected: false,
     onSelectGit: () => selected.push("git"),
     onSelectNotifications: () => selected.push("notifications"),
@@ -39,7 +40,8 @@ test("tabs support roving arrows, Home/End, and keyboard close", async () => {
   // Notifications is the first pinned tab, so Home lands there.
   const notifications = screen.getByRole("tab", { name: "Notifications" });
 
-  const explorer = screen.getByRole("tab", { name: "Explorer" });
+  const explorer = screen.getByRole("tab", { name: "Files" });
+  const search = screen.getByRole("tab", { name: "Search" });
   const alpha = screen.getByRole("tab", { name: "/workspace/alpha.ts" });
   const beta = screen.getByRole("tab", { name: "/workspace/beta.ts" });
   assert.equal(alpha.tabIndex, 0);
@@ -61,10 +63,15 @@ test("tabs support roving arrows, Home/End, and keyboard close", async () => {
   assert.equal(document.activeElement, explorer);
   assert.deepEqual(selected, ["beta", "notifications", "explorer"]);
 
-  fireEvent.keyDown(explorer, { key: "End" });
+  fireEvent.keyDown(explorer, { key: "ArrowRight" });
+  await nextFrame();
+  assert.equal(document.activeElement, search);
+  assert.deepEqual(selected, ["beta", "notifications", "explorer", "search"]);
+
+  fireEvent.keyDown(search, { key: "End" });
   await nextFrame();
   assert.equal(document.activeElement, beta);
-  assert.deepEqual(selected, ["beta", "notifications", "explorer", "beta"]);
+  assert.deepEqual(selected, ["beta", "notifications", "explorer", "search", "beta"]);
 
   fireEvent.keyDown(beta, { key: "Delete" });
   assert.deepEqual(closed, ["beta"]);
@@ -72,7 +79,7 @@ test("tabs support roving arrows, Home/End, and keyboard close", async () => {
   fireEvent.keyDown(alpha, { key: "ArrowLeft" });
   await nextFrame();
   assert.equal(document.activeElement, screen.getByRole("tab", { name: "Worktrees" }));
-  assert.deepEqual(selected, ["beta", "notifications", "explorer", "beta", "worktrees"]);
+  assert.deepEqual(selected, ["beta", "notifications", "explorer", "search", "beta", "worktrees"]);
 });
 
 test("a tab that is not closable has no close button and ignores Delete", () => {

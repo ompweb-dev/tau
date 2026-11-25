@@ -18,6 +18,7 @@ import * as cwdValidate from "@/app/api/cwd/validate/route";
 import * as defaultCwd from "@/app/api/default-cwd/route";
 import * as events from "@/app/api/events/route";
 import * as fileIndex from "@/app/api/file-index/route";
+import * as fileSearch from "@/app/api/file-search/route";
 import * as filesPath from "@/app/api/files/[...path]/route";
 import * as gitDiff from "@/app/api/git/diff/route";
 import * as gitStatus from "@/app/api/git/status/route";
@@ -117,6 +118,7 @@ export const ROUTE_MODULES: Record<string, RouteModule> = {
   "default-cwd": defaultCwd,
   "events": events,
   "file-index": fileIndex,
+  "file-search": fileSearch,
   "files/[...path]": filesPath,
   "git/diff": gitDiff,
   "git/status": gitStatus,

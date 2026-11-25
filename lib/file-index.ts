@@ -1,11 +1,16 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Dirent } from "fs";
-import { readdir } from "node:fs/promises";
+import { constants, readdirSync, statSync, type Stats } from "node:fs";
+import { open, readdir, stat, type FileHandle } from "node:fs/promises";
 import path from "path";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
-import type { WorkspaceIndex } from "./workspace-types";
+import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
+import { existingPathWithinRootsChecker, isPiSecretFile } from "./file-access";
+import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
+import { HostOpError } from "./hosts/link-protocol";
+import { getAgentDir, getConfigRoot } from "./pi/paths";
 const execFileAsync = promisify(execFile);
 
 
@@ -132,7 +137,8 @@ async function listWithWalk(cwd: string): Promise<FileListing> {
   return { files, hardTruncated };
 }
 
-export async function indexWorkspaceFiles(cwd: string, query: string, limit: number, kind: "all" | "file", forceRefresh: boolean): Promise<WorkspaceIndex> {
+/** The cwd's listing, from the cache while it is fresh. */
+async function cachedListing(cwd: string, forceRefresh: boolean): Promise<CacheEntry> {
     const cache = getIndexCache();
     const now = Date.now();
     // An explicit refresh in the UI must not be answered from the TTL window,
@@ -153,7 +159,11 @@ export async function indexWorkspaceFiles(cwd: string, query: string, limit: num
       cached = { listing, expiresAt: Date.now() + CACHE_TTL_MS };
       cache.set(cwd, cached);
     }
+    return cached;
+}
 
+export async function indexWorkspaceFiles(cwd: string, query: string, limit: number, kind: "all" | "file", forceRefresh: boolean): Promise<WorkspaceIndex> {
+    const cached = await cachedListing(cwd, forceRefresh);
     if (query) {
       cached.entries ??= buildEntriesFromFiles(cached.listing.files);
       // Directories score a ranking bonus, so a caller that only renders files
@@ -181,4 +191,125 @@ export async function indexWorkspaceFiles(cwd: string, query: string, limit: num
       files: files.slice(0, MAX_FILES),
       truncated: hardTruncated || files.length > MAX_FILES,
     };
+}
+
+/** Most matches a text search answers. */
+export const MAX_TEXT_MATCHES = 500;
+/** Longest line excerpt a match carries. */
+const TEXT_MATCH_EXCERPT = 240;
+/** Tests shorten the budget. */
+export const textSearchLimits = { budgetMs: 10_000 };
+/** The newest search per cwd and client (a search panel): its older one still scanning stops. */
+const latestSearch = new Map<string, object>();
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
+const NO_FOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+const NON_BLOCK = typeof constants.O_NONBLOCK === "number" ? constants.O_NONBLOCK : 0;
+const missing = (error: unknown) => ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "");
+
+/**
+ * Whether a file needs the full credential check, which reads pi's agent directories on every
+ * call: a hard link, a file under an agent or tau state directory, or the file an entry there
+ * points to (a symlinked `auth.json`), matched by device and inode. Unreadable directories or
+ * entries send every file through the full check.
+ */
+function credentialCandidates(): (filePath: string, info: Stats) => boolean {
+  const agentDirs = [getAgentDir(), path.join(getConfigRoot(), "agent")];
+  const dirs = [...agentDirs, ...agentDirs.map((dir) => path.join(dir, "tau"))];
+  const inDirs = existingPathWithinRootsChecker(new Set(dirs));
+  const targets = new Set<string>();
+  let unknown = false;
+  for (const dir of dirs) {
+    let names: string[];
+    try { names = readdirSync(dir); }
+    catch (error) { if (!missing(error)) unknown = true; continue; }
+    for (const name of names) {
+      try { const target = statSync(path.join(dir, name)); targets.add(`${target.dev}:${target.ino}`); }
+      catch (error) { if (!missing(error)) unknown = true; }
+    }
+  }
+  return (filePath, info) => unknown || info.nlink > 1 || targets.has(`${info.dev}:${info.ino}`) || inDirs(filePath);
+}
+
+/** An excerpt of a long line (minified files) around its match, keeping the whole match where it fits. */
+function excerpt(line: string, index: number, matched: number): Omit<WorkspaceTextMatch, "path" | "line"> {
+  let start = 0;
+  let end = line.length;
+  if (line.length > TEXT_MATCH_EXCERPT) {
+    start = Math.max(0, Math.min(index - Math.min(60, Math.max(0, TEXT_MATCH_EXCERPT - matched)), line.length - TEXT_MATCH_EXCERPT));
+    if (start > 0 && isLowSurrogate(line.charCodeAt(start))) start++;
+    end = Math.min(line.length, start + TEXT_MATCH_EXCERPT);
+    if (end < line.length && isHighSurrogate(line.charCodeAt(end - 1))) end--;
+  }
+  const text = line.slice(start, end);
+  const column = index - start;
+  return { text, column, length: Math.min(matched, text.length - column) };
+}
+
+/**
+ * Searches the text files of the cwd's listing (the file index: .gitignore
+ * respected) for a literal string. Reads only regular files whose real path
+ * stays inside the cwd, up to the preview size (what a result can open), and
+ * skips binary files (a NUL in the first 8 KiB) and pi's credential files.
+ * `truncated`: the match cap, the time budget, a newer search by the same
+ * client (`""`: none) or the listing's cap stopped it.
+ */
+export async function searchWorkspaceText(cwd: string, query: string, caseSensitive: boolean, client = ""): Promise<WorkspaceTextSearch> {
+  const token = {};
+  const key = client ? `${cwd}\0${client}` : null;
+  if (key) latestSearch.set(key, token);
+  // The budget covers the listing too.
+  const deadline = Date.now() + textSearchLimits.budgetMs;
+  try {
+    // Fresh: a search must see files written a moment ago.
+    const { listing } = await cachedListing(cwd, true);
+    const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), caseSensitive ? "u" : "iu");
+    // A parent directory swapped for a symlink still lists its old files, and lstat follows it.
+    const inCwd = existingPathWithinRootsChecker(new Set([cwd]));
+    const mayBeCredential = credentialCandidates();
+    const buffer = Buffer.alloc(TEXT_PREVIEW_MAX_BYTES + 1);
+    const matches: WorkspaceTextMatch[] = [];
+    for (const rel of listing.files) {
+      if (matches.length > MAX_TEXT_MATCHES) break;
+      if (Date.now() > deadline || (key && latestSearch.get(key) !== token)) return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: true };
+      const absolute = path.join(cwd, rel);
+      let content: Buffer;
+      let handle: FileHandle | null = null;
+      try {
+        // Checked and read through one handle. Non-blocking, so a FIFO swapped in cannot hang the open.
+        handle = await open(absolute, constants.O_RDONLY | NO_FOLLOW | NON_BLOCK);
+        const info = await handle.stat();
+        if (!info.isFile() || info.size > TEXT_PREVIEW_MAX_BYTES) continue;
+        // The path still names the opened file, and its real path is inside the cwd.
+        const now = await stat(absolute);
+        if (now.dev !== info.dev || now.ino !== info.ino || !inCwd(absolute)) continue;
+        if (mayBeCredential(absolute, info) && isPiSecretFile(absolute)) continue;
+        // A file grown since the stat is still read only up to the preview size.
+        let length = 0;
+        for (let read = -1; read !== 0 && length < buffer.length;) {
+          ({ bytesRead: read } = await handle.read(buffer, length, buffer.length - length, length));
+          length += read;
+        }
+        if (length > TEXT_PREVIEW_MAX_BYTES) continue;
+        content = buffer.subarray(0, length);
+      } catch (error) {
+        // Unreadable credential metadata fails closed; any other unreadable path is skipped.
+        if (error instanceof HostOpError && error.status === 503) throw error;
+        continue;
+      } finally {
+        await handle?.close();
+      }
+      if (content.subarray(0, 8192).includes(0)) continue;
+      const lines = content.toString("utf8").split(/\r?\n/);
+      for (let index = 0; index < lines.length && matches.length <= MAX_TEXT_MATCHES; index++) {
+        const found = pattern.exec(lines[index]);
+        if (found) matches.push({ path: rel, line: index + 1, ...excerpt(lines[index], found.index, found[0].length) });
+      }
+    }
+    return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: matches.length > MAX_TEXT_MATCHES || listing.hardTruncated };
+  } finally {
+    if (key && latestSearch.get(key) === token) latestSearch.delete(key);
+  }
 }

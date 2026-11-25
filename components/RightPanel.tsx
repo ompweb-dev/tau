@@ -9,10 +9,12 @@ import {
   Search,
   Upload,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { TabBar } from "./TabBar";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { GitChangesPanel } from "./GitChangesPanel";
+import { SearchPanel } from "./SearchPanel";
 import { NotificationActions, NotificationList } from "./NotificationList";
 import { useUnreadNotificationCount } from "@/lib/notification-history";
 import { WorktreesPanel } from "./WorktreesPanel";
@@ -22,7 +24,7 @@ import { useI18n } from "@/lib/i18n";
 import { getFileName } from "@/lib/file-paths";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 
-export type RightPanelView = "explorer" | "git" | "notifications" | "worktrees" | "connection";
+export type RightPanelView = "explorer" | "search" | "git" | "notifications" | "worktrees" | "connection";
 
 interface Props {
   /** The open file, highlighted in the Explorer (null when it is another workspace's). */
@@ -55,7 +57,7 @@ interface Props {
   explorerRefreshing: boolean;
   isMobile: boolean;
   isCompactOverlay: boolean;
-  onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource) => void;
+  onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource, line?: number) => void;
   onExplorerRefresh: () => void;
   onExplorerRefreshDone: () => void;
   onAtMention: (relativePath: string, isDir: boolean) => void;
@@ -64,6 +66,31 @@ interface Props {
   onResetRightPanelWidth: () => void;
   onRightPanelResizeStart: (e: React.MouseEvent) => void;
   onRightPanelResizeKey: (e: React.KeyboardEvent) => void;
+}
+
+function PanelEmpty({ icon: Icon, title, hint }: { icon: LucideIcon; title: string; hint: string }) {
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
+      <Icon size={26} strokeWidth={1.5} aria-hidden="true" style={{ color: "var(--text-dim)" }} />
+      <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 600 }}>{title}</div>
+      <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6, maxWidth: 260 }}>{hint}</div>
+    </div>
+  );
+}
+
+function RefreshButton({ label, spinning, onClick }: { label: string; spinning: boolean; onClick: () => void }) {
+  return (
+    <button
+      aria-label={label}
+      onClick={onClick}
+      title={label}
+      style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, padding: 0, background: "none", border: "none", borderRadius: "var(--radius-control)", color: spinning ? "var(--accent)" : "var(--text-dim)", cursor: "pointer" }}
+      onMouseEnter={(e) => { if (spinning) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+      onMouseLeave={(e) => { if (spinning) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
+    >
+      <RefreshCw size={13} strokeWidth={2} aria-hidden="true" className={spinning ? "icon-spin" : undefined} />
+    </button>
+  );
 }
 
 // Memo boundary: AppShell re-renders on polls, timers, and session updates
@@ -113,8 +140,13 @@ export const RightPanel = memo(function RightPanel({
   const openWorkspaceFile = useCallback((filePath: string, fileName: string) => {
     onOpenFile(filePath, fileName, { hostId, sessionId: sourceSessionId ?? null, cwd: explorerCwd });
   }, [onOpenFile, hostId, sourceSessionId, explorerCwd]);
+  const openSearchMatch = useCallback((filePath: string, line: number, cwd: string) => {
+    onOpenFile(filePath, getFileName(filePath), { hostId, sessionId: sourceSessionId ?? null, cwd }, line);
+  }, [onOpenFile, hostId, sourceSessionId]);
   const gitBadge = explorerIsRepo ? explorerGitCount : 0;
   const unreadNotifications = useUnreadNotificationCount();
+  // Outlives the Search panel's remounts (one per workspace), so a search still scanning after a switch is stopped too.
+  const [searchClient] = useState(() => Math.random().toString(36).slice(2, 12) + Date.now().toString(36));
   const [visitedViews, setVisitedViews] = useState<Set<RightPanelView>>(() => new Set(["explorer"]));
   useEffect(() => {
     setVisitedViews((previous) => {
@@ -181,6 +213,8 @@ export const RightPanel = memo(function RightPanel({
               explorerSelected={rightView === "explorer"}
               onSelectExplorer={() => onSelectView("explorer")}
               explorerBadge={gitBadge}
+              searchSelected={rightView === "search"}
+              onSelectSearch={() => onSelectView("search")}
               gitSelected={rightView === "git"}
               onSelectGit={() => onSelectView("git")}
               gitBadge={gitBadge}
@@ -195,7 +229,7 @@ export const RightPanel = memo(function RightPanel({
           </div>
           {rightView === "explorer" ? (
             explorerCwd && (
-            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("sessionSidebar.explorer")}>
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("tabBar.files")}>
               <button
                 onClick={onToggleFileSearch}
                 title={t("fileExplorer.searchFiles")}
@@ -229,31 +263,19 @@ export const RightPanel = memo(function RightPanel({
                 <ChevronsDownUp size={isMobile ? 16 : 13} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0 }} />
                 {isMobile && <span>{t("sessionSidebar.collapseExplorer")}</span>}
               </button>
-              <button
-                aria-label={t("sessionSidebar.refreshExplorer")}
-                onClick={onExplorerRefresh}
-                title={t("sessionSidebar.refreshExplorer")}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, padding: 0, background: "none", border: "none", borderRadius: "var(--radius-control)", color: explorerRefreshing ? "var(--accent)" : "var(--text-dim)", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (explorerRefreshing) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                onMouseLeave={(e) => { if (explorerRefreshing) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-              >
-                <RefreshCw size={13} strokeWidth={2} aria-hidden="true" className={explorerRefreshing ? "icon-spin" : undefined} />
-              </button>
+              <RefreshButton label={t("sessionSidebar.refreshExplorer")} spinning={explorerRefreshing} onClick={onExplorerRefresh} />
+            </div>
+            )
+          ) : rightView === "search" ? (
+            explorerCwd && (
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("tabBar.search")}>
+              <RefreshButton label={t("searchPanel.refresh")} spinning={false} onClick={onExplorerRefresh} />
             </div>
             )
           ) : rightView === "git" ? (
             explorerCwd && (
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("tabBar.git")}>
-              <button
-                aria-label={t("gitChanges.refreshChanges")}
-                onClick={onExplorerRefresh}
-                title={t("gitChanges.refreshChanges")}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, padding: 0, background: "none", border: "none", borderRadius: "var(--radius-control)", color: explorerRefreshing ? "var(--accent)" : "var(--text-dim)", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (explorerRefreshing) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                onMouseLeave={(e) => { if (explorerRefreshing) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-              >
-                <RefreshCw size={13} strokeWidth={2} aria-hidden="true" className={explorerRefreshing ? "icon-spin" : undefined} />
-              </button>
+              <RefreshButton label={t("gitChanges.refreshChanges")} spinning={explorerRefreshing} onClick={onExplorerRefresh} />
             </div>
             )
           ) : rightView === "notifications" ? (
@@ -271,7 +293,7 @@ export const RightPanel = memo(function RightPanel({
         </div>
 
         {/* Explorer tab view — kept mounted so expansion survives tab switches. */}
-        <div id="workspace-file-panel-explorer" role="tabpanel" aria-label={t("sessionSidebar.explorer")} style={{ display: rightView === "explorer" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <div id="workspace-file-panel-explorer" role="tabpanel" aria-label={t("tabBar.files")} style={{ display: rightView === "explorer" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
           {visitedViews.has("explorer") && (explorerCwd ? (
             <>
               <div
@@ -335,11 +357,23 @@ export const RightPanel = memo(function RightPanel({
               </div>
             </>
           ) : (
-            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
-              <Folder size={26} strokeWidth={1.5} aria-hidden="true" style={{ color: "var(--text-dim)" }} />
-              <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 600 }}>{t("sessionSidebar.explorer")}</div>
-              <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6, maxWidth: 260 }}>{t("sessionSidebar.selectProjectFirst")}</div>
-            </div>
+            <PanelEmpty icon={Folder} title={t("tabBar.files")} hint={t("sessionSidebar.selectProjectFirst")} />
+          ))}
+        </div>
+        {/* Search tab view — kept mounted so the query and results survive tab switches. */}
+        <div id="workspace-file-panel-search" role="tabpanel" aria-label={t("tabBar.search")} style={{ display: rightView === "search" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+          {visitedViews.has("search") && (explorerCwd ? (
+            <SearchPanel
+              key={`${hostId}:${sourceSessionId ?? ""}:${explorerCwd}`}
+              hostId={hostId}
+              cwd={explorerCwd}
+              sourceSessionId={sourceSessionId}
+              refreshKey={explorerRefreshKey}
+              client={searchClient}
+              onOpenMatch={openSearchMatch}
+            />
+          ) : (
+            <PanelEmpty icon={Search} title={t("tabBar.search")} hint={t("sessionSidebar.selectProjectFirst")} />
           ))}
         </div>
         {/* Git changes tab view — kept mounted so selection survives tab switches. */}
@@ -356,11 +390,7 @@ export const RightPanel = memo(function RightPanel({
               onRefreshDone={onExplorerRefreshDone}
             />
           ) : (
-            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
-              <GitBranch size={26} strokeWidth={1.5} aria-hidden="true" style={{ color: "var(--text-dim)" }} />
-              <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 600 }}>{t("tabBar.git")}</div>
-              <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6, maxWidth: 260 }}>{t("sessionSidebar.selectProjectFirst")}</div>
-            </div>
+            <PanelEmpty icon={GitBranch} title={t("tabBar.git")} hint={t("sessionSidebar.selectProjectFirst")} />
           ))}
         </div>
         <div id="workspace-file-panel-notifications" role="tabpanel" tabIndex={-1} aria-label={t("appShell.notifications")} className="ui-focus-ring" style={{ display: rightView === "notifications" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden", outline: "none" }}>

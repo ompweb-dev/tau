@@ -1684,14 +1684,19 @@ export function AppShell({ appName }: { appName: string }) {
     });
   }, [fileTabs]);
 
-  const handleOpenFile = useCallback((filePath: string, fileName: string, source: WorkspaceFileSource) => {
+  const revealSeqRef = useRef(0);
+  const handleOpenFile = useCallback((filePath: string, fileName: string, source: WorkspaceFileSource, line?: number) => {
     const absolute = filePath.startsWith("/") || filePath.startsWith("~/") || filePath.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(filePath);
     const rooted = !absolute && source.cwd ? joinFilePath(source.cwd, filePath) : filePath;
     const target = filePath.startsWith("~/") ? filePath : normalizeLocalPath(rooted);
     const tabId = `file:${source.sessionId ?? hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
-    setFileTabs((prev) => prev.some((tab) => tab.id === tabId)
-      ? prev
-      : [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId }]);
+    const revealLine = line === undefined ? undefined : { line, seq: ++revealSeqRef.current };
+    setFileTabs((prev) => {
+      if (!prev.some((tab) => tab.id === tabId)) {
+        return [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId, revealLine }];
+      }
+      return revealLine ? prev.map((tab) => tab.id === tabId ? { ...tab, revealLine } : tab) : prev;
+    });
     setActiveFileTabId(tabId);
     setFileShown(true);
     // A Back/Forward still fetching must not replace the file just shown.
@@ -1700,6 +1705,11 @@ export function AppShell({ appName }: { appName: string }) {
     if (isMobile) setSidebarOpen(false);
     if (isCompactOverlay) setRightPanelOpen(false);
   }, [isMobile, isCompactOverlay]);
+
+  // A revealed line is done: a remount of the viewer must not reveal it again.
+  const handleRevealLineDone = useCallback((tabId: string, seq: number) => {
+    setFileTabs((prev) => prev.map((tab) => tab.id === tabId && tab.revealLine?.seq === seq ? { ...tab, revealLine: undefined } : tab));
+  }, []);
 
   // Agent open requests that wait for the user. URLs always ask unless the
   // user opted into opening links from the viewed session automatically; URLs
@@ -2884,6 +2894,7 @@ export function AppShell({ appName }: { appName: string }) {
                       explorerRefreshKey={explorerRefreshKey}
                       onMentionLines={handleFileLineMention}
                       onOpenFile={handleOpenFile}
+                      onRevealDone={handleRevealLineDone}
                     />
                   )}
                   <div id={chatPanelId} role={groupTabs.length > 0 ? "tabpanel" : undefined} aria-label={groupTabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>

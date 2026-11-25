@@ -21,6 +21,10 @@ export interface WorkspaceDirectoryListing {
 }
 export interface WorkspaceRead { id: string; info: WorkspaceFileInfo }
 export type WorkspaceIndex = { files: string[]; truncated: boolean } | { matches: FileIndexEntry[]; truncated?: boolean };
+/** `column` and `length` place the match in `text`, an excerpt of line `line` (1-based). */
+export interface WorkspaceTextMatch { path: string; line: number; text: string; column: number; length: number }
+/** `cwd`: the directory searched, which `path` is relative to. */
+export interface WorkspaceTextSearch { cwd: string; matches: WorkspaceTextMatch[]; truncated: boolean }
 export type WorkspaceBashOutput = { tooLarge: true; size: number; maxBytes: number } | { tooLarge: false; output: string };
 export interface WorkspaceUploadResult { path: string; name: string; skipped: boolean }
 export type WorkspaceFileEvent = { type: "change"; mtime: string; size: number } | { type: "error"; message: string };
@@ -63,6 +67,8 @@ export interface WorkspaceOps {
   cancelClone(id: string): Promise<OpResult<CloneProgress>>;
   /** One answer per requested path, in order; at most 500 paths. */
   gitOrigins(paths: string[]): Promise<OpResult<{ origins: GitOrigin[] }>>;
+  /** A literal search of the cwd's text files; `path` is relative to the cwd. A newer search with the same `client` stops this one. */
+  searchText(cwd: string, query: string, caseSensitive: boolean, client: string, owner?: WorkspaceOwner): Promise<OpResult<WorkspaceTextSearch>>;
 }
 
 export const WORKSPACE_OP_PARAMS: { readonly [K in keyof WorkspaceOps]: readonly string[] } = {
@@ -78,6 +84,7 @@ export const WORKSPACE_OP_PARAMS: { readonly [K in keyof WorkspaceOps]: readonly
   // Older peers cap the advertised prefix before filtering unknown capabilities.
   listFilesInRoot: ["input", "root"],
   gitOrigins: ["paths"],
+  searchText: ["cwd", "query", "caseSensitive", "client", "owner"],
 };
 
 export function isWorkspaceOp(value: string): value is keyof WorkspaceOps {

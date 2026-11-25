@@ -1732,5 +1732,19 @@
   "modelsConfig.accountApiKey": "API 密钥",
   "modelsConfig.disconnectAccount": "断开 {label}",
   "modelsConfig.disconnectAccountTitle": "断开账户？",
-  "modelsConfig.disconnectAccountBody": "pi 将删除 {label} 的已存储凭据。此提供商的其他账户保持连接。"
+  "modelsConfig.disconnectAccountBody": "pi 将删除 {label} 的已存储凭据。此提供商的其他账户保持连接。",
+  "tabBar.files": "文件",
+  "tabBar.search": "搜索",
+  "searchPanel.placeholder": "在文件中搜索",
+  "searchPanel.matchCase": "区分大小写",
+  "searchPanel.searching": "正在搜索…",
+  "searchPanel.noResults": "没有结果",
+  "searchPanel.results.one": "{count} 个结果",
+  "searchPanel.results.other": "{count} 个结果",
+  "searchPanel.files.one": "{count} 个文件",
+  "searchPanel.files.other": "{count} 个文件",
+  "searchPanel.truncated": "仅显示前面的结果，请缩小搜索范围",
+  "searchPanel.failed": "搜索失败 (HTTP {status})",
+  "searchPanel.refresh": "重新搜索",
+  "searchPanel.incomplete": "搜索在完成前已停止"
 }
