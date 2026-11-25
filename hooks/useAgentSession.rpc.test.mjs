@@ -5576,19 +5576,49 @@ test("a retained foreign-source tab cannot mention its path into the selected wo
   assert.equal(view.queryAllByText("FIRST OWNER CONTENT").some((element) => !element.closest('[style*="display: none"]')), true);
   const foreignMention = view.queryByRole("button", { name: translate("appShell.mentionFileInChat") });
   if (foreignMention) await act(async () => { fireEvent.click(foreignMention); });
-  assert.equal(view.getByRole("textbox").value, "Worker two draft", "a source-relative path must not be inserted into another worker's composer");
+  // The file tab covers the chat, which stays mounted (hidden) behind it.
+  assert.equal(view.container.querySelector("#workspace-chat textarea").value, "Worker two draft", "a source-relative path must not be inserted into another worker's composer");
   assert.equal(foreignMention === null || foreignMention.disabled, true, "the foreign-source action is unavailable");
-  await act(async () => { fireEvent.click(view.getByText("Worker one conversation")); await sleep(60); });
+  await act(async () => { fireEvent.click(view.getByRole("tab", { name: "Worker one conversation" })); await sleep(60); });
+  // Its chat tab shows the chat; the file tab shows the file again.
+  await act(async () => { fireEvent.click(view.getAllByRole("tab", { name: /report\.txt/ })[0]); await sleep(30); });
   const sourceMention = view.getByRole("button", { name: translate("appShell.mentionFileInChat") });
   assert.equal(sourceMention.disabled, false, "returning to the source session restores the action");
   await act(async () => {
-    const composer = view.getByRole("textbox");
+    const composer = view.container.querySelector("#workspace-chat textarea");
     composer.focus();
     composer.setSelectionRange(composer.value.length, composer.value.length);
     fireEvent.click(sourceMention);
   });
+  // Mentioning shows the chat it went into.
   assert.equal(view.getByRole("textbox").value.includes("@report.txt"), true);
   assert.equal(view.getByRole("textbox").value.startsWith("Worker one draft"), true);
+  view.unmount();
+});
+
+test("closing the shown chat under a file tab keeps the file and shows the neighbouring chat after it", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  const stream = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
+  await act(async () => { fireEvent.change(view.getByRole("textbox"), { target: { value: "Worker one draft" } }); });
+  await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
+  await act(async () => {
+    stream.emit({ type: "host_tool_call", id: "close-open", sessionId: "worker-two", hostId: "h2", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(60);
+  });
+  await until(() => view.queryByText("SECOND OWNER CONTENT"), "the file opens over the chat");
+  assert.equal(view.container.querySelector("#workspace-chat").hasAttribute("inert"), true, "the covered chat is inert");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(60); });
+  assert.equal(view.queryByRole("tab", { name: "Worker two conversation" }), null);
+  assert.equal(view.getByRole("tab", { name: /report\.txt/ }).getAttribute("aria-selected"), "true", "the file stays shown");
+  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "report.txt" }) })); await sleep(60); });
+  assert.equal(view.getByRole("tab", { name: "Worker one conversation" }).getAttribute("aria-selected"), "true");
+  assert.equal(view.getByRole("textbox").value, "Worker one draft", "the neighbouring conversation is the chat behind it");
   view.unmount();
 });
 

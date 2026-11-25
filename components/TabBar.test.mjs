@@ -14,12 +14,12 @@ afterEach(cleanup);
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
-test("right-panel tabs support roving arrows, Home/End, and keyboard close", async () => {
+test("tabs support roving arrows, Home/End, and keyboard close", async () => {
   const selected = [];
   const closed = [];
   const tabs = [
-    { id: "alpha", label: "alpha.ts", filePath: "/workspace/alpha.ts" },
-    { id: "beta", label: "beta.ts", filePath: "/workspace/beta.ts" },
+    { id: "alpha", label: "alpha.ts", title: "/workspace/alpha.ts", icon: null },
+    { id: "beta", label: "beta.ts", title: "/workspace/beta.ts", icon: null },
   ];
 
   render(React.createElement(TabBar, {
@@ -73,4 +73,34 @@ test("right-panel tabs support roving arrows, Home/End, and keyboard close", asy
   await nextFrame();
   assert.equal(document.activeElement, screen.getByRole("tab", { name: "Worktrees" }));
   assert.deepEqual(selected, ["beta", "notifications", "explorer", "beta", "worktrees"]);
+});
+
+test("a tab that is not closable has no close button and ignores Delete", () => {
+  const closed = [];
+  render(React.createElement(TabBar, {
+    tabs: [{ id: "chat:new", label: "New session", title: "New session", icon: null, closable: false }],
+    activeTabId: "chat:new",
+    onCloseTab: (id) => closed.push(id),
+  }));
+  const tab = screen.getByRole("tab", { name: "New session" });
+  assert.equal(screen.queryByRole("button", { name: "Close New session" }), null);
+  fireEvent.keyDown(tab, { key: "Delete" });
+  assert.deepEqual(closed, []);
+});
+
+test("closing a tab from the keyboard moves focus to its neighbour", async () => {
+  const closed = [];
+  const tabs = [
+    { id: "a", label: "a.ts", title: "a.ts", icon: null },
+    { id: "b", label: "b.ts", title: "b.ts", icon: null },
+    { id: "c", label: "c.ts", title: "c.ts", icon: null },
+  ];
+  const view = render(React.createElement(TabBar, { tabs, activeTabId: "a", manualActivation: true, onCloseTab: (id) => closed.push(id) }));
+  const b = screen.getByRole("tab", { name: "b.ts" });
+  b.focus();
+  fireEvent.keyDown(b, { key: "Delete" });
+  view.rerender(React.createElement(TabBar, { tabs: tabs.filter((tab) => tab.id !== "b"), activeTabId: "a", manualActivation: true, onCloseTab: (id) => closed.push(id) }));
+  await nextFrame();
+  assert.deepEqual(closed, ["b"]);
+  assert.equal(document.activeElement, screen.getByRole("tab", { name: "c.ts" }));
 });

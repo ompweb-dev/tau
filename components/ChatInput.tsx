@@ -119,6 +119,8 @@ const TOOL_PRESET_OPTIONS: Array<{ value: ToolPreset; descriptionKey: string }> 
 ];
 
 interface Props {
+  /** A file tab covers the chat: its window-level dictation keys stay off. */
+  covered?: boolean;
   /** Without `outbox`, only a rejected submission is restored; completed/superseded runs must not be replayed.
    *  `uploads`: the ids of files sent As file, passed only when there are some. `options` preserves explicit model-input
    *  intent when attachments or prefills would otherwise leave a shell-looking string. */
@@ -280,6 +282,7 @@ function menuDropStyle(placement: MenuPlacement, maxHeight: number | null): Reac
 }
 
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
+  covered = false,
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelsLoading, onModelChange,
   onAbortCompaction, isCompacting, compactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap, modelNameOverride,
@@ -1227,7 +1230,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   // so Escape/Enter are handled at window level: Escape cancels/discard, Enter
   // retries after an error or converts the recording to text.
   useEffect(() => {
-    if (!(isRecording || isPaused || isReviewing || isTranscribing || transcribeError)) return;
+    if (covered || !(isRecording || isPaused || isReviewing || isTranscribing || transcribeError)) return;
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -1245,7 +1248,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isRecording, isPaused, isReviewing, isTranscribing, transcribeError, cancelDictation, retryDictation, confirmTranscribeDictation, stopDictation]);
+  }, [covered, isRecording, isPaused, isReviewing, isTranscribing, transcribeError, cancelDictation, retryDictation, confirmTranscribeDictation, stopDictation]);
 
   const slashQuery = slashMatch?.query ?? null;
   const isMidPromptSkillLookup = slashMatch?.mode === "mid-prompt";
@@ -2122,8 +2125,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       }
     }
   }, [contextOpen, contextContainer]);
+  // A file tab covering the chat closes what the chat shows outside its own
+  // area: the context panel (in the header on mobile) and the fullscreen editor
+  // (portaled to the body; its text stays in the composer).
   useEffect(() => {
-    if (!contextOpen) return;
+    if (!covered) return;
+    setContextOpen(false);
+    setEditorFullscreen(false);
+  }, [covered]);
+  useEffect(() => {
+    if (!contextOpen || covered) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
       const panel = contextWrapRef.current?.querySelector<HTMLElement>('[role="dialog"]');
@@ -2139,7 +2150,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [contextOpen]);
+  }, [contextOpen, covered]);
 
   // Close dropdowns on outside click
   useEffect(() => {

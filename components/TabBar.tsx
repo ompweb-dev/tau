@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Activity, Bell, Folder, GitBranch, GitFork, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
-import { getFileIcon } from "./FileIcons";
 
 export interface Tab {
   id: string;
@@ -15,11 +14,28 @@ export interface Tab {
   sourceCwd: string | null;
 }
 
+/** A tab of the strip after the pinned ones: an open chat or file. */
+export interface StripTab {
+  id: string;
+  label: string;
+  /** Full name: the tooltip and the accessible name. */
+  title: string;
+  icon: ReactNode;
+  /** False hides the close button (the transient New chat tab). */
+  closable?: boolean;
+  /** The panel the tab shows (aria-controls). */
+  panelId?: string;
+}
+
 interface Props {
-  tabs: Tab[];
-  activeTabId: string;
-  onSelectTab: (id: string) => void;
-  onCloseTab: (id: string) => void;
+  tabs?: StripTab[];
+  activeTabId?: string;
+  onSelectTab?: (id: string) => void;
+  onCloseTab?: (id: string) => void;
+  /** The tablist's accessible name. */
+  ariaLabel?: string;
+  /** Arrows only move focus; Enter or Space shows the tab (for tabs that are costly to show). */
+  manualActivation?: boolean;
   /** Pinned Explorer tab rendered after Notifications, before the file tabs (right-panel tab redesign). */
   explorerSelected?: boolean;
   onSelectExplorer?: () => void;
@@ -129,7 +145,7 @@ function PinnedTab({ id, panelId, label, title, icon, selected, badge, badgeColo
   );
 }
 
-export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
+export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -150,7 +166,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
     else if (id === "connection") onSelectConnection?.();
     else {
       const tab = tabs.find((item) => item.id === id);
-      if (tab) onSelectTab(tab.id);
+      if (tab) onSelectTab?.(tab.id);
     }
   };
 
@@ -177,14 +193,17 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
     if (nextIndex !== null) {
       event.preventDefault();
       const nextId = orderedTabIds[nextIndex];
-      selectTabById(nextId);
+      if (!manualActivation) selectTabById(nextId);
       focusTabById(nextId);
       return;
     }
 
-    if ((event.key === "Delete" || event.key === "Backspace") && tabs.some((tab) => tab.id === id)) {
+    if ((event.key === "Delete" || event.key === "Backspace") && tabs.some((tab) => tab.id === id && tab.closable !== false)) {
       event.preventDefault();
-      onCloseTab(id);
+      onCloseTab?.(id);
+      // Keep keyboard focus in the strip, on the tab that takes the closed one's place.
+      const neighbour = orderedTabIds[index + 1] ?? orderedTabIds[index - 1];
+      if (neighbour) focusTabById(neighbour);
     }
   };
 
@@ -207,7 +226,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
     <div
       ref={listRef}
       role="tablist"
-      aria-label={t("appShell.filePanel")}
+      aria-label={ariaLabel ?? t("appShell.filePanel")}
       aria-orientation="horizontal"
       className="tabbar-scroll"
       style={{
@@ -288,28 +307,30 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
           onKeyDown={handleTabKeyDown}
         />
       )}
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const isActive = tab.id === activeTabId;
+        // With nothing selected, the first tab keeps the tablist reachable by keyboard.
+        const focusable = isActive || (index === 0 && !orderedTabIds.includes(activeTabId));
         return (
           <div
             key={tab.id}
             data-tab-id={tab.id}
             className="tabbar-tab ui-focus-ring"
-            onClick={() => onSelectTab(tab.id)}
+            onClick={() => onSelectTab?.(tab.id)}
             role="tab"
-            tabIndex={isActive ? 0 : -1}
+            tabIndex={focusable ? 0 : -1}
             aria-selected={isActive}
-            aria-label={tab.filePath}
-            aria-controls="workspace-file-panel-file"
+            aria-label={tab.title}
+            aria-controls={tab.panelId}
             onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();
             }}
             onAuxClick={(e) => {
-              if (e.button !== 1) return;
+              if (e.button !== 1 || tab.closable === false) return;
               e.preventDefault();
               e.stopPropagation();
-              onCloseTab(tab.id);
+              onCloseTab?.(tab.id);
             }}
             style={{
               display: "flex",
@@ -317,7 +338,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
               gap: 6,
               height: "var(--tab-height)",
               paddingLeft: 12,
-              paddingRight: 6,
+              paddingRight: tab.closable === false ? 12 : 6,
               borderRight: "1px solid var(--border)",
               background: isActive ? "var(--bg)" : "var(--bg-panel)",
               cursor: "pointer",
@@ -348,7 +369,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
               />
             )}
             <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.7, display: "flex", alignItems: "center" }}>
-              {getFileIcon(tab.label, 13)}
+              {tab.icon}
             </span>
             <span
               style={{
@@ -357,13 +378,13 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
                 flex: 1,
                 fontWeight: isActive ? 500 : 400,
               }}
-              title={tab.filePath}
+              title={tab.title}
             >
               {tab.label}
             </span>
-            <button
+            {tab.closable !== false && <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
+              onClick={(e) => { e.stopPropagation(); onCloseTab?.(tab.id); }}
               tabIndex={isActive ? 0 : -1}
               onKeyDown={(event) => event.stopPropagation()}
               onMouseEnter={() => setHoveredClose(tab.id)}
@@ -384,7 +405,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, explorerSel
               aria-label={t("tabBar.closeTab", { label: tab.label })}
             >
               <X size={11} strokeWidth={2} aria-hidden="true" />
-            </button>
+            </button>}
           </div>
         );
       })}
