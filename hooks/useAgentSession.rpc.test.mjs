@@ -5576,17 +5576,21 @@ test("a retained foreign-source tab cannot mention its path into the selected wo
   assert.equal(view.queryAllByText("FIRST OWNER CONTENT").some((element) => !element.closest('[style*="display: none"]')), true);
   const foreignMention = view.queryByRole("button", { name: translate("appShell.mentionFileInChat") });
   if (foreignMention) await act(async () => { fireEvent.click(foreignMention); });
-  assert.equal(view.getByRole("textbox").value, "Worker two draft", "a source-relative path must not be inserted into another worker's composer");
+  // The file tab covers the chat, which stays mounted (hidden) behind it.
+  assert.equal(view.container.querySelector("#workspace-chat textarea").value, "Worker two draft", "a source-relative path must not be inserted into another worker's composer");
   assert.equal(foreignMention === null || foreignMention.disabled, true, "the foreign-source action is unavailable");
-  await act(async () => { fireEvent.click(view.getByText("Worker one conversation")); await sleep(60); });
+  await act(async () => { fireEvent.click(view.getByRole("tab", { name: "Worker one conversation" })); await sleep(60); });
+  // Its chat tab shows the chat; the file tab shows the file again.
+  await act(async () => { fireEvent.click(view.getAllByRole("tab", { name: /report\.txt/ })[0]); await sleep(30); });
   const sourceMention = view.getByRole("button", { name: translate("appShell.mentionFileInChat") });
   assert.equal(sourceMention.disabled, false, "returning to the source session restores the action");
   await act(async () => {
-    const composer = view.getByRole("textbox");
+    const composer = view.container.querySelector("#workspace-chat textarea");
     composer.focus();
     composer.setSelectionRange(composer.value.length, composer.value.length);
     fireEvent.click(sourceMention);
   });
+  // Mentioning shows the chat it went into.
   assert.equal(view.getByRole("textbox").value.includes("@report.txt"), true);
   assert.equal(view.getByRole("textbox").value.startsWith("Worker one draft"), true);
   view.unmount();

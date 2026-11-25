@@ -265,6 +265,7 @@
   "appShell.allModels": "すべてのモデル",
   "appShell.showFilePanel": "ファイルパネルを表示",
   "appShell.filePanel": "ファイルパネル",
+  "appShell.openTabs": "開いているタブ",
   "appShell.revealSourceSession": "エクスプローラーで表示する前に、このファイルの元のセッションを選択してください。",
   "appShell.showSidebar": "サイドバーを表示",
   "appShell.skills": "スキル",

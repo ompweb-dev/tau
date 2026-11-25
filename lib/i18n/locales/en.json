@@ -279,6 +279,7 @@
   "composerContext.speedCurrent": "{current} t/s",
   "appShell.allModels": "All models",
   "appShell.filePanel": "File panel",
+  "appShell.openTabs": "Open tabs",
   "appShell.showFilePanel": "Show file panel",
   "appShell.showSidebar": "Show sidebar",
   "appShell.skills": "Skills",

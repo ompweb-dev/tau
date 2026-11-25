@@ -279,6 +279,7 @@
   "composerContext.speedCurrent": "{current} t/s",
   "appShell.allModels": "所有模型",
   "appShell.filePanel": "檔案面板",
+  "appShell.openTabs": "開啟的分頁",
   "appShell.showFilePanel": "顯示檔案面板",
   "appShell.showSidebar": "顯示側邊欄",
   "appShell.skills": "技能",
