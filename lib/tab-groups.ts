@@ -276,7 +276,10 @@ export function restoredLayout(value: unknown): TabLayout | null {
       return node;
     }
     const total = node.sizes.reduce((sum, size) => sum + size, 0);
-    return { ...node, children: node.children.map(visit), sizes: node.sizes.map((size) => size / total) };
+    const sizes = node.sizes.map((size) => size / total);
+    // Sizes that overflow or underflow the sum normalize to 0 or NaN.
+    if (!sizes.every((size) => Number.isFinite(size) && size > 0)) valid = false;
+    return { ...node, children: node.children.map(visit), sizes };
   };
   const layout = visit(value);
   return valid ? layout : null;
