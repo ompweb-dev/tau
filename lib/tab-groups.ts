@@ -1,3 +1,5 @@
+import { isRecord } from "./type-guards";
+
 // Editor-group layout of the main tab strip: a tree of splits whose leaves are
 // tab groups. Every open tab lives in exactly one group. Pure functions only:
 // AppShell keeps the tree in state and the views read it.
@@ -207,9 +209,10 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
 }
 
 /**
- * Chat tabs after a session list loads: a listed session's title replaces the
- * tab's (a `live` tab's only from a copy modified later than its own, since its
- * own may be newer than a cached list), and
+ * Chat tabs after a session list loads: a listed session replaces the tab's
+ * copy (title, paths, project: a restored tab's can be days old), a `live`
+ * tab's only when modified later than its own, since its own may be newer
+ * than a cached list; and
  * a tab whose session was in the previous list (`before`) but is no longer
  * listed closes, unless `keep` holds it (shown, or its host's list is not
  * current). A tab never listed yet (a session newer than the list) stays. The
@@ -228,18 +231,16 @@ export function syncChatTabs<T extends { name?: string; firstMessage: string; mo
       changed = true;
       return [];
     }
-    if (found.name === tab.name && found.firstMessage === tab.firstMessage) return [tab];
+    if (JSON.stringify(found) === JSON.stringify(tab)) return [tab];
     if (live(tab) && !(Date.parse(found.modified ?? "") > Date.parse(tab.modified ?? ""))) return [tab];
     changed = true;
-    return [{ ...tab, name: found.name, firstMessage: found.firstMessage, modified: found.modified }];
+    return [found];
   });
   return changed ? next : tabs;
 }
 
-const isLayout = (node: unknown): node is TabLayout => {
-  if (typeof node !== "object" || node === null) return false;
-  const value = node as Record<string, unknown>;
-  if (typeof value.id !== "string") return false;
+const isLayout = (value: unknown): value is TabLayout => {
+  if (!isRecord(value) || typeof value.id !== "string") return false;
   if (value.kind === "group") {
     return Array.isArray(value.tabs) && value.tabs.every((tab) => typeof tab === "string")
       && (value.active === null || typeof value.active === "string")
@@ -252,16 +253,28 @@ const isLayout = (node: unknown): node is TabLayout => {
 };
 
 /**
- * A layout read back from storage, or null when it is not one. Its ids are
- * reserved, so groups and splits made afterwards never take one of them.
+ * A layout read back from storage (sizes normalized), or null when it is not
+ * one: a malformed node, an id or a tab used twice. Its ids are reserved, so
+ * groups and splits made afterwards never take one of them.
  */
 export function restoredLayout(value: unknown): TabLayout | null {
   if (!isLayout(value)) return null;
-  const visit = (node: TabLayout) => {
+  const ids = new Set<string>();
+  const tabs = new Set<string>();
+  let valid = true;
+  const visit = (node: TabLayout): TabLayout => {
+    if (ids.has(node.id)) valid = false;
+    ids.add(node.id);
+    // An absurd stored id would leave the counter unable to step past it.
     const n = Number(node.id.slice(1));
-    if (Number.isSafeInteger(n)) nextId = Math.max(nextId, n);
-    if (node.kind === "split") node.children.forEach(visit);
+    if (Number.isSafeInteger(n) && n < 1e9) nextId = Math.max(nextId, n);
+    if (node.kind === "group") {
+      for (const tab of node.tabs) { if (tabs.has(tab)) valid = false; tabs.add(tab); }
+      return node;
+    }
+    const total = node.sizes.reduce((sum, size) => sum + size, 0);
+    return { ...node, children: node.children.map(visit), sizes: node.sizes.map((size) => size / total) };
   };
-  visit(value);
-  return value;
+  const layout = visit(value);
+  return valid ? layout : null;
 }

@@ -5752,18 +5752,32 @@ test("the strips and groups come back after a reload, and a tab whose session we
   await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation")); await sleep(60); });
   await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "persist-open", sessionId: "worker-two", hostId: "h2", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(80);
+  });
+  await until(() => view.queryByRole("tab", { name: /report\.txt/ }), "a file tab opens");
   view.unmount();
 
-  // Worker one (behind legacy in its group) went while the page was closed.
-  sessions.splice(sessions.findIndex((session) => session.id === "worker-one"), 1);
+  // Worker legacy, the chat its group showed, went while the page was closed.
+  sessions.splice(sessions.findIndex((session) => session.id === "legacy"), 1);
   window.history.replaceState(null, "", "?session=worker-two");
   view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
   await settle();
-  await until(() => view.queryByRole("tab", { name: "Worker legacy conversation" }), "a background tab comes back");
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "a background tab comes back");
+  assert.ok(view.getByRole("tab", { name: /report\.txt/ }), "and the file tab");
   assert.equal(view.getAllByRole("separator", { name: translate("appShell.resizeTabGroups") }).length, 1, "the split comes back");
   const groupOf = (name) => view.getByRole("tab", { name }).closest("[data-group-id]");
-  assert.notEqual(groupOf("Worker legacy conversation"), groupOf("Worker two conversation"), "each chat in its own group again");
-  await until(() => !view.queryByRole("tab", { name: "Worker one conversation" }), "a session gone meanwhile loses its tab on the first list");
+  assert.notEqual(groupOf("Worker one conversation"), groupOf("Worker two conversation"), "each chat in its own group again");
+  await until(() => !view.queryByRole("tab", { name: "Worker legacy conversation" }), "a session gone meanwhile loses its tab on the first list, shown or not");
+  view.unmount();
+
+  // Reloaded without a conversation in the URL: the focused group's tab is shown again.
+  window.history.replaceState(null, "", "/");
+  view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => new URLSearchParams(window.location.search).get("session") === "worker-two", "the focused group's chat is selected");
   view.unmount();
 });
 
