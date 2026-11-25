@@ -61,6 +61,9 @@ export function validWorkspaceResult(op: keyof WorkspaceOps, result: unknown): b
       isRecord(entry) && text(entry.name) && typeof entry.isDir === "boolean" && count(entry.size) && text(entry.modified)
       && (entry.linkTarget === undefined || text(entry.linkTarget))
       && (entry.outsideRoot === undefined || typeof entry.outsideRoot === "boolean"));
+    case "searchText": return typeof value.truncated === "boolean" && Array.isArray(value.matches) && value.matches.length <= 500
+      && value.matches.every((match) => isRecord(match) && text(match.path) && count(match.line) && typeof match.text === "string"
+        && match.text.length <= 240 && count(match.column) && count(match.length));
     case "fileIndex": return Array.isArray(value.files)
       ? value.files.length <= 5000 && value.files.every(text) && typeof value.truncated === "boolean"
       : Array.isArray(value.matches) && value.matches.length <= 200 && value.matches.every((entry) =>

@@ -1732,5 +1732,18 @@
   "modelsConfig.accountApiKey": "APIキー",
   "modelsConfig.disconnectAccount": "{label} を切断",
   "modelsConfig.disconnectAccountTitle": "アカウントを切断しますか？",
-  "modelsConfig.disconnectAccountBody": "pi は {label} の保存済み資格情報を削除します。このプロバイダーの他のアカウントは接続されたままです。"
+  "modelsConfig.disconnectAccountBody": "pi は {label} の保存済み資格情報を削除します。このプロバイダーの他のアカウントは接続されたままです。",
+  "tabBar.files": "ファイル",
+  "tabBar.search": "検索",
+  "searchPanel.placeholder": "ファイル内を検索",
+  "searchPanel.matchCase": "大文字と小文字を区別",
+  "searchPanel.searching": "検索中…",
+  "searchPanel.noResults": "結果なし",
+  "searchPanel.results.one": "{count} 件",
+  "searchPanel.results.other": "{count} 件",
+  "searchPanel.files.one": "{count} ファイル",
+  "searchPanel.files.other": "{count} ファイル",
+  "searchPanel.truncated": "最初の結果のみ表示しています。検索語を絞り込んでください",
+  "searchPanel.failed": "検索に失敗しました (HTTP {status})",
+  "searchPanel.refresh": "再検索"
 }

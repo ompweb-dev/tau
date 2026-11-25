@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { authorizeFileAccess } from "../file-authorization";
 import { existingPathWithinRootsChecker, isAbsoluteFileRequestPath, isExistingFilePathAllowed, isFilePathAllowed } from "../file-access";
 import { resolveDirentIsDirectory } from "../file-dirent";
-import { indexWorkspaceFiles } from "../file-index";
+import { indexWorkspaceFiles, searchWorkspaceText } from "../file-index";
 import { inspectUploadTargets, validateUploadFileNames } from "../file-upload";
 import type { StagedUploads } from "./uploads";
 import { MAX_RESULT_LIMIT } from "../file-fuzzy";
@@ -14,7 +14,7 @@ import { documentPreviewKind, getAudioMime, getDocumentMime, getFileLanguage, ge
 import { MAX_INLINE_BASH_OUTPUT_BYTES, openRegularFileNoFollow, readUtf8FileWithinLimit, resolveBashOutputPath } from "../bash-output";
 import { isBashOutputPathReferencedBySession } from "../session-file-references";
 import { isRecord } from "../type-guards";
-import type { GitOrigin, WorkspaceFileEvent, WorkspaceFileInfo, WorkspaceFileRequest, WorkspaceOps } from "../workspace-types";
+import type { GitOrigin, WorkspaceFileEvent, WorkspaceFileInfo, WorkspaceFileRequest, WorkspaceOps, WorkspaceOwner } from "../workspace-types";
 import { HostOpError } from "./link-protocol";
 import type { OpResult } from "./session-ops";
 import { assertOutsideAgentDir, assertRemovableOutsideAgentDir, authorizeWorkspaceDirectory, authorizeWritableDirectory, getWorkspaceRoots } from "./workspace-roots";
@@ -145,6 +145,17 @@ async function bashPath(sessionId: string, requested: string): Promise<string> {
   if (!await isBashOutputPathReferencedBySession(resolved, sessionId)) throw new HostOpError(403, "access_denied", "Access denied");
   return resolved;
 }
+/** A cwd the file index and text search may scan. */
+async function indexedDirectory(cwd: unknown, owner: WorkspaceOwner | undefined): Promise<string> {
+  if (typeof cwd !== "string" || !path.isAbsolute(cwd)) throw new HostOpError(400, "cwd_must_be_absolute", "cwd must be an absolute path");
+  const roots = await getWorkspaceRoots(owner);
+  if (!isFilePathAllowed(cwd, roots)) throw new HostOpError(403, "access_denied", "Access denied");
+  let stat: fs.Stats;
+  try { stat = fs.statSync(cwd); } catch { throw new HostOpError(404, "directory_not_found", "Directory not found"); }
+  if (!stat.isDirectory()) throw new HostOpError(400, "not_a_directory", "Not a directory");
+  if (!isExistingFilePathAllowed(cwd, roots)) throw new HostOpError(403, "access_denied", "Access denied");
+  return cwd;
+}
 export interface WorkspaceService {
   ops: WorkspaceOps;
   busy(): boolean;
@@ -271,16 +282,13 @@ export function createWorkspaceService(uploads: StagedUploads, emit: (id: string
       } finally { await reads.close(ticket.id); }
     }),
     fileIndex: (cwd, query, limit, kind, refresh, owner) => result(async () => {
-      if (typeof cwd !== "string" || !path.isAbsolute(cwd)) throw new HostOpError(400, "cwd_must_be_absolute", "cwd must be an absolute path");
       if (typeof query !== "string" || !Number.isSafeInteger(limit) || limit < 1 || limit > MAX_RESULT_LIMIT
         || (kind !== "all" && kind !== "file") || typeof refresh !== "boolean") throw invalid();
-      const roots = await getWorkspaceRoots(owner);
-      if (!isFilePathAllowed(cwd, roots)) throw new HostOpError(403, "access_denied", "Access denied");
-      let stat: fs.Stats;
-      try { stat = fs.statSync(cwd); } catch { throw new HostOpError(404, "directory_not_found", "Directory not found"); }
-      if (!stat.isDirectory()) throw new HostOpError(400, "not_a_directory", "Not a directory");
-      if (!isExistingFilePathAllowed(cwd, roots)) throw new HostOpError(403, "access_denied", "Access denied");
-      return indexWorkspaceFiles(cwd, query.slice(0, 500), limit, kind, refresh);
+      return indexWorkspaceFiles(await indexedDirectory(cwd, owner), query.slice(0, 500), limit, kind, refresh);
+    }),
+    searchText: (cwd, query, caseSensitive, owner) => result(async () => {
+      if (typeof query !== "string" || query.length === 0 || query.length > 500 || typeof caseSensitive !== "boolean") throw invalid();
+      return searchWorkspaceText(await indexedDirectory(cwd, owner), query, caseSensitive);
     }),
     readBashOutput: (id, requested) => result(async () => {
       const read = await readUtf8FileWithinLimit(await bashPath(id, requested));

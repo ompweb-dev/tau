@@ -1769,5 +1769,18 @@
   "modelsConfig.accountApiKey": "API 金鑰",
   "modelsConfig.disconnectAccount": "中斷連線 {label}",
   "modelsConfig.disconnectAccountTitle": "中斷帳號連線？",
-  "modelsConfig.disconnectAccountBody": "pi 將刪除 {label} 的已儲存憑證。此供應商的其他帳號仍會維持連線。"
+  "modelsConfig.disconnectAccountBody": "pi 將刪除 {label} 的已儲存憑證。此供應商的其他帳號仍會維持連線。",
+  "tabBar.files": "檔案",
+  "tabBar.search": "搜尋",
+  "searchPanel.placeholder": "在檔案中搜尋",
+  "searchPanel.matchCase": "區分大小寫",
+  "searchPanel.searching": "正在搜尋…",
+  "searchPanel.noResults": "沒有結果",
+  "searchPanel.results.one": "{count} 個結果",
+  "searchPanel.results.other": "{count} 個結果",
+  "searchPanel.files.one": "{count} 個檔案",
+  "searchPanel.files.other": "{count} 個檔案",
+  "searchPanel.truncated": "僅顯示前面的結果，請縮小搜尋範圍",
+  "searchPanel.failed": "搜尋失敗 (HTTP {status})",
+  "searchPanel.refresh": "重新搜尋"
 }

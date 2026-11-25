@@ -1684,14 +1684,16 @@ export function AppShell({ appName }: { appName: string }) {
     });
   }, [fileTabs]);
 
-  const handleOpenFile = useCallback((filePath: string, fileName: string, source: WorkspaceFileSource) => {
+  const revealSeqRef = useRef(0);
+  const handleOpenFile = useCallback((filePath: string, fileName: string, source: WorkspaceFileSource, line?: number) => {
     const absolute = filePath.startsWith("/") || filePath.startsWith("~/") || filePath.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(filePath);
     const rooted = !absolute && source.cwd ? joinFilePath(source.cwd, filePath) : filePath;
     const target = filePath.startsWith("~/") ? filePath : normalizeLocalPath(rooted);
     const tabId = `file:${source.sessionId ?? hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
+    const revealLine = line === undefined ? undefined : { line, seq: ++revealSeqRef.current };
     setFileTabs((prev) => prev.some((tab) => tab.id === tabId)
-      ? prev
-      : [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId }]);
+      ? (revealLine ? prev.map((tab) => tab.id === tabId ? { ...tab, revealLine } : tab) : prev)
+      : [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId, revealLine }]);
     setActiveFileTabId(tabId);
     setFileShown(true);
     // A Back/Forward still fetching must not replace the file just shown.

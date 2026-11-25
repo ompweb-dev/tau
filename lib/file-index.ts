@@ -1,11 +1,12 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Dirent } from "fs";
-import { readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "path";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
-import type { WorkspaceIndex } from "./workspace-types";
+import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
+import { isPiSecretFile } from "./file-access";
 const execFileAsync = promisify(execFile);
 
 
@@ -132,7 +133,8 @@ async function listWithWalk(cwd: string): Promise<FileListing> {
   return { files, hardTruncated };
 }
 
-export async function indexWorkspaceFiles(cwd: string, query: string, limit: number, kind: "all" | "file", forceRefresh: boolean): Promise<WorkspaceIndex> {
+/** The cwd's listing, from the cache while it is fresh. */
+async function cachedListing(cwd: string, forceRefresh: boolean): Promise<CacheEntry> {
     const cache = getIndexCache();
     const now = Date.now();
     // An explicit refresh in the UI must not be answered from the TTL window,
@@ -153,7 +155,11 @@ export async function indexWorkspaceFiles(cwd: string, query: string, limit: num
       cached = { listing, expiresAt: Date.now() + CACHE_TTL_MS };
       cache.set(cwd, cached);
     }
+    return cached;
+}
 
+export async function indexWorkspaceFiles(cwd: string, query: string, limit: number, kind: "all" | "file", forceRefresh: boolean): Promise<WorkspaceIndex> {
+    const cached = await cachedListing(cwd, forceRefresh);
     if (query) {
       cached.entries ??= buildEntriesFromFiles(cached.listing.files);
       // Directories score a ranking bonus, so a caller that only renders files
@@ -181,4 +187,48 @@ export async function indexWorkspaceFiles(cwd: string, query: string, limit: num
       files: files.slice(0, MAX_FILES),
       truncated: hardTruncated || files.length > MAX_FILES,
     };
+}
+
+/** Most matches a text search answers. */
+export const MAX_TEXT_MATCHES = 500;
+/** Longest line excerpt a match carries. */
+export const TEXT_MATCH_EXCERPT = 240;
+const TEXT_SEARCH_MAX_FILE_BYTES = 1024 * 1024;
+/** Tests shorten the budget. */
+export const textSearchLimits = { budgetMs: 10_000 };
+
+/**
+ * Searches the text files of the cwd's listing (the file index: .gitignore
+ * respected, symlinks skipped) for a literal string. Skips files over 1 MiB,
+ * binary files (a NUL in the first 8 KiB) and omp's credential files.
+ * `truncated`: the match cap, the time budget or the listing's cap stopped it.
+ */
+export async function searchWorkspaceText(cwd: string, query: string, caseSensitive: boolean): Promise<WorkspaceTextSearch> {
+  // Fresh: a search must see files written a moment ago.
+  const { listing } = await cachedListing(cwd, true);
+  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), caseSensitive ? "u" : "iu");
+  const matches: WorkspaceTextMatch[] = [];
+  const deadline = Date.now() + textSearchLimits.budgetMs;
+  for (const rel of listing.files) {
+    if (matches.length >= MAX_TEXT_MATCHES || Date.now() > deadline) return { matches, truncated: true };
+    const absolute = path.join(cwd, rel);
+    if (isPiSecretFile(absolute)) continue;
+    let content: Buffer;
+    try {
+      const stat = await lstat(absolute);
+      if (!stat.isFile() || stat.size > TEXT_SEARCH_MAX_FILE_BYTES) continue;
+      content = await readFile(absolute);
+    } catch { continue; }
+    if (content.subarray(0, 8192).includes(0)) continue;
+    const lines = content.toString("utf8").split(/\r?\n/);
+    for (let index = 0; index < lines.length && matches.length < MAX_TEXT_MATCHES; index++) {
+      const line = lines[index];
+      const found = pattern.exec(line);
+      if (!found) continue;
+      // An excerpt around the match: long lines (minified files) stay short.
+      const start = line.length <= TEXT_MATCH_EXCERPT ? 0 : Math.max(0, Math.min(found.index - 60, line.length - TEXT_MATCH_EXCERPT));
+      matches.push({ path: rel, line: index + 1, text: line.slice(start, start + TEXT_MATCH_EXCERPT), column: found.index - start, length: found[0].length });
+    }
+  }
+  return { matches, truncated: matches.length >= MAX_TEXT_MATCHES || listing.hardTruncated };
 }

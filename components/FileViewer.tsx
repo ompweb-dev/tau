@@ -42,6 +42,8 @@ interface Props {
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   gitRefreshKey?: number;
   active?: boolean;
+  /** Scrolls to this line of the source and marks it, once per `seq`. */
+  revealLine?: { line: number; seq: number };
 }
 
 interface FileData {
@@ -788,7 +790,7 @@ function DocumentViewer({ filePath, hostId, sourceSessionId, active = true }: Pr
   );
 }
 
-export function FileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true }: Props) {
+export function FileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
@@ -798,10 +800,10 @@ export function FileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile,
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
-  return <TextFileViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} active={active} />;
+  return <TextFileViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} active={active} revealLine={revealLine} />;
 }
 
-function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true }: Props) {
+function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine }: Props) {
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [data, setData] = useState<FileData | null>(null);
@@ -831,6 +833,9 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
   const contentRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
+  // The last reveal done; a newer one waits until its line is rendered.
+  const revealedSeqRef = useRef(0);
+  const revealPending = revealLine !== undefined && revealLine.seq !== revealedSeqRef.current;
 
   const fetchContent = useCallback((filePath: string) => {
     // Guard against stale responses: bump the request id and ignore any
@@ -879,6 +884,19 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
       if (requestId === gitDiffRequestRef.current) setGitDiff(null);
     }
   }, [cwd, hostId, sourceSessionId]);
+
+  // Runs again as the content, highlighting and mode settle, until the line is there to scroll to.
+  useEffect(() => {
+    if (!revealLine || !revealPending || !data || !active) return;
+    if (displayMode !== "source") { setDisplayMode("source"); return; }
+    const root = contentRef.current;
+    const line = root?.querySelector<HTMLElement>(`.file-source-line[data-line-number="${revealLine.line}"]`);
+    if (!root || !line) return;
+    revealedSeqRef.current = revealLine.seq;
+    for (const marked of root.querySelectorAll(".file-source-line.is-revealed")) marked.classList.remove("is-revealed");
+    line.classList.add("is-revealed");
+    line.scrollIntoView({ block: "center" });
+  }, [revealLine, revealPending, data, active, displayMode, highlightReady]);
 
   // Reset per file, not per activation: switching tabs back keeps the user's pick.
   useEffect(() => {

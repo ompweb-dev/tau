@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Activity, Bell, Folder, GitBranch, GitFork, X } from "lucide-react";
+import { Activity, Bell, Folder, GitBranch, GitFork, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 export interface Tab {
@@ -12,6 +12,8 @@ export interface Tab {
   sourceSessionId?: string | null;
   /** Original workspace context; selecting another conversation must not rebase this tab. */
   sourceCwd: string | null;
+  /** A line to scroll to and mark; `seq` tells a repeat of the same line apart. */
+  revealLine?: { line: number; seq: number };
 }
 
 /** A tab of the strip after the pinned ones: an open chat or file. */
@@ -45,7 +47,10 @@ interface Props {
   onSelectExplorer?: () => void;
   /** Changed-file count badge on the Explorer tab. */
   explorerBadge?: number;
-  /** Pinned Git changes tab rendered after Explorer (Tauri parity). */
+  /** Pinned Search tab rendered after Files. */
+  searchSelected?: boolean;
+  onSelectSearch?: () => void;
+  /** Pinned Git changes tab rendered after Search. */
   gitSelected?: boolean;
   onSelectGit?: () => void;
   /** Changed-file count badge on the Git tab. */
@@ -75,7 +80,7 @@ const badgeStyle = (color: string) => ({
   fontWeight: 700,
 });
 
-/** Notifications / Explorer / Git: fixed tabs before the file tabs. */
+/** Notifications / Files / Search / Git: fixed tabs before the file tabs. */
 function PinnedTab({ id, panelId, label, title, icon, selected, badge, badgeColor, onSelect, onKeyDown }: {
   id: string;
   panelId: string;
@@ -152,13 +157,14 @@ function PinnedTab({ id, panelId, label, title, icon, selected, badge, badgeColo
 /** Drag data type of a strip tab being moved. */
 const TAB_DRAG_TYPE = "application/x-tau-tab";
 
-export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, onDropTab, onMoveTabToGroup, explorerSelected = false, onSelectExplorer, explorerBadge = 0, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
+export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, onDropTab, onMoveTabToGroup, explorerSelected = false, onSelectExplorer, explorerBadge = 0, searchSelected = false, onSelectSearch, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const orderedTabIds = [
     ...(onSelectNotifications ? ["notifications"] : []),
     ...(onSelectExplorer ? ["explorer"] : []),
+    ...(onSelectSearch ? ["search"] : []),
     ...(onSelectGit ? ["git"] : []),
     ...(onSelectWorktrees ? ["worktrees"] : []),
     ...(onSelectConnection ? ["connection"] : []),
@@ -167,6 +173,7 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
 
   const selectTabById = (id: string) => {
     if (id === "explorer") onSelectExplorer?.();
+    else if (id === "search") onSelectSearch?.();
     else if (id === "git") onSelectGit?.();
     else if (id === "notifications") onSelectNotifications?.();
     else if (id === "worktrees") onSelectWorktrees?.();
@@ -287,13 +294,27 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
         <PinnedTab
           id="explorer"
           panelId="workspace-file-panel-explorer"
-          label={t("sessionSidebar.explorer")}
-          title={explorerBadge > 0 ? t("sessionSidebar.explorerChanged", { count: explorerBadge }) : t("sessionSidebar.explorer")}
+          label={t("tabBar.files")}
+          title={explorerBadge > 0 ? t("sessionSidebar.explorerChanged", { count: explorerBadge }) : t("tabBar.files")}
           icon={<Folder size={13} strokeWidth={2} aria-hidden="true" />}
           selected={explorerSelected}
           badge={explorerBadge}
           badgeColor="var(--status-modified)"
           onSelect={onSelectExplorer}
+          onKeyDown={handleTabKeyDown}
+        />
+      )}
+      {onSelectSearch && (
+        <PinnedTab
+          id="search"
+          panelId="workspace-file-panel-search"
+          label={t("tabBar.search")}
+          title={t("tabBar.search")}
+          icon={<Search size={13} strokeWidth={2} aria-hidden="true" />}
+          selected={searchSelected}
+          badge={0}
+          badgeColor="var(--accent)"
+          onSelect={onSelectSearch}
           onKeyDown={handleTabKeyDown}
         />
       )}

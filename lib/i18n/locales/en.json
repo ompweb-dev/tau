@@ -1769,5 +1769,18 @@
   "modelsConfig.accountApiKey": "API key",
   "modelsConfig.disconnectAccount": "Disconnect {label}",
   "modelsConfig.disconnectAccountTitle": "Disconnect account?",
-  "modelsConfig.disconnectAccountBody": "pi will delete the stored credential for {label}. Other accounts for this provider stay connected."
+  "modelsConfig.disconnectAccountBody": "pi will delete the stored credential for {label}. Other accounts for this provider stay connected.",
+  "tabBar.files": "Files",
+  "tabBar.search": "Search",
+  "searchPanel.placeholder": "Search in files",
+  "searchPanel.matchCase": "Match case",
+  "searchPanel.searching": "Searching…",
+  "searchPanel.noResults": "No results",
+  "searchPanel.results.one": "{count} result",
+  "searchPanel.results.other": "{count} results",
+  "searchPanel.files.one": "{count} file",
+  "searchPanel.files.other": "{count} files",
+  "searchPanel.truncated": "first results only, refine the search",
+  "searchPanel.failed": "Search failed (HTTP {status})",
+  "searchPanel.refresh": "Search again"
 }

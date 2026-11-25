@@ -13,6 +13,7 @@ import {
 import { TabBar } from "./TabBar";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { GitChangesPanel } from "./GitChangesPanel";
+import { SearchPanel } from "./SearchPanel";
 import { NotificationActions, NotificationList } from "./NotificationList";
 import { useUnreadNotificationCount } from "@/lib/notification-history";
 import { WorktreesPanel } from "./WorktreesPanel";
@@ -22,7 +23,7 @@ import { useI18n } from "@/lib/i18n";
 import { getFileName } from "@/lib/file-paths";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 
-export type RightPanelView = "explorer" | "git" | "notifications" | "worktrees" | "connection";
+export type RightPanelView = "explorer" | "search" | "git" | "notifications" | "worktrees" | "connection";
 
 interface Props {
   /** The open file, highlighted in the Explorer (null when it is another workspace's). */
@@ -55,7 +56,7 @@ interface Props {
   explorerRefreshing: boolean;
   isMobile: boolean;
   isCompactOverlay: boolean;
-  onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource) => void;
+  onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource, line?: number) => void;
   onExplorerRefresh: () => void;
   onExplorerRefreshDone: () => void;
   onAtMention: (relativePath: string, isDir: boolean) => void;
@@ -112,6 +113,9 @@ export const RightPanel = memo(function RightPanel({
   const { t } = useI18n();
   const openWorkspaceFile = useCallback((filePath: string, fileName: string) => {
     onOpenFile(filePath, fileName, { hostId, sessionId: sourceSessionId ?? null, cwd: explorerCwd });
+  }, [onOpenFile, hostId, sourceSessionId, explorerCwd]);
+  const openSearchMatch = useCallback((relativePath: string, line: number) => {
+    onOpenFile(relativePath, getFileName(relativePath), { hostId, sessionId: sourceSessionId ?? null, cwd: explorerCwd }, line);
   }, [onOpenFile, hostId, sourceSessionId, explorerCwd]);
   const gitBadge = explorerIsRepo ? explorerGitCount : 0;
   const unreadNotifications = useUnreadNotificationCount();
@@ -181,6 +185,8 @@ export const RightPanel = memo(function RightPanel({
               explorerSelected={rightView === "explorer"}
               onSelectExplorer={() => onSelectView("explorer")}
               explorerBadge={gitBadge}
+              searchSelected={rightView === "search"}
+              onSelectSearch={() => onSelectView("search")}
               gitSelected={rightView === "git"}
               onSelectGit={() => onSelectView("git")}
               gitBadge={gitBadge}
@@ -241,6 +247,21 @@ export const RightPanel = memo(function RightPanel({
               </button>
             </div>
             )
+          ) : rightView === "search" ? (
+            explorerCwd && (
+            <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("tabBar.search")}>
+              <button
+                aria-label={t("searchPanel.refresh")}
+                onClick={onExplorerRefresh}
+                title={t("searchPanel.refresh")}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, padding: 0, background: "none", border: "none", borderRadius: "var(--radius-control)", color: "var(--text-dim)", cursor: "pointer" }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
+              >
+                <RefreshCw size={13} strokeWidth={2} aria-hidden="true" />
+              </button>
+            </div>
+            )
           ) : rightView === "git" ? (
             explorerCwd && (
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("tabBar.git")}>
@@ -271,7 +292,7 @@ export const RightPanel = memo(function RightPanel({
         </div>
 
         {/* Explorer tab view — kept mounted so expansion survives tab switches. */}
-        <div id="workspace-file-panel-explorer" role="tabpanel" aria-label={t("sessionSidebar.explorer")} style={{ display: rightView === "explorer" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <div id="workspace-file-panel-explorer" role="tabpanel" aria-label={t("tabBar.files")} style={{ display: rightView === "explorer" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
           {visitedViews.has("explorer") && (explorerCwd ? (
             <>
               <div
@@ -338,6 +359,25 @@ export const RightPanel = memo(function RightPanel({
             <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
               <Folder size={26} strokeWidth={1.5} aria-hidden="true" style={{ color: "var(--text-dim)" }} />
               <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 600 }}>{t("sessionSidebar.explorer")}</div>
+              <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6, maxWidth: 260 }}>{t("sessionSidebar.selectProjectFirst")}</div>
+            </div>
+          ))}
+        </div>
+        {/* Search tab view — kept mounted so the query and results survive tab switches. */}
+        <div id="workspace-file-panel-search" role="tabpanel" aria-label={t("tabBar.search")} style={{ display: rightView === "search" ? "flex" : "none", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
+          {visitedViews.has("search") && (explorerCwd ? (
+            <SearchPanel
+              key={`${hostId}:${sourceSessionId ?? ""}:${explorerCwd}`}
+              hostId={hostId}
+              cwd={explorerCwd}
+              sourceSessionId={sourceSessionId}
+              refreshKey={explorerRefreshKey}
+              onOpenMatch={openSearchMatch}
+            />
+          ) : (
+            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, textAlign: "center" }}>
+              <Search size={26} strokeWidth={1.5} aria-hidden="true" style={{ color: "var(--text-dim)" }} />
+              <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 600 }}>{t("tabBar.search")}</div>
               <div style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.6, maxWidth: 260 }}>{t("sessionSidebar.selectProjectFirst")}</div>
             </div>
           ))}

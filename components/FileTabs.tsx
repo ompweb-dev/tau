@@ -122,6 +122,7 @@ export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabI
             sourceSessionId={tab.sourceSessionId}
             gitRefreshKey={explorerRefreshKey}
             active={tab.id === activeFileTab?.id && active}
+            revealLine={tab.revealLine}
             onMentionLines={tab.id === activeFileTab?.id && active && focused && activeFileMatchesSource ? onMentionLines : undefined}
             onOpenFile={(filePath) => onOpenFile(
               filePath,
