@@ -1603,11 +1603,11 @@ export function AppShell({ appName }: { appName: string }) {
     ? workspaceOptions.projects.find((project) => project.poolId === session.poolId && project.projectId === session.projectId)
     : undefined, [workspaceOptions.projects]);
 
-  const handleSessionDeleted = useCallback((sessionId: string) => {
+  const handleSessionDeleted = useCallback((sessionId: string, hostId?: string) => {
     // The composer for this session can never be reopened, so its draft would
     // otherwise keep the exit guard armed for unreachable content.
     clearDraft(sessionId);
-    setChatTabs((tabs) => tabs.filter((tab) => tab.id !== sessionId));
+    setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, { id: sessionId, hostId })));
     setRefreshKey((k) => k + 1);
     if (selectedSession?.id === sessionId) {
       const cwd = selectedSession.cwd;
@@ -1690,6 +1690,8 @@ export function AppShell({ appName }: { appName: string }) {
       : [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId }]);
     setActiveFileTabId(tabId);
     setFileShown(true);
+    // A Back/Forward still fetching must not replace the file just shown.
+    navViewVersionRef.current += 1;
     // The file opens in the main area: close what covers it there.
     if (isMobile) setSidebarOpen(false);
     if (isCompactOverlay) setRightPanelOpen(false);
@@ -1845,6 +1847,7 @@ export function AppShell({ appName }: { appName: string }) {
   const handleSelectFileTab = useCallback((tabId: string) => {
     setActiveFileTabId(tabId);
     setFileShown(true);
+    navViewVersionRef.current += 1;
   }, []);
   // Stable selectors for the memoized RightPanel: inline arrows here would be
   // new identities every render and defeat the memo boundary.
@@ -2666,6 +2669,7 @@ export function AppShell({ appName }: { appName: string }) {
               <div
                 ref={setSessionInfoContainer}
                 className="shell-session-info"
+                inert={fileTabShown ? true : undefined}
                 style={{ display: "flex", height: 44, flexShrink: 0, alignSelf: "flex-start" }}
               />
             )}

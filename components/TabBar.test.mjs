@@ -87,3 +87,20 @@ test("a tab that is not closable has no close button and ignores Delete", () => 
   fireEvent.keyDown(tab, { key: "Delete" });
   assert.deepEqual(closed, []);
 });
+
+test("closing a tab from the keyboard moves focus to its neighbour", async () => {
+  const closed = [];
+  const tabs = [
+    { id: "a", label: "a.ts", title: "a.ts", icon: null },
+    { id: "b", label: "b.ts", title: "b.ts", icon: null },
+    { id: "c", label: "c.ts", title: "c.ts", icon: null },
+  ];
+  const view = render(React.createElement(TabBar, { tabs, activeTabId: "a", manualActivation: true, onCloseTab: (id) => closed.push(id) }));
+  const b = screen.getByRole("tab", { name: "b.ts" });
+  b.focus();
+  fireEvent.keyDown(b, { key: "Delete" });
+  view.rerender(React.createElement(TabBar, { tabs: tabs.filter((tab) => tab.id !== "b"), activeTabId: "a", manualActivation: true, onCloseTab: (id) => closed.push(id) }));
+  await nextFrame();
+  assert.deepEqual(closed, ["b"]);
+  assert.equal(document.activeElement, screen.getByRole("tab", { name: "c.ts" }));
+});

@@ -2126,7 +2126,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     }
   }, [contextOpen, contextContainer]);
   useEffect(() => {
-    if (!contextOpen) return;
+    if (!contextOpen || covered) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
       const panel = contextWrapRef.current?.querySelector<HTMLElement>('[role="dialog"]');
@@ -2142,7 +2142,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [contextOpen]);
+  }, [contextOpen, covered]);
 
   // Close dropdowns on outside click
   useEffect(() => {

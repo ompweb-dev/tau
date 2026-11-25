@@ -119,7 +119,7 @@ interface ProjectRowProps {
   removeBusy: boolean;
   onSelectSession: (s: SessionInfo) => void;
   onRenamed?: () => void;
-  onSessionDeleted?: (id: string) => void;
+  onSessionDeleted?: (id: string, hostId?: string) => void;
   /** The active search query; each session row can then list its hits. */
   searchQuery?: string;
   onOpenSearchMatch?: (session: SessionInfo, target: SearchMatchTarget) => void;
@@ -552,7 +552,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
   relativeTimeNow: number;
   onSelectSession: (s: SessionInfo) => void;
   onRenamed?: () => void;
-  onSessionDeleted?: (id: string) => void;
+  onSessionDeleted?: (id: string, hostId?: string) => void;
   searchQuery?: string;
   onOpenSearchMatch?: (session: SessionInfo, target: SearchMatchTarget) => void;
   depth: number;
@@ -577,8 +577,8 @@ const SessionTreeItem = memo(function SessionTreeItem({
     onSelectSession(node.session);
   }, [onSelectSession, node.session]);
   const handleDeleted = useCallback((id: string) => {
-    onSessionDeleted?.(id);
-  }, [onSessionDeleted]);
+    onSessionDeleted?.(id, node.session.hostId);
+  }, [onSessionDeleted, node.session.hostId]);
   const handleToggleCollapse = useCallback(() => {
     setCollapsed((v) => !v);
   }, []);

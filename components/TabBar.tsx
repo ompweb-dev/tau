@@ -201,6 +201,9 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     if ((event.key === "Delete" || event.key === "Backspace") && tabs.some((tab) => tab.id === id && tab.closable !== false)) {
       event.preventDefault();
       onCloseTab?.(id);
+      // Keep keyboard focus in the strip, on the tab that takes the closed one's place.
+      const neighbour = orderedTabIds[index + 1] ?? orderedTabIds[index - 1];
+      if (neighbour) focusTabById(neighbour);
     }
   };
 

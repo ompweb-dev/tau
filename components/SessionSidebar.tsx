@@ -79,7 +79,7 @@ interface Props {
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
   refreshKey?: number;
-  onSessionDeleted?: (sessionId: string) => void;
+  onSessionDeleted?: (sessionId: string, hostId?: string) => void;
   selectedCwd?: string | null;
   /** Host `selectedCwd` lives on (this machine when absent). */
   selectedHostId?: string | null;
@@ -1471,8 +1471,8 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
 
   // Stable callbacks for the session list so memoized children don't re-render
   // on every parent state change.
-  const handleSessionDeleted = useCallback((id: string) => {
-    onSessionDeleted?.(id);
+  const handleSessionDeleted = useCallback((id: string, hostId?: string) => {
+    onSessionDeleted?.(id, hostId);
     loadSessions();
   }, [onSessionDeleted, loadSessions]);
 
