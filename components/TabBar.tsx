@@ -270,15 +270,17 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
     if (!list) return;
     const active = list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeTabId)}"]`);
     if (!active) return;
-    // Clear of the faded ends (scrolling stops at the strip's own ends).
+    // Clear of the faded ends when it fits between them (scrolling stops at the strip's own ends).
     const listRect = list.getBoundingClientRect();
     const tabRect = active.getBoundingClientRect();
-    if (tabRect.left < listRect.left + TAB_FADE_PX) {
-      list.scrollLeft -= listRect.left + TAB_FADE_PX - tabRect.left;
-    } else if (tabRect.right > listRect.right - TAB_FADE_PX) {
-      list.scrollLeft += tabRect.right - (listRect.right - TAB_FADE_PX);
+    const inset = list.clientWidth >= tabRect.width + 2 * TAB_FADE_PX ? TAB_FADE_PX : 0;
+    if (tabRect.left < listRect.left + inset) {
+      list.scrollLeft -= listRect.left + inset - tabRect.left;
+    } else if (tabRect.right > listRect.right - inset) {
+      list.scrollLeft += tabRect.right - (listRect.right - inset);
     }
-  }, [activeTabId, tabs]);
+    // Not on every render: a strip the user scrolled stays where it is.
+  }, [activeTabId, labels]);
 
   return (
     <div

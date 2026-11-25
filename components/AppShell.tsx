@@ -1884,6 +1884,7 @@ export function AppShell({ appName }: { appName: string }) {
   }, [activeFileTab]);
 
   const handleCloseAllFileTabs = useCallback((groupTabIds: readonly string[]) => {
+    stripActionRef.current = Date.now();
     setFileTabs((tabs) => tabs.filter((tab) => !groupTabIds.includes(tab.id)));
     setActiveFileTabId(null);
     setFileShown(false);
@@ -1903,7 +1904,8 @@ export function AppShell({ appName }: { appName: string }) {
     const selected = activeSessionTargetRef.current;
     setChatTabs((tabs) => {
       const next = syncChatTabs(tabs, chatTabId, listed, before,
-        (tab) => !unavailable || unavailable.has(remoteHostId(tab.hostId) ?? LOCAL_HOST_ID) || shownChatIdsRef.current.has(chatTabId(tab)),
+        (tab) => !unavailable || unavailable.has(remoteHostId(tab.hostId) ?? LOCAL_HOST_ID) || shownChatIdsRef.current.has(chatTabId(tab))
+          || Boolean(selected && sameSessionTarget(tab, selected)),
         (tab) => Boolean(selected && sameSessionTarget(tab, selected)));
       // A tab kept although unlisted (shown, or its host unavailable) is still gone-if-missing next time.
       listedTabKeysRef.current = new Set([...listed.keys(), ...next.map(chatTabId).filter((key) => before.has(key) && !listed.has(key))]);
@@ -2110,9 +2112,11 @@ export function AppShell({ appName }: { appName: string }) {
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
+  // A chat a group already shows stays reachable from the strip, whatever its host.
+  const reachable = (session: SessionInfo) => shownChatIds.has(chatTabId(session)) || !unreachableReason(session);
   const selectStripTab = (id: string) => {
-    if (id === NEW_CHAT_TAB_ID) { setFileShown(false); return; }
     stripActionRef.current = Date.now();
+    if (id === NEW_CHAT_TAB_ID) { setFileShown(false); return; }
     const session = chatTabById(id);
     if (!session) { handleSelectFileTab(id); return; }
     // As in the sidebar: an unreachable host's conversation cannot be opened (one already shown still can be).
@@ -2143,7 +2147,7 @@ export function AppShell({ appName }: { appName: string }) {
         // chat in its workspace. A file shown over it stays shown.
         const candidates = [next, ...rest.slice(index), ...rest.slice(0, index).reverse(), ...otherShownChats, ...stripIds];
         selected = candidates.map((candidate) => candidate ? chatTabById(candidate) : undefined)
-          .find((candidate) => candidate && !sameSessionTarget(candidate, session) && !unreachableReason(candidate));
+          .find((candidate) => candidate && !sameSessionTarget(candidate, session) && reachable(candidate));
         // A chat its group keeps behind another chat is brought to the front
         // there, so the strip names the chat the group shows (behind a file it
         // stays behind).
@@ -2153,6 +2157,8 @@ export function AppShell({ appName }: { appName: string }) {
           setTabLayout((layout) => activateTab(layout, front));
         }
         if (selected) handleSelectSession(selected);
+        // Never a new chat on an unreachable host: the sidebar's workspace then.
+        else if (unreachableReason(session)) handleNewSession(randomUUID(), activeCwd, activeHostId);
         else handleNewSession(randomUUID(), session.poolId ? null : session.cwd, session.hostId, poolProjectOf(session));
         // Both of those show the chat; batched, this wins.
         if (!shown && fileTabShown) setFileShown(true);
@@ -2164,7 +2170,7 @@ export function AppShell({ appName }: { appName: string }) {
     if (nextGroup && nextGroup !== group) setLastFocusedGroupId(nextGroup.id);
     const nextSession = chatTabById(next);
     if (next === NEW_CHAT_TAB_ID) setFileShown(false);
-    else if (nextSession) { if (nextSession !== selected && !unreachableReason(nextSession)) handleSelectSession(nextSession); }
+    else if (nextSession) { if (nextSession !== selected && reachable(nextSession)) handleSelectSession(nextSession); }
     else handleSelectFileTab(next);
   };
   const dropStripTab = (tabId: string, groupId: string, beforeId: string | null) => {

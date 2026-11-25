@@ -260,6 +260,9 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   const sessionRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sessionsEtagRef = useRef<string | null>(null);
+  // Through a ref: a new callback must not re-create loadSessions, whose effects refetch.
+  const onSessionsLoadedRef = useRef(onSessionsLoaded);
+  onSessionsLoadedRef.current = onSessionsLoaded;
   const sessionsAbortRef = useRef<AbortController | null>(null);
   // Set once the first /api/sessions fetch settles (success OR failure) so the
   // initial-restore effect can stop waiting on a load that never yields rows.
@@ -285,7 +288,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       if (etag) sessionsEtagRef.current = etag;
       const data = await res.json() as { sessions: SessionInfo[]; runningSessionIds?: string[]; runningSessions?: Array<LivePlace & { id: string }>; unavailableHosts?: string[] };
       setAllSessions(data.sessions);
-      onSessionsLoaded?.(data.sessions, data.unavailableHosts ?? null);
+      onSessionsLoadedRef.current?.(data.sessions, data.unavailableHosts ?? null);
       if (data.runningSessions) {
         for (const rs of data.runningSessions) {
           if (rs.id && rs.cwd) knownRunningPlacesRef.current.set(rs.id, rs);
@@ -324,7 +327,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       initialLoadedRef.current = true;
       if (showLoading) setLoading(false);
     }
-  }, [t, onSessionsLoaded]);
+  }, [t]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {

@@ -227,7 +227,8 @@ export function syncChatTabs<T extends { name?: string; firstMessage: string }>(
       changed = true;
       return [];
     }
-    if (live(tab) || (found.name === tab.name && found.firstMessage === tab.firstMessage)) return [tab];
+    // A live tab's own title may be newer than a cached list's: it takes only a name the list has (a rename).
+    if ((live(tab) && !found.name) || (found.name === tab.name && found.firstMessage === tab.firstMessage)) return [tab];
     changed = true;
     return [{ ...tab, name: found.name, firstMessage: found.firstMessage }];
   });
