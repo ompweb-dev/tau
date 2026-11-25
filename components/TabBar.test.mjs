@@ -104,3 +104,16 @@ test("closing a tab from the keyboard moves focus to its neighbour", async () =>
   assert.deepEqual(closed, ["b"]);
   assert.equal(document.activeElement, screen.getByRole("tab", { name: "c.ts" }));
 });
+
+test("Alt+Shift+arrows move the focused tab along its strip and to another strip", () => {
+  const drops = [];
+  const moves = [];
+  const tabs = ["a", "b", "c"].map((id) => ({ id, label: id, title: id, icon: null }));
+  render(React.createElement(TabBar, { tabs, activeTabId: "b", onSelectTab() {}, onDropTab: (...args) => drops.push(args), onMoveTabToGroup: (...args) => moves.push(args) }));
+  const tab = screen.getByRole("tab", { name: "b" });
+  fireEvent.keyDown(tab, { key: "ArrowLeft", altKey: true, shiftKey: true });
+  fireEvent.keyDown(tab, { key: "ArrowRight", altKey: true, shiftKey: true });
+  fireEvent.keyDown(tab, { key: "ArrowDown", altKey: true, shiftKey: true });
+  assert.deepEqual(drops, [["b", "a"], ["b", null]]);
+  assert.deepEqual(moves, [["b", 1]]);
+});

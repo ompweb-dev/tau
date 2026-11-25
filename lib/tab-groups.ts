@@ -9,6 +9,8 @@ export interface TabGroup {
   tabs: string[];
   /** The tab the group shows (the focused group's is the app's shown tab). */
   active: string | null;
+  /** The chat the group showed last: it stays mounted under a file the group shows. */
+  chat?: string | null;
 }
 
 export interface TabSplit {
@@ -72,7 +74,7 @@ function withoutTab(group: TabGroup, tabId: string): TabGroup {
   if (index < 0) return group;
   const tabs = group.tabs.filter((id) => id !== tabId);
   const active = group.active === tabId ? tabs[Math.min(index, tabs.length - 1)] ?? null : group.active;
-  return { ...group, tabs, active };
+  return { ...group, tabs, active, chat: group.chat === tabId ? null : group.chat };
 }
 
 /**
@@ -94,8 +96,10 @@ export function reconcileTabs(layout: TabLayout, ids: readonly string[], targetG
 }
 
 /** Makes `tabId` its group's shown tab. */
-export function activateTab(layout: TabLayout, tabId: string): TabLayout {
-  return mapGroups(layout, (group) => group.tabs.includes(tabId) && group.active !== tabId ? { ...group, active: tabId } : group);
+export function activateTab(layout: TabLayout, tabId: string, isChat = false): TabLayout {
+  return mapGroups(layout, (group) => group.tabs.includes(tabId) && (group.active !== tabId || (isChat && group.chat !== tabId))
+    ? { ...group, active: tabId, chat: isChat ? tabId : group.chat }
+    : group);
 }
 
 /** Moves a tab before `beforeId` in `groupId` (at the end without one); it becomes that group's shown tab. */
@@ -120,7 +124,7 @@ export function moveTab(layout: TabLayout, tabId: string, groupId: string, befor
 export function splitGroup(layout: TabLayout, groupId: string, dir: TabSplit["dir"]): TabLayout {
   const source = groupsOf(layout).find((group) => group.id === groupId);
   if (!source?.active || source.tabs.length < 2) return layout;
-  const moved: TabGroup = { ...source, tabs: [source.active] };
+  const moved: TabGroup = { ...source, tabs: [source.active], chat: source.chat === source.active ? source.chat : null };
   const rest: TabGroup = { ...withoutTab(source, source.active), id: newId("g") };
   const insert = (node: TabLayout): TabLayout => {
     if (node.kind === "group") {
@@ -147,6 +151,13 @@ export function resizeSplit(layout: TabLayout, splitId: string, sizes: number[])
   return withChildren(layout, layout.children.map((child) => resizeSplit(child, splitId, sizes)));
 }
 
+/** The range child `index`'s share can take when the boundary after it moves (see moveBoundary). */
+export function boundaryRange(sizes: readonly number[], index: number): [number, number] {
+  const pair = sizes[index] + sizes[index + 1];
+  const floor = (size: number) => size < MIN_SHARE ? Math.min(size, pair / 2) : MIN_SHARE;
+  return [floor(sizes[index]), pair - floor(sizes[index + 1])];
+}
+
 /**
  * Moves the boundary after child `index` of a split by `delta` (a share),
  * leaving either side at least MIN_SHARE. A side already narrower never
@@ -155,8 +166,8 @@ export function resizeSplit(layout: TabLayout, splitId: string, sizes: number[])
  */
 export function moveBoundary(sizes: readonly number[], index: number, delta: number): number[] {
   const pair = sizes[index] + sizes[index + 1];
-  const floor = (size: number) => size < MIN_SHARE ? Math.min(size, pair / 2) : MIN_SHARE;
-  const left = Math.min(pair - floor(sizes[index + 1]), Math.max(floor(sizes[index]), sizes[index] + delta));
+  const [min, max] = boundaryRange(sizes, index);
+  const left = Math.min(max, Math.max(min, sizes[index] + delta));
   const next = [...sizes];
   next[index] = left;
   next[index + 1] = pair - left;

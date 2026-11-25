@@ -5656,10 +5656,24 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   await act(async () => { fireEvent.keyDown(composerTwo, { key: "a" }); await sleep(60); });
   assert.equal(shownSession(), "worker-two", "typing in a group shows its chat");
 
+  // A file shown over a group's chat keeps that chat mounted when another group takes focus.
+  await act(async () => { fireEvent.pointerDown(composerOne); await sleep(60); });
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "group-open", sessionId: "worker-one", hostId: "h1", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(60);
+  });
+  await until(() => view.queryByText("FIRST OWNER CONTENT"), "the file opens over the focused group's chat");
+  assert.ok(one.contains(view.getByRole("tab", { name: /report\.txt/ })), "in the focused group");
+  await act(async () => { fireEvent.pointerDown(composerTwo); await sleep(60); });
+  assert.equal(shownSession(), "worker-two");
+  assert.equal(one.querySelector("textarea"), composerOne, "the chat under the file stays mounted");
+  assert.equal(composerOne.closest('[id^="workspace-chat-"]').hasAttribute("inert"), true, "and inert while covered");
+
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(60); });
   assert.equal(view.queryByRole("separator", { name: translate("appShell.resizeTabGroups") }), null, "the emptied group is gone");
   assert.equal(view.getAllByRole("tablist", { name: translate("appShell.openTabs") }).length, 1);
-  assert.equal(shownSession(), "worker-one", "closing a group's shown last tab shows what the other group shows");
+  assert.equal(shownSession(), "worker-one", "closing a group's shown last tab selects the chat the other group keeps");
   assert.equal(one.querySelector("textarea"), composerOne, "without remounting it");
   view.unmount();
 });

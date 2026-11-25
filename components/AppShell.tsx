@@ -2008,9 +2008,9 @@ export function AppShell({ appName }: { appName: string }) {
   useEffect(() => {
     setTabLayout((layout) => {
       const next = reconcileTabs(layout, stripIds, lastFocusedGroupId);
-      return activeStripTabId ? activateTab(next, activeStripTabId) : next;
+      return activeStripTabId ? activateTab(next, activeStripTabId, !fileTabShown) : next;
     });
-  }, [stripIds, activeStripTabId, lastFocusedGroupId]);
+  }, [stripIds, activeStripTabId, fileTabShown, lastFocusedGroupId]);
   const tabGroups = groupsOf(tabLayout);
   const focusedGroup = groupOfTab(tabLayout, activeStripTabId) ?? tabGroups.find((group) => group.id === lastFocusedGroupId) ?? tabGroups[0];
   useEffect(() => { setLastFocusedGroupId(focusedGroup.id); }, [focusedGroup.id]);
@@ -2020,7 +2020,9 @@ export function AppShell({ appName }: { appName: string }) {
   const chatTabById = (id: string) => chatTabs.find((tab) => chatTabId(tab) === id);
   const fileTabIds = new Set(fileTabs.map((tab) => tab.id));
   // Chats the groups show (as of their last activation).
-  const shownChatIds = new Set(tabGroups.flatMap((group) => group.active && !fileTabIds.has(group.active) ? [group.active] : []));
+  // The chat a group shows: its shown tab when that is a chat, else the chat under its file.
+  const groupChat = (group: TabGroup) => group.active && !fileTabIds.has(group.active) ? group.active : group.chat ?? null;
+  const shownChatIds = new Set(tabGroups.flatMap((group) => groupChat(group) ?? []));
 
   // Mount keys of the chats the groups show: stable across group focus (see nextChatMounts).
   const [chatMounts, setChatMounts] = useState<ChatMounts>({ selected: selectedChatId, sessionKey, keys: {} });
@@ -2093,6 +2095,14 @@ export function AppShell({ appName }: { appName: string }) {
     if (!stripTabInfo.has(tabId)) return; // A tab dragged from another window.
     setTabLayout((layout) => moveTab(layout, tabId, groupId, beforeId));
     selectStripTab(tabId);
+  };
+  // Alt+Shift+Up/Down: the keyboard's move to the previous or next group.
+  const moveStripTabToGroup = (tabId: string, fromGroupId: string, step: number) => {
+    const index = tabGroups.findIndex((group) => group.id === fromGroupId);
+    const target = tabGroups[(index + step + tabGroups.length) % tabGroups.length];
+    if (!target || target.id === fromGroupId) return;
+    dropStripTab(tabId, target.id, null);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(target.id)}"] [data-tab-id="${CSS.escape(tabId)}"]`)?.focus());
   };
   const splitTabGroup = (groupId: string, dir: "row" | "column") => {
     setTabLayout((layout) => splitGroup(layout, groupId, dir));
@@ -2781,7 +2791,9 @@ export function AppShell({ appName }: { appName: string }) {
             });
             const shownFile = fileTabs.find((tab) => tab.id === group.active) ?? null;
             const primary = group.id === primaryGroupId;
-            const backgroundChat = !primary && group.active ? chatTabById(group.active) : undefined;
+            // Another group's chat, kept mounted under a file the group shows.
+            const chatId = groupChat(group);
+            const backgroundChat = !primary && chatId ? chatTabById(chatId) : undefined;
             const backgroundHost = backgroundChat && remoteHostId(backgroundChat.hostId) ? hosts?.find((host) => host.id === backgroundChat.hostId) : undefined;
             const chatPanelLabel = primary
               ? (selectedChatId ? stripTabInfo.get(selectedChatId)?.title : undefined) ?? (selectedSession ? chatTabLabel(selectedSession) : t("appShell.newSession"))
@@ -2836,6 +2848,7 @@ export function AppShell({ appName }: { appName: string }) {
                         onSelectTab={selectStripTab}
                         onCloseTab={closeStripTab}
                         onDropTab={(tabId, beforeId) => dropStripTab(tabId, group.id, beforeId)}
+                        onMoveTabToGroup={tabGroups.length > 1 ? (tabId, step) => moveStripTabToGroup(tabId, group.id, step) : undefined}
                         ariaLabel={tabGroups.length > 1 ? t("appShell.tabGroup", { index: groupIndex + 1 }) : t("appShell.openTabs")}
                         manualActivation
                       />
@@ -2883,8 +2896,8 @@ export function AppShell({ appName }: { appName: string }) {
               hostLabel={backgroundHost ? hostName(t, backgroundHost) : undefined}
               onAgentEnd={handleAgentEnd}
               modelsRefreshKey={modelsRefreshKey}
-              onOpenFile={handleOpenFile}
-              // Not the selected conversation: its links ask first, as another session's would.
+              // Not the selected conversation: its file opens and links ask first, as another session's would.
+              onOpenFile={(path, name, source) => setPendingOpens((queue) => [...queue, { kind: "file", target: path, name, sessionId: backgroundChat.id, source, crossSession: true }])}
               onOpenUrl={(url) => requestOpenUrl(url, backgroundChat.id, true)}
               onOpenProviders={() => setSettingsTab("providers")}
               toolCallsDefaultCollapsed={toolCallsDefaultCollapsed}

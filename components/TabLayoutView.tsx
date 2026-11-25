@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
-import { groupsOf, moveBoundary, type TabGroup, type TabLayout, type TabSplit } from "@/lib/tab-groups";
+import { boundaryRange, groupsOf, moveBoundary, type TabGroup, type TabLayout, type TabSplit } from "@/lib/tab-groups";
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface Sash { split: TabSplit; index: number; rect: Rect; at: number }
@@ -37,32 +37,37 @@ export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, onR
   resizeLabel: string;
 }) {
   const areaRef = useRef<HTMLDivElement>(null);
+  // The pointer of the drag under way: one drag at a time, other pointers ignored.
+  const dragPointerRef = useRef<number | null>(null);
   const groupRects = new Map<string, Rect>();
   const sashes: Sash[] = [];
   place(layout, { x: 0, y: 0, w: 1, h: 1 }, groupRects, sashes);
 
   const startDrag = (event: PointerEvent<HTMLDivElement>, sash: Sash) => {
     const area = areaRef.current?.getBoundingClientRect();
-    if (!area || event.button !== 0) return;
+    if (!area || event.button !== 0 || dragPointerRef.current !== null) return;
     event.preventDefault();
+    const pointerId = event.pointerId;
+    dragPointerRef.current = pointerId;
     const row = sash.split.dir === "row";
     const splitPixels = row ? sash.rect.w * area.width : sash.rect.h * area.height;
     const start = row ? event.clientX : event.clientY;
     const sizes = sash.split.sizes;
     const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
+    target.setPointerCapture(pointerId);
     const move = (moveEvent: globalThis.PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       const delta = ((row ? moveEvent.clientX : moveEvent.clientY) - start) / splitPixels;
       onResize(sash.split.id, moveBoundary(sizes, sash.index, delta));
     };
-    const end = () => {
+    const end = (endEvent: globalThis.PointerEvent) => {
+      if (endEvent.pointerId !== pointerId) return;
+      dragPointerRef.current = null;
+      for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) target.removeEventListener(type, end);
       target.removeEventListener("pointermove", move);
-      target.removeEventListener("pointerup", end);
-      target.removeEventListener("pointercancel", end);
     };
     target.addEventListener("pointermove", move);
-    target.addEventListener("pointerup", end);
-    target.addEventListener("pointercancel", end);
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"] as const) target.addEventListener(type, end);
   };
 
   const keyResize = (event: KeyboardEvent<HTMLDivElement>, sash: Sash) => {
@@ -90,14 +95,17 @@ export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, onR
       })}
       {!single && sashes.map((sash) => {
         const row = sash.split.dir === "row";
+        // Within the split, as aria-valuenow: the panes before the pair plus each side's floor.
+        const before = sash.at - sash.split.sizes[sash.index];
+        const [min, max] = boundaryRange(sash.split.sizes, sash.index);
         return (
           <div
             key={`${sash.split.id}:${sash.index}`}
             role="separator"
             aria-orientation={row ? "vertical" : "horizontal"}
             aria-label={resizeLabel}
-            aria-valuemin={0}
-            aria-valuemax={100}
+            aria-valuemin={Math.round((before + min) * 100)}
+            aria-valuemax={Math.round((before + max) * 100)}
             aria-valuenow={Math.round(sash.at * 100)}
             tabIndex={0}
             className="tab-group-sash ui-focus-ring"
