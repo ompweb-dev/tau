@@ -172,7 +172,7 @@ export function tableChartSvg(groups: ChartGroup[]): string {
     parts.push(`<line x1="${x(0)}" x2="${x(0)}" y1="${top}" y2="${y}" stroke="#94a3b8"/><text x="${left}" y="${y + 16}" font-size="12">${Number(domain.min.toFixed(3))}</text><text x="${left + span}" y="${y + 16}" font-size="12" text-anchor="end">${Number(domain.max.toFixed(3))}${group.unit ? ` ${escapeXml(group.unit)}` : ""}</text>`);
     y += 36;
   }
-  const hatches = SERIES_COLORS.map((color, i) => `<pattern id="interval-hatch-${i}" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#F1F1F2"/><path d="M0 6L6 0" stroke="${color}"/></pattern>`).join("");
+  const hatches = SERIES_COLORS.map((color, i) => `<pattern id="interval-hatch-${i}" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#F1F0EA"/><path d="M0 6L6 0" stroke="${color}"/></pattern>`).join("");
   const title = escapeXml(groups.flatMap((group) => group.series.map((series) => series.header)).join(", "));
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="${y}" viewBox="0 0 1040 ${y}" role="img"><title>${title}</title><defs>${hatches}</defs><rect width="100%" height="100%" fill="#fff"/><g fill="#17232c" font-size="14" font-family="Malgun Gothic,Apple SD Gothic Neo,Noto Sans KR,Arial,sans-serif">${parts.join("")}</g></svg>`;
 }

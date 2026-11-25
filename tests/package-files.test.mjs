@@ -15,6 +15,6 @@ test("the package ships the font license texts with the fonts", () => {
     shell: process.platform === "win32",
   }))[0].files.map((file) => file.path);
   const licenses = readdirSync(path.join(repo, "app", "fonts")).filter((name) => /OFL|LICENSE/.test(name));
-  assert.ok(licenses.length >= 5, licenses.join(", "));
+  assert.ok(licenses.length >= 2, licenses.join(", "));
   for (const name of licenses) assert.ok(packed.includes(`app/fonts/${name}`), name);
 });

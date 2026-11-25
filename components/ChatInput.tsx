@@ -3669,9 +3669,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                   : isRecording || isPaused || isReviewing ? t("chatInput.sendDictation") : t("chatInput.send")}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
-                  background: (isRecording || isPaused || isReviewing || isTranscribing || value.trim() || hasAttachments) ? "var(--accent-strong)" : "var(--bg-panel)",
+                  background: (isRecording || isPaused || isReviewing || isTranscribing || value.trim() || hasAttachments) ? "var(--text)" : "var(--bg-panel)",
                   border: "none",
-                  color: (isRecording || isPaused || isReviewing || isTranscribing || value.trim() || hasAttachments) ? "var(--on-accent)" : "var(--text-dim)",
+                  color: (isRecording || isPaused || isReviewing || isTranscribing || value.trim() || hasAttachments) ? "var(--bg)" : "var(--text-dim)",
                   cursor: submissionBlocked || (!btwMode && uploadsBlockSend) ? "not-allowed" : isTranscribing ? "wait" : (isRecording || isPaused || isReviewing || value.trim() || hasAttachments) ? "pointer" : "not-allowed",
                   fontSize: 12,
                   fontWeight: 600,

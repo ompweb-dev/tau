@@ -1,33 +1,20 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Check, ChevronDown, Monitor, Moon, Sparkles, Sun } from "lucide-react";
+import { Check, ChevronDown, Monitor, Moon, Sun } from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useFixedMenuPosition } from "@/hooks/useFixedMenuPosition";
-import {
-  DARK_THEMES,
-  LIGHT_THEMES,
-  type ThemePreference,
-  useTheme,
-} from "@/hooks/useTheme";
+import { type ThemePreference, useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/lib/i18n";
 
-type ThemeOption = {
-  value: ThemePreference;
-  name: string;
-  bg: string;
-  accent: string;
-  category: "light" | "dark" | "system";
-};
-
-const ALL_OPTIONS: ReadonlyArray<ThemeOption> = [
-  ...LIGHT_THEMES.map((t) => ({ value: t.id, name: t.name, bg: t.bg, accent: t.accent, category: "light" as const })),
-  ...DARK_THEMES.map((t) => ({ value: t.id, name: t.name, bg: t.bg, accent: t.accent, category: "dark" as const })),
-  { value: "system", name: "System", bg: "transparent", accent: "var(--accent)", category: "system" as const },
+export const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string; fallback: string; Icon: typeof Sun }> = [
+  { value: "light", label: "appShell.lightThemes", fallback: "Light", Icon: Sun },
+  { value: "dark", label: "appShell.darkThemes", fallback: "Dark", Icon: Moon },
+  { value: "system", label: "appShell.themeSystem", fallback: "System", Icon: Monitor },
 ];
 
 /** Theme picker for the top bar. Shows the current mode icon and opens a
- * small menu to pick light / dark / midnight / system directly, with
+ * small menu to pick light / dark / system directly, with
  * full keyboard support:
  *   - Enter / Space / ↓ : open
  *   - Arrow Up / Down    : move selection
@@ -46,7 +33,7 @@ export function ThemeSwitcher() {
   const baseId = useId();
   const menuId = `${baseId}-menu`;
 
-  const index = Math.max(0, ALL_OPTIONS.findIndex((o) => o.value === preference));
+  const index = Math.max(0, THEME_OPTIONS.findIndex((o) => o.value === preference));
   // Keep the highlighted item in sync with the chosen theme when closed.
   useEffect(() => {
     if (!open) setActiveIndex(index);
@@ -54,7 +41,7 @@ export function ThemeSwitcher() {
 
   // Fixed positioning escapes the compact top-bar overflow strip, whose
   // horizontal scroller would otherwise clip the menu to its 48px height.
-  const menuPos = useFixedMenuPosition(open, triggerRef, isMobile ? 220 : 350);
+  const menuPos = useFixedMenuPosition(open, triggerRef, 200);
   const menuShown = menuPos !== null;
 
   // Focus the active item once the positioned menu mounts, or when the highlight moves.
@@ -81,7 +68,7 @@ export function ThemeSwitcher() {
     if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " " || e.key === "ArrowUp") {
       e.preventDefault();
       setOpen(true);
-      setActiveIndex(e.key === "ArrowUp" ? ALL_OPTIONS.length - 1 : index);
+      setActiveIndex(e.key === "ArrowUp" ? THEME_OPTIONS.length - 1 : index);
     }
   };
 
@@ -89,25 +76,11 @@ export function ThemeSwitcher() {
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setActiveIndex((i + 1) % ALL_OPTIONS.length);
+        setActiveIndex((i + 1) % THEME_OPTIONS.length);
         break;
       case "ArrowUp":
         e.preventDefault();
-        setActiveIndex((i - 1 + ALL_OPTIONS.length) % ALL_OPTIONS.length);
-        break;
-      case "ArrowRight":
-        e.preventDefault();
-        // If in light column (0..3), jump to dark column
-        if (i < LIGHT_THEMES.length) {
-          setActiveIndex(Math.min(ALL_OPTIONS.length - 2, i + LIGHT_THEMES.length));
-        }
-        break;
-      case "ArrowLeft":
-        e.preventDefault();
-        // If in dark column (4..13), jump to light column
-        if (i >= LIGHT_THEMES.length && i < ALL_OPTIONS.length - 1) {
-          setActiveIndex(Math.min(LIGHT_THEMES.length - 1, i - LIGHT_THEMES.length));
-        }
+        setActiveIndex((i - 1 + THEME_OPTIONS.length) % THEME_OPTIONS.length);
         break;
       case "Home":
         e.preventDefault();
@@ -115,12 +88,12 @@ export function ThemeSwitcher() {
         break;
       case "End":
         e.preventDefault();
-        setActiveIndex(ALL_OPTIONS.length - 1);
+        setActiveIndex(THEME_OPTIONS.length - 1);
         break;
       case "Enter":
       case " ":
         e.preventDefault();
-        choose(ALL_OPTIONS[i].value);
+        choose(THEME_OPTIONS[i].value);
         break;
       case "Escape":
         e.preventDefault();
@@ -164,8 +137,6 @@ export function ThemeSwitcher() {
       >
         {preference === "system" ? (
           <Monitor size={16} strokeWidth={1.8} aria-hidden="true" />
-        ) : preference === "midnight" ? (
-          <Sparkles size={16} strokeWidth={1.8} aria-hidden="true" />
         ) : isDark ? (
           <Moon size={16} strokeWidth={1.8} aria-hidden="true" />
         ) : (
@@ -193,7 +164,7 @@ export function ThemeSwitcher() {
             top: menuPos.top,
             left: menuPos.left,
             zIndex: 600,
-            minWidth: isMobile ? 220 : 350,
+            minWidth: 200,
             maxWidth: "calc(100vw / var(--ui-scale) - 16px)",
             margin: 0,
             padding: 6,
@@ -203,212 +174,43 @@ export function ThemeSwitcher() {
             boxShadow: "var(--shadow-pop)",
           }}
         >
-          <div
-            style={{
-              display: isMobile ? "flex" : "grid",
-              flexDirection: isMobile ? "column" : undefined,
-              gridTemplateColumns: isMobile ? undefined : "1fr 1fr",
-              gap: isMobile ? 4 : 8,
-              // Desktop previously had no cap, so on short viewports the
-              // fixed-position menu clipped its bottom themes with no way
-              // to scroll to them. Cap against the viewport, as on mobile.
-              maxHeight: isMobile ? 380 : "calc(100vh - 56px)",
-              overflowY: "auto",
-            }}
-          >
-            {/* Light column */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              <div
+          {THEME_OPTIONS.map(({ value, label, fallback, Icon }, i) => {
+            const selected = preference === value;
+            return (
+              <button
+                key={value}
+                className="dropdown-item"
+                ref={(el) => { itemRefs.current[i] = el; }}
+                type="button"
+                role="menuitemradio"
+                tabIndex={-1}
+                aria-checked={selected}
+                onClick={() => choose(value)}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = selected ? "var(--bg-selected)" : "transparent"; }}
+                onKeyDown={(e) => onItemKeyDown(e, i)}
                 style={{
-                  padding: "4px 8px 2px",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--text-dim)",
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 8px",
+                  border: 0,
+                  borderRadius: 5,
+                  background: selected ? "var(--bg-selected)" : "transparent",
+                  color: selected ? "var(--text)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  textAlign: "left",
+                  transition: "background-color var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
                 }}
               >
-                {t("appShell.lightThemes") || "Light"}
-              </div>
-              {LIGHT_THEMES.map((theme, localIdx) => {
-                const globalIdx = localIdx;
-                const selected = theme.id === preference;
-                return (
-                  <button
-                    key={theme.id}
-                    className="dropdown-item"
-                    ref={(el) => { itemRefs.current[globalIdx] = el; }}
-                    type="button"
-                    role="menuitemradio"
-                    tabIndex={-1}
-                    aria-checked={selected}
-                    onClick={() => choose(theme.id)}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selected ? "var(--bg-selected)" : "transparent"; }}
-                    onKeyDown={(e) => onItemKeyDown(e, globalIdx)}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      border: 0,
-                      borderRadius: 5,
-                      background: selected ? "var(--bg-selected)" : "transparent",
-                      color: selected ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      textAlign: "left",
-                      transition: "background-color var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 13,
-                        height: 13,
-                        borderRadius: "50%",
-                        backgroundColor: theme.bg,
-                        border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: theme.accent }} />
-                    </span>
-                    <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{theme.name}</span>
-                    {selected && <Check size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />}
-                  </button>
-                );
-              })}
-
-              <div style={{ borderTop: "1px solid var(--border)", margin: "6px 4px 4px" }} />
-
-              <div
-                style={{
-                  padding: "4px 8px 2px",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--text-dim)",
-                }}
-              >
-                {t("appShell.system") || "System"}
-              </div>
-              {(() => {
-                const systemIdx = ALL_OPTIONS.length - 1;
-                const selected = preference === "system";
-                return (
-                  <button
-                    key="system"
-                    className="dropdown-item"
-                    ref={(el) => { itemRefs.current[systemIdx] = el; }}
-                    type="button"
-                    role="menuitemradio"
-                    tabIndex={-1}
-                    aria-checked={selected}
-                    onClick={() => choose("system")}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selected ? "var(--bg-selected)" : "transparent"; }}
-                    onKeyDown={(e) => onItemKeyDown(e, systemIdx)}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      border: 0,
-                      borderRadius: 5,
-                      background: selected ? "var(--bg-selected)" : "transparent",
-                      color: selected ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      textAlign: "left",
-                      transition: "background-color var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                    }}
-                  >
-                    <Monitor size={13} strokeWidth={1.8} aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }} />
-                    <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {t("appShell.themeSystem") || "System"}
-                    </span>
-                    {selected && <Check size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />}
-                  </button>
-                );
-              })()}
-            </div>
-
-            {/* Dark column */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              <div
-                style={{
-                  padding: "4px 8px 2px",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--text-dim)",
-                }}
-              >
-                {t("appShell.darkThemes") || "Dark"}
-              </div>
-              {DARK_THEMES.map((theme, localIdx) => {
-                const globalIdx = LIGHT_THEMES.length + localIdx;
-                const selected = theme.id === preference;
-                return (
-                  <button
-                    key={theme.id}
-                    className="dropdown-item"
-                    ref={(el) => { itemRefs.current[globalIdx] = el; }}
-                    type="button"
-                    role="menuitemradio"
-                    tabIndex={-1}
-                    aria-checked={selected}
-                    onClick={() => choose(theme.id)}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selected ? "var(--bg-selected)" : "transparent"; }}
-                    onKeyDown={(e) => onItemKeyDown(e, globalIdx)}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      border: 0,
-                      borderRadius: 5,
-                      background: selected ? "var(--bg-selected)" : "transparent",
-                      color: selected ? "var(--text)" : "var(--text-muted)",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      textAlign: "left",
-                      transition: "background-color var(--dur-fast) var(--ease-out-warm), color var(--dur-fast) var(--ease-out-warm)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 13,
-                        height: 13,
-                        backgroundColor: theme.bg,
-                        border: theme.id === "midnight" ? "1.5px solid #7DD7E8" : "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: theme.accent }} />
-                    </span>
-                    <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      {theme.name}
-                      {theme.id === "midnight" && <Sparkles size={11} strokeWidth={2} style={{ color: "var(--accent)", flexShrink: 0 }} aria-hidden="true" />}
-                    </span>
-                    {selected && <Check size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+                <Icon size={13} strokeWidth={1.8} aria-hidden="true" style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t(label) || fallback}</span>
+                {selected && <Check size={12} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0, color: "var(--accent)" }} />}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
