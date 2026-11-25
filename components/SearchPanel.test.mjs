@@ -12,7 +12,7 @@ test("results group by file, open at their line, and follow the case toggle", as
   globalThis.fetch = async (input) => {
     const url = new URL(String(input), "http://localhost");
     requests.push(url);
-    return Response.json({ truncated: false, matches: [
+    return Response.json({ cwd: "/w", truncated: false, matches: [
       { path: "src/a.ts", line: 3, text: "  const needle = 1;", column: 8, length: 6 },
       { path: "src/a.ts", line: 9, text: "needle()", column: 0, length: 6 },
       { path: "README.md", line: 1, text: "# Needle", column: 2, length: 6 },
@@ -20,7 +20,10 @@ test("results group by file, open at their line, and follow the case toggle", as
   };
   const opened = [];
   render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", sourceSessionId: "s1", refreshKey: 0, onOpenMatch: (path, line) => opened.push([path, line]) }));
-  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "needle" } });
+  for (const value of ["n", "ne", "needle"]) {
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value } });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   await waitFor(() => assert.ok(screen.getByRole("status").textContent.includes("3 results")));
   assert.equal(requests.length, 1, "typing is debounced into one request");
   assert.deepEqual(Object.fromEntries(requests[0].searchParams), { cwd: "/w", hostId: "local", q: "needle", sessionId: "s1" });
@@ -28,7 +31,7 @@ test("results group by file, open at their line, and follow the case toggle", as
   assert.deepEqual([...document.querySelectorAll("mark")].map((mark) => mark.textContent), ["needle", "needle", "Needle"]);
 
   fireEvent.click(screen.getByRole("button", { name: /9\s*needle\(\)/ }));
-  assert.deepEqual(opened, [["src/a.ts", 9]]);
+  assert.deepEqual(opened, [["/w/src/a.ts", 9]], "a result opens against the directory searched");
 
   const file = screen.getByRole("button", { name: /a\.ts/, expanded: true });
   fireEvent.click(file);
@@ -46,4 +49,24 @@ test("a failed search shows the server's error", async () => {
   fireEvent.change(screen.getByRole("searchbox"), { target: { value: "x" } });
   await waitFor(() => assert.ok(screen.getByRole("status").textContent.length > 0 && !screen.getByRole("status").textContent.includes("Searching")));
   assert.equal(document.querySelectorAll(".search-panel-match").length, 0);
+});
+
+test("an older answer arriving last never replaces the newer one", async () => {
+  const pending = [];
+  globalThis.fetch = (input) => new Promise((resolve) => {
+    const q = new URL(String(input), "http://localhost").searchParams.get("q");
+    pending.push(() => resolve(Response.json({ cwd: "/w", truncated: false, matches: [{ path: `${q}.ts`, line: 1, text: q, column: 0, length: q.length }] })));
+  });
+  render(React.createElement(SearchPanel, { cwd: "/w", hostId: "local", refreshKey: 0, onOpenMatch() {} }));
+  const box = screen.getByRole("searchbox");
+  fireEvent.change(box, { target: { value: "old" } });
+  await waitFor(() => assert.equal(pending.length, 1));
+  fireEvent.change(box, { target: { value: "new" } });
+  await waitFor(() => assert.equal(pending.length, 2));
+  pending[1]();
+  await waitFor(() => assert.ok(screen.getByRole("button", { name: /new\.ts/ })));
+  pending[0]();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(screen.queryByRole("button", { name: /old\.ts/ }), null);
+  assert.ok(screen.getByRole("button", { name: /new\.ts/ }));
 });

@@ -5,7 +5,7 @@ import { CaseSensitive, ChevronRight, Search } from "lucide-react";
 import { getFileIcon } from "./FileIcons";
 import { translate, useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
-import { getFileDirectory, getFileName } from "@/lib/file-paths";
+import { getFileDirectory, getFileName, joinFilePath } from "@/lib/file-paths";
 import type { WorkspaceTextMatch, WorkspaceTextSearch } from "@/lib/workspace-types";
 
 interface Props {
@@ -14,8 +14,7 @@ interface Props {
   sourceSessionId?: string | null;
   /** Bumped by the panel's refresh: the shown search runs again. */
   refreshKey: number;
-  /** `relativePath` is relative to `cwd`. */
-  onOpenMatch: (relativePath: string, line: number) => void;
+  onOpenMatch: (filePath: string, line: number) => void;
 }
 
 type State =
@@ -23,6 +22,16 @@ type State =
   | { status: "searching" }
   | { status: "done"; result: WorkspaceTextSearch }
   | { status: "failed"; error: string };
+
+async function fetchSearch(cwd: string, hostId: string, sourceSessionId: string | null | undefined, query: string, caseSensitive: boolean, signal: AbortSignal): Promise<WorkspaceTextSearch> {
+  const params = new URLSearchParams({ cwd, hostId, q: query });
+  if (caseSensitive) params.set("case", "1");
+  if (sourceSessionId) params.set("sessionId", sourceSessionId);
+  const res = await fetch(`/api/file-search?${params}`, { signal });
+  if (res.ok) return res.json() as Promise<WorkspaceTextSearch>;
+  const body = await res.json().catch(() => ({})) as { error?: string; code?: string };
+  throw new Error(formatApiError({ ...body, error: body.error ?? translate("searchPanel.failed", { status: res.status }) }));
+}
 
 /** Literal text search across the workspace's files, grouped by file. */
 export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMatch }: Props) {
@@ -39,15 +48,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
     setState({ status: "searching" });
     // Each run reads every text file: wait for a pause in typing.
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ cwd, hostId, q: query });
-      if (caseSensitive) params.set("case", "1");
-      if (sourceSessionId) params.set("sessionId", sourceSessionId);
-      fetch(`/api/file-search?${params}`, { signal: controller.signal })
-        .then(async (res) => {
-          if (res.ok) return res.json() as Promise<WorkspaceTextSearch>;
-          const body = await res.json().catch(() => ({})) as { error?: string; code?: string };
-          throw new Error(formatApiError({ ...body, error: body.error ?? translate("searchPanel.failed", { status: res.status }) }));
-        })
+      fetchSearch(cwd, hostId, sourceSessionId, query, caseSensitive, controller.signal)
         .then((result) => {
           if (controller.signal.aborted) return;
           setCollapsed(new Set());
@@ -62,9 +63,23 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
 
   const files = useMemo(() => {
     const grouped = new Map<string, WorkspaceTextMatch[]>();
-    if (state.status === "done") for (const match of state.result.matches) grouped.set(match.path, [...grouped.get(match.path) ?? [], match]);
+    if (state.status !== "done") return [];
+    for (const match of state.result.matches) {
+      const list = grouped.get(match.path);
+      if (list) list.push(match);
+      else grouped.set(match.path, [match]);
+    }
     return [...grouped];
   }, [state]);
+
+  const statusText = () => {
+    if (state.status === "searching") return t("searchPanel.searching");
+    if (state.status === "failed") return state.error;
+    if (state.status !== "done") return null;
+    const { matches, truncated } = state.result;
+    if (matches.length === 0) return t("searchPanel.noResults");
+    return `${tn("searchPanel.results", matches.length)} · ${tn("searchPanel.files", files.length)}${truncated ? ` · ${t("searchPanel.truncated")}` : ""}`;
+  };
 
   const toggle = (file: string) => setCollapsed((previous) => {
     const next = new Set(previous);
@@ -98,12 +113,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
         </button>
       </div>
       <div role="status" className="search-panel-status">
-        {state.status === "searching" ? t("searchPanel.searching")
-          : state.status === "failed" ? state.error
-            : state.status === "done" ? (
-              state.result.matches.length === 0 ? t("searchPanel.noResults")
-                : `${tn("searchPanel.results", state.result.matches.length)} · ${tn("searchPanel.files", files.length)}${state.result.truncated ? ` · ${t("searchPanel.truncated")}` : ""}`
-            ) : null}
+        {statusText()}
       </div>
       <div className="search-panel-results" style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
         {files.map(([file, matches]) => {
@@ -124,7 +134,7 @@ export function SearchPanel({ cwd, hostId, sourceSessionId, refreshKey, onOpenMa
                   key={match.line}
                   className="search-panel-match ui-focus-ring"
                   title={`${file}:${match.line}`}
-                  onClick={() => onOpenMatch(file, match.line)}
+                  onClick={() => state.status === "done" && onOpenMatch(joinFilePath(state.result.cwd, file), match.line)}
                 >
                   <span className="search-panel-line">{match.line}</span>
                   <span className="search-panel-text">

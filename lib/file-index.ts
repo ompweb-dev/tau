@@ -6,7 +6,10 @@ import path from "path";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
 import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
-import { isPiSecretFile } from "./file-access";
+import { existingPathWithinRootsChecker, isPiSecretFile } from "./file-access";
+import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
+import { HostOpError } from "./hosts/link-protocol";
+import { getAgentDir, getConfigRoot } from "./pi/paths";
 const execFileAsync = promisify(execFile);
 
 
@@ -192,43 +195,75 @@ export async function indexWorkspaceFiles(cwd: string, query: string, limit: num
 /** Most matches a text search answers. */
 export const MAX_TEXT_MATCHES = 500;
 /** Longest line excerpt a match carries. */
-export const TEXT_MATCH_EXCERPT = 240;
-const TEXT_SEARCH_MAX_FILE_BYTES = 1024 * 1024;
+const TEXT_MATCH_EXCERPT = 240;
 /** Tests shorten the budget. */
 export const textSearchLimits = { budgetMs: 10_000 };
+/** The newest search per cwd: an older one still scanning stops. */
+const latestSearch = new Map<string, object>();
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
+/** An excerpt of a long line (minified files) around its match, keeping the whole match where it fits. */
+function excerpt(line: string, index: number, matched: number): Omit<WorkspaceTextMatch, "path" | "line"> {
+  let start = 0;
+  let end = line.length;
+  if (line.length > TEXT_MATCH_EXCERPT) {
+    start = Math.max(0, Math.min(index - Math.min(60, Math.max(0, TEXT_MATCH_EXCERPT - matched)), line.length - TEXT_MATCH_EXCERPT));
+    if (start > 0 && isLowSurrogate(line.charCodeAt(start))) start++;
+    end = Math.min(line.length, start + TEXT_MATCH_EXCERPT);
+    if (end < line.length && isHighSurrogate(line.charCodeAt(end - 1))) end--;
+  }
+  const text = line.slice(start, end);
+  const column = index - start;
+  return { text, column, length: Math.min(matched, text.length - column) };
+}
 
 /**
  * Searches the text files of the cwd's listing (the file index: .gitignore
- * respected, symlinks skipped) for a literal string. Skips files over 1 MiB,
- * binary files (a NUL in the first 8 KiB) and omp's credential files.
- * `truncated`: the match cap, the time budget or the listing's cap stopped it.
+ * respected) for a literal string. Reads only regular files whose real path
+ * stays inside the cwd, up to the preview size (what a result can open), and
+ * skips binary files (a NUL in the first 8 KiB) and pi's credential files.
+ * `truncated`: the match cap, the time budget, a newer search of the cwd or
+ * the listing's cap stopped it.
  */
 export async function searchWorkspaceText(cwd: string, query: string, caseSensitive: boolean): Promise<WorkspaceTextSearch> {
-  // Fresh: a search must see files written a moment ago.
-  const { listing } = await cachedListing(cwd, true);
-  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), caseSensitive ? "u" : "iu");
-  const matches: WorkspaceTextMatch[] = [];
-  const deadline = Date.now() + textSearchLimits.budgetMs;
-  for (const rel of listing.files) {
-    if (matches.length >= MAX_TEXT_MATCHES || Date.now() > deadline) return { matches, truncated: true };
-    const absolute = path.join(cwd, rel);
-    if (isPiSecretFile(absolute)) continue;
-    let content: Buffer;
-    try {
-      const stat = await lstat(absolute);
-      if (!stat.isFile() || stat.size > TEXT_SEARCH_MAX_FILE_BYTES) continue;
-      content = await readFile(absolute);
-    } catch { continue; }
-    if (content.subarray(0, 8192).includes(0)) continue;
-    const lines = content.toString("utf8").split(/\r?\n/);
-    for (let index = 0; index < lines.length && matches.length < MAX_TEXT_MATCHES; index++) {
-      const line = lines[index];
-      const found = pattern.exec(line);
-      if (!found) continue;
-      // An excerpt around the match: long lines (minified files) stay short.
-      const start = line.length <= TEXT_MATCH_EXCERPT ? 0 : Math.max(0, Math.min(found.index - 60, line.length - TEXT_MATCH_EXCERPT));
-      matches.push({ path: rel, line: index + 1, text: line.slice(start, start + TEXT_MATCH_EXCERPT), column: found.index - start, length: found[0].length });
+  const token = {};
+  latestSearch.set(cwd, token);
+  try {
+    // Fresh: a search must see files written a moment ago.
+    const { listing } = await cachedListing(cwd, true);
+    const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), caseSensitive ? "u" : "iu");
+    // A parent directory swapped for a symlink still lists its old files, and lstat follows it.
+    const inCwd = existingPathWithinRootsChecker(new Set([cwd]));
+    const inAgentDir = existingPathWithinRootsChecker(new Set([getAgentDir(), path.join(getConfigRoot(), "agent")]));
+    const matches: WorkspaceTextMatch[] = [];
+    const deadline = Date.now() + textSearchLimits.budgetMs;
+    for (const rel of listing.files) {
+      if (matches.length > MAX_TEXT_MATCHES) break;
+      if (Date.now() > deadline || latestSearch.get(cwd) !== token) return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: true };
+      const absolute = path.join(cwd, rel);
+      let content: Buffer;
+      try {
+        const stat = await lstat(absolute);
+        if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES || !inCwd(absolute)) continue;
+        // The full credential check costs a directory read: only a hard link or a file in pi's agent directory can be one.
+        if ((stat.nlink > 1 || inAgentDir(absolute)) && isPiSecretFile(absolute)) continue;
+        content = await readFile(absolute);
+      } catch (error) {
+        // Unreadable credential metadata fails closed; any other unreadable path is skipped.
+        if (error instanceof HostOpError && error.status === 503) throw error;
+        continue;
+      }
+      if (content.subarray(0, 8192).includes(0)) continue;
+      const lines = content.toString("utf8").split(/\r?\n/);
+      for (let index = 0; index < lines.length && matches.length <= MAX_TEXT_MATCHES; index++) {
+        const found = pattern.exec(lines[index]);
+        if (found) matches.push({ path: rel, line: index + 1, ...excerpt(lines[index], found.index, found[0].length) });
+      }
     }
+    return { cwd, matches: matches.slice(0, MAX_TEXT_MATCHES), truncated: matches.length > MAX_TEXT_MATCHES || listing.hardTruncated };
+  } finally {
+    if (latestSearch.get(cwd) === token) latestSearch.delete(cwd);
   }
-  return { matches, truncated: matches.length >= MAX_TEXT_MATCHES || listing.hardTruncated };
 }

@@ -1691,9 +1691,12 @@ export function AppShell({ appName }: { appName: string }) {
     const target = filePath.startsWith("~/") ? filePath : normalizeLocalPath(rooted);
     const tabId = `file:${source.sessionId ?? hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
     const revealLine = line === undefined ? undefined : { line, seq: ++revealSeqRef.current };
-    setFileTabs((prev) => prev.some((tab) => tab.id === tabId)
-      ? (revealLine ? prev.map((tab) => tab.id === tabId ? { ...tab, revealLine } : tab) : prev)
-      : [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId, revealLine }]);
+    setFileTabs((prev) => {
+      if (!prev.some((tab) => tab.id === tabId)) {
+        return [...prev, { id: tabId, label: fileName, filePath: target, hostId: source.hostId, sourceCwd: source.cwd, sourceSessionId: source.sessionId, revealLine }];
+      }
+      return revealLine ? prev.map((tab) => tab.id === tabId ? { ...tab, revealLine } : tab) : prev;
+    });
     setActiveFileTabId(tabId);
     setFileShown(true);
     // A Back/Forward still fetching must not replace the file just shown.
@@ -1702,6 +1705,11 @@ export function AppShell({ appName }: { appName: string }) {
     if (isMobile) setSidebarOpen(false);
     if (isCompactOverlay) setRightPanelOpen(false);
   }, [isMobile, isCompactOverlay]);
+
+  // A revealed line is done: a remount of the viewer must not reveal it again.
+  const handleRevealLineDone = useCallback((tabId: string, seq: number) => {
+    setFileTabs((prev) => prev.map((tab) => tab.id === tabId && tab.revealLine?.seq === seq ? { ...tab, revealLine: undefined } : tab));
+  }, []);
 
   // Agent open requests that wait for the user. URLs always ask unless the
   // user opted into opening links from the viewed session automatically; URLs
@@ -2886,6 +2894,7 @@ export function AppShell({ appName }: { appName: string }) {
                       explorerRefreshKey={explorerRefreshKey}
                       onMentionLines={handleFileLineMention}
                       onOpenFile={handleOpenFile}
+                      onRevealDone={handleRevealLineDone}
                     />
                   )}
                   <div id={chatPanelId} role={groupTabs.length > 0 ? "tabpanel" : undefined} aria-label={groupTabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>

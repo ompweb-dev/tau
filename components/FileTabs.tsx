@@ -96,7 +96,7 @@ export const FileTabToolbar = memo(function FileTabToolbar({ activeFileTab, file
 });
 
 /** Every open file's viewer, kept mounted so switching tabs preserves scroll and preview state. */
-export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabIds, activeFileTab, focused, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile }: {
+export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabIds, activeFileTab, focused, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile, onRevealDone }: {
   panelId: string;
   fileTabs: Tab[];
   /** The group's tabs: its files are the views. */
@@ -109,6 +109,7 @@ export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabI
   explorerRefreshKey: number;
   onMentionLines: (relativePath: string, startLine: number, endLine: number) => void;
   onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource) => void;
+  onRevealDone: (tabId: string, seq: number) => void;
 }) {
   const active = activeFileTab !== null;
   return (
@@ -123,6 +124,7 @@ export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabI
             gitRefreshKey={explorerRefreshKey}
             active={tab.id === activeFileTab?.id && active}
             revealLine={tab.revealLine}
+            onRevealDone={(seq) => onRevealDone(tab.id, seq)}
             onMentionLines={tab.id === activeFileTab?.id && active && focused && activeFileMatchesSource ? onMentionLines : undefined}
             onOpenFile={(filePath) => onOpenFile(
               filePath,
