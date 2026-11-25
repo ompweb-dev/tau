@@ -2125,6 +2125,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       }
     }
   }, [contextOpen, contextContainer]);
+  // A file tab covering the chat closes its context panel: on mobile the panel
+  // lives in the header, outside the covered area, and would float over the file.
+  useEffect(() => {
+    if (covered) setContextOpen(false);
+  }, [covered]);
   useEffect(() => {
     if (!contextOpen || covered) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
