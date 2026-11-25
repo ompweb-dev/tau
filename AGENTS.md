@@ -611,15 +611,16 @@ Location: `<agent dir>/sessions/--<cwd without its leading separator, / \ : repl
 
 ## Design Tokens & UI Kit (`app/globals.css`, `components/ui/`)
 
-Neutral grey palettes with a blue accent (light and dark); every text/background pair is WCAG AA-verified (ratios
-noted in `globals.css`). Components must consume these variables, never hardcoded colors. On desktop the sidebar,
+Two themes, Light and Dark (plus System, which picks one by the OS), modelled on Pendant: warm paper and charcoal
+surfaces with a muted blue accent. Every text/background pair is WCAG AA-verified (ratios noted in `globals.css`).
+Add no further themes; change these two. Components must consume these variables, never hardcoded colors. On desktop the sidebar,
 the chat and the docked right panel are rounded cards on `--bg-frame` (`.app-frame`); phones stay full-bleed.
 
 ```
 color:  --bg --bg-panel --bg-hover --bg-selected --border --bg-subtle
         --text --text-muted --text-dim
         --accent --accent-strong --accent-hover   (links / filled buttons / hover)
-        --user-bg --tool-bg --bg-frame (desktop frame behind the cards; themes without it fall back to --bg-panel)
+        --user-bg --tool-bg --bg-frame (desktop frame behind the cards)
 type:   --font-serif (display headings, class .display-serif; now the UI sans, the name is historical)  --font-mono
 shape:  --radius-control (8) --radius-card (12) --radius-modal (16)
 depth:  --shadow-card --shadow-pop --shadow-modal

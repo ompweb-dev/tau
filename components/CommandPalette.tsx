@@ -3,7 +3,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Command } from "cmdk";
-import { Check, MessageSquare, Monitor, Moon, Plus, Sparkles, Sun } from "lucide-react";
+import { Check, MessageSquare, Monitor, Moon, Plus, Sun } from "lucide-react";
 import type { SessionInfo } from "@/lib/types";
 import { useI18n } from "@/lib/i18n";
 import { ALL_THEMES, useTheme } from "@/hooks/useTheme";
@@ -125,7 +125,7 @@ export const CommandPalette = memo(function CommandPalette({ onSelectSession, on
                     height: 13,
                     borderRadius: "50%",
                     backgroundColor: theme.bg,
-                    border: theme.id === "midnight" ? "1.5px solid #7DD7E8" : "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--border) 80%, transparent)",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -134,10 +134,7 @@ export const CommandPalette = memo(function CommandPalette({ onSelectSession, on
                 >
                   <span style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: theme.accent }} />
                 </span>
-                <span style={{ flex: 1, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  {theme.name}
-                  {theme.id === "midnight" && <Sparkles size={12} color="var(--accent)" />}
-                </span>
+                <span style={{ flex: 1 }}>{theme.name}</span>
                 {preference === theme.id && <Check size={14} color="var(--accent)" />}
               </Command.Item>
             ))}

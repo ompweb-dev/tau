@@ -76,13 +76,13 @@ function ToolCategoryIcon({
     case "todo":
       return <CheckSquare size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent, #EC5BAB)", ...style }} />;
     case "task":
-      return <Bot size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent-2, #7DD7E8)", ...style }} />;
+      return <Bot size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "hub":
-      return <MessagesSquare size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent-2, #7DD7E8)", ...style }} />;
+      return <MessagesSquare size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     case "code":
       return <Code2 size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent, #EC5BAB)", ...style }} />;
     case "web":
-      return <Globe size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent-2, #7DD7E8)", ...style }} />;
+      return <Globe size={size} strokeWidth={1.8} className={className} style={{ color: "var(--accent)", ...style }} />;
     default:
       return <Wrench size={size} strokeWidth={1.8} className={className} style={{ color: "var(--text-muted)", ...style }} />;
   }

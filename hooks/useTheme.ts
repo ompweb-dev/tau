@@ -3,20 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { manifestHref, THEME_COLOR_COOKIE } from "@/lib/manifest-theme";
 
-export type LightTheme = "light" | "one-light" | "catppuccin-latte" | "rose-pine-dawn";
-export type DarkTheme =
-  | "dark"
-  | "midnight"
-  | "dracula"
-  | "harbor"
-  | "one-dark-pro"
-  | "rose-pine"
-  | "catppuccin-mocha"
-  | "gruvbox-dark"
-  | "nord"
-  | "tokyo-night";
-
-export type Theme = LightTheme | DarkTheme;
+export type Theme = "light" | "dark";
 export type ThemePreference = Theme | "system";
 
 export type ThemeDefinition = {
@@ -30,48 +17,22 @@ export type ThemeDefinition = {
 };
 
 export const LIGHT_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "light", name: "Light", mode: "light", bg: "#FBFBFB", panel: "#F1F1F2", accent: "#2B5FCC" },
-  { id: "one-light", name: "One Light", mode: "light", bg: "#FAFAFA", panel: "#F0F0F0", accent: "#2F65D9" },
-  { id: "catppuccin-latte", name: "Catppuccin Latte", mode: "light", bg: "#EFF1F5", panel: "#E6E9EF", accent: "#1E66F5" },
-  { id: "rose-pine-dawn", name: "Rosé Pine Dawn", mode: "light", bg: "#FAF4ED", panel: "#FFFAF3", accent: "#286983" },
+  { id: "light", name: "Light", mode: "light", bg: "#F8F5EF", panel: "#F1F0EA", accent: "#3A5C8C" },
 ];
 
 export const DARK_THEMES: ReadonlyArray<ThemeDefinition> = [
-  { id: "midnight", name: "Midnight", mode: "dark", bg: "#000000", panel: "#0A0A0C", accent: "#EC5BAB" },
-  { id: "dark", name: "Dark", mode: "dark", bg: "#1C1D20", panel: "#232427", accent: "#7AA8F7" },
-  { id: "dracula", name: "Dracula", mode: "dark", bg: "#282A36", panel: "#21222C", accent: "#FF79C6" },
-  { id: "harbor", name: "Harbor", mode: "dark", bg: "#1B1B1B", panel: "#242424", accent: "#E75A50" },
-  { id: "one-dark-pro", name: "One Dark Pro", mode: "dark", bg: "#282C34", panel: "#21252B", accent: "#61AFEF" },
-  { id: "rose-pine", name: "Rosé Pine", mode: "dark", bg: "#191724", panel: "#1F1D2E", accent: "#EBBCBA" },
-  { id: "catppuccin-mocha", name: "Catppuccin Mocha", mode: "dark", bg: "#1E1E2E", panel: "#181825", accent: "#CBA6F7" },
-  { id: "gruvbox-dark", name: "Gruvbox Dark", mode: "dark", bg: "#282828", panel: "#1D2021", accent: "#FE8019" },
-  { id: "nord", name: "Nord", mode: "dark", bg: "#2E3440", panel: "#272C36", accent: "#88C0D0" },
-  { id: "tokyo-night", name: "Tokyo Night", mode: "dark", bg: "#1A1B26", panel: "#16161E", accent: "#7AA2F7" },
+  { id: "dark", name: "Dark", mode: "dark", bg: "#1A1C1E", panel: "#232526", accent: "#8EA8DA" },
 ];
 
 export const ALL_THEMES: ReadonlyArray<ThemeDefinition> = [...LIGHT_THEMES, ...DARK_THEMES];
 
 export function isDarkTheme(theme: Theme): boolean {
-  return theme !== "light" && theme !== "one-light" && theme !== "catppuccin-latte" && theme !== "rose-pine-dawn";
+  return theme === "dark";
 }
 
-const VALID_PREFERENCES: Record<string, true> = {
-  light: true,
-  "one-light": true,
-  "catppuccin-latte": true,
-  "rose-pine-dawn": true,
-  dark: true,
-  midnight: true,
-  dracula: true,
-  harbor: true,
-  "one-dark-pro": true,
-  "rose-pine": true,
-  "catppuccin-mocha": true,
-  "gruvbox-dark": true,
-  nord: true,
-  "tokyo-night": true,
-  system: true,
-};
+/** Themes tau no longer ships keep their light or dark side: an earlier light theme reads as Light, any other as Dark. */
+const RETIRED_LIGHT_THEMES = new Set(["one-light", "catppuccin-latte", "rose-pine-dawn"]);
+const RETIRED_DARK_THEMES = new Set(["midnight", "dracula", "harbor", "one-dark-pro", "rose-pine", "catppuccin-mocha", "gruvbox-dark", "nord", "tokyo-night"]);
 
 const STORAGE_KEY = "tau-theme";
 const listeners = new Set<() => void>();
@@ -86,9 +47,9 @@ function storedPreference(): ThemePreference {
   if (typeof window === "undefined") return "system";
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    if (value && VALID_PREFERENCES[value]) {
-      return value as ThemePreference;
-    }
+    if (value === "light" || value === "dark" || value === "system") return value;
+    if (value && RETIRED_LIGHT_THEMES.has(value)) return "light";
+    if (value && RETIRED_DARK_THEMES.has(value)) return "dark";
     return "system";
   } catch {
     return "system";
@@ -96,17 +57,14 @@ function storedPreference(): ThemePreference {
 }
 
 export function resolveTheme(preference: ThemePreference, prefersDark = false): Theme {
-  if (preference === "midnight") return "midnight";
   if (preference === "system") return prefersDark ? "dark" : "light";
   return preference;
 }
 
 export function nextThemePreference(preference: ThemePreference): ThemePreference {
   if (preference === "light") return "dark";
-  if (preference === "dark") return "midnight";
-  if (preference === "midnight") return "system";
-  if (preference === "system") return "light";
-  return isDarkTheme(preference as Theme) ? "light" : "dark";
+  if (preference === "dark") return "system";
+  return "light";
 }
 
 export function applyDomTheme(theme: Theme): void {
@@ -119,11 +77,8 @@ export function applyDomTheme(theme: Theme): void {
   });
   toRemove.forEach((cls) => cl.remove(cls));
 
-  cl.toggle("dark", dark && theme !== "midnight");
-  cl.toggle("midnight", theme === "midnight");
-  if (theme !== "midnight") {
-    cl.add(`theme-${theme}`);
-  }
+  cl.toggle("dark", dark);
+  cl.add(`theme-${theme}`);
   document.documentElement.setAttribute("data-theme", theme);
   const color = ALL_THEMES.find((definition) => definition.id === theme)?.panel;
   const meta = document.querySelector('meta[name="theme-color"]');
