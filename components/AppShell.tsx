@@ -1609,7 +1609,7 @@ export function AppShell({ appName }: { appName: string }) {
     clearDraft(sessionId);
     setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, { id: sessionId, hostId })));
     setRefreshKey((k) => k + 1);
-    if (selectedSession?.id === sessionId) {
+    if (selectedSession && sameSessionTarget(selectedSession, { id: sessionId, hostId })) {
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(selectedSession.poolId ? null : cwd ?? null);
