@@ -72,7 +72,7 @@ interface Props {
   hideThinkingBlock?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
-  /** A file tab covers this chat: Esc must not stop a run the user cannot see. */
+  /** A file tab covers this chat: its window-level keys (Esc stop, model and thinking cycling, dictation) stay off. */
   covered?: boolean;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
@@ -528,7 +528,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   // cycle_model / cycle_thinking_level). Meta/Alt combos avoid clashing with
   // ordinary typing in the composer.
   useEffect(() => {
-    if (!session) return;
+    if (!session || covered) return;
     const handler = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || !e.altKey) return;
       const key = e.key.toLowerCase();
@@ -542,7 +542,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [session, handleCycleModel, handleCycleThinkingLevel]);
+  }, [session, covered, handleCycleModel, handleCycleThinkingLevel]);
 
   // --- Lazy-load historical messages ---
   // Only render the last N messages initially. When the user scrolls to the
@@ -918,6 +918,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   const chatInputElement = (
     <ChatInput
       ref={composerRef}
+      covered={covered}
       sessionInfoContainer={sessionInfoContainer}
       onSend={handleSend}
       onAbort={handleAbort}
