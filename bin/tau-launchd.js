@@ -1,8 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+require("./runtime-version").exitIfUnsupportedRuntime();
 
 // Install tau as a macOS launchd user agent (starts at login, restarts on crash).
 //
@@ -103,8 +103,8 @@ function buildHostEnv({ svcPath, piBin, agentDir }) {
 }
 
 function install(pkgArg) {
-  const nodeBin = process.execPath;
-  const siblingNpx = path.join(path.dirname(nodeBin), "npx");
+  const runtimeBin = process.execPath;
+  const siblingNpx = path.join(path.dirname(runtimeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
   // An explicit pi for the service; without it the service finds pi on PATH.
@@ -139,7 +139,7 @@ function install(pkgArg) {
     ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
-    path.dirname(nodeBin),
+    path.dirname(runtimeBin),
     "/usr/bin",
     "/bin",
     "/usr/sbin",

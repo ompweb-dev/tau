@@ -26,7 +26,7 @@ async function launch(env, args = []) {
     // The package has no bun dependency, so the launcher runs this under the Bun on PATH: this test's own,
     // as on Windows npm puts only a bun.cmd shim there, which a spawn without a shell cannot run.
     await writeFile(join(pkg, "server", "main.ts"), `require("fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify(process.env));`);
-    const result = spawnSync("node", [join(pkg, "bin", "tau.js"), "--no-open", "-p", "0", ...args], {
+    const result = spawnSync(process.execPath, [join(pkg, "bin", "tau.js"), "--no-open", "-p", "0", ...args], {
       env: { PATH: [dirname(process.execPath), process.env.PATH].join(delimiter), HOME: pkg, ...env },
       encoding: "utf8",
       timeout: 20_000,

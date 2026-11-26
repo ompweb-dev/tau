@@ -2,7 +2,6 @@
 // Session reads take IDs, never paths; pooled preparation takes registered paths
 // derived by server admission, never browser-supplied filesystem authority.
 // Live-wrapper work (RPC sends, stopping a child) stays in the routes on main.
-// No `next/*` or `@/` imports: the daemon loads this through plain jiti.
 import { randomUUID } from "crypto";
 import { execFile } from "child_process";
 import { closeSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, statSync, type Stats } from "fs";

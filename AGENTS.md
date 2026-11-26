@@ -28,7 +28,7 @@ tau never imports pi's SDK (or any `@earendil-works/*` package): every live sess
 started with tau's companion extension `--extension lib/pi/tau-extension.ts`. See `DESIGN.md` for the porting contract.
 
 ```
-Browser                    Bun server (server/app.ts)                   tau host daemon (Node)        pi child
+Browser                    Bun server (server/app.ts)                   tau host daemon (Bun)         pi child
   │                               │                                            │                         │
   ├─ GET /api/sessions ──────────▶ listSessions op ─────── host link (WS) ───▶ reads ~/.pi/agent/sessions │
   ├─ SharedWorker ─ GET /api/events ▶ ONE multiplexed SSE per browser          │                         │
@@ -40,10 +40,11 @@ Browser                    Bun server (server/app.ts)                   tau host
   │◀── event: s<n> data: {...} ───│                                            │                         │
 ```
 
-- The launcher (`bin/tau.js`), the host daemon (`bin/tau-host.js`, `tau host`) and the tray run on Node. The launcher
-  spawns `bun server/main.ts` (Bun from `bin/bun-runtime.js`: the npm `@oven/bun-*` binary, else `bun` on `PATH`),
-  which serves the SPA from `dist/`, the API routes and the password gate in one process. The daemon and tray must
-  not use Bun APIs. The compiled binary (`server/binary.ts`) is one Bun program: the server in its own process, plus
+- Everything runs on Bun: every package bin is `#!/usr/bin/env bun` and refuses another runtime first
+  (`bin/runtime-version.js`, minimum Bun 1.4.4 = `engines.bun`). The launcher (`bin/tau.js`) spawns its own Bun
+  (`process.execPath`) on `server/main.ts`, which serves the SPA from `dist/`, the API routes and the password gate
+  in one process; `tau host` (`bin/tau-host.js`), the tray and the update workers run on that Bun too. Bun resolves
+  the `@/` alias (tsconfig `paths`) everywhere, the daemon included. The compiled binary (`server/binary.ts`) is one Bun program: the server in its own process, plus
   `tau host`, `tau preflight` and `tau hash-password`.
 - **Every machine runs sessions through a daemon**, this one included: main never spawns a session pi. The web server
   links to this machine's own `tau host` daemon like to any remote host (see "Remote hosts"). `startRpcSession()`
@@ -235,9 +236,9 @@ hooks/                   useAgentSession(-stream/-sync/-queue/-notices), useBtw,
                          useNavigationHistory, useChatSearchHighlights, useDictation, useSpeechSynthesis, ...
 
 bin/
-  tau.js              launcher (Node); `tau preflight` through jiti
-  tau-host.js         `tau host [login|logout|status|drain|resume]`: loads lib/hosts/host-cli.ts through jiti; token from stdin, never argv
-  bun-runtime.js      resolves Bun (npm `@oven/bun-*`, else PATH, minimum version)
+  tau.js              launcher; `tau preflight` imports lib/hosts/preflight.ts
+  tau-host.js         `tau host [login|logout|status|drain|resume]`: imports lib/hosts/host-cli.ts; token from stdin, never argv
+  runtime-version.js  refuses Node and Bun older than 1.4.4 (first statement of every bin)
   tau-tray.js, linux-tray.js, tau-systemd.js, tau-launchd.js   tray and service installers
 
 scripts/
@@ -323,7 +324,6 @@ The table is static imports, not a runtime glob, so `bun build --compile` bundle
 - **Orphans and adoption.** On `hello`, listed channels with no wrapper are adopted (`reattach`/`adopt`): servers `open` each, restore pending requests and the current streaming message, request state/subagents/side-question snapshots, then release held frames (`RpcProcess.release` skips requests the replay already delivered). Adopted wrappers feed replayed requests through `handleFrame` (`replaying`; agent tools are not re-run), so dialogs reappear and browser tool calls wait for the next tab (`hostToolsUnknown`, `parkHostTool`). Only when adoption is impossible is a child killed (escalating to force after 5 s). A cold spawn awaits `orphanExit(hostId, sessionId)` first; the wait rejects 503 when the link drops. A daemon buffer overflow (`channelBufferBytes`, 32 MiB per channel) drops the backlog and sends `resync {ch}`; main reruns the `get_state` reconcile.
 - **Proxy exclusion.** `proxy.ts` `UNGATED` lets through exactly `/api/hosts/link`, `/api/hosts/maintenance`, `/api/hosts/cluster-config/manifest` and `/api/hosts/cluster-config/file/<64 hex>` (plus static assets, icons and `sw.js`). The daemon has no cookie; each of these checks `Authorization: Bearer <host token>` itself (the link before the upgrade: 401 unknown token, 503 unreadable `hosts.json` or frozen server; the cluster routes through `admitClusterMember`, again after the build). `/api/hosts` and `/api/hosts/[id]/*` (an id of `cluster-config` included) stay gated. A reverse proxy passes the ungated paths without its own authentication and without redirects.
 - **Remote paths never reach `allowFileRoot`** or any other main-side filesystem check. `startNewRpcSession` calls `allowFileRoot` and the local list invalidation only for the local host; remote cwd validation is the host's `validateCwd`. Daemon input is untrusted: blob hashes must match `^[0-9a-f]{64}$`, results are shape-checked (`hub.ts`, `workspace-results.ts`), and `sessionFileExists`/`spawn` accept only paths under the daemon's sessions directory. A remote session export is always an attachment.
-- **Daemon-loaded modules must not import `@/` or use Bun APIs.** `bin/tau-host.js` loads `lib/hosts/host-cli.ts` through plain `jiti` on Node (no `@/` alias, no `Bun` global); that covers everything the daemon pulls in (`daemon*.ts`, `link-protocol.ts`, `maintenance-protocol.ts`, `local-host.ts`, `session-ops.ts`, `workspace-*.ts`, `preflight.ts`, the `lib/pi/*` they import). Use relative imports.
 - **Registry.** `<agent dir>/tau/hosts.json` (0600, atomic) stores only `sha256(token)`; the token is shown once. Mutations use the strict reader and throw `HostRegistryUnreadableError` (503) instead of rewriting a file they could not parse. Revoke deletes the record first, then closes the link (the daemon stops its children). A missing `hosts.json` (an agent-dir mismatch) answers 401 to every daemon, and a daemon told its token is unknown stops all its pi children: check `PI_CODING_AGENT_DIR` before starting main.
 - **Agent tools.** Calls carry the caller's host (`sourceHostId`); `new_session`'s `host` defaults to it. A host with `allowAgentStart` off asks a server-owned `confirm` (`confirmFromServer`). Local callers never ask for this machine; a remote caller asks before any other host unless that host allows agent starts, and always before this machine, for `new_session` and `send_to_session`.
 - **Message origin** (`docs/specs/2026-11-14-message-origin-design.md`). Messages from `send_to_session`, a `new_session` first prompt or the GitHub watcher stay native user messages but carry server-authored `origin`. The extension journals it with the message's `client-message-entry` (`/tau_meta name`); the reader joins it only on the active branch, and the outbox stores it beside held entries. Browser/HTTP commands cannot supply `origin` (`origin_not_allowed`); readers drop malformed or over-4096-byte metadata. The chat renders trusted origins as source cards (`OriginMessageView`).

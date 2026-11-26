@@ -26,7 +26,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShellNoCC {
           packages = with pkgs; [
-            nodejs-slim
+            nodejs
             bun
           ];
         };

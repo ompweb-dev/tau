@@ -347,7 +347,7 @@ export async function getWebServiceStatus(): Promise<WebServiceStatus> {
   const isInstalled = desktopExists || startMenuExists || startupExists || existsSync(getWebServiceConfigPath());
   let isRunning = await isTrayProcessRunning();
   // Fallback: tray process detection via WMI CommandLine can miss hidden wscript-launched
-  // powershell (or manual `node bin/tau.js start`). If the service URL is
+  // powershell (or manual `bun bin/tau.js start`). If the service URL is
   // actually listening, report as running even when tray detection fails.
   if (!isRunning) {
     const host = config.hostname || "127.0.0.1";

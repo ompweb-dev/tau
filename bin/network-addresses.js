@@ -30,7 +30,7 @@ function getBrowserUrl(hostname, port) {
 
 /** Open `url` in the default browser; a failure only warns. */
 function openInBrowser(url) {
-  // getBuiltinModule: bin/ files add no new eslint-disable comments (see bin/bun-runtime.js).
+  // getBuiltinModule: bin/ files add no new eslint-disable comments.
   const { spawn } = process.getBuiltinModule("node:child_process");
   const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
   const opener = spawn(command, [url], { stdio: "ignore", detached: true });

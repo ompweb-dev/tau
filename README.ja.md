@@ -25,7 +25,7 @@ pi のセッションを読み込み、コンパニオンの pi 拡張ととも�
 
 ## 動作要件
 
-- npm パッケージには **Node.js 24 以降**。ランチャー（`tau`）は Node で動き、サーバーは [Bun](https://bun.sh) 1.4.4 以降で動きます。Bun はパッケージの依存としてインストールされます（同梱の Bun がない場合は、`PATH` 上のそのバージョン以上の `bun` を使います）。[単一バイナリ](#単一バイナリ)はどちらも不要です。
+- npm パッケージには `PATH` 上の **[Bun](https://bun.sh) 1.4.4 以降**が必要です。tau のすべて（`tau` コマンド、サーバー、`tau host`、トレイ）が Bun で動きます。[単一バイナリ](#単一バイナリ)は Bun を内蔵しています。
 - セッションを実行するすべてのマシンに **pi** をインストールします:
 
   ```bash
@@ -39,11 +39,11 @@ pi のセッションを読み込み、コンパニオンの pi 拡張ととも�
 ### npm または Bun
 
 ```bash
-npm install -g @ompweb-dev/tau
+bun add -g @ompweb-dev/tau
 tau
 ```
 
-`bun add -g @ompweb-dev/tau` でも同じパッケージをインストールできますが、`tau` ランチャーには `PATH` 上の Node.js 24 が必要です。`npx @ompweb-dev/tau@latest` ならグローバルインストールなしで実行できます。
+`npm install -g @ompweb-dev/tau` でも同じパッケージをインストールできます。どちらの場合もコマンドは `PATH` 上の `bun` で動きます。`bunx @ompweb-dev/tau@latest` ならグローバルインストールなしで実行できます。
 
 tau はブラウザで `http://127.0.0.1:30187` を開きます。**Settings → API Keys & Providers** でモデルプロバイダーにログインし（[設定](#設定)を参照）、ワークスペースを選んでセッションを開始します。
 
@@ -69,7 +69,7 @@ git clone https://github.com/ompweb-dev/tau.git
 cd tau
 npm install
 npm run build
-node bin/tau.js
+bun bin/tau.js
 ```
 
 ## 実行
@@ -251,7 +251,7 @@ tau host status|drain|resume                control the running daemon
 
 ### 別のマシンをリンクする
 
-別のマシンには pi と、npm 版の tau（Node.js 24）または単一バイナリが必要です。
+別のマシンには pi と、npm 版の tau（Bun が必要）または単一バイナリが必要です。
 
 1. tau サーバーで **Settings → Hosts → Add host** を開き、名前を入力してトークンをコピーします。トークンは一度だけ表示され、サーバーはそのハッシュだけを保存します。
 2. 別のマシンでリンクを保存します。求められたらトークンを貼り付けるか、パイプで渡します。`ps` に表示されることはありません:

@@ -17,6 +17,7 @@ All notable changes to **tau** (`@ompweb-dev/tau`) are documented in this file. 
 
 ### Changed
 
+- **tau runs on Bun only.** Every command in the npm package (`tau`, `tau host`, the tray, the service installers) runs on the Bun on `PATH` (1.4.4 or newer) and refuses Node.js, and so do the update workers. The package no longer bundles Bun or jiti. Install with `bun add -g @ompweb-dev/tau` (or `npm install -g` with Bun on `PATH`); services installed by an earlier version run the launcher on Node and must be installed again. The single binary is unchanged.
 - **Search, the file index and session deletes follow what is on screen.**
   - The Files and Search tabs search the folder the panel shows, instead of always the conversation's working directory, as long as it is one of the conversation's own folders: its project, or a folder in it. A conversation whose worktree was removed searches its repository again instead of failing. Another worktree of the same repository is refused.
   - Text search no longer holds up the host while it resolves paths, and hard-linked files (a pnpm store, for example) are no longer each put through the full credential check.

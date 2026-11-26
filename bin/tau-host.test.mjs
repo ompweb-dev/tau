@@ -16,7 +16,7 @@ test("SIGTERM to `tau host` stops the daemon itself, leaving no orphan", { skip:
   mkdirSync(join(agentDir, "tau"), { recursive: true });
   // Nothing listens on this loopback port: the daemon redials until it is stopped.
   writeFileSync(join(agentDir, "tau", "host.json"), JSON.stringify({ url: "http://127.0.0.1:9", token: "t" }), { mode: 0o600 });
-  const child = spawn("node", [bin, "host"], {
+  const child = spawn(process.execPath, [bin, "host"], {
     env: { ...process.env, HOME: scratch, USERPROFILE: scratch, PI_CODING_AGENT_DIR: agentDir },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -48,7 +48,7 @@ async function login(t, input, { end = true } = {}) {
   const scratch = mkdtempSync(join(tmpdir(), "tau-host-login-"));
   const agentDir = join(scratch, "agent");
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
-  const child = spawn("node", [bin, "host", "login", "--url", "http://127.0.0.1:9"], {
+  const child = spawn(process.execPath, [bin, "host", "login", "--url", "http://127.0.0.1:9"], {
     env: { ...process.env, HOME: scratch, USERPROFILE: scratch, PI_CODING_AGENT_DIR: agentDir },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -77,7 +77,7 @@ test("`tau host login` refuses a token line over 4096 bytes without waiting for 
 });
 
 async function hostCommand(env, ...args) {
-  const child = spawn("node", [bin, "host", ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [bin, "host", ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
   let stdout = "";
   let stderr = "";
   child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -107,7 +107,7 @@ function controlFixture(t, { url, longRoot = false } = {}) {
 }
 
 function launchHost(t, env) {
-  const child = spawn("node", [bin, "host"], { env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [bin, "host"], { env, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (chunk) => { stderr += chunk; });
   const closed = new Promise((resolve) => child.once("close", (code) => resolve(code)));
@@ -244,7 +244,7 @@ test("`tau host login --add` and logout change only the selected URL without arg
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const run = async (args, input = "") => {
     assert.ok(!args.includes(staging.token));
-    const child = spawn("node", [bin, "host", ...args], {
+    const child = spawn(process.execPath, [bin, "host", ...args], {
       env: { ...process.env, HOME: scratch, USERPROFILE: scratch, PI_CODING_AGENT_DIR: agentDir },
       stdio: ["pipe", "pipe", "pipe"],
     });

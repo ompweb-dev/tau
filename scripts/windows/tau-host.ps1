@@ -37,26 +37,21 @@ if ((Test-Path $LogFile) -and ((Get-Item $LogFile).Length -gt 5MB)) {
     Move-Item -Path $LogFile -Destination "$LogFile.old" -Force -ErrorAction SilentlyContinue
 }
 
-function Find-NodeExecutable {
-    $nodeCmd = Get-Command node.exe -ErrorAction SilentlyContinue
-    if ($nodeCmd -and (Test-Path $nodeCmd.Source)) { return $nodeCmd.Source }
-    $candidates = @(
-        "$env:ProgramFiles\nodejs\node.exe",
-        "${env:ProgramFiles(x86)}\nodejs\node.exe",
-        "$env:LOCALAPPDATA\Programs\node\node.exe",
-        "$env:USERPROFILE\.bun\bin\node.exe"
-    )
-    foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
-    return "node.exe"
+function Find-BunExecutable {
+    $bunCmd = Get-Command bun.exe -ErrorAction SilentlyContinue
+    if ($bunCmd -and (Test-Path $bunCmd.Source)) { return $bunCmd.Source }
+    $candidate = "$env:USERPROFILE\.bun\bin\bun.exe"
+    if (Test-Path $candidate) { return $candidate }
+    return "bun.exe"
 }
-$NodeExe = Find-NodeExecutable
+$BunExe = Find-BunExecutable
 
 try {
     while ($true) {
         # Output goes to a file through cmd, as in tau-service.ps1.
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $env:ComSpec
-        $psi.Arguments = "/d /s /c `"`"$NodeExe`" `"$LauncherJs`" host >> `"$LogFile`" 2>&1`""
+        $psi.Arguments = "/d /s /c `"`"$BunExe`" `"$LauncherJs`" host >> `"$LogFile`" 2>&1`""
         $psi.WorkingDirectory = $LaunchWorkingDirectory
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true

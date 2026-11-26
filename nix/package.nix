@@ -1,8 +1,7 @@
 {
   lib,
-  stdenv,
   buildNpmPackage,
-  autoPatchelfHook,
+  bun,
   ...
 }:
 let
@@ -40,22 +39,12 @@ buildNpmPackage (finalAttrs: {
   # Unverified: written without nix. Refresh npmDepsHash on a machine with nix (`nix build .#default` prints it).
   npmDepsHash = "sha256-HxT+m6bI0I3t9sqsSgHun6oXve3WtIEmkFpCoBplrC4=";
 
-  # npmPackFlags = [ "--ignore-scripts" ];
-
-  # Bun runs from the npm @oven/bun-<os>-<arch> package (the pinned version every install uses). bun's postinstall
-  # (the only install script) execs that binary before it is patched, so skip it: bin/bun-runtime.js then picks the
-  # @oven binary itself.
+  # tau runs on Bun: the bins' `#!/usr/bin/env bun` lines are patched to this bun, and the build bundles with it.
+  # npm still installs the dependencies (package-lock.json). The npm `bun` package (a dev peer of bun-plugin-tailwind)
+  # has a postinstall that downloads a binary: skip install scripts.
   npmRebuildFlags = [ "--ignore-scripts" ];
-  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
-  # Patched once in preBuild (the build runs it); fixup has nothing else to patch.
-  dontAutoPatchelf = true;
-
-  # node_modules/.bin/bun points at bun's postinstall placeholder; build with the binary the launcher resolves.
-  preBuild = ''
-    ${lib.optionalString stdenv.hostPlatform.isLinux "autoPatchelf -- node_modules/@oven"}
-    rm -f node_modules/.bin/bun node_modules/.bin/bunx
-    export PATH="$(dirname "$(node -p 'require("./bin/bun-runtime.js").resolveBunBinary(".")')"):$PATH"
-  '';
+  nativeBuildInputs = [ bun ];
+  buildInputs = [ bun ];
 
   meta = {
     description = "Local web UI for the oh-my-pi (omp) coding agent";

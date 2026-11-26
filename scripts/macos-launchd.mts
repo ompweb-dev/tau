@@ -1,7 +1,7 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Install tau as a macOS launchd user agent (starts at login, restarts on crash).
 //
-// Usage (installed as the `tau-launchd` bin, or run via npx / node directly):
+// Usage (installed as the `tau-launchd` bin, or run via npx / bun directly):
 //   tau-launchd [install [package-spec]|uninstall|status]
 //   npx -p @ompweb-dev/tau@latest tau-launchd install
 //
@@ -76,11 +76,11 @@ function launchctl(args: string[], { ignoreFailure = false } = {}): string {
 function install(pkgArg?: string): void {
   // Resolve absolute paths now: launchd agents run with a minimal PATH
   // (/usr/bin:/bin:/usr/sbin:/sbin), so nothing from nvm/asdf/homebrew is visible.
-  // Prefer the npx sitting next to the real node binary over the PATH hit:
+  // Prefer the npx sitting next to the real bun binary over the PATH hit:
   // version-manager shims (asdf/nvm) re-invoke their manager by name and can
   // fail under launchd's minimal environment.
-  const nodeBin = process.execPath;
-  const siblingNpx = path.join(path.dirname(nodeBin), "npx");
+  const runtimeBin = process.execPath;
+  const siblingNpx = path.join(path.dirname(runtimeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
   // An explicit pi for the service; without it the service finds pi on PATH.
@@ -104,7 +104,7 @@ function install(pkgArg?: string): void {
   // launchd does not expand `~` in environment values — resolve it now.
   const agentDir = process.env.PI_CODING_AGENT_DIR?.replace(/^~(?=\/|$)/, HOME);
 
-  // Give the service a PATH covering npx/node, omp, and system tools (`open`
+  // Give the service a PATH covering npx/bun, omp, and system tools (`open`
   // for the browser). asdf/nvm shims re-invoke their manager by name, so the
   // manager's own directory must be reachable too when present.
   const asdfBin = which("asdf");
@@ -112,7 +112,7 @@ function install(pkgArg?: string): void {
     ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
-    path.dirname(nodeBin),
+    path.dirname(runtimeBin),
     "/usr/bin",
     "/bin",
     "/usr/sbin",

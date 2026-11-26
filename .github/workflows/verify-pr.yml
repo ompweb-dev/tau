@@ -49,6 +49,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # tau runs on Bun (its bins, the server, the host daemon and the tests); npm only installs the dependencies.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
       - name: Install dependencies
         run: npm ci
 
@@ -107,35 +112,35 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Windows ]; then
-            npx bun scripts/build-binary.ts --target bun-windows-x64-baseline
+            bun scripts/build-binary.ts --target bun-windows-x64-baseline
             bin=release/tau-windows-x64/tau.exe
             archive=release/tau-windows-x64.zip
           elif [ "$RUNNER_OS" = macOS ]; then
             arch=$(node -p process.arch)
             target="bun-darwin-$arch"
             if [ "$arch" = x64 ]; then target="$target-baseline"; fi
-            npx bun scripts/build-binary.ts --target "$target"
+            bun scripts/build-binary.ts --target "$target"
             bin="release/tau-darwin-$arch/tau"
             archive="release/tau-darwin-$arch.tar.gz"
           else
-            npx bun scripts/build-binary.ts --target bun-linux-x64-baseline
+            bun scripts/build-binary.ts --target bun-linux-x64-baseline
             bin=release/tau-linux-x64/tau
             archive=release/tau-linux-x64.tar.gz
           fi
           # The archive a host downloads must pass the updater's own size limits and checks.
-          npx bun scripts/check-host-release-archive.ts "$archive"
+          bun scripts/check-host-release-archive.ts "$archive"
           npm run smoke -- --binary "$bin"
           # What the host updater checks on a new release before it switches (lib/hosts/update-worker.ts): the marker
           # it finds the command by, then the command itself against the pi on PATH.
           grep -qa tau-preflight-scratch- "$bin"
-          node -e 'require("node:child_process").execFileSync(process.argv[1], ["preflight"], {stdio:"inherit",timeout:120000})' "$bin"
+          "$bin" preflight
 
       # Required on every supported runner, including macOS foreground. A skip fails the job.
       - name: Native compiled coordinated upgrade and rollback
         shell: bash
         env:
           TAU_COMPILED_UPGRADE_E2E: "1"
-        run: npx bun test --parallel --timeout 900000 lib/compiled-upgrade.integration.test.mjs
+        run: bun test --parallel --timeout 900000 lib/compiled-upgrade.integration.test.mjs
 
       - name: Packed install smoke test
         shell: bash
@@ -143,13 +148,6 @@ jobs:
           npm pack --ignore-scripts
           npm install -g --prefix "$RUNNER_TEMP/tau-prefix" ./ompweb-dev-tau-*.tgz
           npm run smoke -- --package "$(npm root -g --prefix "$RUNNER_TEMP/tau-prefix")/@ompweb-dev/tau"
-
-      # Bun's postinstall does not run here: the launcher must fall back to @oven/bun-<os>-<arch> (spec R1).
-      - name: Packed install smoke test (install scripts disabled)
-        shell: bash
-        run: |
-          npm install -g --ignore-scripts --prefix "$RUNNER_TEMP/tau-prefix-no-scripts" ./ompweb-dev-tau-*.tgz
-          npm run smoke -- --package "$(npm root -g --prefix "$RUNNER_TEMP/tau-prefix-no-scripts")/@ompweb-dev/tau"
 
       - name: Parse Windows PowerShell scripts (Windows only)
         if: runner.os == 'Windows'
@@ -164,10 +162,10 @@ jobs:
       - name: Verify Windows System Tray & Shortcuts (Windows only)
         if: runner.os == 'Windows'
         run: |
-          node bin/tau-tray.js --status
-          node bin/tau-tray.js --install
-          node bin/tau-tray.js --status
-          node bin/tau-tray.js --uninstall
+          bun bin/tau-tray.js --status
+          bun bin/tau-tray.js --install
+          bun bin/tau-tray.js --status
+          bun bin/tau-tray.js --uninstall
 
   pr-rules:
     name: PR Rules & Quality Gates

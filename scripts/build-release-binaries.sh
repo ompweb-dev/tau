@@ -7,9 +7,9 @@
 # tau-<os>-x64 names.
 set -eu
 for target in bun-linux-x64-baseline bun-linux-arm64 bun-darwin-x64-baseline bun-darwin-arm64 bun-windows-x64-baseline; do
-	npx bun scripts/build-binary.ts --target "$target" "$@"
+	bun scripts/build-binary.ts --target "$target" "$@"
 done
 # Every archive must pass the host updater's size limits and checks (lib/hosts/update-worker.ts).
 for archive in release/tau-*.tar.gz release/tau-*.zip; do
-	npx bun scripts/check-host-release-archive.ts "$archive"
+	bun scripts/check-host-release-archive.ts "$archive"
 done

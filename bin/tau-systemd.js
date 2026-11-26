@@ -1,8 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+require("./runtime-version").exitIfUnsupportedRuntime();
 
 // Install tau as a Linux systemd user service.
 //
@@ -199,7 +199,7 @@ function formatExecStart(value) {
 }
 
 // Resolve the tau binary the unit will run. An explicit override wins,
-// followed by the sibling of node (npm/bun global installs), then PATH.
+// followed by the sibling of bun (bun/npm global installs), then PATH.
 function resolveTauBin(env = process.env) {
   const override = env.TAU_SYSTEMD_BIN;
   if (override) {
@@ -212,7 +212,7 @@ function resolveTauBin(env = process.env) {
 
   const onPath = which("tau", env);
   if (onPath) return onPath;
-  throw new Error("tau binary not found (next to node or on PATH); set TAU_SYSTEMD_BIN");
+  throw new Error("tau binary not found (next to bun or on PATH); set TAU_SYSTEMD_BIN");
 }
 function validatePort(value) {
   const port = Number(value);

@@ -1,7 +1,8 @@
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+require("./runtime-version").exitIfUnsupportedRuntime();
 
 // Linux system tray for tau (KDE Plasma and any StatusNotifierItem host).
 //
@@ -542,11 +543,11 @@ function buildAutostartDesktop(execLine) {
 }
 
 function buildAutostartExec() {
-  const nodeBin = process.execPath;
+  const runtimeBin = process.execPath;
   const script = path.resolve(__filename);
-  const needsQuoting = [nodeBin, script].some((part) => /\s/.test(part));
-  if (!needsQuoting) return `${nodeBin} ${script} --start`;
-  return `"${nodeBin.replace(/"/g, '\\"')}" "${script.replace(/"/g, '\\"')}" --start`;
+  const needsQuoting = [runtimeBin, script].some((part) => /\s/.test(part));
+  if (!needsQuoting) return `${runtimeBin} ${script} --start`;
+  return `"${runtimeBin.replace(/"/g, '\\"')}" "${script.replace(/"/g, '\\"')}" --start`;
 }
 
 // Terminal used to open logs; ordered candidates, first hit wins.

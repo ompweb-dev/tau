@@ -1,8 +1,8 @@
 // The detached worker of an application update: it replaces the installation the web server (and, when it runs from
 // the same installation, this machine's host) runs from, so it runs from outside it: a copy of the compiled binary
-// (`tau server-update-worker <descriptor>`), or a Node bundle of this file built by the server before the cutover
-// (`node worker.mjs --server-update-descriptor <descriptor>`). Node-compatible: node:* and shared host modules only,
-// never the Bun server or the hub. self-update.ts prepares everything the worker uses and verifies the result.
+// (`tau server-update-worker <descriptor>`), or a bundle of this file built by the server before the cutover
+// (`bun worker.mjs --server-update-descriptor <descriptor>`): node:* and shared host modules only, never the server
+// or the hub. self-update.ts prepares everything the worker uses and verifies the result.
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -37,7 +37,7 @@ export interface ServerUpdateDescriptor {
   releasePin: ApprovedReleasePin;
   fromVersion: string;
   targetVersion: string;
-  /** Node, for the package launcher and the host's package entrypoint. */
+  /** Bun, for the package launcher and the host's package entrypoint. */
   runtime: string;
   /** The inspected top process: the npm launcher, or the compiled server itself. `pids` are every pid of the server tree known at commit. */
   server: { process: UpgradeProcess; launch: Omit<UpgradeLaunch, "env">; pids: number[] };
@@ -128,7 +128,7 @@ export async function probeLocalHost(control: typeof requestHostControl = reques
   }
 }
 
-/** How the host starts in this installation: the compiled `tau host`, or the package's host entrypoint on a Node runtime (the daemon's own, when one runs). Never from inside the installation: a cwd there blocks the next replacement on Windows. */
+/** How the host starts in this installation: the compiled `tau host`, or the package's host entrypoint on Bun (the daemon's own, when one runs). Never from inside the installation: a cwd there blocks the next replacement on Windows. */
 export function launchFor(d: Pick<ServerUpdateDescriptor, "installMethod" | "installDir" | "runtime" | "hostArgs" | "localHost">): UpgradeLaunch {
   const runtime = d.localHost.kind === "shared" ? d.localHost.process.executable : d.runtime;
   return hostLaunch({ installMethod: d.installMethod, installDir: d.installDir, runtime, hostArgs: d.hostArgs, cwd: homedir() });

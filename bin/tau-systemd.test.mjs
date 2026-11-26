@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-// The scripts under test run on Node in production. Some tests narrow PATH, so resolve it up front.
-const NODE = Bun.which("node");
+// The scripts under test run on this Bun. Some tests narrow PATH, so use its absolute path.
+const RUNTIME = process.execPath;
 const require = createRequire(import.meta.url);
 const {
   buildHostUnit,
@@ -200,7 +200,7 @@ test("install creates the env file and unit with LAN settings", { skip: process.
     delete childEnv.PI_CODING_AGENT_DIR;
     delete childEnv.TAU_PI_BIN;
 
-    const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: childEnv,
       encoding: "utf8",
     });
@@ -258,7 +258,7 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
     delete base.TAU_PASSWORD;
 
     const provided = hashPassword("preset-password");
-    const ok = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const ok = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: { ...base, TAU_PASSWORD_HASH: provided },
       encoding: "utf8",
     });
@@ -268,7 +268,7 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
       provided,
     );
 
-    const broken = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const broken = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: { ...base, TAU_PASSWORD_HASH: "definitely-not-a-hash" },
       encoding: "utf8",
     });
@@ -291,14 +291,14 @@ test("install fails loudly when the omp launcher interpreter is missing", () => 
 
     const childEnv = {
       ...process.env,
-      // No node dir: the spawn uses an absolute process.execPath, and adding
+      // No runtime dir: the spawn uses an absolute process.execPath, and adding
       // it breaks the premise when node and bun share a directory.
       PATH: binDir,
       TAU_SYSTEMD_BIN: fakeTau,
       TAU_PI_BIN: path.join(binDir, "omp"),
       PORT: "40123",
     };
-    const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: childEnv,
       encoding: "utf8",
     });
@@ -311,7 +311,7 @@ test("install fails loudly when the omp launcher interpreter is missing", () => 
 });
 
 test("main tau bin forwards the systemd subcommand", () => {
-  const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau.js"), "systemd", "--version"], {
+  const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau.js"), "systemd", "--version"], {
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr);
@@ -345,7 +345,7 @@ function runWithFakeSystemctl(command, { hostUnit = true, active = false, dir: s
   );
   const env = { ...process.env, HOME: home, PATH: binDir, TAU_SYSTEMD_BIN: fakeTau, TAU_DISABLE_AUTOUPDATE: "1" };
   for (const key of ["PI_CODING_AGENT_DIR", "TAU_PI_BIN", "TAU_PASSWORD"]) delete env[key];
-  const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), command], { env, encoding: "utf8" });
+  const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), command], { env, encoding: "utf8" });
   const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
   rmSync(log, { force: true });
   return { result, calls, dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };

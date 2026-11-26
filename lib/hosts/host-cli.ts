@@ -2,7 +2,6 @@ import { createHostControlServer, requestHostControl } from "./host-control";
 import type { HostDaemon } from "./daemon";
 
 // `tau host`: link this machine to web servers through ./daemon.
-// Loaded by Node/jiti and the compiled binary: no `@/` imports.
 // Tokens are read from stdin, never from argv.
 import { addHostLink, loginHost, readHostLinks, removeHostLink } from "./host-login";
 
@@ -68,7 +67,7 @@ async function main(argv: string[]): Promise<number> {
     console.error("This machine is not linked yet. Start tau on this machine (it writes the link), or run `tau host login --url <server url>`.");
     return 1;
   }
-  // Login/logout need none of the daemon, which jiti would otherwise transpile on every run.
+  // Login/logout need none of the daemon: load it only to run it.
   const { runHostDaemon } = await import("./daemon");
   let daemon: HostDaemon | undefined;
   const endpoint = await createHostControlServer((command) => {

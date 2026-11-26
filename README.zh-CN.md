@@ -25,7 +25,7 @@ tau 是 [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-codin
 
 ## 环境要求
 
-- npm 包需要 **Node.js 24 或更高版本**。启动器（`tau`）运行在 Node 上；服务器运行在 [Bun](https://bun.sh) 1.4.4 或更高版本上，Bun 作为包的依赖自动安装（若内置的 Bun 不存在，则使用 `PATH` 上不低于该版本的 `bun`）。[单一可执行文件](#单一可执行文件)两者都不需要。
+- npm 包需要 `PATH` 上的 **[Bun](https://bun.sh) 1.4.4 或更高版本**：tau 的一切（`tau` 命令、服务器、`tau host` 和托盘）都运行在 Bun 上。[单一可执行文件](#单一可执行文件)自带 Bun。
 - 每台运行会话的机器都要安装 **pi**：
 
   ```bash
@@ -39,11 +39,11 @@ tau 是 [pi coding agent](https://www.npmjs.com/package/@earendil-works/pi-codin
 ### npm 或 Bun
 
 ```bash
-npm install -g @ompweb-dev/tau
+bun add -g @ompweb-dev/tau
 tau
 ```
 
-`bun add -g @ompweb-dev/tau` 安装的是同一个包；`tau` 启动器仍需要 `PATH` 上的 Node.js 24。`npx @ompweb-dev/tau@latest` 无需全局安装即可运行。
+`npm install -g @ompweb-dev/tau` 安装的是同一个包；两种方式下命令都运行在 `PATH` 上的 `bun` 上。`bunx @ompweb-dev/tau@latest` 无需全局安装即可运行。
 
 tau 会在浏览器中打开 `http://127.0.0.1:30187`。在 **Settings → API Keys & Providers** 中登录你的模型提供商（见[配置](#配置)），选择工作区并开始会话。
 
@@ -69,7 +69,7 @@ git clone https://github.com/ompweb-dev/tau.git
 cd tau
 npm install
 npm run build
-node bin/tau.js
+bun bin/tau.js
 ```
 
 ## 运行
@@ -251,7 +251,7 @@ tau host status|drain|resume                control the running daemon
 
 ### 链接另一台机器
 
-另一台机器需要 pi，以及 npm 版 tau（Node.js 24）或单一可执行文件。
+另一台机器需要 pi，以及 npm 版 tau（需要 Bun）或单一可执行文件。
 
 1. 在 tau 服务器上打开 **Settings → Hosts → Add host**，输入名称并复制令牌。令牌只显示一次；服务器只保存其哈希。
 2. 在另一台机器上保存链接。按提示粘贴令牌，或通过管道传入；它不会出现在 `ps` 中：

@@ -1,4 +1,4 @@
-// Host daemon only (Node, loaded through jiti): relative imports, `node:*` modules and the global fetch, no `Bun` global.
+// Host daemon only.
 // A cluster member runs on the master's pi configuration (docs/specs/2026-11-11-cluster-configuration-design.md, K3-K6):
 // a version is applied whole or not at all, and the member's own configuration waits in `own-config/` until it leaves.
 import { createHash, randomBytes } from "node:crypto";
