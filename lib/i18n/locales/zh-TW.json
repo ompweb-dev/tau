@@ -1241,8 +1241,6 @@
   "sessionSidebar.copyTranscript": "複製逐字稿",
   "sessionSidebar.copyTranscriptCopied": "逐字稿已複製到剪貼簿",
   "sessionSidebar.copyTranscriptFailed": "無法複製逐字稿",
-  "sessionSidebar.unsentDraft": "未傳送的草稿",
-  "sessionSidebar.awaitingInput": "等待您的輸入",
   "sessionSidebar.statusReady": "就緒",
   "sessionSidebar.statusRunning": "執行中",
   "sessionSidebar.statusNeedsInput": "等待輸入",

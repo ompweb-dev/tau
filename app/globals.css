@@ -1299,6 +1299,12 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
   border-radius: 4px;
 }
 
+/* Two lines (title, status): the height and vertical padding live here, so touch rows can differ. */
+.session-item-row {
+  min-height: 42px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
 .session-item-trailing {
   gap: 2px;
   height: 24px;
@@ -1322,18 +1328,17 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
   height: 24px;
 }
 .sidebar-project-actions {
-  /* Match the session status column after reserving timestamp + menu space;
-     grows when the pin toggle sits beside the menu. */
-  min-width: 46px;
+  /* Match the session rows' trailing column (their menu); grows when the pin toggle sits beside the menu. */
+  min-width: 24px;
   display: flex;
   justify-content: flex-end;
   gap: 2px;
 }
 
-/* Touch rows keep the compact timestamp immediately beside a full-size menu target. */
+/* Touch rows: full-size menu targets, and the row's height is the 44px target (no extra padding). */
 @media (hover: none), (pointer: coarse) {
   .sidebar-project-actions {
-    min-width: 56px;
+    min-width: 44px;
   }
   .sidebar-icon-button,
   .sidebar-project-action,
@@ -1349,6 +1354,8 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
   }
   .session-item-row {
     min-height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
   }
   .session-item-trailing {
     height: 44px;
@@ -4438,7 +4445,7 @@ html[data-touch-targets="accessible"] .chat-header-pill-button {
 .route-fallback-sidebar-title { width: 58%; height: 14px; }
 .route-fallback-sidebar-button { width: 100%; height: 38px; }
 .route-fallback-sidebar-list { display: grid; gap: 8px; margin-top: 8px; }
-.route-fallback-sidebar-row { width: 100%; height: 30px; }
+.route-fallback-sidebar-row { width: 100%; height: 42px; }
 .route-fallback-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .route-fallback-topbar {
   display: flex;

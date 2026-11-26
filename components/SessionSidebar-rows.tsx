@@ -741,6 +741,7 @@ const SessionItem = memo(function SessionItem({
       : exited ? t("sessionSidebar.statusStopped")
         : isUnread ? t("sessionSidebar.statusDone")
           : t("sessionSidebar.statusReady");
+  const statusId = useId();
   const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, relativeTime || null].filter(Boolean).join(" · ");
   const rowBackground = isSelected
     ? "color-mix(in srgb, var(--bg-selected) 70%, transparent)"
@@ -853,13 +854,13 @@ const SessionItem = memo(function SessionItem({
         }
       }}
       style={{
-        minHeight: 42,
         display: "flex",
         alignItems: "center",
         gap: 6,
         width: "100%",
         margin: "1px 0",
-        padding: `4px 8px 4px ${30 + depth * 14}px`,
+        paddingLeft: 30 + depth * 14,
+        paddingRight: 8,
         position: "relative",
         overflow: "hidden",
         background: rowBackground,
@@ -888,11 +889,11 @@ const SessionItem = memo(function SessionItem({
       ) : (
         <>
           {depth > 0 && <GitBranch size={11} strokeWidth={2} style={{ flexShrink: 0, color: "var(--text-dim)" }} aria-hidden="true" />}
-          <button ref={contentButtonRef} type="button" className="session-item-button" aria-current={isSelected ? "true" : undefined} onKeyDown={(event) => { if (event.key === "Delete" && !deleting) { event.preventDefault(); setConfirmDelete(true); } }} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", flex: 1, minWidth: 0, textAlign: "left" }}>
+          <button ref={contentButtonRef} type="button" className="session-item-button" aria-label={title} aria-describedby={statusId} aria-current={isSelected ? "true" : undefined} onKeyDown={(event) => { if (event.key === "Delete" && !deleting) { event.preventDefault(); setConfirmDelete(true); } }} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "center", flex: 1, minWidth: 0, textAlign: "left" }}>
             <span title={title} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12.5, fontWeight: isSelected ? 600 : 500, lineHeight: 1.35, letterSpacing: "-0.005em" }}>
               {title}
             </span>
-            <span className="session-item-status" title={session.modified ? new Date(session.modified).toLocaleString(locale) : undefined} data-attention={isAwaitingInput || exited ? "true" : undefined}>
+            <span id={statusId} className="session-item-status" title={relativeTime ? new Date(session.modified).toLocaleString(locale) : undefined} data-attention={isAwaitingInput || exited ? "true" : undefined}>
               {statusLine}
             </span>
           </button>

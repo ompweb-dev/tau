@@ -1203,8 +1203,6 @@
   "sessionSidebar.copyTranscript": "复制对话记录",
   "sessionSidebar.copyTranscriptCopied": "对话记录已复制到剪贴板",
   "sessionSidebar.copyTranscriptFailed": "无法复制对话记录",
-  "sessionSidebar.unsentDraft": "未发送的草稿",
-  "sessionSidebar.awaitingInput": "等待你的输入",
   "sessionSidebar.statusReady": "就绪",
   "sessionSidebar.statusRunning": "运行中",
   "sessionSidebar.statusNeedsInput": "等待输入",

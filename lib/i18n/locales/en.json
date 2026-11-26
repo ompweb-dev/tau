@@ -1241,8 +1241,6 @@
   "sessionSidebar.copyTranscript": "Copy transcript",
   "sessionSidebar.copyTranscriptCopied": "Transcript copied to clipboard",
   "sessionSidebar.copyTranscriptFailed": "Could not copy the transcript",
-  "sessionSidebar.unsentDraft": "Unsent draft",
-  "sessionSidebar.awaitingInput": "Waiting for your input",
   "sessionSidebar.statusReady": "Ready",
   "sessionSidebar.statusRunning": "Running",
   "sessionSidebar.statusNeedsInput": "Needs input",

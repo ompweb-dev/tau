@@ -1782,9 +1782,9 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
           {loading && (
             <div role="status" aria-live="polite" aria-label={t("sessionSidebar.loading")} style={{ display: "grid", gap: 10, padding: "10px 4px" }}>
               <div aria-hidden="true" className="skeleton" style={{ width: "78%", height: 18 }} />
-              <div aria-hidden="true" className="skeleton" style={{ width: "92%", height: 30 }} />
-              <div aria-hidden="true" className="skeleton" style={{ width: "86%", height: 30 }} />
-              <div aria-hidden="true" className="skeleton" style={{ width: "68%", height: 30 }} />
+              <div aria-hidden="true" className="skeleton" style={{ width: "92%", height: 42 }} />
+              <div aria-hidden="true" className="skeleton" style={{ width: "86%", height: 42 }} />
+              <div aria-hidden="true" className="skeleton" style={{ width: "68%", height: 42 }} />
             </div>
           )}
           {poolsFailed && (
