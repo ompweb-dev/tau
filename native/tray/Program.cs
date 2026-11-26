@@ -203,13 +203,14 @@ class TrayApplication : IDisposable
     {
         try
         {
-            var psi = new ProcessStartInfo("where", "bun") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
+            var psi = new ProcessStartInfo("where", "bun.exe") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             using var p = Process.Start(psi);
             if (p != null)
             {
                 var outp = p.StandardOutput.ReadToEnd();
                 p.WaitForExit(2000);
-                var first = outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                // Only an .exe can be started without a shell (npm puts extensionless and .cmd shims on PATH too).
+                var first = outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(line => line.Trim()).FirstOrDefault(line => line.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
                 if (!string.IsNullOrEmpty(first) && File.Exists(first)) return first;
             }
         }

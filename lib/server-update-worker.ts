@@ -128,10 +128,11 @@ export async function probeLocalHost(control: typeof requestHostControl = reques
   }
 }
 
-/** How the host starts in this installation: the compiled `tau host`, or the package's host entrypoint on Bun (the daemon's own, when one runs). Never from inside the installation: a cwd there blocks the next replacement on Windows. */
-export function launchFor(d: Pick<ServerUpdateDescriptor, "installMethod" | "installDir" | "runtime" | "hostArgs" | "localHost">): UpgradeLaunch {
-  const runtime = d.localHost.kind === "shared" ? d.localHost.process.executable : d.runtime;
-  return hostLaunch({ installMethod: d.installMethod, installDir: d.installDir, runtime, hostArgs: d.hostArgs, cwd: homedir() });
+/** How the host starts in this installation: the compiled `tau host`, or the package's host entrypoint on the server's Bun
+ * (never the running daemon's executable, which an earlier release started on Node). Never from inside the installation:
+ * a cwd there blocks the next replacement on Windows. */
+export function launchFor(d: Pick<ServerUpdateDescriptor, "installMethod" | "installDir" | "runtime" | "hostArgs">): UpgradeLaunch {
+  return hostLaunch({ installMethod: d.installMethod, installDir: d.installDir, runtime: d.runtime, hostArgs: d.hostArgs, cwd: homedir() });
 }
 
 /** The local host as the update sees it right now: what to stop, and whether it is this installation's to replace. */
@@ -139,7 +140,7 @@ export async function captureLocalHost(input: { installDir: string; installMetho
   const status = await probeLocalHost(input.control);
   if (!status) return { localHost: { kind: "absent" }, hostArgs: [] };
   if (!hostInInstall(status, input.installDir)) return { localHost: { kind: "separate" }, hostArgs: [] };
-  const launch = launchFor({ installMethod: input.installMethod, installDir: input.installDir, runtime: status.executable, hostArgs: [], localHost: { kind: "absent" } });
+  const launch = launchFor({ installMethod: input.installMethod, installDir: input.installDir, runtime: status.executable, hostArgs: [] });
   const inspected = await (input.inspect ?? inspectUpgradeProcess)({ pid: status.pid, installDir: input.installDir, role: "host", launch });
   // The daemon's own flags: restarting it without --allow-http would drop links it was started to keep.
   return { localHost: { kind: "shared", process: inspected }, hostArgs: inspected.args.includes("--allow-http") ? ["--allow-http"] : [] };

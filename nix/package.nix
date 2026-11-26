@@ -43,6 +43,10 @@ buildNpmPackage (finalAttrs: {
   # npm still installs the dependencies (package-lock.json). The npm `bun` package (a dev peer of bun-plugin-tailwind)
   # has a postinstall that downloads a binary: skip install scripts.
   npmRebuildFlags = [ "--ignore-scripts" ];
+  # Its node_modules/.bin/bun is the postinstall's placeholder, which `npm run build` would find first on PATH.
+  preBuild = ''
+    rm -f node_modules/.bin/bun node_modules/.bin/bunx
+  '';
   nativeBuildInputs = [ bun ];
   buildInputs = [ bun ];
 

@@ -76,9 +76,8 @@ async function workerRuntime(): Promise<WorkerRuntime> {
   if (existsSync(lifecycle) && existsSync(identity)) {
     return { process: await import(pathToFileURL(lifecycle).href), identity: await import(pathToFileURL(identity).href) };
   }
-  // Run from source under Bun (the web server's own runtime, tests).
-  if (typeof Bun !== "undefined") return embedded();
-  throw new Error("The host update worker's lifecycle modules are missing beside it");
+  // Run from source (the web server's own runtime, tests).
+  return embedded();
 }
 
 
