@@ -4334,7 +4334,7 @@ html[data-touch-targets="accessible"] .chat-header-pill-button {
     transition: none;
   }
 }
-@media (min-width: 641px) and (width < 960px) {
+@media (min-width: 641px) and (max-width: 959.98px) {
   .right-panel-resize-handle {
     display: none !important;
   }
@@ -4968,7 +4968,7 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   .app-frame > .sidebar-container.sidebar-closed,
   .app-frame > .right-panel-container.right-panel-closed { border-width: 0; }
 }
-@media (min-width: 641px) and (width < 960px) {
+@media (min-width: 641px) and (max-width: 959.98px) {
   /* The overlay file panel starts below the top bar, which the frame's inset and the chat card's border push down. */
   .app-frame > .right-panel-container.right-panel-open {
     top: calc(var(--shell-topbar-height) + 7px);

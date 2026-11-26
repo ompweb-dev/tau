@@ -52,7 +52,7 @@ test("a PDF or DOCX preview names its file in the header", () => {
   globalThis.fetch = async () => Response.json({ size: 10 });
   for (const name of ["docs/spec.pdf", "docs/brief.docx"]) {
     const view = render(React.createElement(FileViewer, { filePath: `/same/${name}`, cwd: "/same", hostId: "local" }));
-    assert.ok(view.container.querySelector(`[title="/same/${name}"]`).textContent.includes(name));
+    assert.equal(view.container.querySelector(`[title="/same/${name}"]`).textContent, name, "relative to the cwd");
     cleanup();
   }
 });

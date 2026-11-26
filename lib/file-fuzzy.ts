@@ -189,7 +189,7 @@ export function buildAtInsertText(entryPath: string, isDir: boolean, forceQuotes
     const text = needsQuotes ? `@"${p}"` : `@${p}`;
     return { text, cursorOffset: needsQuotes ? text.length - 1 : text.length };
   }
-  const text = needsQuotes ? `@"${p}" ` : `@${p} `;
+  const text = `@${mentionPath(p, forceQuotes)} `;
   return { text, cursorOffset: text.length };
 }
 
@@ -203,13 +203,13 @@ export function buildAtMentionText(entryPath: string, isDir: boolean): string {
 }
 
 /**
- * A path as omp's @mention reads it: bare, in double quotes when it has a space, in single quotes when it has a
- * double quote (omp also reads `@'…'`).
+ * A path in an @mention: bare, in double quotes when it has a space (or `force`), in single quotes when it has a
+ * double quote. pi does not parse mentions in a prompt, so this is for the model and for the composer's chips
+ * (`ChatInput-mirror.tsx`). A path with both quote kinds and a space has no clean form and gets double quotes.
  */
-// ponytail: a path with both quote kinds and a space has no form omp reads; it gets double quotes and stays prose.
-function mentionPath(p: string): string {
+function mentionPath(p: string, force = false): string {
   if (p.includes('"') && !p.includes("'")) return `'${p}'`;
-  return p.includes(" ") ? `"${p}"` : p;
+  return force || p.includes(" ") ? `"${p}"` : p;
 }
 
 /** Closed file @mention scoped to one logical line or an inclusive line range. */
