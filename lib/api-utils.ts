@@ -5,7 +5,7 @@ import { isLinkUp, type Host } from "./hosts/host";
 import { getHost } from "./hosts/hub";
 import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
-import { hostForSessionId, hostSessions } from "./hosts/session-index";
+import { hostForSessionId, hostHoldingSession, hostSessions, listedOnOtherHost } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
 import { getRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
@@ -13,14 +13,17 @@ import type { WorkspaceOwner } from "./workspace-types";
 const SESSION_NOT_FOUND = { error: "Session not found", code: "session_not_found" } as const;
 
 /** Resolve a session id to the host holding its file: a live session's own host first, then the
- * hosts' lists. A 404 JSON response only when absence is confirmed across all hosts; otherwise 503. */
+ * hosts' lists (only the named host's with `hostId`). A 404 JSON response only when absence is
+ * confirmed (across all hosts, or on the named one); otherwise 503. */
 export async function resolveSessionHostOr404(
   id: string,
+  /** The host the caller's row names (`?hostId=`): the same id on another host is not this session. */
+  hostId?: string | null,
 ): Promise<{ host: Host } | { response: Response }> {
   const live = getRpcSession(id);
-  if (live?.isAlive()) return { host: live.host };
+  if (live?.isAlive() && (!hostId || live.host.id === hostId)) return { host: live.host };
   try {
-    const host = await hostForSessionId(id);
+    const host = hostId ? await hostHoldingSession(id, hostId) : await hostForSessionId(id);
     return host ? { host } : { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   } catch (error) {
     // Nothing was sent: a command the composer holds is refused, not lost.
@@ -28,6 +31,13 @@ export async function resolveSessionHostOr404(
     if (error instanceof HostOpError && error.code === "host_sessions_unavailable") return { response: apiErrorResponse(error) };
     throw error;
   }
+}
+
+/** A copy of the id is known on a host other than `hostId` (its child runs, or its last list names it): state kept
+ * by id alone (watches, outbox lineage, exit marks) is that copy's too. From what is at hand, so a delete never waits. */
+export function sessionCopiedElsewhere(id: string, hostId: string): boolean {
+  const live = getRpcSession(id);
+  return Boolean(live?.isAlive?.() && live.host.id !== hostId) || listedOnOtherHost(id, hostId);
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */

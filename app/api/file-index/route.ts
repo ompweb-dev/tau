@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     const resolved = await resolveWorkspaceHost(params.get("hostId") ?? undefined, params.get("sessionId"));
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.workspaceOps.fileIndex(
-      resolved.cwd ?? params.get("cwd")?.trim() ?? "", params.get("q") ?? "", parseResultLimit(params.get("limit")),
+      params.get("cwd")?.trim() || resolved.cwd || "", params.get("q") ?? "", parseResultLimit(params.get("limit")),
       params.get("kind") === "file" ? "file" : "all", params.get("refresh") === "1", resolved.owner,
     );
     return result.ok ? Response.json(result.value) : opErrorResponse(result);

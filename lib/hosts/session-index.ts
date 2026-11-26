@@ -158,11 +158,30 @@ export async function hostForSessionId(id: string): Promise<Host | null> {
   // shortcut: every miss re-asks each linked host; throttle per host if polling for gone sessions shows up.
   const host = (await hostWithSession(id, false)) ?? (await hostWithSession(id, true));
   if (host) return host;
-  for (const hostId of hostIds()) {
-    const candidate = getHost(hostId);
-    if (!candidate || !isLinkUp(candidate.status())) throw new HostOpError(503, "host_offline", `${candidate?.label ?? "A host"} is offline`);
-    if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${candidate.label}'s sessions are unavailable`);
-  }
+  for (const hostId of hostIds()) assertHostListCurrent(hostId);
+  return null;
+}
+
+/** Another host's last list (as cached: nothing is read again) names the session: a copy of the id lives there. */
+export function listedOnOtherHost(id: string, hostId: string): boolean {
+  return hostIds().some((other) => other !== hostId && hostLists(other).sessions.some((session) => session.id === id));
+}
+
+/** A miss on `hostId`'s list proves absence only while that list is current: 503 otherwise. */
+function assertHostListCurrent(hostId: string): void {
+  const host = getHost(hostId);
+  if (!host || !isLinkUp(host.status())) throw new HostOpError(503, "host_offline", `${host?.label ?? "A host"} is offline`);
+  if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${host.label}'s sessions are unavailable`);
+}
+
+/** `host` when it holds the session (its list read again once on a miss), else null: an id copied across hosts is
+ * resolved on the one named. A miss counts only while that host's list is current (else 503, as hostForSessionId). */
+export async function hostHoldingSession(id: string, hostId: string): Promise<Host | null> {
+  const host = getHost(hostId);
+  if (!host || !isValidSessionId(id)) return null;
+  const listed = async (refresh: boolean) => (await hostSessions(hostId, refresh)).some((session) => session.id === id);
+  if (await listed(false) || await listed(true)) return host;
+  assertHostListCurrent(hostId);
   return null;
 }
 
@@ -178,10 +197,12 @@ export async function sessionSpawnTarget(
   return info ? { sessionFile: info.path, cwd: info.cwd, recordedCwd: info.cwd } : null;
 }
 
-/** Drop one host's cached session list; it is kept as the fallback while the host is unreachable. */
-export function invalidateHostSessionList(hostId: string): void {
+/** Drop one host's cached session list; it is kept as the fallback while the host is unreachable, less `removedId`
+ * (a session it just deleted or archived), which no fallback may name as still there. */
+export function invalidateHostSessionList(hostId: string, removedId?: string): void {
   const lists = globalThis.__tauHostLists?.get(hostId);
   if (!lists) return;
+  if (removedId) lists.sessions = lists.sessions.filter((session) => session.id !== removedId);
   lists.fetchedAt = 0;
   lists.generation += 1;
   lists.loaded = false;

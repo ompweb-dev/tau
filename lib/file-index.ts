@@ -1,13 +1,14 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type { Dirent } from "fs";
-import { constants, readdirSync, statSync, type Stats } from "node:fs";
+import { constants, readdirSync, statSync, type BigIntStats } from "node:fs";
 import { open, readdir, stat, type FileHandle } from "node:fs/promises";
 import path from "path";
+import { isUtf8 } from "node:buffer";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
 import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
-import { existingPathWithinRootsChecker, isPiSecretFile } from "./file-access";
+import { existingPathWithinRootsCheckerAsync, isPiSecretFile, PI_SECRET_NAME } from "./file-access";
 import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
 import { HostOpError } from "./hosts/link-protocol";
 import { getAgentDir, getConfigRoot } from "./pi/paths";
@@ -211,26 +212,31 @@ const missing = (error: unknown) => ["ENOENT", "ENOTDIR"].includes((error as Nod
 
 /**
  * Whether a file needs the full credential check, which reads pi's agent directories on every
- * call: a hard link, a file under an agent or tau state directory, or the file an entry there
- * points to (a symlinked `auth.json`), matched by device and inode. Unreadable directories or
- * entries send every file through the full check.
+ * call: a file under an agent or tau state directory, or one with the device and inode of an
+ * entry there. Every credential file is such an entry, so this also catches a hard link to one
+ * (or the file a symlinked `auth.json` points to) without checking every hard-linked file of the
+ * workspace (a pnpm store). Unreadable directories or entries send every file through the full check.
  */
-function credentialCandidates(): (filePath: string, info: Stats) => boolean {
+async function credentialCandidates(): Promise<(filePath: string, info: BigIntStats) => Promise<boolean>> {
   const agentDirs = [getAgentDir(), path.join(getConfigRoot(), "agent")];
   const dirs = [...agentDirs, ...agentDirs.map((dir) => path.join(dir, "tau"))];
-  const inDirs = existingPathWithinRootsChecker(new Set(dirs));
+  const inDirs = await existingPathWithinRootsCheckerAsync(new Set(dirs));
   const targets = new Set<string>();
   let unknown = false;
   for (const dir of dirs) {
-    let names: string[];
-    try { names = readdirSync(dir); }
+    let entries: Buffer[];
+    try { entries = readdirSync(dir, { encoding: "buffer" }); }
     catch (error) { if (!missing(error)) unknown = true; continue; }
-    for (const name of names) {
-      try { const target = statSync(path.join(dir, name)); targets.add(`${target.dev}:${target.ino}`); }
+    for (const entry of entries) {
+      // A credential-like name that is not UTF-8 cannot be named back to stat it: every file then gets the full
+      // check, which refuses (as isPiSecretFile does). Other such names are not credentials.
+      if (!isUtf8(entry)) { if (PI_SECRET_NAME.test(entry.toString("utf8"))) unknown = true; continue; }
+      const name = entry.toString("utf8");
+      try { const target = statSync(path.join(dir, name), { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
       catch (error) { if (!missing(error)) unknown = true; }
     }
   }
-  return (filePath, info) => unknown || info.nlink > 1 || targets.has(`${info.dev}:${info.ino}`) || inDirs(filePath);
+  return async (filePath, info) => unknown || targets.has(`${info.dev}:${info.ino}`) || await inDirs(filePath);
 }
 
 /** An excerpt of a long line (minified files) around its match, keeping the whole match where it fits. */
@@ -267,8 +273,8 @@ export async function searchWorkspaceText(cwd: string, query: string, caseSensit
     const { listing } = await cachedListing(cwd, true);
     const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), caseSensitive ? "u" : "iu");
     // A parent directory swapped for a symlink still lists its old files, and lstat follows it.
-    const inCwd = existingPathWithinRootsChecker(new Set([cwd]));
-    const mayBeCredential = credentialCandidates();
+    const inCwd = await existingPathWithinRootsCheckerAsync(new Set([cwd]));
+    const mayBeCredential = await credentialCandidates();
     const buffer = Buffer.alloc(TEXT_PREVIEW_MAX_BYTES + 1);
     const matches: WorkspaceTextMatch[] = [];
     for (const rel of listing.files) {
@@ -280,12 +286,12 @@ export async function searchWorkspaceText(cwd: string, query: string, caseSensit
       try {
         // Checked and read through one handle. Non-blocking, so a FIFO swapped in cannot hang the open.
         handle = await open(absolute, constants.O_RDONLY | NO_FOLLOW | NON_BLOCK);
-        const info = await handle.stat();
+        const info = await handle.stat({ bigint: true });
         if (!info.isFile() || info.size > TEXT_PREVIEW_MAX_BYTES) continue;
         // The path still names the opened file, and its real path is inside the cwd.
-        const now = await stat(absolute);
-        if (now.dev !== info.dev || now.ino !== info.ino || !inCwd(absolute)) continue;
-        if (mayBeCredential(absolute, info) && isPiSecretFile(absolute)) continue;
+        const now = await stat(absolute, { bigint: true });
+        if (now.dev !== info.dev || now.ino !== info.ino || !(await inCwd(absolute))) continue;
+        if (await mayBeCredential(absolute, info) && isPiSecretFile(absolute)) continue;
         // A file grown since the stat is still read only up to the preview size.
         let length = 0;
         for (let read = -1; read !== 0 && length < buffer.length;) {

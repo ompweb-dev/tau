@@ -2020,7 +2020,7 @@ export function AppShell({ appName }: { appName: string }) {
     restoredChatsRef.current = new Set([...restoredChats].filter((chat) => !listed.has(chatTabId(chat)) && hostUnavailable(chat)));
     for (const chat of restoredChats) {
       if (listed.has(chatTabId(chat)) || hostUnavailable(chat)) continue;
-      void fetch(`/api/sessions/${encodeURIComponent(chat.id)}?meta=1`).then((response) => {
+      void fetch(`/api/sessions/${encodeURIComponent(chat.id)}?meta=1&hostId=${encodeURIComponent(remoteHostId(chat.hostId) ?? LOCAL_HOST_ID)}`).then((response) => {
         if (response.status !== 404) return;
         const now = activeSessionTargetRef.current;
         setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, chat) || Boolean(now && sameSessionTarget(tab, now))));

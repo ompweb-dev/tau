@@ -1,4 +1,5 @@
 import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from "fs";
+import { realpath } from "fs/promises";
 import { homedir } from "os";
 import path from "path";
 import { isUtf8 } from "node:buffer";
@@ -89,7 +90,7 @@ export function getConfigAgentRoots(): string[] {
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
-const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
+export const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
 const PI_SECRET_FILES = ["auth.json", "mcp-auth.json", "oauth.json", "models.json", "mcp.json", "tau-settings.json"];
 /** tau's key files, checked by identity too: a hard link of one outside `tau/` is still that secret. */
 const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "host-control.json",
@@ -347,6 +348,15 @@ export function existingPathWithinRootsChecker(roots: Set<string>): (target: str
     let realTarget: string;
     try { realTarget = stripLongPathPrefix(realpathSync(target)); } catch { return false; }
     return isPathWithinRoots(realTarget, realRoots);
+  };
+}
+
+/** `existingPathWithinRootsChecker`, resolving each target without blocking (a scan of many files). */
+export async function existingPathWithinRootsCheckerAsync(roots: Set<string>): Promise<(target: string) => Promise<boolean>> {
+  const realRoots = new Set<string>();
+  for (const root of roots) { try { realRoots.add(stripLongPathPrefix(await realpath(root))); } catch { /* stale */ } }
+  return async (target) => {
+    try { return isPathWithinRoots(stripLongPathPrefix(await realpath(target)), realRoots); } catch { return false; }
   };
 }
 
