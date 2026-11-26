@@ -132,15 +132,17 @@ export function moveTab(layout: TabLayout, tabId: string, groupId: string, befor
 }
 
 /**
- * Splits a group: its shown tab moves after the others (`dir` "row": to the
- * right; "column": below). The shown tab keeps the group's id, so what it
- * shows stays mounted; the other tabs form the new group. Needs two tabs or more.
+ * Splits a group: `tabId` (its shown tab by default) moves after the others (`dir` "row": to the right;
+ * "column": below) and is shown there. Whichever part keeps showing the group's shown tab keeps the group's
+ * id, so what it shows stays mounted; the other part is a new group. Needs two tabs or more.
  */
-export function splitGroup(layout: TabLayout, groupId: string, dir: TabSplit["dir"]): TabLayout {
+export function splitGroup(layout: TabLayout, groupId: string, dir: TabSplit["dir"], tabId?: string): TabLayout {
   const source = groupsOf(layout).find((group) => group.id === groupId);
-  if (!source?.active || source.tabs.length < 2) return layout;
-  const moved: TabGroup = { ...source, tabs: [source.active], chat: source.chat === source.active ? source.chat : null };
-  const rest: TabGroup = { ...withoutTab(source, source.active), id: newId("g") };
+  const moving = tabId ?? source?.active;
+  if (!source || !moving || !source.tabs.includes(moving) || source.tabs.length < 2) return layout;
+  const shown = moving === source.active;
+  const moved: TabGroup = { ...source, id: shown ? source.id : newId("g"), tabs: [moving], active: moving, chat: source.chat === moving ? moving : null };
+  const rest: TabGroup = { ...withoutTab(source, moving), id: shown ? newId("g") : source.id };
   const insert = (node: TabLayout): TabLayout => {
     if (node.kind === "group") {
       return node.id === groupId ? { kind: "split", id: newId("s"), dir, children: [rest, moved], sizes: [0.5, 0.5] } : node;

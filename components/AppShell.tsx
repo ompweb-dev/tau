@@ -18,10 +18,11 @@ import { notificationHistory, useUnreadNotificationCount } from "@/lib/notificat
 import { ConfirmDialog } from "./ui/field";
 import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
-import { TabBar, type StripTab, type Tab } from "./TabBar";
+import { TabBar, type StripTab, type TabMenuItem, type Tab } from "./TabBar";
 import { TabLayoutView, type TabLayer } from "./TabLayoutView";
 import { restoredLayout, syncChatTabs, activateTab, closeTab, replaceTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
-import { FileTabToolbar, FileTabView } from "./FileTabs";
+import { FileTabView, type FileActions } from "./FileTabs";
+import { EMPTY_TAB_HISTORY, step as stepTabHistory, stepTarget, visit as visitTabHistory, type TabHistory } from "@/lib/tab-history";
 import { getFileIcon } from "./FileIcons";
 import { type FileExplorerHandle } from "./FileExplorer";
 import type { RightPanelView } from "./RightPanel";
@@ -30,7 +31,7 @@ import { NotificationBell } from "./NotificationBell";
 import { BranchNavigator } from "./BranchNavigator";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { CommandPaletteMount } from "./CommandPaletteMount";
-import { Check, ChevronDown, Columns2, Command, Ellipsis, Folder, GitBranch, History, Menu, MessageSquare, PanelLeft, PanelRight, Rows2, Server, Terminal, Wand2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Command, Ellipsis, Folder, GitBranch, History, Menu, MessageSquare, PanelLeft, PanelRight, Plus, Server, Terminal, Wand2 } from "lucide-react";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 import { translate, useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -38,7 +39,7 @@ import { formatGenerationSpeed } from "@/lib/generation-speed";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useIsCompactOverlay } from "@/hooks/useIsCompactOverlay";
 import { copyText } from "@/lib/clipboard";
-import { getFileApiUrl, getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
+import { getFileName, getRelativeFilePath, joinFilePath } from "@/lib/file-paths";
 import { normalizeLocalPath } from "@/lib/file-links";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -1915,15 +1916,6 @@ export function AppShell({ appName }: { appName: string }) {
     );
   }, [activeFileTab, t]);
 
-  const handleDownloadActiveFile = useCallback(() => {
-    if (!activeFileTab) return;
-    const link = document.createElement("a");
-    link.href = getFileApiUrl(activeFileTab.filePath, "download", activeFileTab.hostId, activeFileTab.sourceSessionId);
-    link.download = activeFileTab.label;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  }, [activeFileTab]);
   const handleRevealActiveFile = useCallback(() => {
     if (!activeFileTab) return;
     if (activeFileTab.sourceSessionId !== (selectedSession?.id ?? null)) {
@@ -1956,11 +1948,6 @@ export function AppShell({ appName }: { appName: string }) {
   }, []);
 
   // Close others / Close all act on the files of the shown file's tab group.
-  const handleCloseOtherFileTabs = useCallback((groupTabIds: readonly string[]) => {
-    if (!activeFileTab) return;
-    setFileTabs((tabs) => tabs.filter((tab) => tab.id === activeFileTab.id || !groupTabIds.includes(tab.id)));
-  }, [activeFileTab]);
-
   const handleCloseAllFileTabs = useCallback((groupTabIds: readonly string[]) => {
     stripActionRef.current = Date.now();
     setFileTabs((tabs) => tabs.filter((tab) => !groupTabIds.includes(tab.id)));
@@ -2172,6 +2159,14 @@ export function AppShell({ appName }: { appName: string }) {
   );
 
   const activeFileMatchesSource = activeFileTab?.hostId === workspaceHostId && (activeFileTab?.sourceSessionId ?? null) === (selectedSession?.id ?? null);
+  const fileRevealed = Boolean(activeFileTab && revealTarget?.hostId === workspaceHostId && revealTarget.path === activeFileTab.filePath);
+  const fileActions = useMemo<FileActions>(() => ({
+    matchesSource: activeFileMatchesSource,
+    revealed: fileRevealed,
+    onMention: handleMentionActiveFile,
+    onCopyPath: handleCopyActiveFilePath,
+    onReveal: handleRevealActiveFile,
+  }), [activeFileMatchesSource, fileRevealed, handleMentionActiveFile, handleCopyActiveFilePath, handleRevealActiveFile]);
   const fileTabShown = fileShown && activeFileTab !== null;
   const selectedChatId = selectedSession ? chatTabId(selectedSession) : showChat ? NEW_CHAT_TAB_ID : null;
   const activeStripTabId = fileTabShown ? activeFileTabId ?? "" : selectedChatId ?? "";
@@ -2181,6 +2176,24 @@ export function AppShell({ appName }: { appName: string }) {
       return activeStripTabId ? activateTab(next, activeStripTabId, !fileTabShown) : next;
     });
   }, [stripIds, activeStripTabId, fileTabShown, lastFocusedGroupId]);
+  // Each group's back/forward history: the tabs it showed, in order (lib/tab-history.ts).
+  const [tabHistories, setTabHistories] = useState<ReadonlyMap<string, TabHistory>>(() => new Map());
+  const shownPerGroup = tabGroups.map((group) => `${group.id}\0${group.active ?? ""}`).join("\n");
+  useEffect(() => {
+    setTabHistories((histories) => {
+      const next = new Map<string, TabHistory>();
+      let changed = histories.size !== tabGroups.length;
+      for (const group of tabGroups) {
+        const history = histories.get(group.id) ?? EMPTY_TAB_HISTORY;
+        const visited = visitTabHistory(history, group.active);
+        if (visited !== history || !histories.has(group.id)) changed = true;
+        next.set(group.id, visited);
+      }
+      return changed ? next : histories;
+    });
+    // tabGroups is a new array on every render; what it shows is in shownPerGroup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownPerGroup]);
   const focusedGroup = groupOfTab(tabLayout, activeStripTabId) ?? tabGroups.find((group) => group.id === lastFocusedGroupId) ?? tabGroups[0];
   useEffect(() => { setLastFocusedGroupId(focusedGroup.id); }, [focusedGroup.id]);
   // The group showing the selected chat (or the new chat, or the workspace
@@ -2336,8 +2349,43 @@ export function AppShell({ appName }: { appName: string }) {
     dropStripTab(tabId, target.id, null);
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(target.id)}"] [data-tab-id="${CSS.escape(tabId)}"]`)?.focus());
   };
-  const splitTabGroup = (groupId: string, dir: "row" | "column") => {
-    setTabLayout((layout) => splitGroup(layout, groupId, dir));
+  // Splits off `tabId` (the group's shown tab by default) to the right or below.
+  const splitTabGroup = (groupId: string, dir: "row" | "column", tabId?: string) => {
+    setTabLayout((layout) => splitGroup(layout, groupId, dir, tabId));
+  };
+  // A group's ←/→: the tab it showed before (or after), skipping closed ones. The history moves first, so the
+  // visit that the selection causes finds it already there.
+  const stepGroupHistory = (group: TabGroup, dir: -1 | 1) => {
+    const history = tabHistories.get(group.id) ?? EMPTY_TAB_HISTORY;
+    const open = new Set(group.tabs);
+    const target = stepTarget(history, dir, open);
+    if (!target) return;
+    setTabHistories((histories) => new Map(histories).set(group.id, stepTabHistory(history, dir, open)));
+    selectStripTab(target);
+  };
+  // What the command palette's New session does: a new chat in the shown workspace, else in the server's default folder.
+  const startNewChat = () => {
+    // An empty cwd is truthy, so showChat would render the shell while
+    // useAgentSession refuses to start — every send a silent no-op.
+    // Fall back to the server's default cwd (~/tau-cwd-<date>) instead.
+    if (activeCwd || activePoolProject) {
+      handleNewSession(randomUUID(), activeCwd, activeHostId, activePoolProject ?? undefined);
+      return;
+    }
+    const targetHost = currentHostId ?? LOCAL_HOST_ID;
+    const sourceVersion = navViewVersionRef.current;
+    void fetch(`/api/default-cwd?${new URLSearchParams({ hostId: targetHost })}`, { method: "POST" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = (await response.json()) as { cwd?: string };
+        if (!data.cwd) throw new Error("Empty cwd returned");
+        return data;
+      })
+      .then((data) => {
+        if (!data.cwd) throw new Error("Empty cwd returned");
+        if (navViewVersionRef.current === sourceVersion) handleNewSession(randomUUID(), data.cwd, targetHost);
+      })
+      .catch(() => toast.error(translate("errors.generic")));
   };
   const resizeTabGroups = useCallback((splitId: string, sizes: number[]) => {
     setTabLayout((layout) => resizeSplit(layout, splitId, sizes));
@@ -2452,29 +2500,7 @@ export function AppShell({ appName }: { appName: string }) {
       />
       <CommandPaletteMount
         onSelectSession={handleSelectSession}
-        onNewSession={() => {
-          // An empty cwd is truthy, so showChat would render the shell while
-          // useAgentSession refuses to start — every send a silent no-op.
-          // Fall back to the server's default cwd (~/tau-cwd-<date>) instead.
-          if (activeCwd || activePoolProject) {
-            handleNewSession(randomUUID(), activeCwd, activeHostId, activePoolProject ?? undefined);
-            return;
-          }
-          const targetHost = currentHostId ?? LOCAL_HOST_ID;
-          const sourceVersion = navViewVersionRef.current;
-          void fetch(`/api/default-cwd?${new URLSearchParams({ hostId: targetHost })}`, { method: "POST" })
-            .then(async (response) => {
-              if (!response.ok) throw new Error(`HTTP ${response.status}`);
-              const data = (await response.json()) as { cwd?: string };
-              if (!data.cwd) throw new Error("Empty cwd returned");
-              return data;
-            })
-            .then((data) => {
-              if (!data.cwd) throw new Error("Empty cwd returned");
-              if (navViewVersionRef.current === sourceVersion) handleNewSession(randomUUID(), data.cwd, targetHost);
-            })
-            .catch(() => toast.error(translate("errors.generic")));
-        }}
+        onNewSession={startNewChat}
         currentModel={null}
       />
     <style>{`
@@ -3038,21 +3064,22 @@ export function AppShell({ appName }: { appName: string }) {
               if (event.target instanceof Element && event.target.closest('[role="tab"] button')) return;
               selectStripTab(group.active);
             };
-            const splitButton = (dir: "row" | "column") => {
-              const label = t(dir === "row" ? "appShell.splitRight" : "appShell.splitDown");
-              return (
-              <button
-                type="button"
-                className="tab-group-action ui-focus-ring"
-                disabled={group.tabs.length < 2}
-                onClick={() => splitTabGroup(group.id, dir)}
-                title={label}
-                aria-label={label}
-              >
-                {dir === "row" ? <Columns2 size={13} strokeWidth={2} aria-hidden="true" /> : <Rows2 size={13} strokeWidth={2} aria-hidden="true" />}
-              </button>
-              );
-            };
+            const history = tabHistories.get(group.id) ?? EMPTY_TAB_HISTORY;
+            const openInGroup = new Set(group.tabs);
+            const fileTabsInGroup = group.tabs.filter((id) => fileTabIds.has(id));
+            const tabMenu = (tabId: string): TabMenuItem[] => [
+              { label: t("appShell.splitRight"), disabled: group.tabs.length < 2, onSelect: () => splitTabGroup(group.id, "row", tabId) },
+              { label: t("appShell.splitDown"), disabled: group.tabs.length < 2, onSelect: () => splitTabGroup(group.id, "column", tabId) },
+              { label: t("tabBar.close"), disabled: stripTabInfo.get(tabId)?.closable === false, onSelect: () => closeStripTab(tabId) },
+              ...(fileTabIds.has(tabId) ? [
+                { label: t("appShell.closeOtherTabs"), disabled: fileTabsInGroup.length < 2, onSelect: () => {
+                  stripActionRef.current = Date.now();
+                  handleSelectFileTab(tabId);
+                  setFileTabs((tabs) => tabs.filter((tab) => tab.id === tabId || !group.tabs.includes(tab.id)));
+                } },
+                { label: t("appShell.closeAllTabs"), onSelect: () => handleCloseAllFileTabs(group.tabs) },
+              ] : []),
+            ];
             // A group's strip, and its views (placed by TabLayoutView, outside the group's own element).
             const inGroup = (node: ReactNode) => (
               <div data-group-focused={focused} onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ position: "absolute", inset: 0 }}>{node}</div>
@@ -3074,6 +3101,16 @@ export function AppShell({ appName }: { appName: string }) {
                         {groupIndex + 1}/{tabGroups.length}
                       </button>
                     )}
+                    {!isMobile && (
+                      <>
+                        <button type="button" className="tab-group-action tab-group-nav ui-focus-ring" disabled={!stepTarget(history, -1, openInGroup)} onClick={() => stepGroupHistory(group, -1)} title={t("appShell.groupBack")} aria-label={t("appShell.groupBack")}>
+                          <ArrowLeft size={14} strokeWidth={2} aria-hidden="true" />
+                        </button>
+                        <button type="button" className="tab-group-action tab-group-nav ui-focus-ring" disabled={!stepTarget(history, 1, openInGroup)} onClick={() => stepGroupHistory(group, 1)} title={t("appShell.groupForward")} aria-label={t("appShell.groupForward")}>
+                          <ArrowRight size={14} strokeWidth={2} aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
                     <div style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
                       <TabBar
                         tabs={groupTabs}
@@ -3084,23 +3121,20 @@ export function AppShell({ appName }: { appName: string }) {
                         onMoveTabToGroup={tabGroups.length > 1 ? (tabId, step) => moveStripTabToGroup(tabId, group.id, step) : undefined}
                         ariaLabel={tabGroups.length > 1 ? t("appShell.tabGroup", { index: groupIndex + 1 }) : t("appShell.openTabs")}
                         manualActivation
+                        tabMenu={tabMenu}
+                        trailing={(
+                          <button
+                            type="button"
+                            className="tab-group-action tab-group-new ui-focus-ring"
+                            onClick={() => { setLastFocusedGroupId(group.id); startNewChat(); }}
+                            title={t("appShell.newSessionInGroup")}
+                            aria-label={t("appShell.newSessionInGroup")}
+                          >
+                            <Plus size={14} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        )}
                       />
                     </div>
-                    {focused && fileTabShown && (
-                      <FileTabToolbar
-                        activeFileTab={activeFileTab}
-                        fileTabs={fileTabs.filter((tab) => group.tabs.includes(tab.id))}
-                        activeFileMatchesSource={activeFileMatchesSource}
-                        revealPath={revealTarget?.hostId === workspaceHostId ? revealTarget.path : null}
-                        onMentionActiveFile={handleMentionActiveFile}
-                        onCopyActiveFilePath={handleCopyActiveFilePath}
-                        onRevealActiveFile={handleRevealActiveFile}
-                        onDownloadActiveFile={handleDownloadActiveFile}
-                        onCloseOtherFileTabs={() => handleCloseOtherFileTabs(group.tabs)}
-                        onCloseAllFileTabs={() => handleCloseAllFileTabs(group.tabs)}
-                      />
-                    )}
-                    {!isMobile && <>{splitButton("row")}{splitButton("column")}</>}
                   </div>
                 )}
               </div>
@@ -3119,6 +3153,7 @@ export function AppShell({ appName }: { appName: string }) {
                   shown={tab.id === shownFile?.id}
                   focused={focused}
                   activeFileMatchesSource={activeFileMatchesSource}
+                  actions={focused && tab.id === shownFile?.id ? fileActions : undefined}
                   explorerRefreshKey={explorerRefreshKey}
                   onMentionLines={handleFileLineMention}
                   onOpenFile={handleOpenFile}

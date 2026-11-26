@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 import {
   createSyntaxElement as renderSyntaxNode,
@@ -45,6 +45,8 @@ interface Props {
   /** Scrolls to this line of the source and marks it, then calls `onRevealDone` with its `seq`. */
   revealLine?: { line: number; seq: number };
   onRevealDone?: (seq: number) => void;
+  /** Controls placed in the header row, before the download link. */
+  headerActions?: ReactNode;
 }
 
 interface FileData {
@@ -428,7 +430,7 @@ export function DiffView({ patch }: { patch: string }) {
   );
 }
 
-function ImageViewer({ filePath, hostId, cwd, sourceSessionId, active = true }: Props) {
+function ImageViewer({ filePath, hostId, cwd, sourceSessionId, active = true, headerActions }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -504,7 +506,7 @@ function ImageViewer({ filePath, hostId, cwd, sourceSessionId, active = true }: 
           />
           {watching ? t("fileViewer.live") : t("fileViewer.static")}
         </span>
-        <DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
+        {headerActions}<DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
       <div
         style={{
@@ -556,7 +558,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, hostId, cwd, sourceSessionId, active = true }: Props) {
+function AudioViewer({ filePath, hostId, cwd, sourceSessionId, active = true, headerActions }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -632,7 +634,7 @@ function AudioViewer({ filePath, hostId, cwd, sourceSessionId, active = true }: 
           />
           {watching ? t("fileViewer.live") : t("fileViewer.static")}
         </span>
-        <DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
+        {headerActions}<DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
       <div
         style={{
@@ -666,7 +668,7 @@ function AudioViewer({ filePath, hostId, cwd, sourceSessionId, active = true }: 
   );
 }
 
-function DocumentViewer({ filePath, hostId, sourceSessionId, active = true }: Props) {
+function DocumentViewer({ filePath, hostId, sourceSessionId, active = true, headerActions }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -753,7 +755,7 @@ function DocumentViewer({ filePath, hostId, sourceSessionId, active = true }: Pr
         </span>
         <span style={{ marginLeft: "auto" }}>{ext === "docx" ? t("fileViewer.docxPreview") : t("fileViewer.pdfType")}</span>
         {size != null && <span>{formatSize(size)}</span>}
-        <DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
+        {headerActions}<DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
         <span
           title={watching ? t("fileViewer.liveSyncActive") : t("fileViewer.notWatching")}
           style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "var(--status-success)" : "var(--text-dim)", flexShrink: 0 }}
@@ -791,25 +793,25 @@ function DocumentViewer({ filePath, hostId, sourceSessionId, active = true }: Pr
   );
 }
 
-export function FileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine, onRevealDone }: Props) {
+export function FileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine, onRevealDone, headerActions }: Props) {
   const textual = !isImagePath(filePath) && !isAudioPath(filePath) && !isDocumentPreviewPath(filePath);
   // Image, audio and document views have no lines (a search hit in an SVG opens its image): consume the request.
   useEffect(() => {
     if (!textual && revealLine) onRevealDone?.(revealLine.seq);
   }, [textual, revealLine, onRevealDone]);
   if (isImagePath(filePath)) {
-    return <ImageViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
+    return <ImageViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} headerActions={headerActions} />;
   }
   if (isAudioPath(filePath)) {
-    return <AudioViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
+    return <AudioViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} headerActions={headerActions} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
+    return <DocumentViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} headerActions={headerActions} />;
   }
-  return <TextFileViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} active={active} revealLine={revealLine} onRevealDone={onRevealDone} />;
+  return <TextFileViewer hostId={hostId} filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} active={active} revealLine={revealLine} onRevealDone={onRevealDone} headerActions={headerActions} />;
 }
 
-function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine, onRevealDone }: Props) {
+function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, active = true, revealLine, onRevealDone, headerActions }: Props) {
   const { t } = useI18n();
   const { isDark } = useTheme();
   const [data, setData] = useState<FileData | null>(null);
@@ -1103,7 +1105,7 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
       >
         <span className="file-viewer-path" style={{ fontFamily: "var(--font-mono)" }} title={fullRelativePath}>
           {breadcrumbDir && (
-            <span style={{ color: "var(--text-muted)" }}>{breadcrumbDir}</span>
+            <span style={{ color: "var(--text-muted)" }}>{breadcrumbDir.split("/").filter(Boolean).map((segment) => `${segment} › `).join("")}</span>
           )}
           <span className="display-serif" style={{ color: "var(--text)", fontWeight: 600, letterSpacing: "0.005em" }}>{breadcrumbFile}</span>
         </span>
@@ -1207,7 +1209,7 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
             )}
           </div>
 
-          <DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
+          {headerActions}<DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
         </div>
       </div>
 
