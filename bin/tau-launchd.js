@@ -108,6 +108,9 @@ function install(pkgArg) {
   // npx, not bunx: an in-app update recognizes npm's cache as an npm install, never bunx's.
   const siblingNpx = path.join(path.dirname(runtimeBin), "npx");
   const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH: the launchd agents run tau through npm's npx, so install npm (Node.js)"));
+  // npm's npx is `#!/usr/bin/env node`: the agents need node's directory too.
+  const siblingNode = path.join(path.dirname(npxBin), "node");
+  const nodeBin = isExecutableFile(siblingNode) ? siblingNode : (which("node") ?? fail("node not found on PATH: npm's npx, which the launchd agents run, needs it"));
   let bunDir;
   try {
     bunDir = bunDirectory();
@@ -146,8 +149,9 @@ function install(pkgArg) {
   const svcPath = [
     ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
-    path.dirname(npxBin),
     bunDir,
+    path.dirname(npxBin),
+    path.dirname(nodeBin),
     path.dirname(runtimeBin),
     "/usr/bin",
     "/bin",

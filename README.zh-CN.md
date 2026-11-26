@@ -257,14 +257,14 @@ tau host status|drain|resume                control the running daemon
 2. 在另一台机器上保存链接。按提示粘贴令牌，或通过管道传入；它不会出现在 `ps` 中：
 
    ```bash
-   npx @ompweb-dev/tau@latest host login --url https://tau.example.com
+   tau host login --url https://tau.example.com
    ```
 
    链接以 `600` 权限保存到 `~/.pi/agent/tau/host.json`。`--add` 会添加到另一台服务器的链接，而不是替换第一个。
 3. 运行守护进程并保持运行（作为服务运行，见[服务](#服务)）：
 
    ```bash
-   npx @ompweb-dev/tau@latest host
+   tau host
    ```
 
 之后该主机显示为在线，侧边栏为它的工作区分组，新建会话界面也可以选择它。每台主机保留自己的 `~/.pi/agent`、会话和提供商登录。**Settings → Hosts** 还可以重命名和撤销主机、显示每台主机的 tau 版本并提供更新，以及设置智能体能否无需询问就在该主机上启动会话。被撤销主机的守护进程会停止它的会话。

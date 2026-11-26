@@ -257,14 +257,14 @@ tau host status|drain|resume                control the running daemon
 2. 別のマシンでリンクを保存します。求められたらトークンを貼り付けるか、パイプで渡します。`ps` に表示されることはありません:
 
    ```bash
-   npx @ompweb-dev/tau@latest host login --url https://tau.example.com
+   tau host login --url https://tau.example.com
    ```
 
    リンクはモード `600` で `~/.pi/agent/tau/host.json` に保存されます。`--add` を付けると、最初のリンクを置き換えずに別のサーバーへのリンクを追加します。
 3. デーモンを起動し、動かし続けます（サービスとして。[サービス](#サービス)を参照）:
 
    ```bash
-   npx @ompweb-dev/tau@latest host
+   tau host
    ```
 
 するとホストがオンラインと表示され、サイドバーにそのワークスペースのグループができ、新規セッション画面で選べるようになります。各ホストは自分の `~/.pi/agent`、セッション、プロバイダーのログインを持ちます。**Settings → Hosts** ではホストの名前変更と取り消し、各ホストの tau バージョンと更新の表示、エージェントが確認なしでそこでセッションを開始できるかどうかの設定もできます。取り消されたホストのデーモンは自分のセッションを停止します。

@@ -242,8 +242,8 @@ function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, 
     // interpreter resolved via `env`; without its directory the service
     // fails with exit 127 even though the binary itself is on PATH (#116).
     ...(interpreterDir ? [interpreterDir] : []),
-    path.dirname(tauBin),
     bunDir,
+    path.dirname(tauBin),
     path.join(home, ".local", "bin"),
     "/usr/local/bin",
     "/usr/bin",

@@ -311,7 +311,7 @@ The other machine needs pi, and tau from npm (with Bun) or the single binary.
 2. On the other machine, save the link. Paste the token when asked, or pipe it in; it never appears in `ps`:
 
    ```bash
-   npx @ompweb-dev/tau@latest host login --url https://tau.example.com
+   tau host login --url https://tau.example.com
    ```
 
    The link is saved in `~/.pi/agent/tau/host.json` with mode `600`. `--add` adds a link to a further server instead
@@ -319,7 +319,7 @@ The other machine needs pi, and tau from npm (with Bun) or the single binary.
 3. Run the daemon and keep it running (as a service, see [Services](#services)):
 
    ```bash
-   npx @ompweb-dev/tau@latest host
+   tau host
    ```
 
 The host then shows as online, the sidebar groups its workspaces, and the new-session screen offers it. Each host keeps

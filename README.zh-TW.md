@@ -257,14 +257,14 @@ tau host status|drain|resume                control the running daemon
 2. 在另一台機器上儲存連結。依提示貼上權杖，或透過管線傳入；它不會出現在 `ps` 中：
 
    ```bash
-   npx @ompweb-dev/tau@latest host login --url https://tau.example.com
+   tau host login --url https://tau.example.com
    ```
 
    連結以 `600` 權限儲存到 `~/.pi/agent/tau/host.json`。`--add` 會新增到另一台伺服器的連結，而不是取代第一個。
 3. 執行常駐程式並讓它持續執行（作為服務執行，見[服務](#服務)）：
 
    ```bash
-   npx @ompweb-dev/tau@latest host
+   tau host
    ```
 
 之後該主機顯示為上線，側邊欄為它的工作區分組，新增工作階段畫面也可以選擇它。每台主機保留自己的 `~/.pi/agent`、工作階段和供應商登入。**Settings → Hosts** 還可以重新命名和撤銷主機、顯示每台主機的 tau 版本並提供更新，以及設定代理能否不經詢問就在該主機上啟動工作階段。被撤銷主機的常駐程式會停止它的工作階段。

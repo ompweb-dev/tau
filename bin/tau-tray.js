@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 
 function printHelp() {
-  console.log(`Usage: node bin/tau-tray.js [command] [options]
+  console.log(`Usage: bun bin/tau-tray.js [command] [options]
        tau-tray [command] [options]
 
 Platform notes:

@@ -36,8 +36,8 @@ buildNpmPackage (finalAttrs: {
   pname = "tau";
   inherit src version;
 
-  # Unverified: written without nix. Refresh npmDepsHash on a machine with nix (`nix build .#default` prints it).
-  npmDepsHash = "sha256-HxT+m6bI0I3t9sqsSgHun6oXve3WtIEmkFpCoBplrC4=";
+  # Unverified: written without nix. The lock file changed: `nix build .#default` fails and prints the hash to put here.
+  npmDepsHash = lib.fakeHash;
 
   # tau runs on Bun: the bins' `#!/usr/bin/env bun` lines are patched to this bun, and the build bundles with it.
   # npm still installs the dependencies (package-lock.json). The npm `bun` package (a dev peer of bun-plugin-tailwind)
