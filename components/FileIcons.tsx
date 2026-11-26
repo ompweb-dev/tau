@@ -1,4 +1,4 @@
-// Flat monochrome file & folder icons — all use currentColor / var(--text-dim)
+// Flat file & folder icons in var(--text-dim); a typed file's badge outline carries its language's hue (--file-*).
 
 interface IconProps {
   size?: number;
@@ -39,18 +39,24 @@ export function GenericFileIcon({ size = 14 }: IconProps) {
 // ── File with label text (used for most types) ────────────────────────────
 // Renders the file outline + a short text badge
 
-function LabelFileIcon({ label, size = 14 }: { label: string; size?: number }) {
+/** A language's hue (app/globals.css `--file-*`, per theme); files without one stay dim. */
+type Tone = "blue" | "yellow" | "green" | "teal" | "purple" | "pink" | "orange" | "red";
+
+function LabelFileIcon({ label, size = 14, tone }: { label: string; size?: number; tone?: Tone }) {
   const s = size / 14; // scale factor
+  const color = tone ? `var(--file-${tone})` : DIM;
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <path d="M2.5 1h6l3 3v9h-9V1Z" stroke={DIM} strokeWidth="0.9" fill={DIM} fillOpacity="0.07" strokeLinejoin="round" />
-      <path d="M8.5 1v3h3" stroke={DIM} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
+      {/* No fill: a tint behind the label takes its contrast below 4.5:1 on a selected row. */}
+      <path d="M2.5 1h6l3 3v9h-9V1Z" stroke={color} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
+      <path d="M8.5 1v3h3" stroke={color} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
       <text
         x="7" y="9.5"
         textAnchor="middle"
         fontSize={3.4 * s}
         fontFamily="var(--font-mono), monospace"
         fontWeight="600"
+        // The label stays --text-dim (4.6:1 or more on a selected row); the hue is the badge's outline.
         fill={DIM}
         letterSpacing="0"
       >{label}</text>
@@ -60,33 +66,6 @@ function LabelFileIcon({ label, size = 14 }: { label: string; size?: number }) {
 
 // ── Specific icons ────────────────────────────────────────────────────────
 
-export function TypeScriptIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TS" size={size} />;
-}
-export function TypeScriptReactIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TSX" size={size} />;
-}
-export function JavaScriptIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="JS" size={size} />;
-}
-export function JavaScriptReactIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="JSX" size={size} />;
-}
-export function PythonIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="PY" size={size} />;
-}
-export function JsonIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="{}" size={size} />;
-}
-export function CssIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="CSS" size={size} />;
-}
-export function ScssIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="SC" size={size} />;
-}
-export function HtmlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="HTM" size={size} />;
-}
 export function MarkdownIcon({ size = 14 }: IconProps) {
   // file outline + M↓ symbol
   return (
@@ -100,12 +79,6 @@ export function MarkdownIcon({ size = 14 }: IconProps) {
     </svg>
   );
 }
-export function YamlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="YML" size={size} />;
-}
-export function TomlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TOM" size={size} />;
-}
 export function ShellIcon({ size = 14 }: IconProps) {
   // file outline + > prompt
   return (
@@ -116,21 +89,6 @@ export function ShellIcon({ size = 14 }: IconProps) {
       <path d="M7.5 10.5h2.5" stroke={DIM} strokeWidth="0.95" strokeLinecap="round" />
     </svg>
   );
-}
-export function RustIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="RS" size={size} />;
-}
-export function GoIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="GO" size={size} />;
-}
-export function SqlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="SQL" size={size} />;
-}
-export function GraphqlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="GQL" size={size} />;
-}
-export function TerraformIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TF" size={size} />;
 }
 export function DockerfileIcon({ size = 14 }: IconProps) {
   // file outline + container stack
@@ -179,12 +137,6 @@ export function LockFileIcon({ size = 14 }: IconProps) {
     </svg>
   );
 }
-export function DocFileIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="DOC" size={size} />;
-}
-export function PdfFileIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="PDF" size={size} />;
-}
 export function ConfigIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
@@ -199,9 +151,49 @@ export function ConfigIcon({ size = 14 }: IconProps) {
 
 // ── Main resolver ─────────────────────────────────────────────────────────
 
+type Label = { label: string; tone?: Tone };
+const label = (text: string, tone?: Tone): Label => ({ label: text, tone });
+// Every type drawn as a labelled badge, by extension (a Map, so `constructor` or `__proto__` find nothing).
+const LABELS = new Map<string, Label>([
+  ...["ts", "mts", "cts"].map((ext) => [ext, label("TS", "blue")] as const),
+  ["tsx", label("TSX", "blue")],
+  ...["js", "mjs", "cjs"].map((ext) => [ext, label("JS", "yellow")] as const),
+  ["jsx", label("JSX", "yellow")],
+  ["py", label("PY", "teal")],
+  ...["json", "jsonl"].map((ext) => [ext, label("{}", "yellow")] as const),
+  ...["css", "less"].map((ext) => [ext, label("CSS", "purple")] as const),
+  ["scss", label("SC", "pink")],
+  ...["html", "htm"].map((ext) => [ext, label("HTM", "orange")] as const),
+  ...["yaml", "yml"].map((ext) => [ext, label("YML", "red")] as const),
+  ["toml", label("TOM")],
+  ["rs", label("RS", "orange")],
+  ["go", label("GO", "teal")],
+  ["sql", label("SQL", "yellow")],
+  ...["graphql", "gql"].map((ext) => [ext, label("GQL", "pink")] as const),
+  ...["tf", "hcl"].map((ext) => [ext, label("TF", "purple")] as const),
+  ["docx", label("DOC", "blue")],
+  ["pdf", label("PDF", "red")],
+  ["c", label("C", "blue")],
+  ["h", label("H", "purple")],
+  ...["cc", "cpp", "cxx"].map((ext) => [ext, label("C++", "blue")] as const),
+  ...["hh", "hpp", "hxx"].map((ext) => [ext, label("H++", "purple")] as const),
+  ["cs", label("C#", "purple")],
+  ["java", label("JV", "orange")],
+  ["kt", label("KT", "purple")],
+  ["swift", label("SW", "orange")],
+  ["rb", label("RB", "red")],
+  ["php", label("PHP", "purple")],
+  ["lua", label("LUA", "blue")],
+  ["zig", label("ZIG", "orange")],
+  ["cmake", label("CM", "green")],
+  // Not .obj: in C and C++ trees that is usually a compiled object file.
+  ...["glb", "gltf", "stl"].map((ext) => [ext, label("3D", "teal")] as const),
+]);
+
 export function getFileIcon(name: string, size = 14): React.ReactNode {
   const lower = name.toLowerCase();
-  const ext = lower.split(".").pop() ?? "";
+  // A name without a dot (a file called `h`) has no extension.
+  const ext = lower.includes(".") ? lower.slice(lower.lastIndexOf(".") + 1) : "";
 
   if (lower === "dockerfile" || lower.startsWith("dockerfile.")) return <DockerfileIcon size={size} />;
   if (lower === ".env" || lower.startsWith(".env.")) return <EnvIcon size={size} />;
@@ -211,39 +203,14 @@ export function getFileIcon(name: string, size = 14): React.ReactNode {
   if ([".eslintrc", ".eslintrc.js", ".eslintrc.json", ".eslintrc.yml", "eslint.config.mjs", "eslint.config.js"].includes(lower)) return <ConfigIcon size={size} />;
 
   switch (ext) {
-    case "ts":      return <TypeScriptIcon size={size} />;
-    case "tsx":     return <TypeScriptReactIcon size={size} />;
-    case "js":
-    case "mjs":
-    case "cjs":     return <JavaScriptIcon size={size} />;
-    case "jsx":     return <JavaScriptReactIcon size={size} />;
-    case "py":      return <PythonIcon size={size} />;
-    case "json":
-    case "jsonl":   return <JsonIcon size={size} />;
-    case "css":
-    case "less":    return <CssIcon size={size} />;
-    case "scss":    return <ScssIcon size={size} />;
-    case "html":
-    case "htm":     return <HtmlIcon size={size} />;
     case "md":
     case "mdx":     return <MarkdownIcon size={size} />;
-    case "yaml":
-    case "yml":     return <YamlIcon size={size} />;
-    case "toml":    return <TomlIcon size={size} />;
     case "sh":
     case "bash":
     case "zsh":
     case "fish":    return <ShellIcon size={size} />;
-    case "rs":      return <RustIcon size={size} />;
-    case "go":      return <GoIcon size={size} />;
-    case "sql":     return <SqlIcon size={size} />;
-    case "graphql":
-    case "gql":     return <GraphqlIcon size={size} />;
-    case "tf":
-    case "hcl":     return <TerraformIcon size={size} />;
-    case "docx":    return <DocFileIcon size={size} />;
-    case "pdf":     return <PdfFileIcon size={size} />;
     case "lock":    return <LockFileIcon size={size} />;
-    default:        return <GenericFileIcon size={size} />;
   }
+  const badge = lower === "cmakelists.txt" ? LABELS.get("cmake") : LABELS.get(ext);
+  return badge ? <LabelFileIcon label={badge.label} size={size} tone={badge.tone} /> : <GenericFileIcon size={size} />;
 }

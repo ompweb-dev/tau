@@ -11,6 +11,7 @@ import {
   Folder,
   FolderOpen,
   Loader2,
+  Search,
   TriangleAlert,
   Upload,
   X,
@@ -69,8 +70,6 @@ interface Props {
   onAtMentions?: (relativePaths: string[]) => void;
   onUploadBusyChange?: (busy: boolean) => void;
   onRefreshDone?: () => void;
-  fileSearchOpen?: boolean;
-  onFileSearchOpenChange?: (open: boolean) => void;
   /** Absolute path of the file open in the right panel — rendered selected. */
   activeFilePath?: string | null;
   /** Absolute path to expand, highlight, and scroll into view (one-shot). */
@@ -492,8 +491,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   onAtMentions,
   onUploadBusyChange,
   onRefreshDone,
-  fileSearchOpen = false,
-  onFileSearchOpenChange,
   activeFilePath = null,
   revealPath = null,
   onRevealDone,
@@ -551,37 +548,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const expandedPathsRef = useRef<Set<string>>(new Set());
   expandedPathsRef.current = expandedPaths;
   const refreshToken = `${refreshKey ?? 0}:${treeRefreshKey}`;
-  // Which refresh the search request has already answered; re-baselined every
-  // time the panel opens.
-  const consumedRefreshTokenRef = useRef<string | null>(null);
+  // Which refresh the search request has already answered. Only a refresh after the explorer mounted counts
+  // (the sidebar bumps the explorer key once on mount, and nobody asked for that one).
+  const consumedRefreshTokenRef = useRef(refreshToken);
   const uploadBusy = uploadPhase !== "idle";
-  const searchActive = fileSearchOpen && searchQuery.trim().length > 0;
-
-  // Opening the panel focuses the input; closing it resets the whole search,
-  // mirroring how the session search behaves.
-  useEffect(() => {
-    if (fileSearchOpen) {
-      // Baseline for forced refreshes: only a refresh after the panel opened
-      // counts. The sidebar bumps the explorer key once on mount, and nobody
-      // asked for that one.
-      consumedRefreshTokenRef.current = refreshToken;
-      searchInputRef.current?.focus();
-      return;
-    }
-    setSearchQuery("");
-    setSearchPaths([]);
-    setSearchTruncated(false);
-    setSearchLoading(false);
-    setSearchFailed(false);
-    // refreshToken is read as the value at open time on purpose: adding it to
-    // the deps would re-baseline on every refresh and swallow it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileSearchOpen]);
+  const searchActive = searchQuery.trim().length > 0;
 
   // Debounced query against the same cached, bounded file index that backs
   // the @ mention autocomplete. No second index.
   useEffect(() => {
-    if (!fileSearchOpen) return;
     const query = searchQuery.trim();
     if (!query) {
       setSearchPaths([]);
@@ -633,7 +608,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     return () => { clearTimeout(timer); controller.abort(); };
     // refreshToken participates so the toolbar refresh button and a finished
     // upload re-run the visible query against a freshly built listing.
-  }, [cwd, hostId, sourceSessionId, fileSearchOpen, searchQuery, refreshToken]);
+  }, [cwd, hostId, sourceSessionId, searchQuery, refreshToken]);
 
   // Rows stay in the order the index ranked them, so the closest name matches
   // sit at the top. Folding them into a directory tree would re-sort them
@@ -1078,6 +1053,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   // effect re-runs as ancestor listings resolve (rows identity changes), so
   // deep chains settle level by level; it gives up once every ancestor is
   // loaded but the target still isn't listed.
+  // Each new reveal inside this tree clears a query left in the field (it would show only its hits). Keyed on the
+  // reveal alone, so typing while a reveal waits is not erased; the reveal itself waits for the tree (below).
+  useEffect(() => {
+    if (!revealPath) return;
+    const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
+    const normalizedTarget = normalizeFilePathSlashes(revealPath);
+    if (normalizedTarget === normalizedCwd || normalizedTarget.startsWith(`${normalizedCwd}/`)) setSearchQuery("");
+    // Only a new reveal (or tree) clears; cwd is read with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealPath]);
   useEffect(() => {
     if (!revealPath) return;
     const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
@@ -1086,6 +1071,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       onRevealDone?.();
       return;
     }
+    // The rows are search hits while a query is shown: wait for the tree.
+    if (searchActive) return;
     const relative = normalizedTarget.slice(normalizedCwd.length + 1);
     const segments = relative.split("/").filter(Boolean);
     setExpandedPaths((prev) => {
@@ -1123,7 +1110,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         || childrenByPath.has(`${normalizedCwd}/${segments.slice(0, level + 1).join("/")}`);
     });
     if (ancestorsLoaded) onRevealDone?.();
-  }, [cwd, revealPath, onRevealDone, rows, childrenByPath, goToRow]);
+  }, [cwd, revealPath, onRevealDone, rows, childrenByPath, goToRow, searchActive]);
 
   const showUploadFeedback = uploadBusy || pendingConflict !== null || uploadError !== null || uploadSummary !== null;
 
@@ -1206,84 +1193,94 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
       {/* Pinned: the result list scrolls, so an un-sticky box leaves you
           unable to edit the query that produced it. */}
-      {fileSearchOpen && (
-        <div style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          background: "var(--bg-panel)",
-          padding: "6px 8px 4px",
-        }}>
-          <input
-            className="file-explorer-search-input"
-            ref={searchInputRef}
-            value={searchQuery}
-            onChange={(e) => {
-              // Arm the loading state in the same batch as the query: the
-              // debounce effect only runs after paint, so the first keystroke
-              // would otherwise show "No matching files" for a frame.
-              setSearchQuery(e.target.value);
-              setSearchLoading(true);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                onFileSearchOpenChange?.(false);
+      <div style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 1,
+        background: "var(--bg-panel)",
+        padding: "6px 8px 4px",
+      }}>
+        <Search size={12} strokeWidth={2} aria-hidden="true" className="file-explorer-search-icon" />
+        <input
+          className="file-explorer-search-input"
+          ref={searchInputRef}
+          value={searchQuery}
+          onChange={(e) => {
+            // Arm the loading state in the same batch as the query: the
+            // debounce effect only runs after paint, so the first keystroke
+            // would otherwise show "No matching files" for a frame.
+            setSearchQuery(e.target.value);
+            setSearchLoading(true);
+          }}
+          onKeyDown={(e) => {
+            // Escape clears the query (back to the tree); with none, it moves into the tree.
+            // Not while an IME composes (Safari ends one with keyCode 229 and isComposing false).
+            if (e.key === "Escape" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
+              e.preventDefault();
+              if (searchQuery) setSearchQuery("");
+              else {
+                // Into the tree: its focused row (rendered first if it scrolled out of the virtual window), else its
+                // first file or folder; with none shown, the field just lets go.
+                const rows = rowsRef.current;
+                const index = rows[focusedIndexRef.current]?.kind === "node" ? focusedIndexRef.current : rows.findIndex((row) => row.kind === "node");
+                // Only while the tree shows rows (loading, an error or an empty state replaces them).
+                if (index >= 0 && scrollRef.current?.querySelector("[data-index]")) goToRow(index);
+                else e.currentTarget.blur();
               }
+            }
+          }}
+          placeholder={t("fileExplorer.searchPlaceholder")}
+          aria-label={t("fileExplorer.searchFiles")}
+          style={{
+            width: "100%",
+            height: 27,
+            boxSizing: "border-box",
+            padding: searchQuery ? "0 26px" : "0 9px 0 26px",
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-control)",
+            outline: "none",
+            color: "var(--text)",
+            fontSize: 12,
+          }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+          onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+        />
+        {searchQuery && (
+          <button
+            className="file-explorer-search-clear"
+            type="button"
+            onClick={() => {
+              setSearchQuery("");
+              searchInputRef.current?.focus();
             }}
-            placeholder={t("fileExplorer.searchPlaceholder")}
-            aria-label={t("fileExplorer.searchFiles")}
+            title={t("fileExplorer.clearSearch")}
+            aria-label={t("fileExplorer.clearSearch")}
             style={{
-              width: "100%",
-              height: 27,
-              boxSizing: "border-box",
-              padding: searchQuery ? "0 26px 0 9px" : "0 9px",
-              background: "var(--bg)",
-              border: "1px solid var(--border)",
+              position: "absolute",
+              right: 12,
+              top: "50%",
+              transform: "translateY(calc(-50% + 1px))",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 18,
+              height: 18,
+              padding: 0,
+              border: "none",
               borderRadius: "var(--radius-control)",
-              outline: "none",
-              color: "var(--text)",
-              fontSize: 12,
+              background: "none",
+              color: "var(--text-dim)",
+              cursor: "pointer",
+              transition: `color var(--dur-fast) var(--ease-out-warm), background var(--dur-fast) var(--ease-out-warm)`,
             }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
-          />
-          {searchQuery && (
-            <button
-              className="file-explorer-search-clear"
-              type="button"
-              onClick={() => {
-                setSearchQuery("");
-                searchInputRef.current?.focus();
-              }}
-              title={t("fileExplorer.clearSearch")}
-              aria-label={t("fileExplorer.clearSearch")}
-              style={{
-                position: "absolute",
-                right: 12,
-                top: "50%",
-                transform: "translateY(calc(-50% + 1px))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 18,
-                height: 18,
-                padding: 0,
-                border: "none",
-                borderRadius: "var(--radius-control)",
-                background: "none",
-                color: "var(--text-dim)",
-                cursor: "pointer",
-                transition: `color var(--dur-fast) var(--ease-out-warm), background var(--dur-fast) var(--ease-out-warm)`,
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-dim)"; }}
-            >
-              <X size={11} strokeWidth={2.4} aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      )}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-dim)"; }}
+          >
+            <X size={11} strokeWidth={2.4} aria-hidden="true" />
+          </button>
+        )}
+      </div>
       {showUploadFeedback && (
         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
         {uploadBusy && (

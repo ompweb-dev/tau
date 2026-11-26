@@ -6098,12 +6098,17 @@ test("workspace file search stays in its source session rather than a same-path 
   resetWorld();
   servePooledWorkspace();
   const view = ownRoot(render(React.createElement(FileExplorer, {
-    cwd: "/shared", hostId: "h1", sourceSessionId: "worker-one", fileSearchOpen: true, onOpenFile() {},
+    cwd: "/shared", hostId: "h1", sourceSessionId: "worker-one", onOpenFile() {},
   }), { wrapper: TestRoot }));
   await settle();
   await act(async () => { fireEvent.change(view.getByRole("textbox", { name: translate("fileExplorer.searchFiles") }), { target: { value: "worker" } }); await sleep(200); });
   await until(() => view.queryByText("worker-search-result.txt"), "the owner-scoped index result renders");
   assert.equal(view.queryByText("central-decoy.txt"), null);
+  // The field is always there: Escape clears the query and the tree comes back.
+  const field = view.getByRole("textbox", { name: translate("fileExplorer.searchFiles") });
+  await act(async () => { fireEvent.keyDown(field, { key: "Escape" }); await sleep(60); });
+  assert.equal(field.value, "");
+  assert.equal(view.queryByText("worker-search-result.txt"), null);
   view.unmount();
 });
 
