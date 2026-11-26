@@ -147,9 +147,10 @@ function install(pkgArg) {
 
   const asdfBin = which("asdf");
   const svcPath = [
+    // First: the bins' `#!/usr/bin/env bun` must find this Bun, not an older one beside pi or npx.
+    bunDir,
     ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
-    bunDir,
     path.dirname(npxBin),
     path.dirname(nodeBin),
     path.dirname(runtimeBin),

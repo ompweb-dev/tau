@@ -237,12 +237,13 @@ function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, 
   const piBin = extraEnv.TAU_PI_BIN ?? null;
   const interpreterDir = piBin ? launcherInterpreterDir(piBin) : null;
   const pathDirs = [
+    // First: the bins' `#!/usr/bin/env bun` must find this Bun, not an older one beside pi or tau.
+    bunDir,
     ...(piBin ? [path.dirname(piBin)] : []),
     // Launcher scripts (e.g. npm global installs of pi) run through an
     // interpreter resolved via `env`; without its directory the service
     // fails with exit 127 even though the binary itself is on PATH (#116).
     ...(interpreterDir ? [interpreterDir] : []),
-    bunDir,
     path.dirname(tauBin),
     path.join(home, ".local", "bin"),
     "/usr/local/bin",

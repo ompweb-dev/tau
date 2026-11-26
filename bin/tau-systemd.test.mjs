@@ -134,7 +134,7 @@ test("buildUnit adds the launcher interpreter dir for Bun/npm installs of omp", 
       envPath: "/home/u/.omp/agent/web-service.env",
     });
     const pathLine = unit.split("\n").find((line) => line.startsWith("Environment="));
-    assert.ok(pathLine?.includes(`PATH=${escapeUnitValue(fakeBinDir)}${path.delimiter}`), `unit PATH missing omp dir: ${pathLine}`);
+    assert.ok(pathLine?.includes(`PATH=/home/u/.bun/bin${path.delimiter}${escapeUnitValue(fakeBinDir)}${path.delimiter}`), `unit PATH: Bun first, then the omp dir: ${pathLine}`);
     assert.ok(!pathLine?.includes(escapeUnitValue(fakeBunDir)), `unit PATH should not invent a bun dir: ${pathLine}`);
     // Native binaries have no shebang: PATH keeps the old shape.
     writeFileSync(path.join(fakeBinDir, "omp-native"), "\x7fELF-native-binary", { mode: 0o755 });
