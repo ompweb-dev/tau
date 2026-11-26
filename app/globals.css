@@ -1299,11 +1299,28 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
   border-radius: 4px;
 }
 
-/* Two lines (title, status): the height and vertical padding live here, so touch rows can differ. */
+/* Two lines (title, status). One height per mode (--session-row-height), shared with the loading skeletons:
+   42px, 44px on touch and with accessible targets (no padding around the 44px menu), 32px compact. */
+:root {
+  --session-row-height: 42px;
+}
 .session-item-row {
-  min-height: 42px;
+  min-height: var(--session-row-height);
   padding-top: 4px;
   padding-bottom: 4px;
+}
+.session-row-skeleton {
+  height: var(--session-row-height);
+}
+html[data-touch-targets="accessible"] {
+  --session-row-height: 44px;
+}
+html[data-touch-targets="accessible"] .session-item-row {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+html[data-touch-targets="accessible"] .session-item-trailing {
+  height: 44px;
 }
 .session-item-trailing {
   height: 24px;
@@ -1336,6 +1353,9 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
 
 /* Touch rows: full-size menu targets, and the row's height is the 44px target (no extra padding). */
 @media (hover: none), (pointer: coarse) {
+  :root {
+    --session-row-height: 44px;
+  }
   .sidebar-project-actions {
     min-width: 44px;
   }
@@ -1352,7 +1372,6 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
     min-height: 44px;
   }
   .session-item-row {
-    min-height: 44px;
     padding-top: 0;
     padding-bottom: 0;
   }
@@ -4444,7 +4463,7 @@ html[data-touch-targets="accessible"] .chat-header-pill-button {
 .route-fallback-sidebar-title { width: 58%; height: 14px; }
 .route-fallback-sidebar-button { width: 100%; height: 38px; }
 .route-fallback-sidebar-list { display: grid; gap: 8px; margin-top: 8px; }
-.route-fallback-sidebar-row { width: 100%; height: 42px; }
+.route-fallback-sidebar-row { width: 100%; height: var(--session-row-height); }
 .route-fallback-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }
 .route-fallback-topbar {
   display: flex;
@@ -4695,9 +4714,12 @@ html[data-touch-targets="compact"] .composer-toolbar > button,
 html[data-touch-targets="compact"] .composer-toolbar > div > button {
   min-height: 28px !important;
 }
+html[data-touch-targets="compact"] {
+  --session-row-height: 32px !important;
+}
 html[data-touch-targets="compact"] .session-item-row {
-  min-height: 30px !important;
-  /* The two text lines alone (about 32px): no padding around them. */
+  /* The two text lines alone: no padding around them. */
+  min-height: 32px !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }

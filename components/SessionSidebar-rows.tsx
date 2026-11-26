@@ -879,7 +879,7 @@ const SessionItem = memo(function SessionItem({
           title={matchesExpanded ? t("sessionSidebar.hideMatches") : t("sessionSidebar.showMatches")}
           aria-label={matchesExpanded ? t("sessionSidebar.hideMatches") : t("sessionSidebar.showMatches")}
           aria-expanded={matchesExpanded}
-          style={{ position: "absolute", left: depth * 14, top: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 24, padding: 0, border: "none", background: "none", color: "var(--text-dim)", cursor: "pointer" }}
+          style={{ position: "absolute", left: depth * 14, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 24, padding: 0, border: "none", background: "none", color: "var(--text-dim)", cursor: "pointer" }}
         >
           <ChevronRight size={12} strokeWidth={1.8} aria-hidden="true" style={{ transform: matchesExpanded ? "rotate(90deg)" : "none", transition: "transform var(--dur-fast) var(--ease-out-warm)" }} />
         </button>
