@@ -551,6 +551,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   // Which refresh the search request has already answered. Only a refresh after the explorer mounted counts
   // (the sidebar bumps the explorer key once on mount, and nobody asked for that one).
   const consumedRefreshTokenRef = useRef(refreshToken);
+  // The reveal that last cleared the search query (see the reveal effect).
+  const revealClearedRef = useRef<string | null>(null);
   const uploadBusy = uploadPhase !== "idle";
   const searchActive = searchQuery.trim().length > 0;
 
@@ -1055,15 +1057,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   // loaded but the target still isn't listed.
   useEffect(() => {
     if (!revealPath) return;
-    // A query left in the field would show only its hits: back to the tree, then reveal (rows change, this runs again).
-    if (searchActive) {
-      setSearchQuery("");
-      return;
-    }
     const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
     const normalizedTarget = normalizeFilePathSlashes(revealPath);
     if (normalizedTarget !== normalizedCwd && !normalizedTarget.startsWith(`${normalizedCwd}/`)) {
       onRevealDone?.();
+      return;
+    }
+    // A query left in the field would show only its hits: back to the tree, then reveal (rows change, this runs
+    // again). Once per reveal, so typing while a reveal still waits is not erased.
+    if (searchActive && revealClearedRef.current !== revealPath) {
+      revealClearedRef.current = revealPath;
+      setSearchQuery("");
       return;
     }
     const relative = normalizedTarget.slice(normalizedCwd.length + 1);
@@ -1207,7 +1211,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           }}
           onKeyDown={(e) => {
             // Escape clears the query (back to the tree); with none, it moves into the tree.
-            if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+            // Not while an IME composes (Safari ends one with keyCode 229 and isComposing false).
+            if (e.key === "Escape" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
               e.preventDefault();
               if (searchQuery) setSearchQuery("");
               else (scrollRef.current?.querySelector<HTMLElement>('[tabindex="0"]') ?? scrollRef.current)?.focus();
@@ -1379,6 +1384,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       <div
         ref={scrollRef}
         role="tree"
+        // Focusable from script only (Escape in the search field lands here when no row is rendered).
+        tabIndex={-1}
         aria-label={t("sessionSidebar.explorer")}
         aria-busy={loading || searchLoading}
         onScroll={handleTreeScroll}
