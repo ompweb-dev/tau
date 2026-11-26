@@ -116,7 +116,7 @@ jobs:
             bin=release/tau-windows-x64/tau.exe
             archive=release/tau-windows-x64.zip
           elif [ "$RUNNER_OS" = macOS ]; then
-            arch=$(node -p process.arch)
+            arch=$(bun -p process.arch)
             target="bun-darwin-$arch"
             if [ "$arch" = x64 ]; then target="$target-baseline"; fi
             bun scripts/build-binary.ts --target "$target"
