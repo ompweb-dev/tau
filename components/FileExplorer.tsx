@@ -551,8 +551,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   // Which refresh the search request has already answered. Only a refresh after the explorer mounted counts
   // (the sidebar bumps the explorer key once on mount, and nobody asked for that one).
   const consumedRefreshTokenRef = useRef(refreshToken);
-  // The reveal that last cleared the search query (see the reveal effect).
-  const revealClearedRef = useRef<string | null>(null);
   const uploadBusy = uploadPhase !== "idle";
   const searchActive = searchQuery.trim().length > 0;
 
@@ -1055,6 +1053,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   // effect re-runs as ancestor listings resolve (rows identity changes), so
   // deep chains settle level by level; it gives up once every ancestor is
   // loaded but the target still isn't listed.
+  // Each new reveal inside this tree clears a query left in the field (it would show only its hits). Keyed on the
+  // reveal alone, so typing while a reveal waits is not erased; the reveal itself waits for the tree (below).
+  useEffect(() => {
+    if (!revealPath) return;
+    const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
+    const normalizedTarget = normalizeFilePathSlashes(revealPath);
+    if (normalizedTarget === normalizedCwd || normalizedTarget.startsWith(`${normalizedCwd}/`)) setSearchQuery("");
+    // Only a new reveal (or tree) clears; cwd is read with it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealPath]);
   useEffect(() => {
     if (!revealPath) return;
     const normalizedCwd = normalizeFilePathSlashes(cwd).replace(/\/$/, "");
@@ -1063,13 +1071,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       onRevealDone?.();
       return;
     }
-    // A query left in the field would show only its hits: back to the tree, then reveal (rows change, this runs
-    // again). Once per reveal, so typing while a reveal still waits is not erased.
-    if (searchActive && revealClearedRef.current !== revealPath) {
-      revealClearedRef.current = revealPath;
-      setSearchQuery("");
-      return;
-    }
+    // The rows are search hits while a query is shown: wait for the tree.
+    if (searchActive) return;
     const relative = normalizedTarget.slice(normalizedCwd.length + 1);
     const segments = relative.split("/").filter(Boolean);
     setExpandedPaths((prev) => {
@@ -1216,11 +1219,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               e.preventDefault();
               if (searchQuery) setSearchQuery("");
               else {
-                  // Into the tree: its focused row (rendered first if it scrolled out of the virtual window), else the tree.
-                  const index = focusedIndexRef.current;
-                  if (rowsRef.current[index]?.kind === "node") goToRow(index);
-                  else scrollRef.current?.focus();
-                }
+                // Into the tree: its focused row (rendered first if it scrolled out of the virtual window), else its
+                // first file or folder; with none, the field just lets go.
+                const rows = rowsRef.current;
+                const index = rows[focusedIndexRef.current]?.kind === "node" ? focusedIndexRef.current : rows.findIndex((row) => row.kind === "node");
+                if (index >= 0) goToRow(index);
+                else e.currentTarget.blur();
+              }
             }
           }}
           placeholder={t("fileExplorer.searchPlaceholder")}
@@ -1389,8 +1394,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       <div
         ref={scrollRef}
         role="tree"
-        // Focusable from script only (Escape in the search field lands here when no row is rendered).
-        tabIndex={-1}
         aria-label={t("sessionSidebar.explorer")}
         aria-busy={loading || searchLoading}
         onScroll={handleTreeScroll}
