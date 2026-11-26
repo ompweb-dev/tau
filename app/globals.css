@@ -1300,15 +1300,22 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
 }
 
 .session-item-trailing {
-  width: 68px;
   gap: 2px;
   height: 24px;
 }
-.session-item-metadata {
-  width: auto;
+/* A session row's second line: status and age ("Ready · 2h"). */
+.session-item-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
 }
-.session-item-time {
-  width: 42px;
+.session-item-status[data-attention="true"] {
+  color: var(--accent);
 }
 .session-item-menu-button {
   width: 24px;
@@ -1344,11 +1351,7 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
     min-height: 44px;
   }
   .session-item-trailing {
-    width: 78px;
     height: 44px;
-  }
-  .session-item-time {
-    width: 32px;
   }
   .session-item-menu-button {
     width: 44px;
@@ -4691,14 +4694,10 @@ html[data-touch-targets="compact"] .session-item-row {
 }
 html[data-touch-targets="compact"] .session-item-trailing {
   height: 24px !important;
-  width: 68px !important;
 }
 html[data-touch-targets="compact"] .session-item-menu-button {
   width: 24px !important;
   height: 24px !important;
-}
-html[data-touch-targets="compact"] .session-item-row .session-item-button {
-  padding-right: 70px !important;
 }
 html[data-touch-targets="compact"] .settings-card {
   padding: 10px 16px !important;

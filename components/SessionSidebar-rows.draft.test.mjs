@@ -11,14 +11,15 @@ const { clearDraft, setDraft } = await import("@/lib/draft-store");
 
 const session = (id) => ({ id, name: id, firstMessage: "", cwd: "/w", modified: new Date().toISOString() });
 const row = (id) => React.createElement(SessionItem, { session: session(id), isSelected: false, onClick() {}, relativeTimeNow: Date.now() });
-const mark = () => screen.queryByRole("img", { name: "Unsent draft" });
+// The row's status line names a waiting draft ("Ready · Draft · now").
+const mark = () => ([...document.querySelectorAll(".session-item-status")].find((line) => line.textContent.split(" · ").includes("Draft")) ?? null);
 
 test("a session row marks unsent composer content and drops the mark once it is gone", () => {
   try {
     // A draft that exists before the row mounts (restored after a reload, a re-expanded project).
     setDraft("draft-a", { value: "half-written", images: [], files: [] });
     const { rerender } = render(row("draft-a"));
-    assert.equal(mark()?.getAttribute("title"), "Unsent draft", "marked on first paint, with its tooltip");
+    assert.ok(mark()?.textContent.startsWith("Ready · Draft"), "an idle session with a draft reads Ready · Draft on first paint");
     rerender(row("draft-b"));
     assert.equal(mark(), null, "a row follows its own session's draft only");
     act(() => setDraft("draft-b", { value: "", images: [], files: [], uploads: [{ id: "u", name: "a.bin", size: 1, hostId: "local" }] }));
