@@ -21,3 +21,10 @@ test("the mirror paints chips under mentions, shows hints when empty, and nothin
   assert.match(mirror("").textContent, /Ask anything@ files\/ commands! shell/);
   assert.equal(mirror("just words").querySelector(".composer-mirror"), null);
 });
+
+test("in forced colours the placeholder rule comes after the one that hides it, so the empty composer still reads", async () => {
+  const css = await Bun.file(new URL("../app/globals.css", import.meta.url)).text();
+  const hidden = css.indexOf(".composer-textarea::placeholder {\n  color: transparent;");
+  const forced = css.lastIndexOf("@media (forced-colors: active)");
+  assert.ok(hidden > 0 && forced > hidden && css.indexOf("color: GrayText", forced) > forced);
+});
