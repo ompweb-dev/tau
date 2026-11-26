@@ -257,7 +257,6 @@
   "appShell.revealInExplorer": "在檔案總管中顯示",
   "appShell.revealSourceSession": "請先選取此檔案的來源對話，再於檔案總管中顯示。",
   "appShell.closeOtherTabs": "關閉其他分頁",
-  "appShell.closeOthers": "關閉其他",
   "appShell.closeAllTabs": "關閉所有分頁",
   "appShell.openingWorkspace": "正在開啟工作區...",
   "appShell.plugins": "外掛程式",

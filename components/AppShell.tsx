@@ -1947,7 +1947,12 @@ export function AppShell({ appName }: { appName: string }) {
     setFileSearchOpen((open) => !open);
   }, []);
 
-  // Close others / Close all act on the files of the shown file's tab group.
+  // A file tab's menu: Close other tabs keeps it and closes the group's other files; Close all closes them all.
+  const handleCloseOtherFileTabs = useCallback((tabId: string, groupTabIds: readonly string[]) => {
+    stripActionRef.current = Date.now();
+    handleSelectFileTab(tabId);
+    setFileTabs((tabs) => tabs.filter((tab) => tab.id === tabId || !groupTabIds.includes(tab.id)));
+  }, [handleSelectFileTab]);
   const handleCloseAllFileTabs = useCallback((groupTabIds: readonly string[]) => {
     stripActionRef.current = Date.now();
     setFileTabs((tabs) => tabs.filter((tab) => !groupTabIds.includes(tab.id)));
@@ -2379,11 +2384,10 @@ export function AppShell({ appName }: { appName: string }) {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as { cwd?: string };
         if (!data.cwd) throw new Error("Empty cwd returned");
-        return data;
+        return data.cwd;
       })
-      .then((data) => {
-        if (!data.cwd) throw new Error("Empty cwd returned");
-        if (navViewVersionRef.current === sourceVersion) handleNewSession(randomUUID(), data.cwd, targetHost);
+      .then((cwd) => {
+        if (navViewVersionRef.current === sourceVersion) handleNewSession(randomUUID(), cwd, targetHost);
       })
       .catch(() => toast.error(translate("errors.generic")));
   };
@@ -3072,11 +3076,7 @@ export function AppShell({ appName }: { appName: string }) {
               { label: t("appShell.splitDown"), disabled: group.tabs.length < 2, onSelect: () => splitTabGroup(group.id, "column", tabId) },
               { label: t("tabBar.close"), disabled: stripTabInfo.get(tabId)?.closable === false, onSelect: () => closeStripTab(tabId) },
               ...(fileTabIds.has(tabId) ? [
-                { label: t("appShell.closeOtherTabs"), disabled: fileTabsInGroup.length < 2, onSelect: () => {
-                  stripActionRef.current = Date.now();
-                  handleSelectFileTab(tabId);
-                  setFileTabs((tabs) => tabs.filter((tab) => tab.id === tabId || !group.tabs.includes(tab.id)));
-                } },
+                { label: t("appShell.closeOtherTabs"), disabled: fileTabsInGroup.length < 2, onSelect: () => handleCloseOtherFileTabs(tabId, group.tabs) },
                 { label: t("appShell.closeAllTabs"), onSelect: () => handleCloseAllFileTabs(group.tabs) },
               ] : []),
             ];
@@ -3103,10 +3103,10 @@ export function AppShell({ appName }: { appName: string }) {
                     )}
                     {!isMobile && (
                       <>
-                        <button type="button" className="tab-group-action tab-group-nav ui-focus-ring" disabled={!stepTarget(history, -1, openInGroup)} onClick={() => stepGroupHistory(group, -1)} title={t("appShell.groupBack")} aria-label={t("appShell.groupBack")}>
+                        <button type="button" className="tab-group-action ui-focus-ring" disabled={!stepTarget(history, -1, openInGroup)} onClick={() => stepGroupHistory(group, -1)} title={t("appShell.groupBack")} aria-label={t("appShell.groupBack")}>
                           <ArrowLeft size={14} strokeWidth={2} aria-hidden="true" />
                         </button>
-                        <button type="button" className="tab-group-action tab-group-nav ui-focus-ring" disabled={!stepTarget(history, 1, openInGroup)} onClick={() => stepGroupHistory(group, 1)} title={t("appShell.groupForward")} aria-label={t("appShell.groupForward")}>
+                        <button type="button" className="tab-group-action ui-focus-ring" disabled={!stepTarget(history, 1, openInGroup)} onClick={() => stepGroupHistory(group, 1)} title={t("appShell.groupForward")} aria-label={t("appShell.groupForward")}>
                           <ArrowRight size={14} strokeWidth={2} aria-hidden="true" />
                         </button>
                       </>
@@ -3125,7 +3125,7 @@ export function AppShell({ appName }: { appName: string }) {
                         trailing={(
                           <button
                             type="button"
-                            className="tab-group-action tab-group-new ui-focus-ring"
+                            className="tab-group-action ui-focus-ring"
                             onClick={() => { setLastFocusedGroupId(group.id); startNewChat(); }}
                             title={t("appShell.newSessionInGroup")}
                             aria-label={t("appShell.newSessionInGroup")}

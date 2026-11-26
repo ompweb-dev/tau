@@ -257,7 +257,6 @@
   "appShell.revealInExplorer": "Reveal in Explorer",
   "appShell.revealSourceSession": "Select this file's source session before revealing it in the explorer.",
   "appShell.closeOtherTabs": "Close other tabs",
-  "appShell.closeOthers": "Others",
   "appShell.closeAllTabs": "Close all tabs",
   "appShell.openingWorkspace": "Opening workspace...",
   "appShell.plugins": "Plugins",
