@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useState, useCallback, useMemo, memo, useRef, useEffect } from "react";
 import { GitBranch } from "lucide-react";
 import { translate, useI18n } from "@/lib/i18n";
@@ -9,10 +10,8 @@ interface Props {
   tree: SessionTreeNode[];
   activeLeafId: string | null;
   onLeafChange: (leafId: string | null) => void;
-  /** When true, renders as a compact inline button for embedding in a top bar */
+  /** When true, renders as a compact button (the chat's pill) whose dropdown opens below it, right-aligned */
   inline?: boolean;
-  /** When inline, use this ref's bounding rect to size/position the dropdown */
-  containerRef?: React.RefObject<HTMLElement | null>;
   /** Controlled open state for inline mode */
   open?: boolean;
   /** Called when the button is clicked in inline mode */
@@ -120,6 +119,7 @@ const TreeNodeView = memo(function TreeNodeView({ node, activePathIds, depth, is
         role="button"
         tabIndex={0}
         aria-label={label}
+        data-active={isActive || undefined}
         style={{
           display: "flex",
           alignItems: "center",
@@ -254,22 +254,25 @@ const TreeNodeView = memo(function TreeNodeView({ node, activePathIds, depth, is
   return true;
 });
 
-export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession }: Props) {
+export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open: openProp, onToggle, hasSession }: Props) {
   const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
   const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   useEffect(() => {
     if (!open || !inline) return;
-    const anchor = containerRef?.current ?? btnRef.current;
+    const anchor = btnRef.current;
     if (!anchor) return;
     const update = () => {
       const rect = anchor.getBoundingClientRect();
-      const width = rect.width;
-      const height = Math.min(260, window.innerHeight - rect.bottom - 8);
-      setDropdownPos({ top: rect.bottom, left: Math.max(0, Math.min(rect.left, window.innerWidth - width)), width, height: Math.max(60, height) });
+      const width = Math.min(380, window.innerWidth - 16);
+      // Below the button (the pill sits at the top of its chat), as tall as the space down there allows.
+      const top = rect.bottom + 6;
+      const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+      setDropdownPos({ top, left, width, height: Math.max(0, Math.min(260, window.innerHeight - top - 8)) });
     };
     update();
     const ro = new ResizeObserver(update);
@@ -280,8 +283,10 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       ro.disconnect();
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
+      // A reopened list is placed afresh before it paints or takes focus.
+      setDropdownPos(null);
     };
-  }, [open, inline, containerRef]);
+  }, [open, inline]);
 
   // Close the inline dropdown on outside click or Escape.
   useEffect(() => {
@@ -303,7 +308,10 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       // Closing the branch menu must not also reach the window-level Esc
       // listener, which would abort a running agent.
       event.stopPropagation();
+      // Focus goes back to the button only from the list (not from wherever the user went meanwhile).
+      const fromList = panelRef.current?.contains(document.activeElement);
       closeDropdown();
+      if (fromList) btnRef.current?.focus();
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", onKey);
@@ -311,7 +319,13 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, inline, containerRef, onToggle]);
+  }, [open, inline, onToggle]);
+
+  const placed = dropdownPos !== null;
+  useEffect(() => {
+    // Into the list (a portal at the end of the page): the active branch's row, else the first.
+    if (open && inline && placed) (panelRef.current?.querySelector<HTMLElement>("[data-active]") ?? panelRef.current?.querySelector<HTMLElement>('[tabindex="0"]'))?.focus();
+  }, [open, inline, placed]);
 
   const activePathIds = useMemo(
     () => buildActivePath(tree, activeLeafId),
@@ -321,6 +335,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   const handleSelect = useCallback((id: string) => {
     onLeafChange(id);
     if (openProp === undefined) setOpenInternal(false);
+    // The row goes with the list: focus returns to the button.
+    btnRef.current?.focus();
   }, [onLeafChange, openProp]);
 
   const noBranchReason = useMemo(() => !hasSession
@@ -341,7 +357,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   const hasContent = !noBranchReason && topLevelBranches.length > 0;
 
   const branchIcon = (
-    <GitBranch size={16} strokeWidth={1.8} aria-hidden="true" style={{ color: hasContent ? "var(--accent)" : undefined, flexShrink: 0 }} />
+    <GitBranch size={15} strokeWidth={1.8} aria-hidden="true" style={{ color: hasContent ? "var(--accent)" : undefined, flexShrink: 0 }} />
   );
 
   const chevron = (
@@ -353,15 +369,11 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
 
   if (inline) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center" }}>
+      <>
         <button
           ref={btnRef}
           onClick={() => onToggle ? onToggle() : setOpenInternal((v) => !v)}
-          className="shell-toolbar-btn ui-focus-ring"
-          style={{
-            background: open ? "var(--bg-selected)" : undefined,
-            color: open ? "var(--text)" : undefined,
-          }}
+          className="chat-header-pill-button ui-focus-ring"
           title={t("branchNavigator.branches")}
           aria-label={t("branchNavigator.branches")}
           aria-haspopup="menu"
@@ -369,8 +381,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
         >
           {branchIcon}
         </button>
-        {open && dropdownPos && (
-          <div data-branch-panel className="dropdown-surface" style={{
+        {open && dropdownPos && createPortal(
+          <div ref={panelRef} data-branch-panel className="dropdown-surface" style={{
             position: "fixed",
             top: dropdownPos.top,
             left: dropdownPos.left,
@@ -398,9 +410,10 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
                 {noBranchReason}
               </div>
             )}
-          </div>
+          </div>,
+          document.body,
         )}
-      </div>
+      </>
     );
   }
 

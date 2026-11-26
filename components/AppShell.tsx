@@ -801,7 +801,6 @@ export function AppShell({ appName }: { appName: string }) {
   const [systemPromptLoading, setSystemPromptLoading] = useState(false);
   const systemPromptLoaderRef = useRef<(() => Promise<void>) | null>(null);
   const systemPromptLoadIdRef = useRef(0);
-  const systemBtnRef = useRef<HTMLButtonElement>(null);
   const handleSystemPromptChange = useCallback((prompt: string | null) => {
     setSystemPrompt(prompt);
     setSystemPromptLoading(false);
@@ -859,7 +858,6 @@ export function AppShell({ appName }: { appName: string }) {
       const tools = mobileToolsRef.current;
       if (tools?.open && !tools.contains(event.target as Node)) {
         tools.open = false;
-        setActiveTopPanel(null);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -881,6 +879,7 @@ export function AppShell({ appName }: { appName: string }) {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
+  const toggleBranchesPanel = useCallback(() => toggleTopPanel("branches"), [toggleTopPanel]);
 
   // Generation speed — current live t/s and the session average.
   const [generationSpeed, setGenerationSpeed] = useState<GenerationSpeedInfo | null>(null);
@@ -1092,14 +1091,15 @@ export function AppShell({ appName }: { appName: string }) {
   }, []);
 
 
-  // Dismiss the topbar dropdowns on outside click or Escape. The Escape
+  // Dismiss the chat pill's system panel on outside click or Escape. The Escape
   // handler stops propagation so the global Esc (abort agent) does not fire
   // while a panel is open.
   useEffect(() => {
     // The branch panel manages its own outside-click and Escape dismissal.
     if (!activeTopPanel || activeTopPanel === "branches") return;
     const onPointerDown = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest("[data-top-panel]")) return;
+      // The pill's own buttons toggle the panel themselves.
+      if (event.target instanceof Element && event.target.closest("[data-top-panel], .chat-header-pill")) return;
       setActiveTopPanel(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2176,6 +2176,8 @@ export function AppShell({ appName }: { appName: string }) {
   }), [activeFileMatchesSource, fileRevealed, handleMentionActiveFile, handleCopyActiveFilePath, handleRevealActiveFile]);
   const fileTabShown = fileShown && activeFileTab !== null;
   const selectedChatId = selectedSession ? chatTabId(selectedSession) : showChat ? NEW_CHAT_TAB_ID : null;
+  // The pill's panels close with it: a file covering the chat, another chat, or Settings.
+  useEffect(() => { setActiveTopPanel(null); }, [fileTabShown, selectedChatId, settingsTab]);
   const activeStripTabId = fileTabShown ? activeFileTabId ?? "" : selectedChatId ?? "";
   useEffect(() => {
     setTabLayout((layout) => {
@@ -2481,6 +2483,69 @@ export function AppShell({ appName }: { appName: string }) {
     />
   );
 
+  // The selected chat's own controls (full history, branches, system prompt), floating at its top right (ChatWindow's headerActions).
+  const chatPill = showChat && selectedSession ? (
+    // No data-top-panel here: that marks a blocking popup (phone drawer swipes stop while one shows).
+    <div className="chat-header-pill-wrap">
+      <div className="chat-header-pill" role="group" aria-label={t("appShell.chatControls")}>
+        <button
+          type="button"
+          onClick={() => { setActiveTopPanel(null); handleViewFullHistory(); }}
+          title={t("appShell.fullHistory")}
+          aria-label={t("appShell.fullHistory")}
+          className="chat-header-pill-button ui-focus-ring"
+        >
+          <History size={15} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+        <BranchNavigator
+          tree={branchTree}
+          activeLeafId={branchActiveLeafId}
+          onLeafChange={handleBranchLeafChange}
+          inline
+          open={activeTopPanel === "branches"}
+          onToggle={toggleBranchesPanel}
+          hasSession
+        />
+        <button
+          type="button"
+          onClick={handleSystemPromptToggle}
+          title={t("appShell.system")}
+          aria-label={t("appShell.system")}
+          aria-pressed={activeTopPanel === "system"}
+          className="chat-header-pill-button ui-focus-ring"
+        >
+          <Terminal size={15} strokeWidth={1.8} aria-hidden="true" style={{ color: systemPrompt ? "var(--accent)" : undefined }} />
+        </button>
+      </div>
+      {activeTopPanel === "system" && (
+        <div data-top-panel className="dropdown-surface chat-header-pill-panel">
+          <div className="session-info-popover">
+            {systemPrompt ? (
+              <div style={{
+                padding: "12px 16px",
+                color: "var(--text-muted)",
+                fontSize: 12,
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                fontFamily: "var(--font-mono)",
+              }}>
+                {systemPrompt}
+              </div>
+            ) : systemPrompt === "" ? (
+              <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                {t("appShell.systemPromptEmpty")}
+              </div>
+            ) : (
+              <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                {systemPromptLoading ? t("appShell.systemPromptLoading") : t("appShell.systemPromptLoadHint")}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <>
     <ToastProvider>
@@ -2676,7 +2741,7 @@ export function AppShell({ appName }: { appName: string }) {
           gap: "0 8px",
           minWidth: 0,
         }}>
-          {/* Left Zone: Utility group (sidebar, theme, language) & session controls (history, branches, system) */}
+          {/* Left Zone: utility group (sidebar, overflow: theme, language, command palette); the chat's own controls are its pill */}
           <div className="shell-topbar-tools" style={{ display: "flex", alignItems: "center", gap: 4, height: isMobile ? 43 : 35, minWidth: 0, flexShrink: 0 }}>
             <button
               onClick={handleSidebarToggle}
@@ -2693,9 +2758,6 @@ export function AppShell({ appName }: { appName: string }) {
               className="shell-topbar-overflow"
               data-compact={isMobile ? "true" : compactTopbar === null ? "pending" : compactTopbar}
               open={isMobile ? undefined : compactTopbar ? undefined : true}
-              onToggle={(event) => {
-                if (!event.currentTarget.open) setActiveTopPanel(null);
-              }}
             >
               <summary
                 className="shell-toolbar-btn ui-focus-ring"
@@ -2710,10 +2772,7 @@ export function AppShell({ appName }: { appName: string }) {
                 <button
                   type="button"
                   onClick={() => {
-                    if (isMobile && mobileToolsRef.current) {
-                      mobileToolsRef.current.open = false;
-                      setActiveTopPanel(null);
-                    }
+                    if (isMobile && mobileToolsRef.current) mobileToolsRef.current.open = false;
                     window.dispatchEvent(new Event("tau:open-command-palette"));
                   }}
                   title={`${t("commandPalette.label")} (Ctrl/⌘ K)`}
@@ -2723,89 +2782,7 @@ export function AppShell({ appName }: { appName: string }) {
                 >
                   <Command size={16} strokeWidth={1.8} aria-hidden="true" />
                 </button>
-            {showChat && (
-              <>
-                <div className="shell-toolbar-divider" aria-hidden="true" />
-                <button
-                  onClick={handleViewFullHistory}
-                  disabled={!selectedSession}
-                  title={selectedSession ? t("appShell.fullHistory") : t("appShell.fullHistoryUnavailable")}
-                  aria-label={t("appShell.fullHistory")}
-                  className="shell-toolbar-btn ui-focus-ring"
-                >
-                  <History size={16} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-                <BranchNavigator
-                  tree={branchTree}
-                  activeLeafId={branchActiveLeafId}
-                  onLeafChange={handleBranchLeafChange}
-                  inline
-                  containerRef={compactTopbar ? mobileToolsContentRef : topBarRef}
-                  open={activeTopPanel === "branches"}
-                  onToggle={() => toggleTopPanel("branches")}
-                  hasSession
-                />
-                <button
-                  ref={systemBtnRef}
-                  onClick={handleSystemPromptToggle}
-                  title={t("appShell.system")}
-                  aria-label={t("appShell.system")}
-                  aria-pressed={activeTopPanel === "system"}
-                  className="shell-toolbar-btn ui-focus-ring"
-                >
-                  <Terminal size={16} strokeWidth={1.8} aria-hidden="true" style={{ color: systemPrompt ? "var(--accent)" : undefined }} />
-                </button>
-              </>
-            )}
               </div>
-          {activeTopPanel === "system" && (
-            <div data-top-panel className="dropdown-surface" style={{
-              position: "absolute",
-              // Compact: below the 48px tools bar, which clips its overflow (it scrolls sideways).
-              top: isMobile || compactTopbar ? "calc(100% + 56px)" : "calc(100% + 4px)",
-              left: isMobile ? 4 : 8,
-              right: "auto",
-              width: "auto",
-              minWidth: isMobile ? undefined : 420,
-              maxWidth: "min(680px, calc(100vw - 24px))",
-              maxHeight: isMobile || compactTopbar ? "min(70vh, calc(100dvh - 108px))" : "min(70vh, calc(100dvh - 56px))",
-              overflowY: "auto",
-              overflowX: "hidden",
-              zIndex: 500,
-            }}>
-              {activeTopPanel === "system" && (
-                <div className="session-info-popover" style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                  boxShadow: "var(--shadow-pop)",
-                  minWidth: isMobile ? undefined : 420,
-                }}>
-                  {systemPrompt ? (
-                    <div style={{
-                      maxHeight: "min(600px, 75vh)",
-                      overflowY: "auto",
-                      padding: "12px 16px",
-                      color: "var(--text-muted)",
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "var(--font-mono)",
-                    }}>
-                      {systemPrompt}
-                    </div>
-                  ) : systemPrompt === "" ? (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      {t("appShell.systemPromptEmpty")}
-                    </div>
-                  ) : (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      {systemPromptLoading ? t("appShell.systemPromptLoading") : t("appShell.systemPromptLoadHint")}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
             </details>
           </div>
 
@@ -3227,6 +3204,7 @@ export function AppShell({ appName }: { appName: string }) {
             <ChatWindow
               key={chatKey ?? undefined}
               session={selectedSession}
+              headerActions={chatPill}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionHostId={newSessionHost}
               newSessionCreationId={effectivePoolProject ? newSessionCreationId : undefined}

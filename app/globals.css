@@ -3265,13 +3265,86 @@ html:root .shell-toolbar-btn.right-panel-close-button {
 html[data-touch-targets="accessible"] .right-panel-toolbar {
   --right-panel-close-width: 44px;
 }
-/* Subtle group separator between toolbar control clusters */
-.shell-toolbar-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 8px;
-  background: var(--border);
-  flex-shrink: 0;
+/* The selected chat's controls, floating at its top right over the transcript (ChatWindow headerActions). */
+:root {
+  --chat-pill-room: 48px;
+}
+html[data-touch-targets="accessible"] {
+  --chat-pill-room: 64px;
+}
+/* Every transcript keeps the room, so moving the pill between split groups never shifts one. */
+.chat-scroll-under-pill {
+  padding-top: var(--chat-pill-room);
+}
+.chat-header-pill-anchor {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  left: 16px;
+  bottom: 8px;
+  z-index: 41;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  pointer-events: none;
+}
+.chat-header-pill-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: auto;
+}
+.chat-header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-card);
+}
+.chat-header-pill-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chat-header-pill-button:hover,
+.chat-header-pill-button[aria-pressed="true"],
+.chat-header-pill-button[aria-expanded="true"] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.chat-header-pill-panel {
+  margin-top: 6px;
+  width: 560px;
+  max-width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+html[data-touch-targets="accessible"] .chat-header-pill-button {
+  width: 44px;
+  height: 44px;
+}
+/* Phones: the same 40px targets as the top bar's buttons. */
+@media (max-width: 640px) {
+  :root {
+    --chat-pill-room: 60px;
+  }
+  .chat-header-pill-button {
+    width: 40px;
+    height: 40px;
+  }
 }
   .right-panel-toolbar > [role="toolbar"] {
     flex-wrap: wrap;
@@ -3289,9 +3362,6 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
   html:root .shell-toolbar-btn.right-panel-close-button {
     padding-top: env(safe-area-inset-top, 0px) !important;
     border-bottom: 1px solid var(--border);
-  }
-  .shell-toolbar-divider {
-    margin: 0 4px;
   }
   .right-panel-toolbar > div:first-child {
     display: flex;
@@ -3385,9 +3455,6 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
   }
   .shell-topbar-tools {
     gap: 2px !important;
-  }
-  .shell-topbar .shell-toolbar-divider {
-    margin: 0;
   }
   .shell-topbar-metrics {
     display: none;
