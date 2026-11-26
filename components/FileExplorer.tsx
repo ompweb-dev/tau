@@ -1220,10 +1220,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               if (searchQuery) setSearchQuery("");
               else {
                 // Into the tree: its focused row (rendered first if it scrolled out of the virtual window), else its
-                // first file or folder; with none, the field just lets go.
+                // first file or folder; with none shown, the field just lets go.
                 const rows = rowsRef.current;
                 const index = rows[focusedIndexRef.current]?.kind === "node" ? focusedIndexRef.current : rows.findIndex((row) => row.kind === "node");
-                if (index >= 0) goToRow(index);
+                // Only while the tree shows rows (loading, an error or an empty state replaces them).
+                if (index >= 0 && scrollRef.current?.querySelector("[data-index]")) goToRow(index);
                 else e.currentTarget.blur();
               }
             }
