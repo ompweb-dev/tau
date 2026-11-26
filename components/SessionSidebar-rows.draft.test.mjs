@@ -69,3 +69,23 @@ test("a mounted session row follows composer typing, attachment-only drafts and 
     window.matchMedia = previousMatchMedia;
   }
 });
+
+test("a session row's status line names one state, by priority, then the draft and the age", () => {
+  const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+  const line = (props) => {
+    const view = render(React.createElement(SessionItem, { session: { ...session("status"), modified: minuteAgo }, isSelected: false, onClick() {}, relativeTimeNow: Date.now(), ...props }));
+    const status = view.container.querySelector(".session-item-status");
+    const result = [status.textContent.split(" · "), status.dataset.attention ?? null];
+    view.unmount();
+    return result;
+  };
+  const exited = { sessionId: "status", reason: "exit", at: Date.now() };
+  const [ready, readyAttention] = line({});
+  assert.equal(ready[0], "Ready");
+  assert.equal(ready.length, 2, "an idle row: Ready, then its age");
+  assert.equal(readyAttention, null);
+  assert.deepEqual(line({ isAwaitingInput: true, isRunning: true, isUnread: true, exited }).map((part, index) => index === 0 ? part[0] : part), ["Needs input", "true"], "Needs input outranks everything and draws attention");
+  assert.equal(line({ isRunning: true, isUnread: true, exited })[0][0], "Running");
+  assert.deepEqual(line({ isUnread: true, exited }).map((part, index) => index === 0 ? part[0] : part), ["Stopped", "true"], "a stopped session draws attention");
+  assert.equal(line({ isUnread: true })[0][0], "Done");
+});

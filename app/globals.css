@@ -4698,6 +4698,9 @@ html[data-touch-targets="compact"] .composer-toolbar > div > button {
 }
 html[data-touch-targets="compact"] .session-item-row {
   min-height: 30px !important;
+  /* The two text lines alone (about 32px): no padding around them. */
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
 }
 html[data-touch-targets="compact"] .session-item-trailing {
   height: 24px !important;

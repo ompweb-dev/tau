@@ -30,8 +30,8 @@ import {
 /**
  * Shared indicator sizing; session rows keep theirs in the right-edge column.
  *
- * Keep the session indicator outside the timestamp and action controls so it
- * stays visible while the menu is open.
+ * Keep the session indicator outside the action controls so it stays visible
+ * while the menu is open.
  */
 const SIDEBAR_STATUS_SLOT = 12;
 const SIDEBAR_STATUS_GAP = 2;
