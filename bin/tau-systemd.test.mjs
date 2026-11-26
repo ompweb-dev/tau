@@ -62,6 +62,7 @@ test("writeServiceEnv creates the parent directory and a private file", () => {
 test("buildUnit points at the generated env file and keeps runtime settings out of the unit", () => {
   const unit = buildUnit({
     tauBin: "/usr/local/bin/tau",
+    bunDir: "/home/u/.bun/bin",
     env: { TAU_PI_BIN: "/home/u/.bun/bin/omp" },
     home: "/home/u",
     envPath: "/home/u/.omp/agent/web-service.env",
@@ -85,6 +86,7 @@ test("buildUnit points at the generated env file and keeps runtime settings out 
 test("buildHostUnit runs `tau host` with the web unit's env file and never gives up restarting", () => {
   const options = {
     tauBin: "/usr/local/bin/tau",
+    bunDir: "/home/u/.bun/bin",
     env: { TAU_PI_BIN: "/home/u/.bun/bin/omp" },
     home: "/home/u",
     envPath: "/home/u/.omp/agent/web-service.env",
@@ -126,6 +128,7 @@ test("buildUnit adds the launcher interpreter dir for Bun/npm installs of omp", 
 
     const unit = buildUnit({
       tauBin: "/usr/local/bin/tau",
+      bunDir: "/home/u/.bun/bin",
       env: { TAU_PI_BIN: path.join(fakeBinDir, "omp") },
       home: "/home/u",
       envPath: "/home/u/.omp/agent/web-service.env",
@@ -179,6 +182,8 @@ test("install creates the env file and unit with LAN settings", { skip: process.
     const fakeSystemctl = path.join(binDir, "systemctl");
     mkdirSync(home, { recursive: true });
     mkdirSync(binDir, { recursive: true });
+    // The unit PATH needs a bun for the bins' shebang; this Bun may be npm's bun.exe, which does not count.
+    writeFileSync(path.join(binDir, "bun"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeTau, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeSystemctl, "#!/bin/sh\ncase \"$*\" in *is-active*) exit 3 ;; *) exit 0 ;; esac\n", { mode: 0o755 });
     // A stock omp on PATH: pinning the services to it would replace tau's own omp, which its sessions need.
@@ -244,6 +249,8 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
     const fakeSystemctl = path.join(binDir, "systemctl");
     mkdirSync(home, { recursive: true });
     mkdirSync(binDir, { recursive: true });
+    // The unit PATH needs a bun for the bins' shebang; this Bun may be npm's bun.exe, which does not count.
+    writeFileSync(path.join(binDir, "bun"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeTau, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeSystemctl, "#!/bin/sh\ncase \"$*\" in *is-active*) exit 3 ;; *) exit 0 ;; esac\n", { mode: 0o755 });
     const base = {
@@ -332,6 +339,7 @@ function runWithFakeSystemctl(command, { hostUnit = true, active = false, dir: s
   const log = path.join(dir, "systemctl.log");
   const fakeTau = path.join(binDir, "tau");
   mkdirSync(binDir, { recursive: true });
+  writeFileSync(path.join(binDir, "bun"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const unitDir = path.join(home, ".config", "systemd", "user");
   mkdirSync(unitDir, { recursive: true });
   writeFileSync(path.join(unitDir, "tau.service"), "[Service]\n");
