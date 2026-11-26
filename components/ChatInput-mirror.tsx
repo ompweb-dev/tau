@@ -51,8 +51,13 @@ export const ComposerMirror = memo(function ComposerMirror({ value, textareaRef,
       observer?.disconnect();
     };
   }, [textareaRef, painted]);
-  // After each change of the text (the textarea may have grown or scrolled).
-  useLayoutEffect(() => syncMirror(textareaRef.current, ref.current), [textareaRef, value, painted]);
+  // After each change of the text or font, and again next frame: ChatInput resizes the textarea in its own layout
+  // effect, which runs after this one.
+  useLayoutEffect(() => {
+    syncMirror(textareaRef.current, ref.current);
+    const frame = requestAnimationFrame(() => syncMirror(textareaRef.current, ref.current));
+    return () => cancelAnimationFrame(frame);
+  }, [textareaRef, value, painted, fontFamily]);
 
   if (!painted) return null;
   let content: ReactNode;

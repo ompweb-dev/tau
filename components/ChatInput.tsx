@@ -3089,8 +3089,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               minHeight: 24,
               maxHeight: 200,
               overflow: "auto",
-              // A block, so the wrapper (and ComposerMirror, inset in it) is exactly its size.
+              // A block without padding, so the wrapper (and ComposerMirror, inset in it) is exactly its text box.
               display: "block",
+              padding: 0,
               position: "relative",
             }}
           />
