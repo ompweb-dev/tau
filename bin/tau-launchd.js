@@ -104,10 +104,9 @@ function buildHostEnv({ svcPath, piBin, agentDir }) {
 
 function install(pkgArg) {
   const runtimeBin = process.execPath;
-  // The service runs the package through Bun's bunx (beside this Bun), else npm's npx.
-  const siblingBunx = path.join(path.dirname(runtimeBin), "bunx");
-  const npxBin = isExecutableFile(siblingBunx) ? siblingBunx : (which("bunx") ?? which("npx") ?? fail("neither bunx nor npx found on PATH"));
-  const runner = path.basename(npxBin) === "npx" ? [npxBin, "--yes"] : [npxBin];
+  // npx, not bunx: an in-app update recognizes npm's cache as an npm install, never bunx's.
+  const siblingNpx = path.join(path.dirname(runtimeBin), "npx");
+  const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
 
   // An explicit pi for the service; without it the service finds pi on PATH.
   const piBin = process.env.TAU_PI_BIN || null;
@@ -160,10 +159,10 @@ function install(pkgArg) {
     ...(piBin ? { TAU_PI_BIN: piBin } : {}),
     ...(agentDir ? { PI_CODING_AGENT_DIR: agentDir } : {}),
   };
-  const web = buildPlist({ label: LABEL, args: [...runner, pkg], env, logName: "tau" });
+  const web = buildPlist({ label: LABEL, args: [npxBin, "--yes", pkg], env, logName: "tau" });
   const host = buildPlist({
     label: HOST_LABEL,
-    args: [...runner, pkg, "host"],
+    args: [npxBin, "--yes", pkg, "host"],
     env: buildHostEnv({ svcPath, piBin, agentDir }),
     logName: "tau-host",
     // host.json does not exist until the web server first starts; the daemon exits until then.

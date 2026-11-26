@@ -242,8 +242,9 @@ function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, 
     // fails with exit 127 even though the binary itself is on PATH (#116).
     ...(interpreterDir ? [interpreterDir] : []),
     path.dirname(tauBin),
-    // The `tau` bin is `#!/usr/bin/env bun`: the directory of a file named bun (npm's bun package names its binary bun.exe).
-    path.dirname(Bun.which("bun") ?? process.execPath),
+    // The `tau` bin is `#!/usr/bin/env bun`: this Bun's directory, or, when its binary is not named bun (npm's bun
+    // package names it bun.exe), the directory of the bun on PATH.
+    isExecutableFile(path.join(path.dirname(process.execPath), "bun")) ? path.dirname(process.execPath) : path.dirname(which("bun") ?? process.execPath),
     path.join(home, ".local", "bin"),
     "/usr/local/bin",
     "/usr/bin",

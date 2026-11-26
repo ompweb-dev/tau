@@ -76,6 +76,8 @@ async function workerRuntime(): Promise<WorkerRuntime> {
   if (existsSync(lifecycle) && existsSync(identity)) {
     return { process: await import(pathToFileURL(lifecycle).href), identity: await import(pathToFileURL(identity).href) };
   }
+  // A copy never imports outside its attempt directory: without its private copies it stops.
+  if (import.meta.url.endsWith(".mts")) throw new Error("The host update worker's lifecycle modules are missing beside it");
   // Run from source (the web server's own runtime, tests).
   return embedded();
 }

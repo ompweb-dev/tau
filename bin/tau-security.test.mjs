@@ -24,7 +24,7 @@ async function launch(env, args = []) {
     await mkdir(join(pkg, "server"));
     const dump = join(pkg, "server-env.json");
     // The launcher runs this on its own Bun (process.execPath).
-    await writeFile(join(pkg, "server", "main.ts"), `require("fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify({ ...process.env, RUNTIME_BUN: process.versions.bun ?? "" }));`);
+    await writeFile(join(pkg, "server", "main.ts"), `require("fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify({ ...process.env, RUNTIME: process.execPath }));`);
     const result = spawnSync(process.execPath, [join(pkg, "bin", "tau.js"), "--no-open", "-p", "0", ...args], {
       env: { PATH: process.env.PATH, HOME: pkg, ...env },
       encoding: "utf8",
@@ -47,7 +47,7 @@ test("launcher refuses unauthenticated non-loopback binds", async () => {
 test("launcher hands the server a hash of a plaintext TAU_PASSWORD, never the plaintext", async () => {
   const { stderr, serverEnv } = await launch({ TAU_PASSWORD: "s3cret pw" });
   assert.ok(serverEnv, stderr);
-  assert.match(serverEnv.RUNTIME_BUN, /^\d+\.\d+\.\d+/, "the server runs on the launcher's Bun");
+  assert.equal(serverEnv.RUNTIME, process.execPath, "the server runs on the launcher's Bun");
   assert.equal(serverEnv.TAU_PASSWORD, undefined);
   const hash = serverEnv.TAU_PASSWORD_HASH;
   assert.equal(verifyPassword("s3cret pw", hash), true);
