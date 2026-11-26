@@ -12,5 +12,10 @@ test("typed files carry their language's label and hue; others stay dim", () => 
   assert.match(icon("CMakeLists.txt"), /var\(--file-green\)/);
   assert.match(icon("utah-teapot.glb"), />3D</);
   assert.match(icon("index.ts"), /var\(--file-blue\)/);
+  assert.match(icon("tool.mjs"), />JS</);
+  assert.doesNotMatch(icon("Cargo.toml"), /--file-/, "TOML keeps a dim badge");
   assert.doesNotMatch(icon("notes.xyz"), /--file-/, "an unknown type keeps the generic, dim icon");
+  assert.doesNotMatch(icon("a.constructor"), /<text/, "an inherited object key is no type");
+  assert.doesNotMatch(icon("h"), /<text/, "a name without a dot has no extension");
+  assert.doesNotMatch(icon("main.obj"), /3D/, "an object file is no 3D model");
 });

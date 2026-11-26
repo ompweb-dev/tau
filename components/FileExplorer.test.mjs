@@ -22,10 +22,9 @@ test("the Files tab always has its search field", () => {
 });
 
 test("keeps the regular file tree visible while the search query is empty", () => {
-  // An open panel with no query must not hide the tree behind an empty
-  // search-results state.
-  const open = render();
-  assert.match(open, /role="tree"/);
-  assert.match(open, /(Loading files\.\.\.|fileExplorer\.loadingFiles)/);
-  assert.doesNotMatch(open, /(No matching files|fileExplorer\.noMatchingFiles)/);
+  // An empty query must not hide the tree behind an empty search-results state.
+  const html = render();
+  assert.match(html, /role="tree"/);
+  assert.match(html, /(Loading files\.\.\.|fileExplorer\.loadingFiles)/);
+  assert.doesNotMatch(html, /(No matching files|fileExplorer\.noMatchingFiles)/);
 });

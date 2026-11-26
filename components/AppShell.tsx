@@ -1942,7 +1942,6 @@ export function AppShell({ appName }: { appName: string }) {
     setRevealTarget((current) => current === revealTarget ? null : current);
   }, [revealTarget]);
 
-
   // A file tab's menu: Close other tabs keeps it and closes the group's other files; Close all closes them all.
   const handleCloseOtherFileTabs = useCallback((tabId: string, groupTabIds: readonly string[]) => {
     stripActionRef.current = Date.now();

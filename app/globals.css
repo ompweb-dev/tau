@@ -138,14 +138,14 @@
   --text-dim: #63615B;
   /* Muted blue. 6.25:1 as link on --bg, 5.95:1 on --bg-panel, 5.83:1 on --user-bg, 5.04:1 on --bg-selected */
   --accent: #3A5C8C;
-  /* File type hues (FileIcons.tsx): icon badges only, never text on a surface. */
-  --file-blue: #3B6FB6;
-  --file-yellow: #A07A12;
-  --file-green: #3E8A4F;
-  --file-teal: #2C8A86;
+  /* File type hues (FileIcons.tsx), also the badge's label text. On --bg-panel: light 4.6-4.9:1, dark 6.1-7.8:1. */
+  --file-blue: #396CB1;
+  --file-yellow: #86660F;
+  --file-green: #367845;
+  --file-teal: #267773;
   --file-purple: #7A55B0;
-  --file-pink: #B04A86;
-  --file-orange: #B8632A;
+  --file-pink: #AB4882;
+  --file-orange: #A25725;
   --file-red: #B5473F;
   /* White-on-fill button: 6.80:1 (passes AA for small text) */
   --accent-strong: #3A5C8C;
@@ -5019,6 +5019,9 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   color: transparent;
 }
 .composer-hint-lead {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-dim);
 }
 .composer-hint {
