@@ -2372,7 +2372,7 @@ export function AppShell({ appName }: { appName: string }) {
     const open = new Set(group.tabs.filter(tabReachable));
     const target = stepTarget(history, dir, open);
     if (!target) return;
-    setTabHistories((histories) => new Map(histories).set(group.id, stepTabHistory(history, dir, open)));
+    setTabHistories((histories) => new Map(histories).set(group.id, stepTabHistory(history, dir, open, new Set(group.tabs))));
     selectStripTab(target);
   };
   // What the command palette's New session does: a new chat in the shown workspace, else in the server's default folder.
@@ -3137,7 +3137,7 @@ export function AppShell({ appName }: { appName: string }) {
                             className="tab-group-action ui-focus-ring"
                             onClick={() => {
                               // The new chat is one tab: one kept in another group moves here first.
-                              setTabLayout((layout) => groupOfTab(layout, NEW_CHAT_TAB_ID) ? moveTab(layout, NEW_CHAT_TAB_ID, group.id, null) : layout);
+                              setTabLayout((layout) => (groupOfTab(layout, NEW_CHAT_TAB_ID)?.id ?? group.id) === group.id ? layout : moveTab(layout, NEW_CHAT_TAB_ID, group.id, null));
                               setLastFocusedGroupId(group.id);
                               startNewChat();
                             }}

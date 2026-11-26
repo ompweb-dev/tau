@@ -27,13 +27,19 @@ export function stepTarget(history: TabHistory, dir: -1 | 1, open: ReadonlySet<s
   return null;
 }
 
-/** The history once the group stepped to `stepTarget`'s answer: closed tabs passed over drop out, the current tab goes to the other side. */
-export function step(history: TabHistory, dir: -1 | 1, open: ReadonlySet<string>): TabHistory {
+/**
+ * The history once the group stepped to `stepTarget`'s answer: the current tab goes to the other side, and so do
+ * the tabs passed over that are still in `kept` (open, but not a target now, say a chat whose host is offline);
+ * the others (closed) drop out.
+ */
+export function step(history: TabHistory, dir: -1 | 1, open: ReadonlySet<string>, kept: ReadonlySet<string> = open): TabHistory {
   const target = stepTarget(history, dir, open);
   if (target === null) return history;
   const from = dir < 0 ? history.back : history.forward;
   const to = dir < 0 ? history.forward : history.back;
-  const rest = from.slice(0, from.lastIndexOf(target));
-  const passed = history.current === null ? to : [...to, history.current].slice(-LIMIT);
+  const index = from.lastIndexOf(target);
+  const rest = from.slice(0, index);
+  const skipped = from.slice(index + 1).filter((id) => kept.has(id) && id !== history.current).reverse();
+  const passed = [...to, ...(history.current === null ? [] : [history.current]), ...skipped].slice(-LIMIT);
   return dir < 0 ? { back: rest, forward: passed, current: target } : { back: passed, forward: rest, current: target };
 }

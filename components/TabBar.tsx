@@ -555,13 +555,16 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
               disabled={item.disabled}
               style={{ padding: "6px 9px", borderRadius: 6, color: item.disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: 12, opacity: item.disabled ? 0.55 : 1, cursor: item.disabled ? "default" : "pointer" }}
               onClick={() => {
+                const tabId = menu?.tabId ?? "";
                 item.onSelect();
                 // Runs before the menu's own focus restore, which then leaves this focus alone.
                 requestAnimationFrame(() => {
                   if (menuAnchorRef.current?.isConnected) return;
-                  // A strip whose last tab left is gone: the first group strip left takes focus.
+                  // Split off: the tab, in its new strip. Closed: this strip's shown tab, or the first group
+                  // strip's when this one went with its last tab.
+                  const moved = document.querySelector<HTMLElement>(`[role="tab"][data-tab-id="${CSS.escape(tabId)}"]`);
                   const strip = listRef.current ?? document.querySelector("[data-group-strip]");
-                  strip?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
+                  (moved ?? strip?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]'))?.focus();
                 });
               }}
             >
