@@ -204,9 +204,10 @@ export function buildAtMentionText(entryPath: string, isDir: boolean): string {
 
 /**
  * A path in an @mention: bare, in double quotes when it has a space (or `force`), in single quotes when it has a
- * double quote. pi does not parse mentions in a prompt, so this is for the model and for the composer's chips
- * (`ChatInput-mirror.tsx`). A path with both quote kinds and a space has no clean form and gets double quotes.
+ * double quote. pi does not parse mentions in a prompt, so this is for the model to read, and line mentions must
+ * match the composer's chip pattern (`LINE_MENTION`, `ChatInput-mirror.tsx`).
  */
+// ponytail: a path with both quote kinds and a space has no clean form and gets broken double quotes; escape if it matters.
 function mentionPath(p: string, force = false): string {
   if (p.includes('"') && !p.includes("'")) return `'${p}'`;
   return force || p.includes(" ") ? `"${p}"` : p;
