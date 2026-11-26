@@ -1956,9 +1956,11 @@ export function AppShell({ appName }: { appName: string }) {
   const handleCloseAllFileTabs = useCallback((groupTabIds: readonly string[]) => {
     stripActionRef.current = Date.now();
     setFileTabs((tabs) => tabs.filter((tab) => !groupTabIds.includes(tab.id)));
-    setActiveFileTabId(null);
-    setFileShown(false);
-  }, []);
+    if (activeFileTabId && groupTabIds.includes(activeFileTabId)) {
+      setActiveFileTabId(null);
+      setFileShown(false);
+    }
+  }, [activeFileTabId]);
 
   // The sidebar's lists keep chat tabs current (see syncChatTabs): a renamed
   // session relabels its tab, and one that left the list since the last load
@@ -2275,6 +2277,11 @@ export function AppShell({ appName }: { appName: string }) {
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
   // A chat a group already shows stays reachable from the strip, whatever its host.
   const reachable = (session: SessionInfo) => shownChatIds.has(chatTabId(session)) || !unreachableReason(session);
+  // A file, the new chat, or a chat that can be opened: what ←/→ may land on and a split may move.
+  const tabReachable = (id: string) => {
+    const session = chatTabById(id);
+    return !session || reachable(session);
+  };
   const selectStripTab = (id: string) => {
     stripActionRef.current = Date.now();
     if (id === NEW_CHAT_TAB_ID) {
@@ -2362,7 +2369,7 @@ export function AppShell({ appName }: { appName: string }) {
   // visit that the selection causes finds it already there.
   const stepGroupHistory = (group: TabGroup, dir: -1 | 1) => {
     const history = tabHistories.get(group.id) ?? EMPTY_TAB_HISTORY;
-    const open = new Set(group.tabs);
+    const open = new Set(group.tabs.filter(tabReachable));
     const target = stepTarget(history, dir, open);
     if (!target) return;
     setTabHistories((histories) => new Map(histories).set(group.id, stepTabHistory(history, dir, open)));
@@ -3069,11 +3076,13 @@ export function AppShell({ appName }: { appName: string }) {
               selectStripTab(group.active);
             };
             const history = tabHistories.get(group.id) ?? EMPTY_TAB_HISTORY;
-            const openInGroup = new Set(group.tabs);
+            const openInGroup = new Set(group.tabs.filter(tabReachable));
             const fileTabsInGroup = group.tabs.filter((id) => fileTabIds.has(id));
             const tabMenu = (tabId: string): TabMenuItem[] => [
-              { label: t("appShell.splitRight"), disabled: group.tabs.length < 2, onSelect: () => splitTabGroup(group.id, "row", tabId) },
-              { label: t("appShell.splitDown"), disabled: group.tabs.length < 2, onSelect: () => splitTabGroup(group.id, "column", tabId) },
+              ...(isMobile ? [] : [
+                { label: t("appShell.splitRight"), disabled: group.tabs.length < 2 || !tabReachable(tabId), onSelect: () => splitTabGroup(group.id, "row", tabId) },
+                { label: t("appShell.splitDown"), disabled: group.tabs.length < 2 || !tabReachable(tabId), onSelect: () => splitTabGroup(group.id, "column", tabId) },
+              ]),
               { label: t("tabBar.close"), disabled: stripTabInfo.get(tabId)?.closable === false, onSelect: () => closeStripTab(tabId) },
               ...(fileTabIds.has(tabId) ? [
                 { label: t("appShell.closeOtherTabs"), disabled: fileTabsInGroup.length < 2, onSelect: () => handleCloseOtherFileTabs(tabId, group.tabs) },
@@ -3126,7 +3135,12 @@ export function AppShell({ appName }: { appName: string }) {
                           <button
                             type="button"
                             className="tab-group-action ui-focus-ring"
-                            onClick={() => { setLastFocusedGroupId(group.id); startNewChat(); }}
+                            onClick={() => {
+                              // The new chat is one tab: one kept in another group moves here first.
+                              setTabLayout((layout) => groupOfTab(layout, NEW_CHAT_TAB_ID) ? moveTab(layout, NEW_CHAT_TAB_ID, group.id, null) : layout);
+                              setLastFocusedGroupId(group.id);
+                              startNewChat();
+                            }}
                             title={t("appShell.newSessionInGroup")}
                             aria-label={t("appShell.newSessionInGroup")}
                           >
@@ -3153,7 +3167,7 @@ export function AppShell({ appName }: { appName: string }) {
                   shown={tab.id === shownFile?.id}
                   focused={focused}
                   activeFileMatchesSource={activeFileMatchesSource}
-                  actions={focused && tab.id === shownFile?.id ? fileActions : undefined}
+                  actions={focused && tab.id === shownFile?.id && tab.id === activeFileTabId ? fileActions : undefined}
                   explorerRefreshKey={explorerRefreshKey}
                   onMentionLines={handleFileLineMention}
                   onOpenFile={handleOpenFile}

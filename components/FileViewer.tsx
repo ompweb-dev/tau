@@ -1042,9 +1042,17 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [displayMode, mentionLineRange, onMentionLines]);
 
+  // While the file loads or after it failed (too large to preview, say), its actions and Download stay at the top right.
+  const stateActions = (
+    <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 4 }}>
+      {headerActions}<DownloadLink hostId={hostId} filePath={filePath} sourceSessionId={sourceSessionId} />
+    </div>
+  );
+
   if (loading) {
     return (
-      <div role="status" aria-busy="true" aria-label={t("fileViewer.loading")} style={{ height: "100%", display: "flex", flexDirection: "column", gap: 12, padding: 24, boxSizing: "border-box", overflow: "hidden" }}>
+      <div role="status" aria-busy="true" aria-label={t("fileViewer.loading")} style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", gap: 12, padding: 24, boxSizing: "border-box", overflow: "hidden" }}>
+        {stateActions}
         <div aria-hidden="true" className="skeleton" style={{ width: "44%", height: 14 }} />
         <div aria-hidden="true" className="skeleton" style={{ width: "92%", height: 12 }} />
         <div aria-hidden="true" className="skeleton" style={{ width: "84%", height: 12 }} />
@@ -1056,7 +1064,8 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
 
   if (error) {
     return (
-      <div role="alert" style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 24, color: "var(--status-error)", fontSize: 13, textAlign: "center" }}>
+      <div role="alert" style={{ position: "relative", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 24, color: "var(--status-error)", fontSize: 13, textAlign: "center" }}>
+        {stateActions}
         <div>{error}</div>
         <button
           type="button"

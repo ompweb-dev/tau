@@ -553,7 +553,14 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
               className="sidebar-menu-item"
               disabled={item.disabled}
               style={{ padding: "6px 9px", borderRadius: 6, color: item.disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: 12, opacity: item.disabled ? 0.55 : 1, cursor: item.disabled ? "default" : "pointer" }}
-              onClick={item.onSelect}
+              onClick={() => {
+                item.onSelect();
+                // Runs before the menu's own focus restore, which then leaves this focus alone.
+                requestAnimationFrame(() => {
+                  if (menuAnchorRef.current?.isConnected) return;
+                  listRef.current?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
+                });
+              }}
             >
               {item.label}
             </button>
