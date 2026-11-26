@@ -742,7 +742,7 @@ const SessionItem = memo(function SessionItem({
         : isUnread ? t("sessionSidebar.statusDone")
           : t("sessionSidebar.statusReady");
   const statusId = useId();
-  const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, relativeTime || null].filter(Boolean).join(" · ");
+  const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, relativeTime].filter(Boolean).join(" · ");
   const rowBackground = isSelected
     ? "color-mix(in srgb, var(--bg-selected) 70%, transparent)"
     : hovered ? "var(--bg-hover)" : "transparent";
@@ -889,7 +889,7 @@ const SessionItem = memo(function SessionItem({
       ) : (
         <>
           {depth > 0 && <GitBranch size={11} strokeWidth={2} style={{ flexShrink: 0, color: "var(--text-dim)" }} aria-hidden="true" />}
-          <button ref={contentButtonRef} type="button" className="session-item-button" aria-label={title} aria-describedby={statusId} aria-current={isSelected ? "true" : undefined} onKeyDown={(event) => { if (event.key === "Delete" && !deleting) { event.preventDefault(); setConfirmDelete(true); } }} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "center", flex: 1, minWidth: 0, textAlign: "left" }}>
+          <button ref={contentButtonRef} type="button" className="session-item-button" aria-label={title} aria-describedby={statusId} aria-current={isSelected ? "true" : undefined} onKeyDown={(event) => { if (event.key === "Delete" && !deleting) { event.preventDefault(); setConfirmDelete(true); } }} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "center", flex: 1, minWidth: 0 }}>
             <span title={title} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12.5, fontWeight: isSelected ? 600 : 500, lineHeight: 1.35, letterSpacing: "-0.005em" }}>
               {title}
             </span>
@@ -910,7 +910,6 @@ const SessionItem = memo(function SessionItem({
               </span>
             )}
             <div className="session-item-trailing" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexShrink: 0 }}>
-              <div className="session-item-actions" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
                 <button type="button" ref={menuButtonRef} className="session-item-icon-button session-item-menu-button" onClick={(event) => { event.stopPropagation(); setMenuPoint(null); setActionMenuOpen((open) => !open); }} title={t("projects.actions")} aria-label={t("projects.actions")} aria-expanded={actionMenuOpen} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 0, border: "none", borderRadius: "var(--radius-control)", background: actionMenuOpen ? "var(--bg-selected)" : "transparent", color: actionMenuOpen ? "var(--text)" : "var(--text-dim)", cursor: "pointer" }}>
                   <MoreHorizontal size={14} strokeWidth={2} aria-hidden="true" />
                 </button>
@@ -920,7 +919,6 @@ const SessionItem = memo(function SessionItem({
                   <button type="button" role="menuitem" data-menu-shortcut="c" aria-keyshortcuts="C" className="sidebar-menu-item" onClick={(event) => { event.stopPropagation(); setActionMenuOpen(false); void handleCopyTranscript(); }} disabled={copyingTranscript} style={{ display: "block", width: "100%", padding: "6px 9px", border: "none", borderRadius: 6, background: "transparent", color: "var(--text-muted)", cursor: copyingTranscript ? "default" : "pointer", textAlign: "left", fontSize: 11, opacity: copyingTranscript ? 0.55 : 1 }}><span>{t("sessionSidebar.copyTranscript")}</span><kbd style={{ float: "right", marginLeft: 16, color: "var(--text-dim)", fontFamily: "inherit" }}>C</kbd></button>
                   <button type="button" role="menuitem" data-menu-shortcut="d" aria-keyshortcuts="D" className="sidebar-menu-item" disabled={deleting} onClick={(event) => { event.stopPropagation(); setActionMenuOpen(false); setConfirmDelete(true); }} style={{ display: "block", width: "100%", padding: "6px 9px", border: "none", borderRadius: 6, background: "transparent", color: "var(--status-error)", cursor: "pointer", textAlign: "left", fontSize: 11 }}><span>{t("sessionSidebar.delete")}</span><kbd style={{ float: "right", marginLeft: 16, color: "var(--text-dim)", fontFamily: "inherit" }}>D</kbd></button>
                 </SidebarPortalMenu>
-              </div>
             </div>
           </div>
         </>

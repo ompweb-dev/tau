@@ -1306,7 +1306,6 @@ html[data-touch-targets="accessible"] :is(.image-lightbox-stepper button, .image
   padding-bottom: 4px;
 }
 .session-item-trailing {
-  gap: 2px;
   height: 24px;
 }
 /* A session row's second line: status and age ("Ready · 2h"). */
