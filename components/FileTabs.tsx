@@ -95,7 +95,6 @@ export const FileTabToolbar = memo(function FileTabToolbar({ activeFileTab, file
   );
 });
 
-/** Every open file's viewer, kept mounted so switching tabs preserves scroll and preview state. */
 /**
  * One file tab's view. Only its group's shown file is displayed (covering the
  * group's chat) and carries the group's file panel id; the others stay mounted, hidden.

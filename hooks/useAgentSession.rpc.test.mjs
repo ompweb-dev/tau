@@ -5864,7 +5864,7 @@ test("closing the last chat tab opens a new chat in its workspace", async (t) =>
   view.unmount();
 });
 
-test("a new chat in a group of its own keeps its tab while another group's chat is selected", async (t) => {
+async function draftInItsOwnGroup(t) {
   resetWorld();
   servePooledWorkspace();
   window.history.replaceState(null, "", "?session=worker-one");
@@ -5874,43 +5874,112 @@ test("a new chat in a group of its own keeps its tab while another group's chat 
   await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
   await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
-  const shownSession = () => new URLSearchParams(window.location.search).get("session");
-  const newChatTab = () => view.queryByRole("tab", { name: translate("appShell.newSession") });
-  const groupOf = (tab) => tab.closest("[data-group-id]");
-  const composerIn = (group) => view.container.querySelector(`[data-layer-group="${group.dataset.groupId}"] textarea`);
-  const separators = () => view.queryAllByRole("separator", { name: translate("appShell.resizeTabGroups") }).length;
-  const one = groupOf(view.getByRole("tab", { name: "Worker one conversation" }));
+  const h = {
+    view,
+    shownSession: () => new URLSearchParams(window.location.search).get("session"),
+    newChatTab: () => view.queryByRole("tab", { name: translate("appShell.newSession") }),
+    groupOf: (tab) => tab.closest("[data-group-id]"),
+    composerIn: (group) => view.container.querySelector(`[data-layer-group="${group.dataset.groupId}"] textarea`),
+    separators: () => view.queryAllByRole("separator", { name: translate("appShell.resizeTabGroups") }).length,
+    tab: (name) => view.getByRole("tab", { name }),
+    focusedGroup: () => view.container.querySelector('[data-group-id] > [data-group-focused="true"]')?.parentElement,
+    newSessionButton: () => {
+      const prefix = translate("sessionSidebar.newSessionIn", { cwd: "\u0000" }).split("\u0000")[0];
+      return view.container.querySelector(`button[title^="${prefix}"]`);
+    },
+  };
+  // Worker one, in the left group, joins worker two's group and gets a group of its own again: one mount throughout.
+  const workerOneComposer = h.composerIn(h.groupOf(h.tab("Worker one conversation")));
+  await act(async () => { fireEvent.keyDown(h.tab("Worker one conversation"), { key: "ArrowDown", altKey: true, shiftKey: true }); await sleep(60); });
+  assert.equal(h.separators(), 0, "one group left");
+  assert.equal(h.composerIn(h.groupOf(h.tab("Worker one conversation"))), workerOneComposer, "a chat moved to another group keeps its mount");
+  await act(async () => { fireEvent.click(h.view.getAllByRole("button", { name: translate("appShell.splitRight") })[0]); await sleep(60); });
+  assert.equal(h.separators(), 1);
+  assert.equal(h.composerIn(h.groupOf(h.tab("Worker one conversation"))), workerOneComposer, "and when split into its own group again");
+  // Groups: [worker two] | [worker one] (focused). A new chat joins the focused group; worker one then closes,
+  // leaving the new chat as its group's only tab.
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(80); });
+  await until(() => h.newChatTab(), "the new chat gets a tab");
+  assert.equal(h.view.queryByRole("button", { name: translate("tabBar.closeTab", { label: translate("appShell.newSession") }) }), null, "the selected new chat has no close button");
+  h.draftGroup = h.groupOf(h.newChatTab());
+  h.other = h.groupOf(h.tab("Worker two conversation"));
+  assert.notEqual(h.draftGroup, h.other);
+  h.draftComposer = h.composerIn(h.draftGroup);
+  await act(async () => { fireEvent.click(h.view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker one conversation" }) })); await sleep(80); });
+  assert.equal(h.separators(), 1, "two groups");
+  return h;
+}
 
-  // A new chat in the focused group (worker two's), with a draft.
-  const prefix = translate("sessionSidebar.newSessionIn", { cwd: "\u0000" }).split("\u0000")[0];
-  await act(async () => { fireEvent.click(view.container.querySelector(`button[title^="${prefix}"]`)); await sleep(80); });
-  await until(() => newChatTab(), "the new chat gets a tab");
-  const draftGroup = groupOf(newChatTab());
-  assert.notEqual(draftGroup, one);
-  const draftComposer = composerIn(draftGroup);
-  await act(async () => { fireEvent.change(draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
-  // Worker two is the draft group's other tab: close it, so the new chat is the group's only tab.
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(80); });
-  assert.equal(separators(), 1, "two groups");
+test("a new chat in a group of its own keeps its tab while another group's chat is selected", async (t) => {
+  const h = await draftInItsOwnGroup(t);
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
 
-  await act(async () => { fireEvent.pointerDown(composerIn(one)); await sleep(80); });
-  assert.equal(shownSession(), "worker-one", "the other group's chat is selected");
-  assert.ok(newChatTab(), "the new chat keeps its tab");
-  assert.equal(separators(), 1, "and its group");
-  assert.equal(composerIn(draftGroup), draftComposer, "its chat stays mounted");
-  assert.equal(draftComposer.value, "unsent idea");
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  assert.equal(h.shownSession(), "worker-two", "the other group's chat is selected");
+  assert.ok(h.newChatTab(), "the new chat keeps its tab");
+  assert.equal(h.separators(), 1, "and its group");
+  assert.equal(h.composerIn(h.draftGroup), h.draftComposer, "its chat stays mounted");
+  assert.equal(h.draftComposer.value, "unsent idea");
 
-  await act(async () => { fireEvent.click(newChatTab()); await sleep(80); });
-  assert.equal(shownSession(), null, "its tab selects the new chat again");
-  assert.equal(newChatTab().getAttribute("aria-selected"), "true");
-  assert.equal(composerIn(draftGroup), draftComposer, "without remounting it");
+  // A conversation opened from the sidebar joins the focused group: the new chat's group is left alone.
+  await act(async () => { fireEvent.click(h.view.getByText("Worker one conversation")); await sleep(120); });
+  assert.equal(h.shownSession(), "worker-one");
+  assert.ok(h.other.contains(h.tab("Worker one conversation")), "in the focused group");
+  assert.ok(h.newChatTab(), "the new chat keeps its tab");
+  assert.equal(h.composerIn(h.draftGroup), h.draftComposer);
 
-  await act(async () => { fireEvent.pointerDown(composerIn(one)); await sleep(80); });
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: translate("appShell.newSession") }) })); await sleep(80); });
-  assert.equal(newChatTab(), null, "closing it from another group removes it");
-  assert.equal(separators(), 0, "and its group");
-  assert.equal(shownSession(), "worker-one");
-  view.unmount();
+  await act(async () => { fireEvent.click(h.newChatTab()); await sleep(80); });
+  assert.equal(h.shownSession(), null, "its tab selects the new chat again");
+  assert.equal(h.newChatTab().getAttribute("aria-selected"), "true");
+  assert.equal(h.composerIn(h.draftGroup), h.draftComposer, "without remounting it");
+
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  await act(async () => { fireEvent.click(h.view.getByRole("button", { name: translate("tabBar.closeTab", { label: translate("appShell.newSession") }) })); await sleep(80); });
+  assert.equal(h.newChatTab(), null, "closing it from another group removes it");
+  assert.equal(h.separators(), 0, "and its group");
+  assert.equal(h.shownSession(), "worker-one");
+  h.view.unmount();
+});
+
+test("another new chat replaces a kept one and opens fresh in the focused group", async (t) => {
+  const h = await draftInItsOwnGroup(t);
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  assert.ok(h.newChatTab(), "kept");
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(h.separators(), 0, "the kept new chat's group is gone");
+  assert.ok(h.other.contains(h.newChatTab()), "the new chat opens in the focused group");
+  assert.equal(h.draftComposer.isConnected, false, "as a new mount");
+  h.view.unmount();
+});
+
+test("a new chat sent and left for another group's chat becomes its session there, unselected", async (t) => {
+  const h = await draftInItsOwnGroup(t);
+  let release;
+  world.holds.push({
+    match: (method, url) => method === "POST" && url === "/api/agent/new",
+    produce: () => new Promise((resolve) => { release = () => resolve({ value: { sessionId: "created", hostId: "h1", cwd: "/shared" } }); }),
+  });
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "hello there" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.draftComposer, { key: "Enter" }); await sleep(60); });
+  await until(() => release, "the new chat is being created");
+  // The chat view (not its composer, which changes once a new chat sends).
+  const viewIn = (group) => view(group)?.querySelector('[id^="workspace-chat-"]');
+  const view = (group) => h.view.container.querySelector(`[data-layer-group="${group.dataset.groupId}"]`);
+  const sending = viewIn(h.draftGroup);
+  const otherComposer = h.composerIn(h.other);
+  await act(async () => { fireEvent.pointerDown(otherComposer); await sleep(80); });
+  assert.equal(h.focusedGroup(), h.other, "the other group's chat is selected");
+  assert.equal(viewIn(h.draftGroup), sending, "the sending chat stays mounted in its group");
+  await act(async () => { release(); await sleep(300); });
+  assert.equal(h.focusedGroup(), h.other, "the selection stays where the user went");
+  assert.equal(h.newChatTab(), null, "the new chat's tab is its session's now");
+  assert.ok(h.draftGroup.querySelector('[role="tab"]'), "in its own group");
+  assert.equal(h.draftGroup.querySelectorAll('[role="tab"]').length, 1);
+  assert.equal(h.separators(), 1);
+  assert.equal(viewIn(h.draftGroup), sending, "on the same mount");
+  assert.equal(h.composerIn(h.other), otherComposer, "and the selected chat keeps its own");
+  h.view.unmount();
 });
 
 test("a chat tab on an offline host says so instead of opening", async (t) => {
