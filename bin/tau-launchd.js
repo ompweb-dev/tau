@@ -2,7 +2,8 @@
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./runtime-version").exitIfUnsupportedRuntime();
+const { bunDirectory, exitIfUnsupportedRuntime } = require("./runtime-version");
+exitIfUnsupportedRuntime();
 
 // Install tau as a macOS launchd user agent (starts at login, restarts on crash).
 //
@@ -106,7 +107,13 @@ function install(pkgArg) {
   const runtimeBin = process.execPath;
   // npx, not bunx: an in-app update recognizes npm's cache as an npm install, never bunx's.
   const siblingNpx = path.join(path.dirname(runtimeBin), "npx");
-  const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
+  const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH: the launchd agents run tau through npm's npx, so install npm (Node.js)"));
+  let bunDir;
+  try {
+    bunDir = bunDirectory();
+  } catch (error) {
+    fail(error.message);
+  }
 
   // An explicit pi for the service; without it the service finds pi on PATH.
   const piBin = process.env.TAU_PI_BIN || null;
@@ -140,7 +147,7 @@ function install(pkgArg) {
     ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
-    path.dirname(runtimeBin),
+    bunDir,
     "/usr/bin",
     "/bin",
     "/usr/sbin",

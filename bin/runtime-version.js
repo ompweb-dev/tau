@@ -31,4 +31,26 @@ function exitIfUnsupportedRuntime() {
   process.exit(1);
 }
 
-module.exports = { MIN_BUN_VERSION, exitIfUnsupportedRuntime, getUnsupportedRuntimeMessage, isBunVersionSupported };
+/**
+ * The directory a service's PATH needs for the bins' `#!/usr/bin/env bun`: this Bun's, else (npm's bun package names its
+ * binary bun.exe) that of the bun on `PATH`. Throws when there is no file named bun in either.
+ */
+function bunDirectory(execPath = process.execPath, env = process.env) {
+  const { accessSync, constants, statSync } = process.getBuiltinModule("node:fs");
+  const path = process.getBuiltinModule("node:path");
+  const isBun = (dir) => {
+    try {
+      const file = path.join(dir, process.platform === "win32" ? "bun.exe" : "bun");
+      accessSync(file, constants.X_OK);
+      return statSync(file).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const candidates = [path.dirname(execPath), ...(env.PATH ?? "").split(path.delimiter).filter(Boolean)];
+  const found = candidates.find(isBun);
+  if (!found) throw new Error("no executable named bun next to this Bun or on PATH: install Bun (https://bun.sh)");
+  return found;
+}
+
+module.exports = { MIN_BUN_VERSION, bunDirectory, exitIfUnsupportedRuntime, getUnsupportedRuntimeMessage, isBunVersionSupported };

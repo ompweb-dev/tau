@@ -2,7 +2,8 @@
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./runtime-version").exitIfUnsupportedRuntime();
+const { bunDirectory, exitIfUnsupportedRuntime } = require("./runtime-version");
+exitIfUnsupportedRuntime();
 
 // Install tau as a Linux systemd user service.
 //
@@ -232,7 +233,7 @@ function validateHostname(value) {
 // tray or an editor can change them without reinstalling the unit. The web and
 // host units share the env file: same user, same HOME and PI_CODING_AGENT_DIR,
 // so both read the same <agent dir>/tau/host.json.
-function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath }) {
+function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath, bunDir = bunDirectory() }) {
   const piBin = extraEnv.TAU_PI_BIN ?? null;
   const interpreterDir = piBin ? launcherInterpreterDir(piBin) : null;
   const pathDirs = [
@@ -242,9 +243,7 @@ function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, 
     // fails with exit 127 even though the binary itself is on PATH (#116).
     ...(interpreterDir ? [interpreterDir] : []),
     path.dirname(tauBin),
-    // The `tau` bin is `#!/usr/bin/env bun`: this Bun's directory, or, when its binary is not named bun (npm's bun
-    // package names it bun.exe), the directory of the bun on PATH.
-    isExecutableFile(path.join(path.dirname(process.execPath), "bun")) ? path.dirname(process.execPath) : path.dirname(which("bun") ?? process.execPath),
+    bunDir,
     path.join(home, ".local", "bin"),
     "/usr/local/bin",
     "/usr/bin",

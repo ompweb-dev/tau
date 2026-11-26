@@ -35,3 +35,16 @@ for (const [name, script] of Object.entries(packageJson.bin)) {
     assert.match(result.stderr, /runs on Bun 1\.4\.4 or newer, not Node\.js/);
   });
 }
+
+test("bunDirectory finds a file named bun beside this Bun or on PATH, or refuses", { skip: process.platform === "win32" && "systemd/launchd only" }, async () => {
+  const { bunDirectory } = require("./runtime-version.js");
+  const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "bun-dir-"));
+  for (const sub of ["npm", "path"]) mkdirSync(join(dir, sub));
+  writeFileSync(join(dir, "npm", "bun.exe"), "", { mode: 0o755 });
+  writeFileSync(join(dir, "path", "bun"), "", { mode: 0o755 });
+  assert.equal(bunDirectory(join(dir, "path", "bun"), { PATH: "" }), join(dir, "path"));
+  assert.equal(bunDirectory(join(dir, "npm", "bun.exe"), { PATH: join(dir, "path") }), join(dir, "path"));
+  assert.throws(() => bunDirectory(join(dir, "npm", "bun.exe"), { PATH: "" }), /no executable named bun/);
+});

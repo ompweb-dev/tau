@@ -1,4 +1,4 @@
-// Daemons copy only this file. Keep its startup self-contained and load lifecycle code before any swap, from private copies or the descriptor's verified installation.
+// A daemon copies this file with the modules it imports at runtime (copyHostWorkerSources). Keep its startup self-contained and load lifecycle code before any swap, from private copies or the descriptor's verified installation.
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmodSync, closeSync, constants, createReadStream, createWriteStream, existsSync, fstatSync, ftruncateSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
