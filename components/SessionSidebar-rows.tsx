@@ -3,7 +3,7 @@
 import { memo, useCallback, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { AgentMessage, ExitedRpcSession, ManagedProject, ProjectLaunchConfig, SessionInfo } from "@/lib/types";
 import { formatExitedSessionNotice, useI18n } from "@/lib/i18n";
-import { ChevronDown, ChevronRight, Folder, GitBranch, MessageCircleQuestion, MoreHorizontal, Pencil, Pin, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, GitBranch, MoreHorizontal, Pin, Plus } from "lucide-react";
 import { Tooltip } from "./ui/primitives";
 import { ConfirmDialog } from "./ui/field";
 import { copyText } from "@/lib/clipboard";
@@ -30,8 +30,8 @@ import {
 /**
  * Shared indicator sizing; session rows keep theirs in the right-edge column.
  *
- * Keep the session indicator outside the timestamp and action controls so it
- * stays visible while the menu is open.
+ * Keep the session indicator outside the action controls so it stays visible
+ * while the menu is open.
  */
 const SIDEBAR_STATUS_SLOT = 12;
 const SIDEBAR_STATUS_GAP = 2;
@@ -735,6 +735,14 @@ const SessionItem = memo(function SessionItem({
   // A session's composer draft is keyed by its id (ChatWindow's `draftKey`).
   const hasUnsentDraft = useSyncExternalStore(subscribeDrafts, () => hasDraft(session.id), () => false);
   const relativeTime = formatRelativeTime(session.modified, locale, relativeTimeNow);
+  // The row's second line: what the session is doing, a draft if one waits, and its age ("Ready · 2h").
+  const status = isAwaitingInput ? t("sessionSidebar.statusNeedsInput")
+    : isRunning ? t("sessionSidebar.statusRunning")
+      : exited ? t("sessionSidebar.statusStopped")
+        : isUnread ? t("sessionSidebar.statusDone")
+          : t("sessionSidebar.statusReady");
+  const statusId = useId();
+  const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, relativeTime].filter(Boolean).join(" · ");
   const rowBackground = isSelected
     ? "color-mix(in srgb, var(--bg-selected) 70%, transparent)"
     : hovered ? "var(--bg-hover)" : "transparent";
@@ -846,13 +854,13 @@ const SessionItem = memo(function SessionItem({
         }
       }}
       style={{
-        height: 30,
         display: "flex",
         alignItems: "center",
         gap: 6,
         width: "100%",
         margin: "1px 0",
-        padding: `0 8px 0 ${30 + depth * 14}px`,
+        paddingLeft: 30 + depth * 14,
+        paddingRight: 8,
         position: "relative",
         overflow: "hidden",
         background: rowBackground,
@@ -871,7 +879,7 @@ const SessionItem = memo(function SessionItem({
           title={matchesExpanded ? t("sessionSidebar.hideMatches") : t("sessionSidebar.showMatches")}
           aria-label={matchesExpanded ? t("sessionSidebar.hideMatches") : t("sessionSidebar.showMatches")}
           aria-expanded={matchesExpanded}
-          style={{ position: "absolute", left: depth * 14, top: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 24, padding: 0, border: "none", background: "none", color: "var(--text-dim)", cursor: "pointer" }}
+          style={{ position: "absolute", left: depth * 14, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", width: 20, height: 24, padding: 0, border: "none", background: "none", color: "var(--text-dim)", cursor: "pointer" }}
         >
           <ChevronRight size={12} strokeWidth={1.8} aria-hidden="true" style={{ transform: matchesExpanded ? "rotate(90deg)" : "none", transition: "transform var(--dur-fast) var(--ease-out-warm)" }} />
         </button>
@@ -881,20 +889,13 @@ const SessionItem = memo(function SessionItem({
       ) : (
         <>
           {depth > 0 && <GitBranch size={11} strokeWidth={2} style={{ flexShrink: 0, color: "var(--text-dim)" }} aria-hidden="true" />}
-          <button ref={contentButtonRef} type="button" className="session-item-button" aria-current={isSelected ? "true" : undefined} onKeyDown={(event) => { if (event.key === "Delete" && !deleting) { event.preventDefault(); setConfirmDelete(true); } }} style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
+          <button ref={contentButtonRef} type="button" className="session-item-button" aria-label={title} aria-describedby={statusId} aria-current={isSelected ? "true" : undefined} onKeyDown={(event) => { if (event.key === "Delete" && !deleting) { event.preventDefault(); setConfirmDelete(true); } }} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "center", flex: 1, minWidth: 0 }}>
             <span title={title} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: 12.5, fontWeight: isSelected ? 600 : 500, lineHeight: 1.35, letterSpacing: "-0.005em" }}>
               {title}
             </span>
-            {isAwaitingInput && (
-              <span role="img" title={t("sessionSidebar.awaitingInput")} aria-label={t("sessionSidebar.awaitingInput")} style={{ display: "inline-flex", flexShrink: 0, marginLeft: 5, color: "var(--accent)" }}>
-                <MessageCircleQuestion size={11} strokeWidth={2.2} aria-hidden="true" />
-              </span>
-            )}
-            {hasUnsentDraft && (
-              <span role="img" title={t("sessionSidebar.unsentDraft")} aria-label={t("sessionSidebar.unsentDraft")} style={{ display: "inline-flex", flexShrink: 0, marginLeft: 5, color: "var(--accent)" }}>
-                <Pencil size={11} strokeWidth={2.2} aria-hidden="true" />
-              </span>
-            )}
+            <span id={statusId} className="session-item-status" title={relativeTime ? new Date(session.modified).toLocaleString(locale) : undefined} data-attention={isAwaitingInput || exited ? "true" : undefined}>
+              {statusLine}
+            </span>
           </button>
           {session.worktreeBranch && <span title={t("sessionSidebar.worktreeTitle", { path: session.cwd })} style={{ display: "flex", alignItems: "center", gap: 3, maxWidth: 56, minWidth: 0, overflow: "hidden", color: "var(--text-dim)", fontSize: 10, flexShrink: 1 }}><GitBranch size={10} strokeWidth={2.4} aria-hidden="true" /><span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.worktreeBranch}</span></span>}
           {hasChildren && <button className="session-item-icon-button" onClick={(event) => { event.stopPropagation(); onToggleCollapse?.(); }} title={collapsed ? t("sessionSidebar.expandForks") : t("sessionSidebar.collapseForks")} aria-label={collapsed ? t("sessionSidebar.expandForks") : t("sessionSidebar.collapseForks")} aria-expanded={!collapsed} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, padding: 0, flexShrink: 0, border: "none", background: "none", color: "var(--text-dim)", cursor: "pointer", transform: collapsed ? "rotate(-90deg)" : "none", transition: "transform var(--dur-fast) var(--ease-out-warm)" }}><ChevronDown size={12} strokeWidth={1.8} aria-hidden="true" /></button>}
@@ -909,10 +910,6 @@ const SessionItem = memo(function SessionItem({
               </span>
             )}
             <div className="session-item-trailing" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexShrink: 0 }}>
-              <div className="session-item-metadata" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
-                {relativeTime && <span className="session-item-time" title={new Date(session.modified).toLocaleString(locale)} style={{ flexShrink: 0, whiteSpace: "nowrap", textAlign: "right", color: isSelected ? "var(--accent)" : "var(--text-dim)", fontSize: 10, fontVariantNumeric: "tabular-nums" }}>{relativeTime}</span>}
-              </div>
-              <div className="session-item-actions" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
                 <button type="button" ref={menuButtonRef} className="session-item-icon-button session-item-menu-button" onClick={(event) => { event.stopPropagation(); setMenuPoint(null); setActionMenuOpen((open) => !open); }} title={t("projects.actions")} aria-label={t("projects.actions")} aria-expanded={actionMenuOpen} style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 0, lineHeight: 0, border: "none", borderRadius: "var(--radius-control)", background: actionMenuOpen ? "var(--bg-selected)" : "transparent", color: actionMenuOpen ? "var(--text)" : "var(--text-dim)", cursor: "pointer" }}>
                   <MoreHorizontal size={14} strokeWidth={2} aria-hidden="true" />
                 </button>
@@ -922,7 +919,6 @@ const SessionItem = memo(function SessionItem({
                   <button type="button" role="menuitem" data-menu-shortcut="c" aria-keyshortcuts="C" className="sidebar-menu-item" onClick={(event) => { event.stopPropagation(); setActionMenuOpen(false); void handleCopyTranscript(); }} disabled={copyingTranscript} style={{ display: "block", width: "100%", padding: "6px 9px", border: "none", borderRadius: 6, background: "transparent", color: "var(--text-muted)", cursor: copyingTranscript ? "default" : "pointer", textAlign: "left", fontSize: 11, opacity: copyingTranscript ? 0.55 : 1 }}><span>{t("sessionSidebar.copyTranscript")}</span><kbd style={{ float: "right", marginLeft: 16, color: "var(--text-dim)", fontFamily: "inherit" }}>C</kbd></button>
                   <button type="button" role="menuitem" data-menu-shortcut="d" aria-keyshortcuts="D" className="sidebar-menu-item" disabled={deleting} onClick={(event) => { event.stopPropagation(); setActionMenuOpen(false); setConfirmDelete(true); }} style={{ display: "block", width: "100%", padding: "6px 9px", border: "none", borderRadius: 6, background: "transparent", color: "var(--status-error)", cursor: "pointer", textAlign: "left", fontSize: 11 }}><span>{t("sessionSidebar.delete")}</span><kbd style={{ float: "right", marginLeft: 16, color: "var(--text-dim)", fontFamily: "inherit" }}>D</kbd></button>
                 </SidebarPortalMenu>
-              </div>
             </div>
           </div>
         </>

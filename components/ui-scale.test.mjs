@@ -75,6 +75,12 @@ test("touch targets density options define accessible and compact modes with inl
   const source = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(source, /@source\s+inline\("data-touch-targets"\);/);
   assert.match(source, /html\[data-touch-targets="compact"\]\s+\.composer-primary-action\s*\{[^}]*min-height:\s*28px/);
-  assert.match(source, /html\[data-touch-targets="compact"\]\s+\.session-item-row\s*\{[^}]*min-height:\s*30px/);
+  // One session row height per mode, shared by the rows and the loading skeletons.
+  assert.match(source, /html\[data-touch-targets="compact"\]\s*\{[^}]*--session-row-height:\s*32px/);
+  assert.match(source, /html\[data-touch-targets="accessible"\]\s*\{[^}]*--session-row-height:\s*44px/);
+  assert.match(source, /html\[data-touch-targets="compact"\]\s+\.session-item-row\s*\{[^}]*min-height:\s*var\(--session-row-height\)/);
+  for (const skeleton of ["session-row-skeleton", "route-fallback-sidebar-row"]) {
+    assert.match(source, new RegExp(`\\.${skeleton}\\s*\\{[^}]*height:\\s*var\\(--session-row-height\\)`), `${skeleton} follows the row height`);
+  }
   assert.match(source, /html\[data-touch-targets="compact"\]\s+\.settings-card\s*\{[^}]*padding:\s*10px 16px/);
 });
