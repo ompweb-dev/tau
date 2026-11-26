@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   if (
     !isRecord(body) || !isValidNotificationId(body.clientId) || !isValidNotificationId(body.deviceId)
     || typeof body.visible !== "boolean" || !Number.isSafeInteger(body.seq)
-    || !Array.isArray(body.sessionIds)
+    || !Array.isArray(body.sessionIds) || body.sessionIds.length > 1000
     || !body.sessionIds.every((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 256)
   ) {
     return Response.json({ error: "Invalid presence report", code: "invalid_presence" }, { status: 400 });

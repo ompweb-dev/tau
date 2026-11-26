@@ -190,6 +190,13 @@ export function AppShell({ appName }: { appName: string }) {
   draftChatRef.current = draftChat;
   // The new chat is the selected view (not kept behind another group's chat).
   const draftShownRef = useRef(false);
+  // A fresh new chat while one is kept in a group: the kept one closes (its draft stays in the store), so the
+  // fresh one opens in the focused group on a mount of its own.
+  const dropKeptDraft = useCallback(() => {
+    if (!draftChatRef.current || draftShownRef.current) return;
+    setDraftChat(null);
+    setTabLayout((layout) => closeTab(layout, NEW_CHAT_TAB_ID));
+  }, []);
   const newSessionCreationId = newSessionCreation.id;
   const handleNewSessionInitialization = useCallback((initialization: string) => {
     setNewSessionCreation((current) => current.id === newSessionCreationId && current.initialization === undefined ? { ...current, initialization } : current);
@@ -1309,6 +1316,7 @@ export function AppShell({ appName }: { appName: string }) {
       if (selectedSession?.poolId === project.poolId && selectedSession.projectId === project.projectId) return;
       if (newSessionPoolProject?.poolId === project.poolId && newSessionPoolProject.projectId === project.projectId) return;
       setNewSessionPoolProject(project);
+      dropKeptDraft();
       setNewSessionCreation({ id: randomUUID() });
       setNewSessionCwd(null);
       setNewSessionHostId(undefined);
@@ -1349,6 +1357,7 @@ export function AppShell({ appName }: { appName: string }) {
       return prev;
     });
     setNewSessionHostId(remoteHostId(hostId));
+    dropKeptDraft();
     setNewSessionCreation({ id: randomUUID() });
     setSessionKey((k) => k + 1);
     setBranchTree([]);
@@ -1357,7 +1366,7 @@ export function AppShell({ appName }: { appName: string }) {
     setSystemPromptLoading(false);
     setActiveTopPanel(null);
     router.replace("/");
-  }, [router, selectedSession, newSessionPoolProject]);
+  }, [router, selectedSession, newSessionPoolProject, dropKeptDraft]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     // Re-picking the already-open session (sidebar double-click, palette
@@ -1394,13 +1403,8 @@ export function AppShell({ appName }: { appName: string }) {
   }, [router, isMobile, selectedSession]);
 
   const handleNewSession = useCallback((creationId: string, cwd: string | null, hostId?: string, project?: ManagedProject, initialization?: string) => {
-    // Another new chat while one is kept in a group: the kept one closes (its draft stays in the store), so the
-    // new one opens fresh in the focused group. Taking the kept one up again passes its own creation id.
-    const kept = draftChatRef.current;
-    if (kept && !draftShownRef.current && (creationId || undefined) !== kept.creationId) {
-      setDraftChat(null);
-      setTabLayout((layout) => closeTab(layout, NEW_CHAT_TAB_ID));
-    }
+    // Taking the kept new chat up again passes its own creation id.
+    if ((creationId || undefined) !== draftChatRef.current?.creationId) dropKeptDraft();
     setSettingsTab(null);
     setFileShown(false);
     setSelectedSession(null);
@@ -1420,7 +1424,7 @@ export function AppShell({ appName }: { appName: string }) {
       requestAnimationFrame(() => chatInputRef.current?.focus());
     }
     router.replace("/");
-  }, [router, isMobile, activeCwd, activePoolProject]);
+  }, [router, isMobile, activeCwd, activePoolProject, dropKeptDraft]);
 
   // ---- In-app Navigate back / forward over visited chat views ----
   // Own stack, not the browser History API (that one belongs to the mobile
@@ -1551,10 +1555,13 @@ export function AppShell({ appName }: { appName: string }) {
     if (!draftShownRef.current && draftChatRef.current) {
       // Sent, then left for another group's chat before pi answered: the new chat becomes its session in place,
       // keeping its mount, and the selection stays where the user went.
+      // A session opened meanwhile already has its tab: the new chat's tab then just closes.
       const id = chatTabId(session);
+      setNewSessionCwd(null);
+      setNewSessionPoolProject(null);
       setChatTabs((tabs) => tabs.some((tab) => sameSessionTarget(tab, session)) ? tabs : [...tabs, session]);
-      setTabLayout((layout) => replaceTab(layout, NEW_CHAT_TAB_ID, id));
-      setChatMounts((mounts) => ({ ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[NEW_CHAT_TAB_ID] ?? NEW_CHAT_TAB_ID } }));
+      setTabLayout((layout) => groupOfTab(layout, id) ? closeTab(layout, NEW_CHAT_TAB_ID) : replaceTab(layout, NEW_CHAT_TAB_ID, id));
+      setChatMounts((mounts) => mounts.keys[id] ? mounts : { ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[NEW_CHAT_TAB_ID] ?? NEW_CHAT_TAB_ID } });
       setRefreshKey((k) => k + 1);
       return;
     }
@@ -1675,6 +1682,7 @@ export function AppShell({ appName }: { appName: string }) {
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(selectedSession.poolId ? null : cwd ?? null);
+      dropKeptDraft();
       setNewSessionCreation({ id: randomUUID() });
       setNewSessionPoolProject(poolProjectOf(selectedSession) ?? null);
       setNewSessionHostId(remoteHostId(selectedSession.hostId));
@@ -1685,7 +1693,7 @@ export function AppShell({ appName }: { appName: string }) {
       setActiveTopPanel(null);
       router.replace("/");
     }
-  }, [selectedSession, router, poolProjectOf]);
+  }, [selectedSession, router, poolProjectOf, dropKeptDraft]);
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
   }, []);
@@ -3101,7 +3109,7 @@ export function AppShell({ appName }: { appName: string }) {
               ),
             }));
             layers.unshift({ key: chatKey ? `chat:${chatKey}` : `view:${group.id}`, groupId: group.id, node: inGroup(
-                  <div id={chatPanelId} role={groupTabs.length > 0 ? "tabpanel" : undefined} aria-label={groupTabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
+                  <div id={chatPanelId} role={group.tabs.length > 0 ? "tabpanel" : undefined} aria-label={group.tabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
           {!primary ? (backgroundChat ? (
             <ChatWindow
               key={chatKey ?? undefined}
@@ -3134,6 +3142,7 @@ export function AppShell({ appName }: { appName: string }) {
               newSessionPoolId={backgroundDraft.project?.poolId}
               newSessionProjectId={backgroundDraft.project?.projectId}
               newSessionInitialization={backgroundDraft.project?.poolId ? backgroundDraft.initialization : undefined}
+              onSessionCreated={handleSessionCreated}
               onAgentEnd={handleAgentEnd}
               modelsRefreshKey={modelsRefreshKey}
               onOpenProviders={() => setSettingsTab("providers")}
