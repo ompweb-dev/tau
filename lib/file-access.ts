@@ -90,7 +90,7 @@ export function getConfigAgentRoots(): string[] {
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
-const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
+export const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
 const PI_SECRET_FILES = ["auth.json", "mcp-auth.json", "oauth.json", "models.json", "mcp.json", "tau-settings.json"];
 /** tau's key files, checked by identity too: a hard link of one outside `tau/` is still that secret. */
 const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "host-control.json",

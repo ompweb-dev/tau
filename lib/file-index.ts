@@ -8,7 +8,7 @@ import { isUtf8 } from "node:buffer";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
 import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
-import { existingPathWithinRootsCheckerAsync, isPiSecretFile } from "./file-access";
+import { existingPathWithinRootsCheckerAsync, isPiSecretFile, PI_SECRET_NAME } from "./file-access";
 import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
 import { HostOpError } from "./hosts/link-protocol";
 import { getAgentDir, getConfigRoot } from "./pi/paths";
@@ -228,8 +228,9 @@ async function credentialCandidates(): Promise<(filePath: string, info: BigIntSt
     try { entries = readdirSync(dir, { encoding: "buffer" }); }
     catch (error) { if (!missing(error)) unknown = true; continue; }
     for (const entry of entries) {
-      // A name that is not UTF-8 cannot be named back to stat it (isPiSecretFile refuses those too).
-      if (!isUtf8(entry)) { unknown = true; continue; }
+      // A credential-like name that is not UTF-8 cannot be named back to stat it: every file then gets the full
+      // check, which refuses (as isPiSecretFile does). Other such names are not credentials.
+      if (!isUtf8(entry)) { if (PI_SECRET_NAME.test(entry.toString("utf8"))) unknown = true; continue; }
       const name = entry.toString("utf8");
       try { const target = statSync(path.join(dir, name), { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
       catch (error) { if (!missing(error)) unknown = true; }

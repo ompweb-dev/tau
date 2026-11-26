@@ -2883,10 +2883,9 @@ export function getRunningRpcSessionIds(): string[] {
   return getRunningRpcSessions().map((s) => s.id);
 }
 
-/** Ids of sessions with a live pi process (turn running or idle). */
-/** Ids of live sessions, those on `hostId` only when given (an id live on another host is another session). */
-export function getLiveRpcSessionIds(hostId?: string): string[] {
-  return [...getRegistry()].filter(([, session]) => session.isAlive?.() && (hostId === undefined || session.host.id === hostId)).map(([sessionId]) => sessionId);
+/** Ids of `hostId`'s sessions with a live pi process (turn running or idle); an id live on another host is another session. */
+export function getLiveRpcSessionIds(hostId: string): string[] {
+  return [...getRegistry()].filter(([, session]) => session.isAlive?.() && session.host.id === hostId).map(([sessionId]) => sessionId);
 }
 
 // ----------------------------------------------------------------------------

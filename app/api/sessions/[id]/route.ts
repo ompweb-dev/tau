@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404, sessionGoneEverywhere } from "@/lib/api-utils";
+import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404, sessionCopiedElsewhere } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import type { SessionReadValue } from "@/lib/hosts/session-ops";
@@ -227,9 +227,8 @@ export async function DELETE(
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds(resolved.host.id));
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id);
-    // State kept by id alone belongs to every copy of the id: it goes with the last one (or stays while another
-    // host's list cannot be read; a watch left behind ends at the outbox's 404).
-    if (await sessionGoneEverywhere(id)) {
+    // State kept by id alone belongs to every copy of the id: it stays while another host has one.
+    if (!sessionCopiedElsewhere(id, resolved.host.id)) {
       // Remove only this deleted session's content-free retry-lineage metadata.
       try {
         forgetSessionReplacementMappings(id);
