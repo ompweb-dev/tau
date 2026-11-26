@@ -28,6 +28,8 @@ export interface TabLayer {
   key: string;
   groupId: string;
   node: ReactNode;
+  /** Kept mounted but not shown: the whole layer is hidden, so it takes no clicks meant for the views below. */
+  hidden?: boolean;
 }
 
 /**
@@ -117,7 +119,7 @@ export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, lay
           <div
             key={layer.key}
             data-layer-group={group.id}
-            style={{ position: "absolute", left: percent(rect.x), top: `calc(${percent(rect.y)} + ${strip})`, width: percent(rect.w), height: `calc(${percent(rect.h)} - ${strip})`, display: hiddenGroup(group) ? "none" : "block", overflow: "hidden" }}
+            style={{ position: "absolute", left: percent(rect.x), top: `calc(${percent(rect.y)} + ${strip})`, width: percent(rect.w), height: `calc(${percent(rect.h)} - ${strip})`, display: hiddenGroup(group) || layer.hidden ? "none" : "block", overflow: "hidden" }}
           >
             {layer.node}
           </div>

@@ -5688,6 +5688,14 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   assert.equal(composerOne.closest('[id^="workspace-chat-"]').hasAttribute("inert"), false, "the chat it covered is uncovered");
   await act(async () => { fireEvent.keyDown(view.getByRole("tab", { name: /report\.txt/ }), { key: "ArrowUp", altKey: true, shiftKey: true }); await sleep(60); });
   assert.equal(view.getByText("FIRST OWNER CONTENT"), report, "and back");
+  // A file tab kept behind its group's chat hides its whole layer, so it takes none of the chat's clicks.
+  const reportLayer = report.closest("[data-layer-group]");
+  await act(async () => { fireEvent.click(view.getByRole("tab", { name: "Worker one conversation" })); await sleep(60); });
+  assert.equal(reportLayer.style.display, "none", "the hidden file's layer is not displayed");
+  assert.ok(reportLayer.isConnected, "but stays mounted");
+  await act(async () => { fireEvent.click(view.getByRole("tab", { name: /report\.txt/ })); await sleep(60); });
+  assert.equal(view.getByText("FIRST OWNER CONTENT").closest("[data-layer-group]"), reportLayer);
+  assert.notEqual(reportLayer.style.display, "none", "the shown file's layer is");
   await act(async () => { fireEvent.pointerDown(composerTwo); await sleep(60); });
 
   await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("tabBar.closeTab", { label: "Worker two conversation" }) })); await sleep(60); });

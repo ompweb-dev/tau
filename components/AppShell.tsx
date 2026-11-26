@@ -3110,6 +3110,7 @@ export function AppShell({ appName }: { appName: string }) {
             const layers: TabLayer[] = fileTabs.filter((tab) => group.tabs.includes(tab.id)).map((tab) => ({
               key: `file:${tab.id}`,
               groupId: group.id,
+              hidden: tab.id !== shownFile?.id,
               node: inGroup(
                 <FileTabView
                   panelId={filePanelId}
