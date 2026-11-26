@@ -5857,6 +5857,38 @@ test("a file opened over the focused composer takes focus, and closing it gives 
   view.unmount();
 });
 
+test("Esc stops the shown chat's run, but not while a file covers it", async (t) => {
+  resetWorld();
+  servePooledWorkspace();
+  window.history.replaceState(null, "", "?session=worker-one");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the conversation gets a tab");
+  // The run starts elsewhere; the chat attaches to it.
+  world.agents.set("worker-one", { running: true, state: { isStreaming: true, isPromptRunning: true } });
+  await act(async () => {
+    for (const running of world.runningStreams) running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["worker-one"] }) });
+    await settle();
+  });
+  await until(() => world.esInstances.some(({ channel }) => channel.kind === "session" && channel.sessionId === "worker-one"), "the chat follows the run");
+  const stops = () => world.calls.filter((call) => call.body?.type === "abort_and_restore_queue" || call.body?.type === "abort").length;
+
+  const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    hostTools.emit({ type: "host_tool_call", id: "esc-open", sessionId: "worker-one", hostId: "h1", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
+    await sleep(80);
+  });
+  await until(() => view.queryByText("FIRST OWNER CONTENT"), "a file opens over the chat");
+  await act(async () => { fireEvent.keyDown(document.body, { key: "Escape" }); await sleep(60); });
+  assert.equal(stops(), 0, "Esc over a file does not stop the run behind it");
+
+  await act(async () => { fireEvent.click(view.getByRole("tab", { name: "Worker one conversation" })); await sleep(60); });
+  await act(async () => { fireEvent.keyDown(document.body, { key: "Escape" }); await sleep(60); });
+  assert.equal(stops(), 1, "with the chat shown, Esc stops its run");
+  view.unmount();
+});
+
 test("closing the last chat tab opens a new chat in its workspace", async (t) => {
   resetWorld();
   servePooledWorkspace();
