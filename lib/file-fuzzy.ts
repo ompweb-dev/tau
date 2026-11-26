@@ -199,15 +199,24 @@ export function buildAtInsertText(entryPath: string, isDir: boolean, forceQuotes
  * too, with a trailing "/" and a trailing space.
  */
 export function buildAtMentionText(entryPath: string, isDir: boolean): string {
-  const p = isDir ? `${entryPath}/` : entryPath;
-  return p.includes(" ") ? `@"${p}" ` : `@${p} `;
+  return `@${mentionPath(isDir ? `${entryPath}/` : entryPath)} `;
+}
+
+/**
+ * A path as omp's @mention reads it: bare, in double quotes when it has a space, in single quotes when it has a
+ * double quote (omp also reads `@'…'`).
+ */
+// ponytail: a path with both quote kinds and a space has no form omp reads; it gets double quotes and stays prose.
+function mentionPath(p: string): string {
+  if (p.includes('"') && !p.includes("'")) return `'${p}'`;
+  return p.includes(" ") ? `"${p}"` : p;
 }
 
 /** Closed file @mention scoped to one logical line or an inclusive line range. */
 export function buildFileLineMentionText(entryPath: string, startLine: number, endLine: number): string {
   const firstLine = Math.max(1, Math.min(startLine, endLine));
   const lastLine = Math.max(1, Math.max(startLine, endLine));
-  const pathMention = entryPath.includes(" ") ? `@"${entryPath}"` : `@${entryPath}`;
+  const pathMention = `@${mentionPath(entryPath)}`;
   const lineSuffix = firstLine === lastLine ? `:${firstLine}` : `:${firstLine}-${lastLine}`;
   return `${pathMention}${lineSuffix} `;
 }

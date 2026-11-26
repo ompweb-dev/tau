@@ -46,3 +46,13 @@ test("an older read cannot replace the same path after its host changes", async 
   assert.ok(view.container.textContent.includes("Beta document"));
   assert.ok(!view.container.textContent.includes("Late alpha"));
 });
+
+test("a PDF or DOCX preview names its file in the header", () => {
+  browser();
+  globalThis.fetch = async () => Response.json({ size: 10 });
+  for (const name of ["docs/spec.pdf", "docs/brief.docx"]) {
+    const view = render(React.createElement(FileViewer, { filePath: `/same/${name}`, cwd: "/same", hostId: "local" }));
+    assert.ok(view.container.querySelector(`[title="/same/${name}"]`).textContent.includes(name));
+    cleanup();
+  }
+});

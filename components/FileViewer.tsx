@@ -668,7 +668,7 @@ function AudioViewer({ filePath, hostId, cwd, sourceSessionId, active = true, he
   );
 }
 
-function DocumentViewer({ filePath, hostId, sourceSessionId, active = true, headerActions }: Props) {
+function DocumentViewer({ filePath, hostId, cwd, sourceSessionId, active = true, headerActions }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -752,6 +752,7 @@ function DocumentViewer({ filePath, hostId, sourceSessionId, active = true, head
         }}
       >
         <span style={{ fontFamily: "var(--font-mono)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+          {getRelativeFilePath(filePath, cwd)}
         </span>
         <span style={{ marginLeft: "auto" }}>{ext === "docx" ? t("fileViewer.docxPreview") : t("fileViewer.pdfType")}</span>
         {size != null && <span>{formatSize(size)}</span>}
