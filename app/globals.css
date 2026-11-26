@@ -3272,6 +3272,7 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
 html[data-touch-targets="accessible"] {
   --chat-pill-room: 64px;
 }
+/* Every transcript keeps the room, so moving the pill between split groups never shifts one. */
 .chat-scroll-under-pill {
   padding-top: var(--chat-pill-room);
 }

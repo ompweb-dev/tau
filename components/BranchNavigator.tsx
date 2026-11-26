@@ -258,6 +258,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
   const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   useEffect(() => {
@@ -270,8 +271,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
       // Below the button, or above it when there is more room there; never past the viewport.
       const below = window.innerHeight - rect.bottom - 14;
       const above = rect.top - 14;
-      const height = Math.max(0, Math.min(260, below >= 120 || below >= above ? below : above));
-      const top = below >= 120 || below >= above ? rect.bottom + 6 : rect.top - 6 - height;
+      const height = Math.max(60, Math.min(260, below >= 120 || below >= above ? below : above));
+      const top = Math.max(8, Math.min(below >= 120 || below >= above ? rect.bottom + 6 : rect.top - 6 - height, window.innerHeight - height - 8));
       setDropdownPos({ top, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)), width, height });
     };
     update();
@@ -307,6 +308,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
       // listener, which would abort a running agent.
       event.stopPropagation();
       closeDropdown();
+      btnRef.current?.focus();
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", onKey);
@@ -315,6 +317,11 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
       document.removeEventListener("keydown", onKey);
     };
   }, [open, inline, onToggle]);
+
+  const placed = dropdownPos !== null;
+  useEffect(() => {
+    if (open && inline && placed) panelRef.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+  }, [open, inline, placed]);
 
   const activePathIds = useMemo(
     () => buildActivePath(tree, activeLeafId),
@@ -369,7 +376,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
           {branchIcon}
         </button>
         {open && dropdownPos && createPortal(
-          <div data-branch-panel className="dropdown-surface" style={{
+          <div ref={panelRef} data-branch-panel className="dropdown-surface" style={{
             position: "fixed",
             top: dropdownPos.top,
             left: dropdownPos.left,
