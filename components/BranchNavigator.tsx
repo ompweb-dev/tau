@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useState, useCallback, useMemo, memo, useRef, useEffect } from "react";
 import { GitBranch } from "lucide-react";
 import { translate, useI18n } from "@/lib/i18n";
@@ -357,10 +358,6 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
           ref={btnRef}
           onClick={() => onToggle ? onToggle() : setOpenInternal((v) => !v)}
           className="chat-header-pill-button ui-focus-ring"
-          style={{
-            background: open ? "var(--bg-selected)" : undefined,
-            color: open ? "var(--text)" : undefined,
-          }}
           title={t("branchNavigator.branches")}
           aria-label={t("branchNavigator.branches")}
           aria-haspopup="menu"
@@ -368,7 +365,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
         >
           {branchIcon}
         </button>
-        {open && dropdownPos && (
+        {open && dropdownPos && createPortal(
           <div data-branch-panel className="dropdown-surface" style={{
             position: "fixed",
             top: dropdownPos.top,
@@ -397,7 +394,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
                 {noBranchReason}
               </div>
             )}
-          </div>
+          </div>,
+          document.body,
         )}
       </>
     );

@@ -858,7 +858,6 @@ export function AppShell({ appName }: { appName: string }) {
       const tools = mobileToolsRef.current;
       if (tools?.open && !tools.contains(event.target as Node)) {
         tools.open = false;
-        setActiveTopPanel(null);
       }
     };
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -880,6 +879,7 @@ export function AppShell({ appName }: { appName: string }) {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
+  const toggleBranchesPanel = useCallback(() => toggleTopPanel("branches"), [toggleTopPanel]);
 
   // Generation speed — current live t/s and the session average.
   const [generationSpeed, setGenerationSpeed] = useState<GenerationSpeedInfo | null>(null);
@@ -1091,14 +1091,15 @@ export function AppShell({ appName }: { appName: string }) {
   }, []);
 
 
-  // Dismiss the topbar dropdowns on outside click or Escape. The Escape
+  // Dismiss the chat pill's system panel on outside click or Escape. The Escape
   // handler stops propagation so the global Esc (abort agent) does not fire
   // while a panel is open.
   useEffect(() => {
     // The branch panel manages its own outside-click and Escape dismissal.
     if (!activeTopPanel || activeTopPanel === "branches") return;
     const onPointerDown = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest("[data-top-panel]")) return;
+      // The pill's own buttons toggle the panel themselves.
+      if (event.target instanceof Element && event.target.closest("[data-top-panel], .chat-header-pill")) return;
       setActiveTopPanel(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2174,6 +2175,8 @@ export function AppShell({ appName }: { appName: string }) {
     onReveal: handleRevealActiveFile,
   }), [activeFileMatchesSource, fileRevealed, handleMentionActiveFile, handleCopyActiveFilePath, handleRevealActiveFile]);
   const fileTabShown = fileShown && activeFileTab !== null;
+  // The pill's panels close with it: a file covering the chat, another chat, or Settings.
+  useEffect(() => { setActiveTopPanel(null); }, [fileTabShown, selectedSession?.id, settingsTab]);
   const selectedChatId = selectedSession ? chatTabId(selectedSession) : showChat ? NEW_CHAT_TAB_ID : null;
   const activeStripTabId = fileTabShown ? activeFileTabId ?? "" : selectedChatId ?? "";
   useEffect(() => {
@@ -2480,11 +2483,11 @@ export function AppShell({ appName }: { appName: string }) {
     />
   );
 
-
-  // The selected chat's own controls (full history, branches, system prompt), floating at its top right.
+  // The selected chat's own controls (full history, branches, system prompt), floating at its top right (ChatWindow's headerActions).
   const chatPill = showChat && selectedSession ? (
-    <div data-top-panel className="chat-header-pill-anchor">
-      <div className="chat-header-pill" role="toolbar" aria-label={t("appShell.chatControls")}>
+    // No data-top-panel here: that marks a blocking popup (phone drawer swipes stop while one shows).
+    <div className="chat-header-pill-wrap">
+      <div className="chat-header-pill" role="group" aria-label={t("appShell.chatControls")}>
         <button
           type="button"
           onClick={() => { setActiveTopPanel(null); handleViewFullHistory(); }}
@@ -2500,7 +2503,7 @@ export function AppShell({ appName }: { appName: string }) {
           onLeafChange={handleBranchLeafChange}
           inline
           open={activeTopPanel === "branches"}
-          onToggle={() => toggleTopPanel("branches")}
+          onToggle={toggleBranchesPanel}
           hasSession
         />
         <button
@@ -2515,12 +2518,10 @@ export function AppShell({ appName }: { appName: string }) {
         </button>
       </div>
       {activeTopPanel === "system" && (
-        <div className="dropdown-surface chat-header-pill-panel">
+        <div data-top-panel className="dropdown-surface chat-header-pill-panel">
           <div className="session-info-popover">
             {systemPrompt ? (
               <div style={{
-                maxHeight: "min(600px, 75vh)",
-                overflowY: "auto",
                 padding: "12px 16px",
                 color: "var(--text-muted)",
                 fontSize: 12,
@@ -2757,9 +2758,6 @@ export function AppShell({ appName }: { appName: string }) {
               className="shell-topbar-overflow"
               data-compact={isMobile ? "true" : compactTopbar === null ? "pending" : compactTopbar}
               open={isMobile ? undefined : compactTopbar ? undefined : true}
-              onToggle={(event) => {
-                if (!event.currentTarget.open) setActiveTopPanel(null);
-              }}
             >
               <summary
                 className="shell-toolbar-btn ui-focus-ring"
@@ -2774,10 +2772,7 @@ export function AppShell({ appName }: { appName: string }) {
                 <button
                   type="button"
                   onClick={() => {
-                    if (isMobile && mobileToolsRef.current) {
-                      mobileToolsRef.current.open = false;
-                      setActiveTopPanel(null);
-                    }
+                    if (isMobile && mobileToolsRef.current) mobileToolsRef.current.open = false;
                     window.dispatchEvent(new Event("tau:open-command-palette"));
                   }}
                   title={`${t("commandPalette.label")} (Ctrl/⌘ K)`}
@@ -3161,7 +3156,6 @@ export function AppShell({ appName }: { appName: string }) {
             }));
             layers.unshift({ key: chatKey ? `chat:${chatKey}` : `view:${group.id}`, groupId: group.id, node: inGroup(
                   <div id={chatPanelId} role={group.tabs.length > 0 ? "tabpanel" : undefined} aria-label={group.tabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
-          {primary && chatPill}
           {!primary ? (backgroundChat ? (
             <ChatWindow
               key={chatKey ?? undefined}
@@ -3210,6 +3204,7 @@ export function AppShell({ appName }: { appName: string }) {
             <ChatWindow
               key={chatKey ?? undefined}
               session={selectedSession}
+              headerActions={chatPill}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionHostId={newSessionHost}
               newSessionCreationId={effectivePoolProject ? newSessionCreationId : undefined}

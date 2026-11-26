@@ -222,7 +222,6 @@
   "appShell.copyFilePath": "複製檔案路徑",
   "appShell.copySessionId": "複製對話 ID",
   "appShell.fullHistory": "完整歷程記錄",
-  "appShell.fullHistoryUnavailable": "對話儲存後即可檢視完整歷程記錄",
   "appShell.generateSessionTitle": "產生對話標題",
   "appShell.generateTitle": "產生標題",
   "appShell.generating": "正在產生...",

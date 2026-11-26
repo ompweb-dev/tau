@@ -220,7 +220,6 @@
   "appShell.copyFilePath": "ファイルパスをコピー",
   "appShell.copySessionId": "セッションIDをコピー",
   "appShell.fullHistory": "全履歴",
-  "appShell.fullHistoryUnavailable": "全履歴はセッションの保存後に利用できます",
   "appShell.generateSessionTitle": "セッションタイトルを生成",
   "appShell.generateTitle": "タイトルを生成",
   "appShell.generating": "生成中...",

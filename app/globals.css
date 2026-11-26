@@ -3265,16 +3265,35 @@ html:root .shell-toolbar-btn.right-panel-close-button {
 html[data-touch-targets="accessible"] .right-panel-toolbar {
   --right-panel-close-width: 44px;
 }
-/* The selected chat's controls, floating at its top right over the transcript. */
+/* The selected chat's controls, floating at its top right over the transcript (ChatWindow headerActions). */
+:root {
+  --chat-pill-room: 48px;
+}
+html[data-touch-targets="accessible"] {
+  --chat-pill-room: 64px;
+}
+.chat-scroll-under-pill {
+  padding-top: var(--chat-pill-room);
+}
 .chat-header-pill-anchor {
   position: absolute;
   top: 8px;
   right: 16px;
-  z-index: 20;
+  left: 16px;
+  bottom: 8px;
+  z-index: 41;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  pointer-events: none;
+}
+.chat-header-pill-wrap {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  max-height: calc(100% - 16px);
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: auto;
 }
 .chat-header-pill {
   display: inline-flex;
@@ -3307,7 +3326,8 @@ html[data-touch-targets="accessible"] .right-panel-toolbar {
 }
 .chat-header-pill-panel {
   margin-top: 6px;
-  width: min(560px, calc(100vw - 32px));
+  width: 560px;
+  max-width: 100%;
   min-height: 0;
   overflow-y: auto;
 }
@@ -3315,13 +3335,15 @@ html[data-touch-targets="accessible"] .chat-header-pill-button {
   width: 44px;
   height: 44px;
 }
-/* Subtle group separator between toolbar control clusters */
-.shell-toolbar-divider {
-  width: 1px;
-  height: 18px;
-  margin: 0 8px;
-  background: var(--border);
-  flex-shrink: 0;
+/* Phones: the same 40px targets as the top bar's buttons. */
+@media (max-width: 640px) {
+  :root {
+    --chat-pill-room: 60px;
+  }
+  .chat-header-pill-button {
+    width: 40px;
+    height: 40px;
+  }
 }
   .right-panel-toolbar > [role="toolbar"] {
     flex-wrap: wrap;
@@ -3339,9 +3361,6 @@ html[data-touch-targets="accessible"] .chat-header-pill-button {
   html:root .shell-toolbar-btn.right-panel-close-button {
     padding-top: env(safe-area-inset-top, 0px) !important;
     border-bottom: 1px solid var(--border);
-  }
-  .shell-toolbar-divider {
-    margin: 0 4px;
   }
   .right-panel-toolbar > div:first-child {
     display: flex;
@@ -3435,9 +3454,6 @@ html[data-touch-targets="accessible"] .chat-header-pill-button {
   }
   .shell-topbar-tools {
     gap: 2px !important;
-  }
-  .shell-topbar .shell-toolbar-divider {
-    margin: 0;
   }
   .shell-topbar-metrics {
     display: none;

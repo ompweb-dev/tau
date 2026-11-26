@@ -59,6 +59,8 @@ interface Props {
   hostStatus?: HostStatus;
   hostLabel?: string;
   newSessionWorkspace?: ReactNode;
+  /** The selected chat's own controls (AppShell's pill), floating at the transcript's top right. */
+  headerActions?: ReactNode;
   toolCallsDefaultCollapsed?: boolean;
   /** UI `hideToolActivity`: fold a running turn's tool calls into one row. */
   hideToolActivity?: boolean;
@@ -392,7 +394,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
   );
 });
 
-export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
   const { t, tn } = useI18n();
   const fileSource = useMemo<WorkspaceFileSource>(() => ({
     hostId: session?.hostId ?? newSessionHostId ?? "local",
@@ -1109,15 +1111,17 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
           scrolls a hidden-overflow box, which shifted the transcript up and left a blank
           band above the composer. The class stays as the fallback where clip is unknown. */}
       <div className="relative flex flex-1 overflow-hidden" style={{ minHeight: 0, overflow: "clip" }}>
+        {headerActions && <div className="chat-header-pill-anchor">{headerActions}</div>}
         <div
           style={{
             position: "absolute",
-            top: 12,
+            // Notices start below the pill, which stays reachable over them.
+            top: headerActions ? "var(--chat-pill-room)" : 12,
             left: 0,
             right: 0,
             zIndex: 40,
             // Scrolls inside the clipped area, so a focused dismiss button below a short chat area stays reachable.
-            maxHeight: "calc(100% - 12px)",
+            maxHeight: headerActions ? "calc(100% - var(--chat-pill-room))" : "calc(100% - 12px)",
             overflowY: "auto",
             padding: `0 ${CHAT_COLUMN_PADDING}px`,
             pointerEvents: "none",
@@ -1130,7 +1134,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
         {/* Hide the Firefox scrollbar on desktop only: ChatMinimap provides the
             position indicator there, but on mobile there is no minimap and
             users need the scrollbar (Chrome's overlay scrollbar still shows). */}
-        <div ref={scrollContainerRef} data-selection-scope="chat" tabIndex={-1} role="log" aria-live={streamState.isStreaming ? "off" : "polite"} aria-busy={streamState.isStreaming || undefined} aria-relevant="additions text" aria-label={t("chatWindow.conversation")} className={`flex-1 overflow-y-auto pt-12` + (isMobile ? "" : " scrollbar-none [&::-webkit-scrollbar]:hidden")} style={{ minHeight: 0 }}>
+        <div ref={scrollContainerRef} data-selection-scope="chat" tabIndex={-1} role="log" aria-live={streamState.isStreaming ? "off" : "polite"} aria-busy={streamState.isStreaming || undefined} aria-relevant="additions text" aria-label={t("chatWindow.conversation")} className={`flex-1 overflow-y-auto ${headerActions ? "chat-scroll-under-pill" : "pt-6"}` + (isMobile ? "" : " scrollbar-none [&::-webkit-scrollbar]:hidden")} style={{ minHeight: 0 }}>
           <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div style={{ maxWidth: isMobile ? CHAT_COLUMN_MAX_WIDTH : CHAT_COLUMN_MAX_WIDTH_DESKTOP, margin: "0 auto" }}>
               <ExtensionStatusBar statuses={extensionStatuses} />

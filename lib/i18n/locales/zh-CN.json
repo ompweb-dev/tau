@@ -220,7 +220,6 @@
   "appShell.copyFilePath": "复制文件路径",
   "appShell.copySessionId": "复制会话 ID",
   "appShell.fullHistory": "完整历史",
-  "appShell.fullHistoryUnavailable": "会话保存后才能查看完整历史",
   "appShell.generateSessionTitle": "生成会话标题",
   "appShell.generateTitle": "生成标题",
   "appShell.generating": "生成中...",
