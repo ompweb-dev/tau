@@ -333,6 +333,7 @@
   "notifications.enableFailed": "プッシュ通知を有効にできませんでした: {error}",
   "notifications.saveFailed": "通知設定を保存できませんでした。",
   "appShell.system": "システム",
+  "appShell.chatControls": "チャットの操作",
   "appShell.systemPrompt": "システムプロンプト",
   "appShell.systemPromptEmpty": "システムプロンプトは空です（ツールは無効）",
   "appShell.systemPromptLoadHint": "システムプロンプトはまだ読み込まれていません",

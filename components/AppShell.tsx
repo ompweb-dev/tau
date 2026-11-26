@@ -801,7 +801,6 @@ export function AppShell({ appName }: { appName: string }) {
   const [systemPromptLoading, setSystemPromptLoading] = useState(false);
   const systemPromptLoaderRef = useRef<(() => Promise<void>) | null>(null);
   const systemPromptLoadIdRef = useRef(0);
-  const systemBtnRef = useRef<HTMLButtonElement>(null);
   const handleSystemPromptChange = useCallback((prompt: string | null) => {
     setSystemPrompt(prompt);
     setSystemPromptLoading(false);
@@ -2481,6 +2480,71 @@ export function AppShell({ appName }: { appName: string }) {
     />
   );
 
+
+  // The selected chat's own controls (full history, branches, system prompt), floating at its top right.
+  const chatPill = showChat && selectedSession ? (
+    <div data-top-panel className="chat-header-pill-anchor">
+      <div className="chat-header-pill" role="toolbar" aria-label={t("appShell.chatControls")}>
+        <button
+          type="button"
+          onClick={() => { setActiveTopPanel(null); handleViewFullHistory(); }}
+          title={t("appShell.fullHistory")}
+          aria-label={t("appShell.fullHistory")}
+          className="chat-header-pill-button ui-focus-ring"
+        >
+          <History size={15} strokeWidth={1.8} aria-hidden="true" />
+        </button>
+        <BranchNavigator
+          tree={branchTree}
+          activeLeafId={branchActiveLeafId}
+          onLeafChange={handleBranchLeafChange}
+          inline
+          open={activeTopPanel === "branches"}
+          onToggle={() => toggleTopPanel("branches")}
+          hasSession
+        />
+        <button
+          type="button"
+          onClick={handleSystemPromptToggle}
+          title={t("appShell.system")}
+          aria-label={t("appShell.system")}
+          aria-pressed={activeTopPanel === "system"}
+          className="chat-header-pill-button ui-focus-ring"
+        >
+          <Terminal size={15} strokeWidth={1.8} aria-hidden="true" style={{ color: systemPrompt ? "var(--accent)" : undefined }} />
+        </button>
+      </div>
+      {activeTopPanel === "system" && (
+        <div className="dropdown-surface chat-header-pill-panel">
+          <div className="session-info-popover">
+            {systemPrompt ? (
+              <div style={{
+                maxHeight: "min(600px, 75vh)",
+                overflowY: "auto",
+                padding: "12px 16px",
+                color: "var(--text-muted)",
+                fontSize: 12,
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                fontFamily: "var(--font-mono)",
+              }}>
+                {systemPrompt}
+              </div>
+            ) : systemPrompt === "" ? (
+              <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                {t("appShell.systemPromptEmpty")}
+              </div>
+            ) : (
+              <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                {systemPromptLoading ? t("appShell.systemPromptLoading") : t("appShell.systemPromptLoadHint")}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <>
     <ToastProvider>
@@ -2676,7 +2740,7 @@ export function AppShell({ appName }: { appName: string }) {
           gap: "0 8px",
           minWidth: 0,
         }}>
-          {/* Left Zone: Utility group (sidebar, theme, language) & session controls (history, branches, system) */}
+          {/* Left Zone: utility group (sidebar, overflow: theme, language, command palette); the chat's own controls are its pill */}
           <div className="shell-topbar-tools" style={{ display: "flex", alignItems: "center", gap: 4, height: isMobile ? 43 : 35, minWidth: 0, flexShrink: 0 }}>
             <button
               onClick={handleSidebarToggle}
@@ -2723,89 +2787,7 @@ export function AppShell({ appName }: { appName: string }) {
                 >
                   <Command size={16} strokeWidth={1.8} aria-hidden="true" />
                 </button>
-            {showChat && (
-              <>
-                <div className="shell-toolbar-divider" aria-hidden="true" />
-                <button
-                  onClick={handleViewFullHistory}
-                  disabled={!selectedSession}
-                  title={selectedSession ? t("appShell.fullHistory") : t("appShell.fullHistoryUnavailable")}
-                  aria-label={t("appShell.fullHistory")}
-                  className="shell-toolbar-btn ui-focus-ring"
-                >
-                  <History size={16} strokeWidth={1.8} aria-hidden="true" />
-                </button>
-                <BranchNavigator
-                  tree={branchTree}
-                  activeLeafId={branchActiveLeafId}
-                  onLeafChange={handleBranchLeafChange}
-                  inline
-                  containerRef={compactTopbar ? mobileToolsContentRef : topBarRef}
-                  open={activeTopPanel === "branches"}
-                  onToggle={() => toggleTopPanel("branches")}
-                  hasSession
-                />
-                <button
-                  ref={systemBtnRef}
-                  onClick={handleSystemPromptToggle}
-                  title={t("appShell.system")}
-                  aria-label={t("appShell.system")}
-                  aria-pressed={activeTopPanel === "system"}
-                  className="shell-toolbar-btn ui-focus-ring"
-                >
-                  <Terminal size={16} strokeWidth={1.8} aria-hidden="true" style={{ color: systemPrompt ? "var(--accent)" : undefined }} />
-                </button>
-              </>
-            )}
               </div>
-          {activeTopPanel === "system" && (
-            <div data-top-panel className="dropdown-surface" style={{
-              position: "absolute",
-              // Compact: below the 48px tools bar, which clips its overflow (it scrolls sideways).
-              top: isMobile || compactTopbar ? "calc(100% + 56px)" : "calc(100% + 4px)",
-              left: isMobile ? 4 : 8,
-              right: "auto",
-              width: "auto",
-              minWidth: isMobile ? undefined : 420,
-              maxWidth: "min(680px, calc(100vw - 24px))",
-              maxHeight: isMobile || compactTopbar ? "min(70vh, calc(100dvh - 108px))" : "min(70vh, calc(100dvh - 56px))",
-              overflowY: "auto",
-              overflowX: "hidden",
-              zIndex: 500,
-            }}>
-              {activeTopPanel === "system" && (
-                <div className="session-info-popover" style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                  boxShadow: "var(--shadow-pop)",
-                  minWidth: isMobile ? undefined : 420,
-                }}>
-                  {systemPrompt ? (
-                    <div style={{
-                      maxHeight: "min(600px, 75vh)",
-                      overflowY: "auto",
-                      padding: "12px 16px",
-                      color: "var(--text-muted)",
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "var(--font-mono)",
-                    }}>
-                      {systemPrompt}
-                    </div>
-                  ) : systemPrompt === "" ? (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      {t("appShell.systemPromptEmpty")}
-                    </div>
-                  ) : (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                      {systemPromptLoading ? t("appShell.systemPromptLoading") : t("appShell.systemPromptLoadHint")}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
             </details>
           </div>
 
@@ -3179,6 +3161,7 @@ export function AppShell({ appName }: { appName: string }) {
             }));
             layers.unshift({ key: chatKey ? `chat:${chatKey}` : `view:${group.id}`, groupId: group.id, node: inGroup(
                   <div id={chatPanelId} role={group.tabs.length > 0 ? "tabpanel" : undefined} aria-label={group.tabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
+          {primary && chatPill}
           {!primary ? (backgroundChat ? (
             <ChatWindow
               key={chatKey ?? undefined}

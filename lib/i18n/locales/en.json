@@ -345,6 +345,7 @@
   "notifications.enableFailed": "Could not enable push notifications: {error}",
   "notifications.saveFailed": "Could not save the notification settings.",
   "appShell.system": "System",
+  "appShell.chatControls": "Chat controls",
   "appShell.systemPrompt": "System prompt",
   "appShell.systemPromptEmpty": "System prompt is empty (tools are disabled)",
   "appShell.systemPromptLoadHint": "System prompt has not loaded yet",

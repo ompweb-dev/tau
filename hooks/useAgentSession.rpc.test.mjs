@@ -5661,12 +5661,16 @@ test("a split shows two chats side by side; focusing either remounts neither, an
 
   await act(async () => { fireEvent.pointerDown(composerOne); await sleep(60); });
   assert.equal(shownSession(), "worker-one", "pointing at a group shows its chat");
+  const pills = () => view.getAllByRole("toolbar", { name: translate("appShell.chatControls") });
+  const pillOn = (group) => pills().length === 1 && Boolean(pills()[0].closest(`[data-layer-group="${group.dataset.groupId}"]`));
+  assert.ok(pillOn(one), "the selected chat alone has the chat controls");
   assert.equal(composerIn(one), composerOne, "focusing a group does not remount its chat");
   assert.equal(composerIn(two), composerTwo, "nor the chat it leaves");
   await act(async () => { composerTwo.focus(); await sleep(60); });
   assert.equal(shownSession(), "worker-one", "a chat's own focus call does not switch groups");
   await act(async () => { fireEvent.keyDown(composerTwo, { key: "a" }); await sleep(60); });
   assert.equal(shownSession(), "worker-two", "typing in a group shows its chat");
+  assert.ok(pillOn(two), "the chat controls follow the selected chat");
   const lastPresence = () => callsTo("POST", "/api/notifications/presence").at(-1)?.body;
   await until(() => lastPresence()?.sessionIds?.length === 2, "presence names every chat on screen");
   assert.deepEqual([...lastPresence().sessionIds].sort(), ["worker-one", "worker-two"]);

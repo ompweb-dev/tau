@@ -345,6 +345,7 @@
   "notifications.enableFailed": "無法啟用推播通知：{error}",
   "notifications.saveFailed": "無法儲存通知設定。",
   "appShell.system": "系統",
+  "appShell.chatControls": "聊天控制項",
   "appShell.systemPrompt": "系統提示詞",
   "appShell.systemPromptEmpty": "系統提示詞為空（工具已停用）",
   "appShell.systemPromptLoadHint": "系統提示詞尚未載入",

@@ -9,10 +9,8 @@ interface Props {
   tree: SessionTreeNode[];
   activeLeafId: string | null;
   onLeafChange: (leafId: string | null) => void;
-  /** When true, renders as a compact inline button for embedding in a top bar */
+  /** When true, renders as a compact button (the chat's pill) whose dropdown opens below it, right-aligned */
   inline?: boolean;
-  /** When inline, use this ref's bounding rect to size/position the dropdown */
-  containerRef?: React.RefObject<HTMLElement | null>;
   /** Controlled open state for inline mode */
   open?: boolean;
   /** Called when the button is clicked in inline mode */
@@ -254,7 +252,7 @@ const TreeNodeView = memo(function TreeNodeView({ node, activePathIds, depth, is
   return true;
 });
 
-export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, containerRef, open: openProp, onToggle, hasSession }: Props) {
+export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open: openProp, onToggle, hasSession }: Props) {
   const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
@@ -263,13 +261,14 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
 
   useEffect(() => {
     if (!open || !inline) return;
-    const anchor = containerRef?.current ?? btnRef.current;
+    const anchor = btnRef.current;
     if (!anchor) return;
     const update = () => {
       const rect = anchor.getBoundingClientRect();
-      const width = rect.width;
-      const height = Math.min(260, window.innerHeight - rect.bottom - 8);
-      setDropdownPos({ top: rect.bottom, left: Math.max(0, Math.min(rect.left, window.innerWidth - width)), width, height: Math.max(60, height) });
+      const width = Math.min(380, window.innerWidth - 16);
+      const top = rect.bottom + 6;
+      const height = Math.min(260, window.innerHeight - top - 8);
+      setDropdownPos({ top, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)), width, height: Math.max(60, height) });
     };
     update();
     const ro = new ResizeObserver(update);
@@ -281,7 +280,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
     };
-  }, [open, inline, containerRef]);
+  }, [open, inline]);
 
   // Close the inline dropdown on outside click or Escape.
   useEffect(() => {
@@ -311,7 +310,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", onKey);
     };
-  }, [open, inline, containerRef, onToggle]);
+  }, [open, inline, onToggle]);
 
   const activePathIds = useMemo(
     () => buildActivePath(tree, activeLeafId),
@@ -341,7 +340,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   const hasContent = !noBranchReason && topLevelBranches.length > 0;
 
   const branchIcon = (
-    <GitBranch size={16} strokeWidth={1.8} aria-hidden="true" style={{ color: hasContent ? "var(--accent)" : undefined, flexShrink: 0 }} />
+    <GitBranch size={15} strokeWidth={1.8} aria-hidden="true" style={{ color: hasContent ? "var(--accent)" : undefined, flexShrink: 0 }} />
   );
 
   const chevron = (
@@ -353,11 +352,11 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
 
   if (inline) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "center" }}>
+      <>
         <button
           ref={btnRef}
           onClick={() => onToggle ? onToggle() : setOpenInternal((v) => !v)}
-          className="shell-toolbar-btn ui-focus-ring"
+          className="chat-header-pill-button ui-focus-ring"
           style={{
             background: open ? "var(--bg-selected)" : undefined,
             color: open ? "var(--text)" : undefined,
@@ -400,7 +399,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             )}
           </div>
         )}
-      </div>
+      </>
     );
   }
 
