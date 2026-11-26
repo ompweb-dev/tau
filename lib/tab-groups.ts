@@ -1,3 +1,5 @@
+import { isRecord } from "./type-guards";
+
 // Editor-group layout of the main tab strip: a tree of splits whose leaves are
 // tab groups. Every open tab lives in exactly one group. Pure functions only:
 // AppShell keeps the tree in state and the views read it.
@@ -206,10 +208,14 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
   return { selected, sessionKey, keys };
 }
 
+/** What a chat tab uses of its session (label, where it runs); counters and timestamps alone change no tab. */
+const TAB_SESSION_FIELDS = ["name", "firstMessage", "cwd", "path", "hostId", "projectRoot", "projectKey", "poolId", "projectId", "worktreeBranch"];
+
 /**
- * Chat tabs after a session list loads: a listed session's title replaces the
- * tab's (a `live` tab's only from a copy modified later than its own, since its
- * own may be newer than a cached list), and
+ * Chat tabs after a session list loads: a listed session replaces the tab's
+ * copy (title, paths, project: a restored tab's can be days old), a `live`
+ * tab's only when modified later than its own, since its own may be newer
+ * than a cached list; and
  * a tab whose session was in the previous list (`before`) but is no longer
  * listed closes, unless `keep` holds it (shown, or its host's list is not
  * current). A tab never listed yet (a session newer than the list) stays. The
@@ -228,10 +234,53 @@ export function syncChatTabs<T extends { name?: string; firstMessage: string; mo
       changed = true;
       return [];
     }
-    if (found.name === tab.name && found.firstMessage === tab.firstMessage) return [tab];
+    if (TAB_SESSION_FIELDS.every((field) => (found as Record<string, unknown>)[field] === (tab as Record<string, unknown>)[field])) return [tab];
     if (live(tab) && !(Date.parse(found.modified ?? "") > Date.parse(tab.modified ?? ""))) return [tab];
     changed = true;
-    return [{ ...tab, name: found.name, firstMessage: found.firstMessage, modified: found.modified }];
+    return [found];
   });
   return changed ? next : tabs;
+}
+
+const isLayout = (value: unknown): value is TabLayout => {
+  if (!isRecord(value) || typeof value.id !== "string") return false;
+  if (value.kind === "group") {
+    return Array.isArray(value.tabs) && value.tabs.every((tab) => typeof tab === "string")
+      && (value.active === null || typeof value.active === "string")
+      && (value.chat === undefined || value.chat === null || typeof value.chat === "string");
+  }
+  return value.kind === "split" && (value.dir === "row" || value.dir === "column")
+    && Array.isArray(value.children) && value.children.length >= 2 && value.children.every(isLayout)
+    && Array.isArray(value.sizes) && value.sizes.length === value.children.length
+    && value.sizes.every((size) => typeof size === "number" && Number.isFinite(size) && size > 0);
+};
+
+/**
+ * A layout read back from storage (sizes normalized), or null when it is not
+ * one: a malformed node, an id or a tab used twice. Its ids are reserved, so
+ * groups and splits made afterwards never take one of them.
+ */
+export function restoredLayout(value: unknown): TabLayout | null {
+  if (!isLayout(value)) return null;
+  const ids = new Set<string>();
+  const tabs = new Set<string>();
+  let valid = true;
+  const visit = (node: TabLayout): TabLayout => {
+    if (ids.has(node.id)) valid = false;
+    ids.add(node.id);
+    // An absurd stored id would leave the counter unable to step past it.
+    const n = Number(node.id.slice(1));
+    if (Number.isSafeInteger(n) && n < 1e9) nextId = Math.max(nextId, n);
+    if (node.kind === "group") {
+      for (const tab of node.tabs) { if (tabs.has(tab)) valid = false; tabs.add(tab); }
+      return node;
+    }
+    const total = node.sizes.reduce((sum, size) => sum + size, 0);
+    const sizes = node.sizes.map((size) => size / total);
+    // Sizes that overflow or underflow the sum normalize to 0 or NaN.
+    if (!sizes.every((size) => Number.isFinite(size) && size > 0)) valid = false;
+    return { ...node, children: node.children.map(visit), sizes };
+  };
+  const layout = visit(value);
+  return valid ? layout : null;
 }
