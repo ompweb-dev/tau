@@ -126,6 +126,8 @@ const NATIVE_SELECT_ALL_STORAGE_KEY = "tau:scope-native-select-all";
 const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 /** The transient tab of a chat not yet sent (no session yet). */
 const NEW_CHAT_TAB_ID = "chat:new";
+/** An unsent new chat's target, as it was last shown. */
+type DraftChat = { cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string; initialization?: string };
 const chatTabId = (session: SessionInfo) => `chat:${remoteHostId(session.hostId) ?? LOCAL_HOST_ID}:${session.id}`;
 /** The strips kept across reloads of this browser tab (sessionStorage: another window keeps its own). */
 const WORKBENCH_STORAGE_KEY = "tau:workbench";
@@ -185,11 +187,12 @@ export function AppShell({ appName }: { appName: string }) {
   const [newSessionHostId, setNewSessionHostId] = useState<string | undefined>(undefined);
   const [newSessionCreation, setNewSessionCreation] = useState<{ id?: string; initialization?: string }>({});
   // The unsent new chat, as last shown: its tab stays in its group while another group's chat is selected.
-  const [draftChat, setDraftChat] = useState<{ cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string; initialization?: string } | null>(null);
+  const [draftChat, setDraftChat] = useState<DraftChat | null>(null);
   const draftChatRef = useRef(draftChat);
   draftChatRef.current = draftChat;
-  // The new chat is the selected view (not kept behind another group's chat).
+  // The new chat is the selected view, or kept behind another group's chat (draftKept).
   const draftShownRef = useRef(false);
+  const draftKeptRef = useRef(false);
   // A fresh new chat while one is kept in a group: the kept one closes (its draft stays in the store), so the
   // fresh one opens in the focused group on a mount of its own.
   const dropKeptDraft = useCallback(() => {
@@ -1332,6 +1335,8 @@ export function AppShell({ appName }: { appName: string }) {
     }
     // A standalone path is never a fallback for a pending pool placement.
     if (!cwd) return;
+    // The sidebar following the shown new chat's own workspace (a kept one taken up): nothing to switch.
+    if (!selectedSession && !newSessionPoolProject && newSessionCwd === cwd && newSessionHostId === remoteHostId(hostId)) return;
     setNewSessionPoolProject(null);
     // Skip only when the notification matches the cwd we're suppressing for.
     if (suppressCwdRef.current !== null && suppressCwdRef.current === cwd) {
@@ -1366,7 +1371,7 @@ export function AppShell({ appName }: { appName: string }) {
     setSystemPromptLoading(false);
     setActiveTopPanel(null);
     router.replace("/");
-  }, [router, selectedSession, newSessionPoolProject, dropKeptDraft]);
+  }, [router, selectedSession, newSessionPoolProject, newSessionCwd, newSessionHostId, dropKeptDraft]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     // Re-picking the already-open session (sidebar double-click, palette
@@ -1425,6 +1430,9 @@ export function AppShell({ appName }: { appName: string }) {
     }
     router.replace("/");
   }, [router, isMobile, activeCwd, activePoolProject, dropKeptDraft]);
+  const takeUpDraft = useCallback((draft: DraftChat) => {
+    handleNewSession(draft.creationId ?? "", draft.cwd, draft.hostId, draft.project ?? undefined, draft.initialization);
+  }, [handleNewSession]);
 
   // ---- In-app Navigate back / forward over visited chat views ----
   // Own stack, not the browser History API (that one belongs to the mobile
@@ -1681,12 +1689,8 @@ export function AppShell({ appName }: { appName: string }) {
     setRefreshKey((k) => k + 1);
     if (selectedSession && sameSessionTarget(selectedSession, { id: sessionId, hostId })) {
       // A new chat kept in another group takes its place, as when its tab closes.
-      const kept = draftShownRef.current ? null : draftChatRef.current;
-      if (kept) {
-        if (kept.cwd && kept.cwd !== activeCwd) suppressCwdRef.current = kept.cwd;
-        handleNewSession(kept.creationId ?? "", kept.cwd, kept.hostId, kept.project ?? undefined, kept.initialization);
-        return;
-      }
+      const kept = draftKeptRef.current ? draftChatRef.current : null;
+      if (kept) { takeUpDraft(kept); return; }
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(selectedSession.poolId ? null : cwd ?? null);
@@ -1700,7 +1704,7 @@ export function AppShell({ appName }: { appName: string }) {
       setActiveTopPanel(null);
       router.replace("/");
     }
-  }, [selectedSession, router, poolProjectOf, handleNewSession, activeCwd]);
+  }, [selectedSession, router, poolProjectOf, takeUpDraft]);
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
   }, []);
@@ -2153,11 +2157,11 @@ export function AppShell({ appName }: { appName: string }) {
   const draftGroup = tabGroups.find((group) => group.active === NEW_CHAT_TAB_ID || group.chat === NEW_CHAT_TAB_ID);
   const draftKept = !draftTabShown && draftChat !== null && Boolean(draftGroup && selectedSession && !draftGroup.tabs.includes(chatTabId(selectedSession)));
   const draftTabOpen = draftTabShown || draftKept;
-  const takeUpDraft = (draft: NonNullable<typeof draftChat>) => {
-    // The sidebar follows the new chat's workspace and reports it back (handleCwdChange): not a project switch.
-    if (draft.cwd && draft.cwd !== activeCwd) suppressCwdRef.current = draft.cwd;
-    handleNewSession(draft.creationId ?? "", draft.cwd, draft.hostId, draft.project ?? undefined, draft.initialization);
-  };
+  draftKeptRef.current = draftKept;
+  // A new chat whose tab is gone (a chat selected into its group replaced it) is forgotten.
+  useEffect(() => {
+    if (!draftTabOpen) setDraftChat(null);
+  }, [draftTabOpen]);
   useEffect(() => {
     saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout: tabLayout, focused: lastFocusedGroupId });
   }, [chatTabs, fileTabs, tabLayout, lastFocusedGroupId]);
