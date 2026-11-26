@@ -18,7 +18,7 @@ All notable changes to **tau** (`@ompweb-dev/tau`) are documented in this file. 
 ### Changed
 
 - **Search, the file index and session deletes follow what is on screen.**
-  - The Files and Search tabs search the folder the panel shows (a worktree, the sidebar's workspace), checked against the conversation's own folders, instead of always the conversation's working directory. A folder outside them is refused.
+  - The Files and Search tabs search the folder the panel shows, instead of always the conversation's working directory, as long as it is one of the conversation's own folders: its project, or a folder in it. A conversation whose worktree was removed searches its repository again instead of failing. Another worktree of the same repository is refused.
   - Text search no longer holds up the host while it resolves paths, and hard-linked files (a pnpm store, for example) are no longer each put through the full credential check.
   - Deleting or archiving a conversation, and checking a reopened tab's conversation still exists, act on the host its row or tab names (`?hostId=`), so a conversation whose id exists on two hosts is never deleted on the other one.
 

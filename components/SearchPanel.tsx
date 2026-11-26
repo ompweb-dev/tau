@@ -16,7 +16,7 @@ interface Props {
   refreshKey: number;
   /** Names the panel to the host: its newer search stops its older one, other panels' are left alone. */
   client: string;
-  /** `cwd`: the directory searched (the session's own when there is one). */
+  /** `cwd`: the directory searched (the panel's, within the session's roots). */
   onOpenMatch: (filePath: string, line: number, cwd: string) => void;
 }
 
