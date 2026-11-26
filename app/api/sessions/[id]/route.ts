@@ -226,7 +226,7 @@ export async function DELETE(
     // owns the file and would clobber it on its next write.
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds(resolved.host.id));
     if (!result.ok) return opErrorResponse(result);
-    invalidateHostSessionList(resolved.host.id);
+    invalidateHostSessionList(resolved.host.id, id);
     // State kept by id alone belongs to every copy of the id: it stays while another host has one.
     if (!sessionCopiedElsewhere(id, resolved.host.id)) {
       // Remove only this deleted session's content-free retry-lineage metadata.

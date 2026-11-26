@@ -35,7 +35,7 @@ export async function POST(
     if (live?.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("archive", true);
     const result = await sessionOps.archiveSession(id);
     if (!result.ok) return opErrorResponse(result);
-    invalidateHostSessionList(resolved.host.id);
+    invalidateHostSessionList(resolved.host.id, id);
     if (!sessionCopiedElsewhere(id, resolved.host.id)) clearExitedRpcSession(id);
     return Response.json({ ok: true, archived: true, archivedPath: result.value.archivedPath });
   } catch (error) {

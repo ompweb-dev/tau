@@ -197,10 +197,12 @@ export async function sessionSpawnTarget(
   return info ? { sessionFile: info.path, cwd: info.cwd, recordedCwd: info.cwd } : null;
 }
 
-/** Drop one host's cached session list; it is kept as the fallback while the host is unreachable. */
-export function invalidateHostSessionList(hostId: string): void {
+/** Drop one host's cached session list; it is kept as the fallback while the host is unreachable, less `removedId`
+ * (a session it just deleted or archived), which no fallback may name as still there. */
+export function invalidateHostSessionList(hostId: string, removedId?: string): void {
   const lists = globalThis.__tauHostLists?.get(hostId);
   if (!lists) return;
+  if (removedId) lists.sessions = lists.sessions.filter((session) => session.id !== removedId);
   lists.fetchedAt = 0;
   lists.generation += 1;
   lists.loaded = false;
