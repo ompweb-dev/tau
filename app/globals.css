@@ -207,6 +207,8 @@ html.theme-dark {
   --text-2xl: 22px;
   --row-height-compact: 30px;
   --tab-height: var(--control-height-lg);
+  /* A group's strip: its tabs and the line under them (TabLayoutView places the views below it). */
+  --tab-strip-height: calc(var(--tab-height) + 1px);
   --toolbar-control-height: var(--control-height-sm);
   --icon-control-size-compact: 24px;
   --border-strong: color-mix(in srgb, var(--border) 76%, var(--text) 24%);

@@ -96,14 +96,16 @@ export const FileTabToolbar = memo(function FileTabToolbar({ activeFileTab, file
 });
 
 /** Every open file's viewer, kept mounted so switching tabs preserves scroll and preview state. */
-export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabIds, activeFileTab, focused, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile, onRevealDone }: {
+/**
+ * One file tab's view. Only its group's shown file is displayed (covering the
+ * group's chat) and carries the group's file panel id; the others stay mounted, hidden.
+ */
+export const FileTabView = memo(function FileTabView({ panelId, tab, shown, focused, activeFileMatchesSource, explorerRefreshKey, onMentionLines, onOpenFile, onRevealDone }: {
   panelId: string;
-  fileTabs: Tab[];
-  /** The group's tabs: its files are the views. */
-  tabIds: string[];
-  /** The group's shown file, if a file (not a chat) is its shown tab: the views then cover the chat. */
-  activeFileTab: Tab | null;
-  /** The views' group is the focused one: only there can lines be mentioned. */
+  tab: Tab;
+  /** The group's shown tab is this file. */
+  shown: boolean;
+  /** The view's group is the focused one: only there can lines be mentioned. */
   focused: boolean;
   activeFileMatchesSource: boolean;
   explorerRefreshKey: number;
@@ -111,29 +113,31 @@ export const FileTabViews = memo(function FileTabViews({ panelId, fileTabs, tabI
   onOpenFile: (filePath: string, fileName: string, source: WorkspaceFileSource) => void;
   onRevealDone: (tabId: string, seq: number) => void;
 }) {
-  const active = activeFileTab !== null;
   return (
-    <div id={panelId} role="tabpanel" tabIndex={-1} aria-label={activeFileTab?.filePath} className="ui-focus-ring" style={{ outline: "none", display: active ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}>
-      {fileTabs.filter((tab) => tabIds.includes(tab.id)).map((tab) => (
-        <div key={tab.id} style={{ display: tab.id === activeFileTab?.id ? "block" : "none", height: "100%" }}>
-          <FileViewer
-            filePath={tab.filePath}
-            hostId={tab.hostId}
-            cwd={tab.sourceCwd ?? undefined}
-            sourceSessionId={tab.sourceSessionId}
-            gitRefreshKey={explorerRefreshKey}
-            active={tab.id === activeFileTab?.id && active}
-            revealLine={tab.revealLine}
-            onRevealDone={(seq) => onRevealDone(tab.id, seq)}
-            onMentionLines={tab.id === activeFileTab?.id && active && focused && activeFileMatchesSource ? onMentionLines : undefined}
-            onOpenFile={(filePath) => onOpenFile(
-              filePath,
-              getFileName(filePath),
-              { hostId: tab.hostId, cwd: tab.sourceCwd, sessionId: tab.sourceSessionId ?? null },
-            )}
-          />
-        </div>
-      ))}
+    <div
+      id={shown ? panelId : undefined}
+      role={shown ? "tabpanel" : undefined}
+      tabIndex={shown ? -1 : undefined}
+      aria-label={shown ? tab.filePath : undefined}
+      className="ui-focus-ring"
+      style={{ outline: "none", display: shown ? "block" : "none", position: "absolute", inset: 0, zIndex: 1, overflow: "hidden", background: "var(--bg)" }}
+    >
+      <FileViewer
+        filePath={tab.filePath}
+        hostId={tab.hostId}
+        cwd={tab.sourceCwd ?? undefined}
+        sourceSessionId={tab.sourceSessionId}
+        gitRefreshKey={explorerRefreshKey}
+        active={shown}
+        revealLine={tab.revealLine}
+        onRevealDone={(seq) => onRevealDone(tab.id, seq)}
+        onMentionLines={shown && focused && activeFileMatchesSource ? onMentionLines : undefined}
+        onOpenFile={(filePath) => onOpenFile(
+          filePath,
+          getFileName(filePath),
+          { hostId: tab.hostId, cwd: tab.sourceCwd, sessionId: tab.sourceSessionId ?? null },
+        )}
+      />
     </div>
   );
 });

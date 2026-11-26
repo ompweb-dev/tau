@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from "react";
 import dynamic from "@/lib/dynamic";
 import { useRouter, useSearchParams } from "@/lib/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -19,9 +19,9 @@ import { ConfirmDialog } from "./ui/field";
 import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
 import { TabBar, type StripTab, type Tab } from "./TabBar";
-import { TabLayoutView } from "./TabLayoutView";
+import { TabLayoutView, type TabLayer } from "./TabLayoutView";
 import { restoredLayout, syncChatTabs, activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
-import { FileTabToolbar, FileTabViews } from "./FileTabs";
+import { FileTabToolbar, FileTabView } from "./FileTabs";
 import { getFileIcon } from "./FileIcons";
 import { type FileExplorerHandle } from "./FileExplorer";
 import type { RightPanelView } from "./RightPanel";
@@ -184,6 +184,8 @@ export function AppShell({ appName }: { appName: string }) {
   // here uses that form (see remoteHostId).
   const [newSessionHostId, setNewSessionHostId] = useState<string | undefined>(undefined);
   const [newSessionCreation, setNewSessionCreation] = useState<{ id?: string; initialization?: string }>({});
+  // The unsent new chat, as last shown: its tab stays in its group while another group's chat is selected.
+  const [draftChat, setDraftChat] = useState<{ cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string } | null>(null);
   const newSessionCreationId = newSessionCreation.id;
   const handleNewSessionInitialization = useCallback((initialization: string) => {
     setNewSessionCreation((current) => current.id === newSessionCreationId && current.initialization === undefined ? { ...current, initialization } : current);
@@ -1534,6 +1536,7 @@ export function AppShell({ appName }: { appName: string }) {
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
+    setDraftChat(null);
     setNewSessionCwd(null);
     setNewSessionPoolProject(null);
     setSelectedSession(session);
@@ -1572,8 +1575,6 @@ export function AppShell({ appName }: { appName: string }) {
       .catch(() => window.location.assign(sessionUrl));
   }, [handleSelectSession, isCompactOverlay]);
 
-  // Full-page Settings hides the chat, so its session counts as not viewed.
-  useNotifications({ sessionId: settingsTab || fileShown ? null : selectedSession?.id ?? null, locale, onOpenSession: openSessionById });
 
   const handleAutoName = useCallback(async () => {
     if (!activeSelectedSessionId || autoNameStatus.kind === "naming") return;
@@ -2097,19 +2098,30 @@ export function AppShell({ appName }: { appName: string }) {
   }, [isMobile, locale, settingsTab, showChat]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
-  const draftTabShown = showChat && !selectedSession;
   // Chats and files share the strips of the tab groups: each group holds its
   // tabs in the order they were opened or dropped there (the unsent chat's
   // tab from when it appears). The focused group is the one showing the app's
   // shown tab; new tabs open there.
   const [tabLayout, setTabLayout] = useState<TabLayout>(() => restored?.layout ?? initialLayout());
   const [lastFocusedGroupId, setLastFocusedGroupId] = useState(() => restored?.focused ?? "g0");
+  const draftTabShown = showChat && !selectedSession;
+  useEffect(() => {
+    if (draftTabShown) setDraftChat({ cwd: effectiveNewSessionCwd, hostId: newSessionHost, project: effectivePoolProject, creationId: newSessionCreation.id });
+  }, [draftTabShown, effectiveNewSessionCwd, newSessionHost, effectivePoolProject, newSessionCreation.id]);
+  // The new chat a group shows keeps its tab while a chat of another group is selected (as before, selecting a
+  // chat of its own group replaces it).
+  const draftKept = !draftTabShown && draftChat !== null && (() => {
+    const groups = groupsOf(tabLayout);
+    const draftGroup = groups.find((group) => group.active === NEW_CHAT_TAB_ID || group.chat === NEW_CHAT_TAB_ID);
+    return Boolean(draftGroup && selectedSession && !draftGroup.tabs.includes(chatTabId(selectedSession)) && groups.some((group) => group !== draftGroup && group.tabs.includes(chatTabId(selectedSession))));
+  })();
+  const draftTabOpen = draftTabShown || draftKept;
   useEffect(() => {
     saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout: tabLayout, focused: lastFocusedGroupId });
   }, [chatTabs, fileTabs, tabLayout, lastFocusedGroupId]);
   const stripIds = useMemo(
-    () => [...chatTabs.map(chatTabId), ...(draftTabShown ? [NEW_CHAT_TAB_ID] : []), ...fileTabs.map((tab) => tab.id)],
-    [chatTabs, fileTabs, draftTabShown],
+    () => [...chatTabs.map(chatTabId), ...(draftTabOpen ? [NEW_CHAT_TAB_ID] : []), ...fileTabs.map((tab) => tab.id)],
+    [chatTabs, fileTabs, draftTabOpen],
   );
 
   const activeFileMatchesSource = activeFileTab?.hostId === workspaceHostId && (activeFileTab?.sourceSessionId ?? null) === (selectedSession?.id ?? null);
@@ -2135,6 +2147,13 @@ export function AppShell({ appName }: { appName: string }) {
   const groupChat = (group: TabGroup) => group.active && !fileTabIds.has(group.active) ? group.active : group.chat ?? null;
   const shownChatIds = new Set(tabGroups.flatMap((group) => groupChat(group) ?? []));
   shownChatIdsRef.current = shownChatIds;
+  // Viewed: each chat a group shows uncovered (on a phone, only the focused group's). Full-page Settings
+  // hides them all.
+  const viewedSessionIds = settingsTab ? [] : (isMobile ? [focusedGroup] : tabGroups).flatMap((group) => {
+    const session = group.active ? chatTabById(group.active) : undefined;
+    return session ? [session.id] : [];
+  });
+  useNotifications({ sessionIds: viewedSessionIds, locale, onOpenSession: openSessionById });
 
   // Focus around a file covering the focused group's chat. The chat goes inert under the file, so
   // focus in it is lost: it moves to the file, and back to where it was in the chat once the
@@ -2185,7 +2204,8 @@ export function AppShell({ appName }: { appName: string }) {
       const label = chatTabLabel(session);
       return [chatTabId(session), { id: chatTabId(session), label, title: session.name || session.firstMessage || label, icon: chatIcon, file: false }] as const;
     }),
-    ...(draftTabShown ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false, file: false }] as const] : []),
+    // Closable only while another chat is selected: the selected new chat has nothing to give way to.
+    ...(draftTabOpen ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: !draftTabShown, file: false }] as const] : []),
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
@@ -2193,7 +2213,11 @@ export function AppShell({ appName }: { appName: string }) {
   const reachable = (session: SessionInfo) => shownChatIds.has(chatTabId(session)) || !unreachableReason(session);
   const selectStripTab = (id: string) => {
     stripActionRef.current = Date.now();
-    if (id === NEW_CHAT_TAB_ID) { setFileShown(false); return; }
+    if (id === NEW_CHAT_TAB_ID) {
+      setFileShown(false);
+      if (!draftTabShown && draftChat) handleNewSession(draftChat.creationId ?? randomUUID(), draftChat.cwd, draftChat.hostId, draftChat.project ?? undefined);
+      return;
+    }
     const session = chatTabById(id);
     if (!session) { handleSelectFileTab(id); return; }
     // As in the sidebar: an unreachable host's conversation cannot be opened (one already shown still can be).
@@ -2214,7 +2238,10 @@ export function AppShell({ appName }: { appName: string }) {
     const otherShownChats = tabGroups.flatMap((other) => other !== group && other.active ? [other.active] : []);
     const session = chatTabById(id);
     let selected: SessionInfo | undefined;
-    if (!session) {
+    if (id === NEW_CHAT_TAB_ID) {
+      // Only another group's new chat closes (see draftKept); its draft stays in the store.
+      setDraftChat(null);
+    } else if (!session) {
       handleCloseFileTab(id);
     } else {
       setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, session)));
@@ -2933,13 +2960,8 @@ export function AppShell({ appName }: { appName: string }) {
         </div>
 
         {/* The tab groups: open conversations and files */}
-        <TabLayoutView
-          layout={tabLayout}
-          focusedGroupId={focusedGroup.id}
-          single={isMobile}
-          onResize={resizeTabGroups}
-          resizeLabel={t("appShell.resizeTabGroups")}
-          renderGroup={(group: TabGroup) => {
+        {(() => {
+          const groupViews = new Map(tabGroups.map((group) => {
             const focused = group.id === focusedGroup.id;
             const chatPanelId = `workspace-chat-${group.id}`;
             const filePanelId = `workspace-file-tabs-${group.id}`;
@@ -2953,9 +2975,10 @@ export function AppShell({ appName }: { appName: string }) {
             const chatId = groupChat(group);
             const backgroundChat = !primary && chatId ? chatTabById(chatId) : undefined;
             const backgroundHost = backgroundChat && remoteHostId(backgroundChat.hostId) ? hosts?.find((host) => host.id === backgroundChat.hostId) : undefined;
+            const backgroundDraft = !primary && chatId === NEW_CHAT_TAB_ID && draftTabOpen ? draftChat : null;
             const chatPanelLabel = primary
               ? (selectedChatId ? stripTabInfo.get(selectedChatId)?.title : undefined) ?? (selectedSession ? chatTabLabel(selectedSession) : t("appShell.newSession"))
-              : backgroundChat ? chatTabLabel(backgroundChat) : undefined;
+              : backgroundChat ? chatTabLabel(backgroundChat) : backgroundDraft ? t("appShell.newSession") : undefined;
             const groupIndex = tabGroups.indexOf(group);
             // Pointing at another group, or typing in it, shows its tab (not a
             // chat's own programmatic focus, nor a tab's close button; Esc
@@ -2982,10 +3005,14 @@ export function AppShell({ appName }: { appName: string }) {
               </button>
               );
             };
-            return (
+            // A group's strip, and its views (placed by TabLayoutView, outside the group's own element).
+            const inGroup = (node: ReactNode) => (
+              <div data-group-focused={focused} onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ position: "absolute", inset: 0 }}>{node}</div>
+            );
+            const chrome = (
               <div data-group-focused={focused} onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                 {groupTabs.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", filter: focused || tabGroups.length === 1 ? undefined : "grayscale(1)" }}>
+                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, height: "var(--tab-strip-height)", boxSizing: "border-box", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", filter: focused || tabGroups.length === 1 ? undefined : "grayscale(1)" }}>
                     {isMobile && tabGroups.length > 1 && (
                       <button
                         type="button"
@@ -3028,23 +3055,28 @@ export function AppShell({ appName }: { appName: string }) {
                     {!isMobile && <>{splitButton("row")}{splitButton("column")}</>}
                   </div>
                 )}
-                {/* A shown file covers the group's chat, which keeps its
-                    layout (and so its scroll position) underneath, inert. */}
-                <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-                  {fileTabs.some((tab) => group.tabs.includes(tab.id)) && (
-                    <FileTabViews
-                      panelId={filePanelId}
-                      fileTabs={fileTabs}
-                      tabIds={group.tabs}
-                      activeFileTab={shownFile}
-                      focused={focused}
-                      activeFileMatchesSource={activeFileMatchesSource}
-                      explorerRefreshKey={explorerRefreshKey}
-                      onMentionLines={handleFileLineMention}
-                      onOpenFile={handleOpenFile}
-                      onRevealDone={handleRevealLineDone}
-                    />
-                  )}
+              </div>
+            );
+            // A shown file covers the group's chat, which keeps its layout (and so its scroll position) underneath, inert.
+            const chatKey = !primary ? (backgroundChat ? chatMountKey(chatTabId(backgroundChat)) : backgroundDraft ? chatMountKey(NEW_CHAT_TAB_ID) : null) : showChat ? chatMountKey(selectedChatId ?? NEW_CHAT_TAB_ID) : null;
+            const layers: TabLayer[] = fileTabs.filter((tab) => group.tabs.includes(tab.id)).map((tab) => ({
+              key: `file:${tab.id}`,
+              groupId: group.id,
+              node: inGroup(
+                <FileTabView
+                  panelId={filePanelId}
+                  tab={tab}
+                  shown={tab.id === shownFile?.id}
+                  focused={focused}
+                  activeFileMatchesSource={activeFileMatchesSource}
+                  explorerRefreshKey={explorerRefreshKey}
+                  onMentionLines={handleFileLineMention}
+                  onOpenFile={handleOpenFile}
+                  onRevealDone={handleRevealLineDone}
+                />,
+              ),
+            }));
+            layers.unshift({ key: chatKey ? `chat:${chatKey}` : `view:${group.id}`, groupId: group.id, node: inGroup(
                   <div id={chatPanelId} role={groupTabs.length > 0 ? "tabpanel" : undefined} aria-label={groupTabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
           {!primary ? (backgroundChat ? (
             <ChatWindow
@@ -3066,6 +3098,26 @@ export function AppShell({ appName }: { appName: string }) {
               expandThinkingByDefault={expandThinkingByDefault}
               hideThinkingBlock={hideThinkingBlock}
               // No searchQuery: the search highlights are page-wide, so only the selected chat paints them.
+              covered
+            />
+          ) : backgroundDraft ? (
+            <ChatWindow
+              key={chatMountKey(NEW_CHAT_TAB_ID)}
+              session={null}
+              newSessionCwd={backgroundDraft.project?.poolId ? null : backgroundDraft.cwd}
+              newSessionHostId={backgroundDraft.project?.poolId ? undefined : backgroundDraft.hostId}
+              newSessionCreationId={backgroundDraft.project?.poolId ? backgroundDraft.creationId : undefined}
+              newSessionPoolId={backgroundDraft.project?.poolId}
+              newSessionProjectId={backgroundDraft.project?.projectId}
+              onAgentEnd={handleAgentEnd}
+              modelsRefreshKey={modelsRefreshKey}
+              onOpenProviders={() => setSettingsTab("providers")}
+              toolCallsDefaultCollapsed={toolCallsDefaultCollapsed}
+              hideToolActivity={hideToolActivity}
+              neverFoldActivity={neverFoldActivity}
+              showToolCallsUnfolded={showToolCallsUnfolded}
+              expandThinkingByDefault={expandThinkingByDefault}
+              hideThinkingBlock={hideThinkingBlock}
               covered
             />
           ) : null) : showChat ? (
@@ -3264,12 +3316,22 @@ export function AppShell({ appName }: { appName: string }) {
                 </div>
               </div>
           )}
-                  </div>
-                </div>
-              </div>
-            );
-          }}
-        />
+                  </div>,
+            ) });
+            return [group.id, { chrome, layers }] as const;
+          }));
+          return (
+            <TabLayoutView
+              layout={tabLayout}
+              focusedGroupId={focusedGroup.id}
+              single={isMobile}
+              onResize={resizeTabGroups}
+              resizeLabel={t("appShell.resizeTabGroups")}
+              renderGroup={(group) => groupViews.get(group.id)?.chrome}
+              layers={[...groupViews.values()].flatMap((view) => view.layers)}
+            />
+          );
+        })()}
           </>
         )}
       </main>

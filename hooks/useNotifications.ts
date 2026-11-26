@@ -37,24 +37,26 @@ export function useNotificationPrefs() {
  * - opens the session when a notification is clicked;
  * - keeps the server's copy of this device's prefs and push subscription current.
  *
- * `sessionId` is the session whose chat is on screen (null while Settings or
- * another view covers it).
+ * `sessionIds` are the sessions whose chats are on screen, one per tab group
+ * showing a chat (none while Settings covers them all).
  */
-export function useNotifications({ sessionId, locale, onOpenSession }: { sessionId: string | null; locale: string; onOpenSession: (sessionId: string, hostId?: string) => void }) {
+export function useNotifications({ sessionIds, locale, onOpenSession }: { sessionIds: readonly string[]; locale: string; onOpenSession: (sessionId: string, hostId?: string) => void }) {
   const openRef = useRef(onOpenSession);
   useEffect(() => {
     openRef.current = onOpenSession;
   }, [onOpenSession]);
 
   // Presence: visible and recently used. Reported on every change, plus a keep-alive.
+  const shownKey = sessionIds.join("\n");
   useEffect(() => {
+    const shown = shownKey ? shownKey.split("\n") : [];
     let lastInput = Date.now();
     let reported: boolean | null = null;
     const present = () => document.visibilityState === "visible" && Date.now() - lastInput < IDLE_AFTER_MS;
     const report = (visible = present()) => {
       reported = visible;
       presenceSeq += 1;
-      const body = JSON.stringify({ clientId: notificationClientId, deviceId: getNotificationDeviceId(), visible, sessionId, seq: presenceSeq });
+      const body = JSON.stringify({ clientId: notificationClientId, deviceId: getNotificationDeviceId(), visible, sessionIds: shown, seq: presenceSeq });
       if (!visible && navigator.sendBeacon) {
         navigator.sendBeacon("/api/notifications/presence", new Blob([body], { type: "application/json" }));
         return;
@@ -81,7 +83,7 @@ export function useNotifications({ sessionId, locale, onOpenSession }: { session
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", onPageHide);
     };
-  }, [sessionId]);
+  }, [shownKey]);
 
   // Pushes are written in the device's language.
   useEffect(() => {

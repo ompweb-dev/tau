@@ -39,7 +39,8 @@ export interface NotificationPresence {
   clientId: string;
   deviceId: string;
   visible: boolean;
-  sessionId: string | null;
+  /** The sessions whose chats are on screen in this tab (one per tab group showing a chat). */
+  sessionIds: string[];
   /** Per-tab report counter: requests can arrive out of order, and only the newest counts. */
   seq: number;
   lastSeen: number;
@@ -127,7 +128,7 @@ export function attachNotificationClient(clientId: string, send: Send): () => vo
 
 /** A visible tab is showing the event's conversation. */
 function isOnScreen(event: NotificationEvent, presence: NotificationPresence[]): boolean {
-  return presence.some((tab) => tab.visible && tab.sessionId === event.sessionId);
+  return presence.some((tab) => tab.visible && tab.sessionIds.includes(event.sessionId));
 }
 
 /**
