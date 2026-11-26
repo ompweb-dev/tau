@@ -3089,8 +3089,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               minHeight: 24,
               maxHeight: 200,
               overflow: "auto",
-              // The same gutter as ComposerMirror, so both wrap at one width.
-              scrollbarGutter: "stable",
+              // A block, so the wrapper (and ComposerMirror, inset in it) is exactly its size.
+              display: "block",
               position: "relative",
             }}
           />

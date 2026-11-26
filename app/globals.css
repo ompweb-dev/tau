@@ -4970,7 +4970,6 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  scrollbar-gutter: stable;
   pointer-events: none;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -4983,7 +4982,24 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   color: transparent;
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-radius: 4px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  /* Wider than its text without moving it. */
+  padding: 0 2px;
+  margin: 0 -2px;
+  box-decoration-break: clone;
+}
+/* The empty composer's hints stay on its one line; what does not fit is cut with an ellipsis. */
+.composer-mirror-hints {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Forced colours repaint transparent text: the mirror would show a second copy, so it is left out there. */
+@media (forced-colors: active) {
+  .composer-mirror {
+    display: none;
+  }
+  .composer-textarea::placeholder {
+    color: GrayText;
+  }
 }
 /* The empty composer's hints replace the placeholder, which stays for assistive technology. */
 .composer-textarea::placeholder {
