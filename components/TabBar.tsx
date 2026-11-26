@@ -561,10 +561,12 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
                 requestAnimationFrame(() => {
                   if (menuAnchorRef.current?.isConnected) return;
                   // Split off: the tab, in its new strip. Closed: this strip's shown tab, or the first group
-                  // strip's when this one went with its last tab.
+                  // strip's when this one went with its last tab. Only shown strips count: a phone keeps the
+                  // other groups mounted under display: none.
+                  const shown = (element: Element | null | undefined) => Boolean(element && element.getClientRects().length > 0);
                   const moved = document.querySelector<HTMLElement>(`[role="tab"][data-tab-id="${CSS.escape(tabId)}"]`);
-                  const strip = listRef.current ?? document.querySelector("[data-group-strip]");
-                  (moved ?? strip?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]'))?.focus();
+                  const strip = [listRef.current, ...document.querySelectorAll("[data-group-strip]")].find(shown);
+                  (shown(moved) ? moved : strip?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]'))?.focus();
                 });
               }}
             >
