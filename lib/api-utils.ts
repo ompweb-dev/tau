@@ -33,6 +33,12 @@ export async function resolveSessionHostOr404(
   }
 }
 
+/** No host holds the session any more: state kept by id alone (watches, outbox lineage, exit marks) may go.
+ * False while another host still lists the id (a copy) or while that cannot be told. */
+export async function sessionGoneEverywhere(id: string): Promise<boolean> {
+  try { return (await hostForSessionId(id)) === null; } catch { return false; }
+}
+
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */
 export function hostOfflineResponse(host: Host): Response | null {
   if (isLinkUp(host.status())) return null;
@@ -59,16 +65,19 @@ export async function resolveWorkspaceHost(
     return "response" in resolved ? resolved : { host: resolved.host, sessionId: null, sessionFile: null, cwd: null };
   }
   if (!isValidSessionId(sessionId)) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
+  // The named host's copy of an id that exists on two hosts: another host's live child or retained cwd is not it.
+  const named = typeof hostId === "string" ? hostId : null;
   const live = getRpcSession(sessionId);
-  const running = live?.isAlive() ? live : undefined;
-  const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
+  const running = live?.isAlive() && (!named || live.host.id === named) ? live : undefined;
+  const pooled = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
+  const retained = pooled && (!named || pooled.hostId === named) ? pooled : null;
   let session: { host: Host } | { response: Response };
   if (running) session = { host: running.host };
   else if (retained) {
     const host = getHost(retained.hostId);
     if (!host) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
     session = { host };
-  } else session = await resolveSessionHostOr404(sessionId);
+  } else session = await resolveSessionHostOr404(sessionId, named);
   if ("response" in session) return session;
   const offline = hostOfflineResponse(session.host);
   if (offline) return { response: offline };

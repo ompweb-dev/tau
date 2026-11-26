@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404, sessionGoneEverywhere } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { clearExitedRpcSession, getRpcSession } from "@/lib/rpc-manager";
@@ -32,11 +32,11 @@ export async function POST(
     if (offline) return offline;
     // Only this host's child: the same id live on another host is another session.
     const live = getRpcSession(id);
-    if (live && live.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("archive", true);
+    if (live?.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("archive", true);
     const result = await sessionOps.archiveSession(id);
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id);
-    clearExitedRpcSession(id);
+    if (await sessionGoneEverywhere(id)) clearExitedRpcSession(id);
     return Response.json({ ok: true, archived: true, archivedPath: result.value.archivedPath });
   } catch (error) {
     if (error instanceof HostOpError) return apiErrorResponse(error);

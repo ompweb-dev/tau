@@ -158,12 +158,15 @@ export async function hostForSessionId(id: string): Promise<Host | null> {
   // shortcut: every miss re-asks each linked host; throttle per host if polling for gone sessions shows up.
   const host = (await hostWithSession(id, false)) ?? (await hostWithSession(id, true));
   if (host) return host;
-  for (const hostId of hostIds()) {
-    const candidate = getHost(hostId);
-    if (!candidate || !isLinkUp(candidate.status())) throw new HostOpError(503, "host_offline", `${candidate?.label ?? "A host"} is offline`);
-    if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${candidate.label}'s sessions are unavailable`);
-  }
+  for (const hostId of hostIds()) assertHostListCurrent(hostId);
   return null;
+}
+
+/** A miss on `hostId`'s list proves absence only while that list is current: 503 otherwise. */
+function assertHostListCurrent(hostId: string): void {
+  const host = getHost(hostId);
+  if (!host || !isLinkUp(host.status())) throw new HostOpError(503, "host_offline", `${host?.label ?? "A host"} is offline`);
+  if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${host.label}'s sessions are unavailable`);
 }
 
 /** `host` when it holds the session (its list read again once on a miss), else null: an id copied across hosts is
@@ -173,8 +176,7 @@ export async function hostHoldingSession(id: string, hostId: string): Promise<Ho
   if (!host || !isValidSessionId(id)) return null;
   const listed = async (refresh: boolean) => (await hostSessions(hostId, refresh)).some((session) => session.id === id);
   if (await listed(false) || await listed(true)) return host;
-  if (!isLinkUp(host.status())) throw new HostOpError(503, "host_offline", `${host.label} is offline`);
-  if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${host.label}'s sessions are unavailable`);
+  assertHostListCurrent(hostId);
   return null;
 }
 

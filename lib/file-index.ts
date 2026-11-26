@@ -4,6 +4,7 @@ import type { Dirent } from "fs";
 import { constants, readdirSync, statSync, type BigIntStats } from "node:fs";
 import { open, readdir, stat, type FileHandle } from "node:fs/promises";
 import path from "path";
+import { isUtf8 } from "node:buffer";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
 import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
@@ -223,10 +224,13 @@ async function credentialCandidates(): Promise<(filePath: string, info: BigIntSt
   const targets = new Set<string>();
   let unknown = false;
   for (const dir of dirs) {
-    let names: string[];
-    try { names = readdirSync(dir); }
+    let entries: Buffer[];
+    try { entries = readdirSync(dir, { encoding: "buffer" }); }
     catch (error) { if (!missing(error)) unknown = true; continue; }
-    for (const name of names) {
+    for (const entry of entries) {
+      // A name that is not UTF-8 cannot be named back to stat it (isPiSecretFile refuses those too).
+      if (!isUtf8(entry)) { unknown = true; continue; }
+      const name = entry.toString("utf8");
       try { const target = statSync(path.join(dir, name), { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
       catch (error) { if (!missing(error)) unknown = true; }
     }
