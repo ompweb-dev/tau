@@ -1,4 +1,4 @@
-// Flat monochrome file & folder icons — all use currentColor / var(--text-dim)
+// Flat file & folder icons: outlines in var(--text-dim); typed files carry their language's hue (--file-* tokens).
 
 interface IconProps {
   size?: number;
@@ -39,19 +39,23 @@ export function GenericFileIcon({ size = 14 }: IconProps) {
 // ── File with label text (used for most types) ────────────────────────────
 // Renders the file outline + a short text badge
 
-function LabelFileIcon({ label, size = 14 }: { label: string; size?: number }) {
+/** A language's hue (app/globals.css `--file-*`, per theme); files without one stay dim. */
+type Tone = "blue" | "yellow" | "green" | "teal" | "purple" | "pink" | "orange" | "red";
+
+function LabelFileIcon({ label, size = 14, tone }: { label: string; size?: number; tone?: Tone }) {
   const s = size / 14; // scale factor
+  const color = tone ? `var(--file-${tone})` : DIM;
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <path d="M2.5 1h6l3 3v9h-9V1Z" stroke={DIM} strokeWidth="0.9" fill={DIM} fillOpacity="0.07" strokeLinejoin="round" />
-      <path d="M8.5 1v3h3" stroke={DIM} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
+      <path d="M2.5 1h6l3 3v9h-9V1Z" stroke={color} strokeWidth="0.9" fill={color} fillOpacity={tone ? 0.12 : 0.07} strokeLinejoin="round" />
+      <path d="M8.5 1v3h3" stroke={color} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
       <text
         x="7" y="9.5"
         textAnchor="middle"
         fontSize={3.4 * s}
         fontFamily="var(--font-mono), monospace"
         fontWeight="600"
-        fill={DIM}
+        fill={color}
         letterSpacing="0"
       >{label}</text>
     </svg>
@@ -61,31 +65,31 @@ function LabelFileIcon({ label, size = 14 }: { label: string; size?: number }) {
 // ── Specific icons ────────────────────────────────────────────────────────
 
 export function TypeScriptIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TS" size={size} />;
+  return <LabelFileIcon label="TS" size={size} tone="blue" />;
 }
 export function TypeScriptReactIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TSX" size={size} />;
+  return <LabelFileIcon label="TSX" size={size} tone="blue" />;
 }
 export function JavaScriptIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="JS" size={size} />;
+  return <LabelFileIcon label="JS" size={size} tone="yellow" />;
 }
 export function JavaScriptReactIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="JSX" size={size} />;
+  return <LabelFileIcon label="JSX" size={size} tone="yellow" />;
 }
 export function PythonIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="PY" size={size} />;
+  return <LabelFileIcon label="PY" size={size} tone="teal" />;
 }
 export function JsonIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="{}" size={size} />;
+  return <LabelFileIcon label="{}" size={size} tone="yellow" />;
 }
 export function CssIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="CSS" size={size} />;
+  return <LabelFileIcon label="CSS" size={size} tone="purple" />;
 }
 export function ScssIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="SC" size={size} />;
+  return <LabelFileIcon label="SC" size={size} tone="pink" />;
 }
 export function HtmlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="HTM" size={size} />;
+  return <LabelFileIcon label="HTM" size={size} tone="orange" />;
 }
 export function MarkdownIcon({ size = 14 }: IconProps) {
   // file outline + M↓ symbol
@@ -101,7 +105,7 @@ export function MarkdownIcon({ size = 14 }: IconProps) {
   );
 }
 export function YamlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="YML" size={size} />;
+  return <LabelFileIcon label="YML" size={size} tone="red" />;
 }
 export function TomlIcon({ size = 14 }: IconProps) {
   return <LabelFileIcon label="TOM" size={size} />;
@@ -118,19 +122,19 @@ export function ShellIcon({ size = 14 }: IconProps) {
   );
 }
 export function RustIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="RS" size={size} />;
+  return <LabelFileIcon label="RS" size={size} tone="orange" />;
 }
 export function GoIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="GO" size={size} />;
+  return <LabelFileIcon label="GO" size={size} tone="teal" />;
 }
 export function SqlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="SQL" size={size} />;
+  return <LabelFileIcon label="SQL" size={size} tone="yellow" />;
 }
 export function GraphqlIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="GQL" size={size} />;
+  return <LabelFileIcon label="GQL" size={size} tone="pink" />;
 }
 export function TerraformIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="TF" size={size} />;
+  return <LabelFileIcon label="TF" size={size} tone="purple" />;
 }
 export function DockerfileIcon({ size = 14 }: IconProps) {
   // file outline + container stack
@@ -180,10 +184,10 @@ export function LockFileIcon({ size = 14 }: IconProps) {
   );
 }
 export function DocFileIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="DOC" size={size} />;
+  return <LabelFileIcon label="DOC" size={size} tone="blue" />;
 }
 export function PdfFileIcon({ size = 14 }: IconProps) {
-  return <LabelFileIcon label="PDF" size={size} />;
+  return <LabelFileIcon label="PDF" size={size} tone="red" />;
 }
 export function ConfigIcon({ size = 14 }: IconProps) {
   return (
@@ -199,11 +203,37 @@ export function ConfigIcon({ size = 14 }: IconProps) {
 
 // ── Main resolver ─────────────────────────────────────────────────────────
 
+// Languages with a hue and a label of their own.
+const LANGUAGE_LABELS: Record<string, { label: string; tone: Tone }> = {
+  c: { label: "C", tone: "blue" },
+  h: { label: "H", tone: "purple" },
+  cc: { label: "C++", tone: "blue" },
+  cpp: { label: "C++", tone: "blue" },
+  cxx: { label: "C++", tone: "blue" },
+  hh: { label: "H++", tone: "purple" },
+  hpp: { label: "H++", tone: "purple" },
+  hxx: { label: "H++", tone: "purple" },
+  cs: { label: "C#", tone: "purple" },
+  java: { label: "JV", tone: "orange" },
+  kt: { label: "KT", tone: "purple" },
+  swift: { label: "SW", tone: "orange" },
+  rb: { label: "RB", tone: "red" },
+  php: { label: "PHP", tone: "purple" },
+  lua: { label: "LUA", tone: "blue" },
+  zig: { label: "ZIG", tone: "orange" },
+  cmake: { label: "CM", tone: "green" },
+  obj: { label: "3D", tone: "teal" },
+  glb: { label: "3D", tone: "teal" },
+  gltf: { label: "3D", tone: "teal" },
+  stl: { label: "3D", tone: "teal" },
+};
+
 export function getFileIcon(name: string, size = 14): React.ReactNode {
   const lower = name.toLowerCase();
   const ext = lower.split(".").pop() ?? "";
 
   if (lower === "dockerfile" || lower.startsWith("dockerfile.")) return <DockerfileIcon size={size} />;
+  if (lower === "cmakelists.txt") return <LabelFileIcon label="CM" size={size} tone="green" />;
   if (lower === ".env" || lower.startsWith(".env.")) return <EnvIcon size={size} />;
   if (lower === ".gitignore" || lower === ".gitattributes" || lower === ".gitmodules") return <GitIcon size={size} />;
   if (lower === "package-lock.json" || lower === "yarn.lock" || lower === "bun.lock" || lower === "pnpm-lock.yaml" || lower === "cargo.lock") return <LockFileIcon size={size} />;
@@ -244,6 +274,9 @@ export function getFileIcon(name: string, size = 14): React.ReactNode {
     case "docx":    return <DocFileIcon size={size} />;
     case "pdf":     return <PdfFileIcon size={size} />;
     case "lock":    return <LockFileIcon size={size} />;
-    default:        return <GenericFileIcon size={size} />;
+    default: {
+      const language = LANGUAGE_LABELS[ext];
+      return language ? <LabelFileIcon label={language.label} size={size} tone={language.tone} /> : <GenericFileIcon size={size} />;
+    }
   }
 }

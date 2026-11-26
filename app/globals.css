@@ -138,6 +138,15 @@
   --text-dim: #63615B;
   /* Muted blue. 6.25:1 as link on --bg, 5.95:1 on --bg-panel, 5.83:1 on --user-bg, 5.04:1 on --bg-selected */
   --accent: #3A5C8C;
+  /* File type hues (FileIcons.tsx): icon badges only, never text on a surface. */
+  --file-blue: #3B6FB6;
+  --file-yellow: #A07A12;
+  --file-green: #3E8A4F;
+  --file-teal: #2C8A86;
+  --file-purple: #7A55B0;
+  --file-pink: #B04A86;
+  --file-orange: #B8632A;
+  --file-red: #B5473F;
   /* White-on-fill button: 6.80:1 (passes AA for small text) */
   --accent-strong: #3A5C8C;
   --accent-hover: #2F4C75;
@@ -174,6 +183,14 @@ html.theme-dark {
   /* Lifted blue for dark surfaces: 7.13:1 as link on --bg, 4.94:1 on --user-bg.
      As a white-text button fill it would fail AA, so filled buttons use --accent-strong. */
   --accent: #8EA8DA;
+  --file-blue: #7FA6E0;
+  --file-yellow: #D9B450;
+  --file-green: #7CC28A;
+  --file-teal: #6CC4BF;
+  --file-purple: #B497E0;
+  --file-pink: #E08ABD;
+  --file-orange: #E3A06A;
+  --file-red: #E58A82;
   /* White-on-fill: 5.99:1 (passes AA) */
   --accent-strong: #41639E;
   --accent-hover: #A8BDE5;
@@ -4988,10 +5005,14 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
-/* The empty composer's hints stay on its one line; what does not fit is cut with an ellipsis. */
+/* The empty composer's hints wrap as whole items, so one that does not fit drops onto a second line, which the
+   one-line composer hides, instead of being cut mid-word. */
 .composer-mirror-hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: baseline;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 /* The empty composer's hints replace the placeholder, which stays for assistive technology. */
 .composer-textarea::placeholder {
@@ -5019,4 +5040,14 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
   .composer-textarea::placeholder {
     color: GrayText;
   }
+}
+
+/* The Files tab's search field: a magnifier at its start. */
+.file-explorer-search-icon {
+  position: absolute;
+  left: 17px;
+  top: 50%;
+  transform: translateY(calc(-50% + 1px));
+  color: var(--text-dim);
+  pointer-events: none;
 }

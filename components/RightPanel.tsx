@@ -47,9 +47,6 @@ interface Props {
   /** Connection diagnostics are on in this browser: the Connection tab is shown. */
   connectionDiagnosticsOn: boolean;
   explorerRefreshKey: number;
-  fileSearchOpen: boolean;
-  onToggleFileSearch: () => void;
-  onFileSearchOpenChange: (open: boolean) => void;
   explorerUploadBusy: boolean;
   onUploadBusyChange: (busy: boolean) => void;
   explorerGitCount: number;
@@ -116,9 +113,6 @@ export const RightPanel = memo(function RightPanel({
   worktrees,
   connectionDiagnosticsOn,
   explorerRefreshKey,
-  fileSearchOpen,
-  onToggleFileSearch,
-  onFileSearchOpenChange,
   explorerUploadBusy,
   onUploadBusyChange,
   explorerGitCount,
@@ -231,17 +225,6 @@ export const RightPanel = memo(function RightPanel({
             explorerCwd && (
             <div style={{ display: "flex", alignItems: "center", flexShrink: 0, padding: "0 2px" }} role="toolbar" aria-label={t("tabBar.files")}>
               <button
-                onClick={onToggleFileSearch}
-                title={t("fileExplorer.searchFiles")}
-                aria-label={t("fileExplorer.searchFiles")}
-                aria-pressed={fileSearchOpen}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, padding: 0, background: fileSearchOpen ? "var(--bg-hover)" : "none", border: "none", borderRadius: "var(--radius-control)", color: fileSearchOpen ? "var(--accent)" : "var(--text-dim)", cursor: "pointer" }}
-                onMouseEnter={(e) => { if (fileSearchOpen) return; e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
-                onMouseLeave={(e) => { if (fileSearchOpen) return; e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-              >
-                <Search size={13} strokeWidth={2} aria-hidden="true" />
-              </button>
-              <button
                 onClick={() => fileExplorerRef.current?.openUploadPicker()}
                 disabled={explorerUploadBusy}
                 title={t("sessionSidebar.uploadFilesTitle")}
@@ -347,8 +330,6 @@ export const RightPanel = memo(function RightPanel({
                   onAtMentions={onAtMentions}
                   onUploadBusyChange={onUploadBusyChange}
                   onRefreshDone={onExplorerRefreshDone}
-                  fileSearchOpen={fileSearchOpen}
-                  onFileSearchOpenChange={onFileSearchOpenChange}
                   activeFilePath={activeFilePath}
                   revealPath={revealPath}
                   onRevealDone={onRevealDone}

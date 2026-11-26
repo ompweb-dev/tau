@@ -6098,7 +6098,7 @@ test("workspace file search stays in its source session rather than a same-path 
   resetWorld();
   servePooledWorkspace();
   const view = ownRoot(render(React.createElement(FileExplorer, {
-    cwd: "/shared", hostId: "h1", sourceSessionId: "worker-one", fileSearchOpen: true, onOpenFile() {},
+    cwd: "/shared", hostId: "h1", sourceSessionId: "worker-one", onOpenFile() {},
   }), { wrapper: TestRoot }));
   await settle();
   await act(async () => { fireEvent.change(view.getByRole("textbox", { name: translate("fileExplorer.searchFiles") }), { target: { value: "worker" } }); await sleep(200); });

@@ -1212,7 +1212,6 @@ export function AppShell({ appName }: { appName: string }) {
   }, []);
   // One-shot request asking the explorer tab to expand + scroll to a file.
   const [revealTarget, setRevealTarget] = useState<{ path: string; hostId: string } | null>(null);
-  const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
   const [explorerGitCount, setExplorerGitCount] = useState(0);
   const [explorerIsRepo, setExplorerIsRepo] = useState(false);
@@ -1943,9 +1942,6 @@ export function AppShell({ appName }: { appName: string }) {
     setRevealTarget((current) => current === revealTarget ? null : current);
   }, [revealTarget]);
 
-  const handleToggleFileSearch = useCallback(() => {
-    setFileSearchOpen((open) => !open);
-  }, []);
 
   // A file tab's menu: Close other tabs keeps it and closes the group's other files; Close all closes them all.
   const handleCloseOtherFileTabs = useCallback((tabId: string, groupTabIds: readonly string[]) => {
@@ -3442,9 +3438,6 @@ export function AppShell({ appName }: { appName: string }) {
         worktrees={worktreeCtx}
         connectionDiagnosticsOn={connectionDiagnosticsOn}
         explorerRefreshKey={explorerRefreshKey}
-        fileSearchOpen={fileSearchOpen}
-        onToggleFileSearch={handleToggleFileSearch}
-        onFileSearchOpenChange={setFileSearchOpen}
         explorerUploadBusy={explorerUploadBusy}
         onUploadBusyChange={setExplorerUploadBusy}
         explorerGitCount={explorerGitCount}

@@ -11,6 +11,7 @@ import {
   Folder,
   FolderOpen,
   Loader2,
+  Search,
   TriangleAlert,
   Upload,
   X,
@@ -69,8 +70,6 @@ interface Props {
   onAtMentions?: (relativePaths: string[]) => void;
   onUploadBusyChange?: (busy: boolean) => void;
   onRefreshDone?: () => void;
-  fileSearchOpen?: boolean;
-  onFileSearchOpenChange?: (open: boolean) => void;
   /** Absolute path of the file open in the right panel — rendered selected. */
   activeFilePath?: string | null;
   /** Absolute path to expand, highlight, and scroll into view (one-shot). */
@@ -492,8 +491,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   onAtMentions,
   onUploadBusyChange,
   onRefreshDone,
-  fileSearchOpen = false,
-  onFileSearchOpenChange,
   activeFilePath = null,
   revealPath = null,
   onRevealDone,
@@ -551,37 +548,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const expandedPathsRef = useRef<Set<string>>(new Set());
   expandedPathsRef.current = expandedPaths;
   const refreshToken = `${refreshKey ?? 0}:${treeRefreshKey}`;
-  // Which refresh the search request has already answered; re-baselined every
-  // time the panel opens.
-  const consumedRefreshTokenRef = useRef<string | null>(null);
+  // Which refresh the search request has already answered. Only a refresh after the explorer mounted counts
+  // (the sidebar bumps the explorer key once on mount, and nobody asked for that one).
+  const consumedRefreshTokenRef = useRef<string | null>(refreshToken);
   const uploadBusy = uploadPhase !== "idle";
-  const searchActive = fileSearchOpen && searchQuery.trim().length > 0;
+  const searchActive = searchQuery.trim().length > 0;
 
-  // Opening the panel focuses the input; closing it resets the whole search,
-  // mirroring how the session search behaves.
-  useEffect(() => {
-    if (fileSearchOpen) {
-      // Baseline for forced refreshes: only a refresh after the panel opened
-      // counts. The sidebar bumps the explorer key once on mount, and nobody
-      // asked for that one.
-      consumedRefreshTokenRef.current = refreshToken;
-      searchInputRef.current?.focus();
-      return;
-    }
-    setSearchQuery("");
-    setSearchPaths([]);
-    setSearchTruncated(false);
-    setSearchLoading(false);
-    setSearchFailed(false);
-    // refreshToken is read as the value at open time on purpose: adding it to
-    // the deps would re-baseline on every refresh and swallow it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileSearchOpen]);
 
   // Debounced query against the same cached, bounded file index that backs
   // the @ mention autocomplete. No second index.
   useEffect(() => {
-    if (!fileSearchOpen) return;
     const query = searchQuery.trim();
     if (!query) {
       setSearchPaths([]);
@@ -633,7 +609,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     return () => { clearTimeout(timer); controller.abort(); };
     // refreshToken participates so the toolbar refresh button and a finished
     // upload re-run the visible query against a freshly built listing.
-  }, [cwd, hostId, sourceSessionId, fileSearchOpen, searchQuery, refreshToken]);
+  }, [cwd, hostId, sourceSessionId, searchQuery, refreshToken]);
 
   // Rows stay in the order the index ranked them, so the closest name matches
   // sit at the top. Folding them into a directory tree would re-sort them
@@ -1206,7 +1182,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
       {/* Pinned: the result list scrolls, so an un-sticky box leaves you
           unable to edit the query that produced it. */}
-      {fileSearchOpen && (
         <div style={{
           position: "sticky",
           top: 0,
@@ -1214,6 +1189,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           background: "var(--bg-panel)",
           padding: "6px 8px 4px",
         }}>
+          <Search size={12} strokeWidth={2} aria-hidden="true" className="file-explorer-search-icon" />
           <input
             className="file-explorer-search-input"
             ref={searchInputRef}
@@ -1226,9 +1202,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               setSearchLoading(true);
             }}
             onKeyDown={(e) => {
+              // Escape clears the query (back to the tree); with none, it leaves the field.
               if (e.key === "Escape") {
                 e.preventDefault();
-                onFileSearchOpenChange?.(false);
+                if (searchQuery) setSearchQuery("");
+                else e.currentTarget.blur();
               }
             }}
             placeholder={t("fileExplorer.searchPlaceholder")}
@@ -1237,7 +1215,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               width: "100%",
               height: 27,
               boxSizing: "border-box",
-              padding: searchQuery ? "0 26px 0 9px" : "0 9px",
+              padding: searchQuery ? "0 26px 0 26px" : "0 9px 0 26px",
               background: "var(--bg)",
               border: "1px solid var(--border)",
               borderRadius: "var(--radius-control)",
@@ -1283,7 +1261,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             </button>
           )}
         </div>
-      )}
       {showUploadFeedback && (
         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
         {uploadBusy && (
