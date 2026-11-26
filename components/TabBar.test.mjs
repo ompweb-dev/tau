@@ -138,3 +138,37 @@ test("the strip marks the ends that have tabs scrolled out of view", () => {
   Object.defineProperty(list, "scrollWidth", { configurable: true, value: 200 });
   assert.equal(at(0), null, "a strip that fits has no cue");
 });
+
+test("a tab's context menu opens on right click and from the keyboard, and runs the chosen item", async () => {
+  const chosen = [];
+  const tabs = [
+    { id: "alpha", label: "alpha.ts", title: "/workspace/alpha.ts", icon: null },
+    { id: "beta", label: "beta.ts", title: "/workspace/beta.ts", icon: null },
+  ];
+  render(React.createElement(TabBar, {
+    tabs,
+    activeTabId: "alpha",
+    onDropTab: () => {},
+    tabMenu: (id) => [
+      { label: "Split right", onSelect: () => chosen.push(`split:${id}`) },
+      { label: "Close others", disabled: true, onSelect: () => chosen.push("never") },
+    ],
+    trailing: React.createElement("button", { type: "button", "aria-label": "New" }, "+"),
+  }));
+  const beta = screen.getByRole("tab", { name: "/workspace/beta.ts" });
+  assert.equal(beta.getAttribute("aria-haspopup"), "menu");
+  // The trailing control sits after the tablist, not inside it.
+  const plus = screen.getByRole("button", { name: "New" });
+  assert.equal(plus.closest('[role="tablist"]'), null);
+
+  fireEvent.contextMenu(beta, { clientX: 40, clientY: 30 });
+  assert.equal(screen.getByRole("menuitem", { name: "Close others" }).disabled, true);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Split right" }));
+  assert.deepEqual(chosen, ["split:beta"]);
+  assert.equal(screen.queryByRole("menuitem"), null, "choosing an item closes the menu");
+
+  const alpha = screen.getByRole("tab", { name: "/workspace/alpha.ts" });
+  fireEvent.keyDown(alpha, { key: "F10", shiftKey: true });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Split right" }));
+  assert.deepEqual(chosen, ["split:beta", "split:alpha"]);
+});

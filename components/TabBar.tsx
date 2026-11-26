@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Activity, Bell, Folder, GitBranch, GitFork, Search, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
+import { SidebarPortalMenu } from "./SessionSidebar-chrome";
 
 export interface Tab {
   id: string;
@@ -14,6 +15,13 @@ export interface Tab {
   sourceCwd: string | null;
   /** A line to scroll to and mark; `seq` tells a repeat of the same line apart. */
   revealLine?: { line: number; seq: number };
+}
+
+/** An entry of a strip tab's context menu. */
+export interface TabMenuItem {
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
 }
 
 /** A tab of the strip after the pinned ones: an open chat or file. */
@@ -42,6 +50,10 @@ interface Props {
   onDropTab?: (tabId: string, beforeId: string | null) => void;
   /** Alt+Shift+ArrowUp/ArrowDown move the focused tab to the previous (-1) or next (1) strip. */
   onMoveTabToGroup?: (tabId: string, step: -1 | 1) => void;
+  /** A tab's context menu (right click, the Menu key or Shift+F10). */
+  tabMenu?: (tabId: string) => TabMenuItem[];
+  /** Right after the last tab, outside the tablist (the strip's "+"); the strip then fits its tabs. */
+  trailing?: ReactNode;
   /** Pinned Explorer tab rendered after Notifications, before the file tabs (right-panel tab redesign). */
   explorerSelected?: boolean;
   onSelectExplorer?: () => void;
@@ -159,10 +171,18 @@ function PinnedTab({ id, panelId, label, title, icon, selected, badge, badgeColo
 /** Drag data type of a strip tab being moved. */
 const TAB_DRAG_TYPE = "application/x-tau-tab";
 
-export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, onDropTab, onMoveTabToGroup, explorerSelected = false, onSelectExplorer, explorerBadge = 0, searchSelected = false, onSelectSearch, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
+export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, ariaLabel, manualActivation = false, onDropTab, onMoveTabToGroup, tabMenu, trailing, explorerSelected = false, onSelectExplorer, explorerBadge = 0, searchSelected = false, onSelectSearch, gitSelected = false, onSelectGit, gitBadge = 0, notificationsSelected = false, onSelectNotifications, notificationsBadge = 0, worktreesSelected = false, onSelectWorktrees, connectionSelected = false, onSelectConnection }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // The tab whose context menu is open, and where (null: below the tab, as from the keyboard).
+  const [menu, setMenu] = useState<{ tabId: string; point: { x: number; y: number } | null } | null>(null);
+  const menuAnchorRef = useRef<HTMLElement | null>(null);
+  const openMenu = (tabId: string, element: HTMLElement, point: { x: number; y: number } | null) => {
+    menuAnchorRef.current = element;
+    setMenu({ tabId, point });
+  };
+  const closeMenu = useCallback(() => setMenu(null), []);
   const orderedTabIds = [
     ...(onSelectNotifications ? ["notifications"] : []),
     ...(onSelectExplorer ? ["explorer"] : []),
@@ -193,6 +213,11 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
   };
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLElement>, id: string) => {
+    if (tabMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && tabs.some((tab) => tab.id === id)) {
+      event.preventDefault();
+      openMenu(id, event.currentTarget, null);
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       selectTabById(id);
@@ -292,7 +317,8 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
   const order = tabs.map((tab) => tab.id).join("\0");
   useEffect(revealActive, [activeTabId, activeLabel, order, revealActive]);
 
-  return (
+  const menuItems = menu && tabMenu ? tabMenu(menu.tabId) : [];
+  const list = (
     <div
       ref={listRef}
       role="tablist"
@@ -300,15 +326,16 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
       aria-orientation="horizontal"
       className="tabbar-scroll"
       data-overflow={overflow ?? undefined}
-      onDragOver={allowTabDrop}
-      onDrop={(event) => dropTab(event, null)}
+      data-group-strip={trailing ? "" : undefined}
+      onDragOver={trailing ? undefined : allowTabDrop}
+      onDrop={trailing ? undefined : (event) => dropTab(event, null)}
       style={{
         display: "flex",
-        minWidth: onDropTab ? "100%" : undefined,
+        minWidth: onDropTab && !trailing ? "100%" : 0,
         background: "var(--bg-panel)",
         // Let a classic horizontal scrollbar take space below the tabs.
         overflowX: "auto",
-        flexShrink: 0,
+        flexShrink: trailing ? 1 : 0,
       }}
     >
       {onSelectNotifications && (
@@ -417,6 +444,8 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
               event.dataTransfer.effectAllowed = "move";
             } : undefined}
             onDrop={(event) => dropTab(event, tab.id)}
+            onContextMenu={tabMenu ? (event) => { event.preventDefault(); openMenu(tab.id, event.currentTarget, { x: event.clientX, y: event.clientY }); } : undefined}
+            aria-haspopup={tabMenu ? "menu" : undefined}
             onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();
@@ -505,5 +534,47 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
         );
       })}
     </div>
+  );
+  return (
+    <>
+      {trailing ? (
+        // The whole strip past the tabs takes a dropped tab at the end.
+        <div onDragOver={allowTabDrop} onDrop={(event) => dropTab(event, null)} style={{ display: "flex", alignItems: "center", minWidth: "100%" }}>
+          {list}
+          {trailing}
+        </div>
+      ) : list}
+      {tabMenu && (
+        <SidebarPortalMenu anchor={menuAnchorRef} open={menu !== null} onClose={closeMenu} placement="below" align="start" point={menu?.point ?? null} minWidth={160}>
+          {menuItems.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              className="sidebar-menu-item"
+              disabled={item.disabled}
+              style={{ padding: "6px 9px", borderRadius: 6, color: item.disabled ? "var(--text-dim)" : "var(--text-muted)", fontSize: 12, opacity: item.disabled ? 0.55 : 1, cursor: item.disabled ? "default" : "pointer" }}
+              onClick={() => {
+                const tabId = menu?.tabId ?? "";
+                item.onSelect();
+                // Runs before the menu's own focus restore, which then leaves this focus alone.
+                requestAnimationFrame(() => {
+                  if (menuAnchorRef.current?.isConnected) return;
+                  // Split off: the tab, in its new strip. Closed: this strip's shown tab, or the first group
+                  // strip's when this one went with its last tab. Only shown strips count: a phone keeps the
+                  // other groups mounted under display: none.
+                  const shown = (element: Element | null | undefined) => Boolean(element && element.getClientRects().length > 0);
+                  const moved = document.querySelector<HTMLElement>(`[data-group-strip] [role="tab"][data-tab-id="${CSS.escape(tabId)}"]`);
+                  const strip = [listRef.current, ...document.querySelectorAll("[data-group-strip]")].find(shown);
+                  (shown(moved) ? moved : strip?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]'))?.focus();
+                });
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </SidebarPortalMenu>
+      )}
+    </>
   );
 }

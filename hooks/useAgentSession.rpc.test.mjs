@@ -5624,6 +5624,14 @@ test("closing the shown chat under a file tab keeps the file and shows the neigh
   view.unmount();
 });
 
+// A group's Split right is in its shown tab's context menu (the first group's, or the `index`th).
+async function splitShownTabRight(root, index = 0) {
+  const tab = root.querySelectorAll('[data-group-focused] [role="tab"][aria-selected="true"]')[index];
+  await act(async () => { fireEvent.contextMenu(tab, { clientX: 10, clientY: 10 }); });
+  const item = [...document.querySelectorAll('[role="menuitem"]')].find((element) => element.textContent.trim() === translate("appShell.splitRight"));
+  await act(async () => { fireEvent.click(item); await sleep(60); });
+}
+
 test("a split shows two chats side by side; focusing either remounts neither, and closing one merges the groups", async (t) => {
   resetWorld();
   servePooledWorkspace();
@@ -5635,7 +5643,7 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   await act(async () => { fireEvent.change(view.getByRole("textbox"), { target: { value: "Worker one draft" } }); });
   await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
   const shownComposer = view.container.querySelector("textarea");
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  await splitShownTabRight(view.container);
   const shownSession = () => new URLSearchParams(window.location.search).get("session");
 
   const groupOf = (name) => view.getByRole("tab", { name }).closest("[data-group-id]");
@@ -5736,7 +5744,7 @@ test("chat tabs follow the session list: a rename relabels, a session gone elsew
   assert.equal(view.queryByRole("tab", { name: "Worker one renamed" }), null, "once its host's list is current, a missing session loses its tab");
 
   // The chat a split group shows keeps its tab.
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  await splitShownTabRight(view.container);
   await act(async () => { fireEvent.pointerDown(view.getByRole("tab", { name: "Worker legacy conversation" })); await sleep(60); });
   without("worker-two");
   await reload();
@@ -5777,7 +5785,7 @@ test("the strips and groups come back after a reload, and a tab whose session we
   await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
   await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation")); await sleep(60); });
   await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  await splitShownTabRight(view.container);
   const hostTools = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
   await act(async () => {
     hostTools.emit({ type: "host_tool_call", id: "persist-open", sessionId: "worker-two", hostId: "h2", cwd: "/shared", toolName: "open_file", arguments: { path: "/shared/report.txt" } });
@@ -5913,7 +5921,7 @@ async function draftInItsOwnGroup(t) {
   await settle();
   await until(() => view.queryByRole("tab", { name: "Worker one conversation" }), "the restored conversation gets a tab");
   await act(async () => { fireEvent.click(view.getByText("Worker two conversation")); await sleep(60); });
-  await act(async () => { fireEvent.click(view.getByRole("button", { name: translate("appShell.splitRight") })); await sleep(60); });
+  await splitShownTabRight(view.container);
   const h = {
     view,
     shownSession: () => new URLSearchParams(window.location.search).get("session"),
@@ -5933,7 +5941,7 @@ async function draftInItsOwnGroup(t) {
   await act(async () => { fireEvent.keyDown(h.tab("Worker one conversation"), { key: "ArrowDown", altKey: true, shiftKey: true }); await sleep(60); });
   assert.equal(h.separators(), 0, "one group left");
   assert.equal(h.composerIn(h.groupOf(h.tab("Worker one conversation"))), workerOneComposer, "a chat moved to another group keeps its mount");
-  await act(async () => { fireEvent.click(h.view.getAllByRole("button", { name: translate("appShell.splitRight") })[0]); await sleep(60); });
+  await splitShownTabRight(h.view.container);
   assert.equal(h.separators(), 1);
   assert.equal(h.composerIn(h.groupOf(h.tab("Worker one conversation"))), workerOneComposer, "and when split into its own group again");
   // Groups: [worker two] | [worker one] (focused). A new chat joins the focused group; worker one then closes,
