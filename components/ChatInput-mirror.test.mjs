@@ -7,7 +7,7 @@ const { ComposerMirror, splitLineMentions } = await import("./ChatInput-mirror.t
 const { buildFileLineMentionText } = await import("../lib/file-fuzzy.ts");
 
 test("line-range mentions, as the file viewer writes them, split out of the composer text", () => {
-  const text = `see ${buildFileLineMentionText("src/main.cpp", 28, 27)}and ${buildFileLineMentionText("a dir/x.ts", 3, 3)}and @src/other.ts plus git@github.com:22 and mail@host:22x`;
+  const text = `see ${buildFileLineMentionText("src/main.cpp", 28, 27)}and ${buildFileLineMentionText("a dir/x.ts", 3, 3)}and @src/other.ts plus git@github.com:22 and mail@host:22 and mail@host:22x`;
   assert.deepEqual(splitLineMentions(text).filter((part) => part.mention).map((part) => part.text), ["@src/main.cpp:27-28", "@\"a dir/x.ts\":3"]);
   assert.equal(splitLineMentions(text).map((part) => part.text).join(""), text, "the parts are the whole text");
 });
