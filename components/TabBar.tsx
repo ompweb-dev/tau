@@ -326,6 +326,7 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
       aria-orientation="horizontal"
       className="tabbar-scroll"
       data-overflow={overflow ?? undefined}
+      data-group-strip={trailing ? "" : undefined}
       onDragOver={trailing ? undefined : allowTabDrop}
       onDrop={trailing ? undefined : (event) => dropTab(event, null)}
       style={{
@@ -558,7 +559,9 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
                 // Runs before the menu's own focus restore, which then leaves this focus alone.
                 requestAnimationFrame(() => {
                   if (menuAnchorRef.current?.isConnected) return;
-                  listRef.current?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
+                  // A strip whose last tab left is gone: the first group strip left takes focus.
+                  const strip = listRef.current ?? document.querySelector("[data-group-strip]");
+                  strip?.querySelector<HTMLElement>('[role="tab"][tabindex="0"]')?.focus();
                 });
               }}
             >

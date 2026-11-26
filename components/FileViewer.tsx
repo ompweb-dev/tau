@@ -484,7 +484,7 @@ function ImageViewer({ filePath, hostId, cwd, sourceSessionId, active = true, he
           flexShrink: 0,
         }}
       >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
+        <span style={{ fontFamily: "var(--font-mono)", minWidth: 0, overflowWrap: "anywhere" }} title={filePath}>
           {getRelativeFilePath(filePath, cwd)}
         </span>
         <span style={{ marginLeft: "auto" }}>{ext || t("fileViewer.imageType")}</span>
@@ -612,7 +612,7 @@ function AudioViewer({ filePath, hostId, cwd, sourceSessionId, active = true, he
           flexShrink: 0,
         }}
       >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
+        <span style={{ fontFamily: "var(--font-mono)", minWidth: 0, overflowWrap: "anywhere" }} title={filePath}>
           {getRelativeFilePath(filePath, cwd)}
         </span>
         <span style={{ marginLeft: "auto" }}>{ext || t("fileViewer.audioType")}</span>
@@ -751,7 +751,7 @@ function DocumentViewer({ filePath, hostId, sourceSessionId, active = true, head
           flexShrink: 0,
         }}
       >
-        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
+        <span style={{ fontFamily: "var(--font-mono)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
         </span>
         <span style={{ marginLeft: "auto" }}>{ext === "docx" ? t("fileViewer.docxPreview") : t("fileViewer.pdfType")}</span>
         {size != null && <span>{formatSize(size)}</span>}
