@@ -19,6 +19,7 @@ import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, get
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
+import { ComposerMirror } from "./ChatInput-mirror";
 import {
   draftFilesToAttachedFiles,
   draftImagesToAttachedImages,
@@ -3037,8 +3038,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             />
           ) : (
           <div style={{ position: "relative" }}>
+          <ComposerMirror value={value} textareaRef={textareaRef} fontFamily={bashMode ? "var(--font-mono)" : "inherit"} />
           <textarea
             ref={textareaRef}
+            className="composer-textarea"
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
@@ -3086,6 +3089,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
               minHeight: 24,
               maxHeight: 200,
               overflow: "auto",
+              // A block without padding, so the wrapper (and ComposerMirror, inset in it) is exactly its text box.
+              display: "block",
+              padding: 0,
               position: "relative",
             }}
           />

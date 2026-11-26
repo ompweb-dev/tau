@@ -4964,3 +4964,59 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
     min-width: 40px;
   }
 }
+
+/* The composer's mirror layer (ChatInput-mirror.tsx): under the textarea, wrapping as it does. */
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: transparent;
+  font-size: var(--chat-user-font-size);
+  line-height: var(--chat-line-height);
+}
+/* A line-range mention (@src/main.cpp:27-28) as a chip. */
+.composer-chip {
+  color: transparent;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  /* Wider than its text without moving it. */
+  padding: 0 2px;
+  margin: 0 -2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* The empty composer's hints stay on its one line; what does not fit is cut with an ellipsis. */
+.composer-mirror-hints {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The empty composer's hints replace the placeholder, which stays for assistive technology. */
+.composer-textarea::placeholder {
+  color: transparent;
+}
+.composer-hint-lead {
+  color: var(--text-dim);
+}
+.composer-hint {
+  margin-left: 12px;
+  color: var(--text-dim);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.composer-hint kbd {
+  font-family: inherit;
+  color: var(--text-muted);
+}
+/* Forced colours repaint transparent text: the mirror would show a second copy, so it is left out there and the
+   placeholder shows instead (after the placeholder rule above, so it wins). */
+@media (forced-colors: active) {
+  .composer-mirror {
+    display: none;
+  }
+  .composer-textarea::placeholder {
+    color: GrayText;
+  }
+}
