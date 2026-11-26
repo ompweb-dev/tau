@@ -8,9 +8,8 @@ import { createGunzip, inflateRawSync } from "node:zlib";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import type { ApprovedReleasePin, HostUpdateOperation, HostUpdateTarget } from "./update-types";
-import type { UpgradeLaunch, UpgradeProcess } from "../upgrade-process";
-import * as processRuntime from "../upgrade-process";
-import * as identityRuntime from "../process-identity";
+import { assertUpgradeProcessControl, restartUpgradeProcess, stopUpgradeProcess, type UpgradeLaunch, type UpgradeProcess } from "../upgrade-process";
+import { isProcessAlive, processStartIdentity } from "../process-identity";
 import { fileURLToPath } from "node:url";
 
 import { setTimeout as pause } from "node:timers/promises";
@@ -59,9 +58,6 @@ export interface HostUpdateDescriptor {
   /** The protocol range the candidate must speak for a maintenance receipt to acknowledge it, while its application protocol may await the server's cutover. */
   receipt?: { min: number; max: number };
 }
-const RUNTIME = { process: processRuntime, identity: identityRuntime };
-type WorkerRuntime = typeof RUNTIME;
-
 export function hostUpdateRoot(): string {
   const agent = process.env.PI_CODING_AGENT_DIR ? resolve(process.env.PI_CODING_AGENT_DIR) : join(homedir(), ".pi", "agent");
   return join(agent, "tau", "host-update");
@@ -672,7 +668,7 @@ export function pruneHostUpdateArtifacts(installDir: string, options: { keepAtte
   }
   for (const id of attempts.keys()) {
     const dir = join(root, id);
-    for (const heavy of readdirSync(dir)) if (/^runtime(\.exe)?$|^worker\.mjs$/.test(heavy)) { try { rmSync(join(dir, heavy), { force: true }); } catch { /* locked: retried next update */ } }
+    for (const heavy of readdirSync(dir)) if (/^(runtime(\.exe)?|worker\.mjs)$/.test(heavy)) { try { rmSync(join(dir, heavy), { force: true }); } catch { /* locked: retried next update */ } }
     if (id !== state?.operation.id && id !== keepBackup && id !== options.keepAttempt && !leftover.has(id)) removeOwnedTree(dir);
   }
 }
@@ -683,21 +679,21 @@ class UnsafeHostRestartError extends Error {}
  * outlast one stop's wait; only a forced update gives it more, and only while it is still the process inspected (every
  * attempt re-verifies that). An error after the daemon is gone is not one.
  */
-async function stopDaemon(plan: UpgradeProcess, pid: number, force: boolean, runtime: WorkerRuntime): Promise<void> {
+async function stopDaemon(plan: UpgradeProcess, pid: number, force: boolean): Promise<void> {
   for (let attempt = 0; ; attempt++) {
-    try { return await runtime.process.stopUpgradeProcess(plan); }
-    catch (error) { if (!runtime.identity.isProcessAlive(pid)) return; if (!force || attempt >= 5) throw error; }
+    try { return await stopUpgradeProcess(plan); }
+    catch (error) { if (!isProcessAlive(pid)) return; if (!force || attempt >= 5) throw error; }
   }
 }
 
 /** A successful signal may outlast the stop wait. Never launch beside a live or replaced instance. */
-async function reconcilePendingStop(plan: UpgradeProcess, pid: number, runtime: WorkerRuntime): Promise<void> {
-  for (const deadline = Date.now() + 30000; runtime.identity.isProcessAlive(pid); await pause(100)) {
+async function reconcilePendingStop(plan: UpgradeProcess, pid: number): Promise<void> {
+  for (const deadline = Date.now() + 30000; isProcessAlive(pid); await pause(100)) {
     if (plan.current.pid !== pid) throw new Error("The signalled daemon's process identity could not be reconciled");
-    const identity = await runtime.identity.processStartIdentity(pid);
+    const identity = await processStartIdentity(pid);
     if (identity !== plan.current.identity) {
       // On macOS ps can finish after the daemon exits; absence is not a recycled live pid.
-      if (!runtime.identity.isProcessAlive(pid)) return;
+      if (!isProcessAlive(pid)) return;
       throw new Error(`The signalled daemon's process identity could not be reconciled (pid ${pid}, expected ${plan.current.identity}, observed ${identity ?? "unreadable"})`);
     }
     if (Date.now() >= deadline) throw new Error("The signalled daemon is still stopping; no replacement was started");
@@ -763,11 +759,11 @@ async function waitForHostUpdateDecision(d: HostUpdateDescriptor): Promise<HostU
  * and it carries the preflight nonce and a protocol inside the approved range: a bare maintenance connection never counts.
  * Whatever fails, the candidate is stopped again through the same supervisor before anything is rolled back.
  */
-async function launchDaemon(d: HostUpdateDescriptor, plan: UpgradeProcess, runtime: WorkerRuntime, health: string, expected: string, nonce?: string): Promise<number> {
+async function launchDaemon(d: HostUpdateDescriptor, plan: UpgradeProcess, health: string, expected: string, nonce?: string): Promise<number> {
   if (existsSync(health)) { assertOwnedPath(health); rmSync(health); }
   // Supervisor restart may itself take time; the acknowledgement gets its full window afterwards.
   try {
-    const launched = (await runtime.process.restartUpgradeProcess(plan, hostLaunch(d))) ?? plan.current.pid ?? undefined;
+    const launched = (await restartUpgradeProcess(plan, hostLaunch(d))) ?? plan.current.pid ?? undefined;
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
       if (existsSync(health)) {
@@ -775,20 +771,20 @@ async function launchDaemon(d: HostUpdateDescriptor, plan: UpgradeProcess, runti
         const marker = JSON.parse(readFileSync(health, "utf8"));
         const vouches = launched !== undefined
           ? marker.pid === launched
-          : marker.pid !== d.daemonPid && marker.pid !== process.pid && (marker.identity === undefined || marker.identity === await runtime.identity.processStartIdentity(marker.pid));
-        if (marker.id === d.id && vouches && runtime.identity.isProcessAlive(marker.pid)) {
+          : marker.pid !== d.daemonPid && marker.pid !== process.pid && (marker.identity === undefined || marker.identity === await processStartIdentity(marker.pid));
+        if (marker.id === d.id && vouches && isProcessAlive(marker.pid)) {
           if (marker.version !== expected) throw new Error(`Host acknowledged version ${marker.version}, expected ${expected}`);
           const requiresReceipt = d.receipt !== undefined && expected === d.version;
           if ((requiresReceipt || marker.receipt !== undefined) && (!d.receipt || !nonce || marker.receipt !== nonce || !Number.isSafeInteger(marker.protocol) || !(marker.protocol >= d.receipt.min && marker.protocol <= d.receipt.max))) throw new Error("The host's maintenance receipt does not match this operation's release proof and approved protocol range");
           return marker.pid;
         }
       }
-      if (launched !== undefined && !runtime.identity.isProcessAlive(launched)) throw new Error("Updated host exited before health acknowledgement");
+      if (launched !== undefined && !isProcessAlive(launched)) throw new Error("Updated host exited before health acknowledgement");
       await pause(100);
     }
     throw new Error("Host launch did not acknowledge healthy reconnect within 30 seconds");
   } catch (error) {
-    try { await runtime.process.stopUpgradeProcess(plan); }
+    try { await stopUpgradeProcess(plan); }
     catch (stopError) { throw new UnsafeHostRestartError(`Failed candidate could not be stopped; backup retained, no duplicate daemon started: ${String(stopError)}; original failure: ${String(error)}`); }
     throw error;
   }
@@ -829,7 +825,6 @@ function validateDescriptor(path: string): HostUpdateDescriptor {
 export async function runHostUpdateWorker(path: string): Promise<number> {
   let d: HostUpdateDescriptor | undefined;
   let plan: UpgradeProcess | undefined;
-  let runtime: WorkerRuntime | undefined;
   let backup: string | undefined;
   let stopped = false;
   let swapped = false;
@@ -840,7 +835,6 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
   let nonce: string | undefined;
   try {
     d = validateDescriptor(path);
-    runtime = RUNTIME;
     const workerLease = join(dirname(path), "worker.lock");
     try { writeFileSync(workerLease, String(process.pid), { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return 1; throw error; }
@@ -852,7 +846,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     // Give the host op response time to reach the web server before any stop.
     await pause(500);
     plan = daemonProcess(d);
-    await runtime.process.assertUpgradeProcessControl(plan);
+    await assertUpgradeProcessControl(plan);
     let release: string | undefined;
     if (!d.restartOnly) {
       // The daemon's own sessions and subagents run the installed runner; stopping the daemon ends them, so they are not sharers. Anything else is.
@@ -876,7 +870,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
       const currentDescriptor = validateDescriptor(path);
       if (JSON.stringify(currentDescriptor) !== JSON.stringify(d)) throw new Error("Host update descriptor changed after preparation");
       if (d.restartOnly && !(await installedHostVersionMatches(d.installMethod, d.installDir, d.version))) throw new Error(restartCandidateMissing);
-      await runtime.process.assertUpgradeProcessControl(plan);
+      await assertUpgradeProcessControl(plan);
       if (release) {
         const sharing = await sharedHostInstallReason(d.installDir, [process.pid], plan.current.pid === d.daemonPid ? [d.daemonPid] : []);
         if (sharing) throw new Error(sharing);
@@ -888,11 +882,11 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     if (d.restartOnly && !(await installedHostVersionMatches(d.installMethod, d.installDir, d.version))) throw new Error(restartCandidateMissing);
     if (d.force) markCommitting(d.id);
     // The supervisor stops the daemon (a forced one ends its sessions with it, after the daemon has preserved its resume manifest).
-    if (runtime.identity.isProcessAlive(d.daemonPid)) {
-      try { await stopDaemon(plan, d.daemonPid, d.force === true, runtime); }
+    if (isProcessAlive(d.daemonPid)) {
+      try { await stopDaemon(plan, d.daemonPid, d.force === true); }
       catch (error) {
         stopPending = (error as NodeJS.ErrnoException).code === "stop_pending";
-        stopped = !runtime.identity.isProcessAlive(d.daemonPid);
+        stopped = !isProcessAlive(d.daemonPid);
         throw error;
       }
     }
@@ -904,7 +898,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
       await moveHostRelease(d.installDir, backup);
       try { await moveHostRelease(release, d.installDir); swapped = true; } catch (error) { await moveHostRelease(backup, d.installDir); backup = undefined; throw error; }
     }
-    await launchDaemon(d, plan, runtime, join(dirname(path), "health.json"), d.version, nonce);
+    await launchDaemon(d, plan, join(dirname(path), "health.json"), d.version, nonce);
     finishHostUpdate(d.id);
     return 0;
   } catch (error) {
@@ -915,8 +909,8 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
       } catch {}
     }
     let message = error instanceof Error ? error.message : String(error);
-    if (stopPending && d && plan && runtime && !stopped) {
-      try { await reconcilePendingStop(plan, d.daemonPid, runtime); stopped = true; }
+    if (stopPending && d && plan && !stopped) {
+      try { await reconcilePendingStop(plan, d.daemonPid); stopped = true; }
       catch (reconcileError) {
         recoveryRequired = true;
         message += `; ${reconcileError instanceof Error ? reconcileError.message : String(reconcileError)}`;
@@ -924,17 +918,17 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
     }
     if (error instanceof UnsafeHostRestartError) recoveryRequired = true;
     if (d?.restartOnly && stopped) message += "; existing shared installation retained; the previous loaded runtime cannot be restored without reinstalling";
-    if (d?.restartOnly && stopPending && stopped && plan && runtime) {
-      try { await launchDaemon(d, plan, runtime, join(dirname(path), "health.json"), d.version, nonce); }
+    if (d?.restartOnly && stopPending && stopped && plan) {
+      try { await launchDaemon(d, plan, join(dirname(path), "health.json"), d.version, nonce); }
       catch (restartError) { recoveryRequired = true; message += `; existing installation restart failed: ${String(restartError)}`; }
     }
-    if (d && plan && runtime && stopped && !d.restartOnly && !(error instanceof UnsafeHostRestartError)) {
+    if (d && plan && stopped && !d.restartOnly && !(error instanceof UnsafeHostRestartError)) {
       try {
         if (swapped && backup) {
           await moveHostRelease(d.installDir, join(dirname(d.installDir), `.tau-failed-${d.id}`));
           await moveHostRelease(backup, d.installDir);
         }
-        await launchDaemon(d, plan, runtime, join(dirname(path), "health.json"), d.fromVersion);
+        await launchDaemon(d, plan, join(dirname(path), "health.json"), d.fromVersion);
         message += "; previous host release restored";
       } catch (rollbackError) { recoveryRequired = true; message += `; rollback/restart failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`; }
     }

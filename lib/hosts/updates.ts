@@ -283,7 +283,7 @@ export function hostUpdateClaimHolder(): string | undefined {
  * install it replaces. Returns the bundle. `plugins` lets tests swap a module of the bundle.
  */
 export async function buildHostUpdateWorker(directory: string, plugins: Bun.BunPlugin[] = []): Promise<string> {
-  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./update-worker.ts", import.meta.url))], target: "bun", format: "esm", outdir: directory, naming: "worker.mjs", plugins });
+  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./update-worker.ts", import.meta.url))], target: "bun", format: "esm", outdir: directory, naming: "worker.mjs", plugins, throw: false });
   if (!bundle.success) throw new Error(`Could not build the host update worker: ${bundle.logs.map(String).join("; ")}`);
   const worker = join(directory, "worker.mjs");
   chmodSync(worker, 0o600);

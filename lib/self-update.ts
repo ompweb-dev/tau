@@ -410,7 +410,7 @@ async function workerLaunch(job: CommitJob, attemptDir: string, descriptor: stri
     return target;
   };
   if (install.method === "binary") return { command: copyRuntime(process.execPath), args: ["server-update-worker", descriptor], cwd: installSpawnCwd(), env };
-  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./server-update-worker.ts", import.meta.url))], target: "bun", format: "esm", outdir: attemptDir, naming: "worker.mjs" });
+  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./server-update-worker.ts", import.meta.url))], target: "bun", format: "esm", outdir: attemptDir, naming: "worker.mjs", throw: false });
   if (!bundle.success) throw new Error(`Could not build the update worker: ${bundle.logs.map(String).join("; ")}`);
   // A runtime inside the package (Windows locks a running .exe) would be replaced under the worker.
   const runtime = insideInstall(install.installDir, install.runtime) ? copyRuntime(install.runtime) : install.runtime;
