@@ -1052,14 +1052,14 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
   if (loading) {
     return (
       <div style={{ position: "relative", height: "100%" }}>
-      {stateActions}
-      <div role="status" aria-busy="true" aria-label={t("fileViewer.loading")} style={{ height: "100%", display: "flex", flexDirection: "column", gap: 12, padding: 24, boxSizing: "border-box", overflow: "hidden" }}>
-        <div aria-hidden="true" className="skeleton" style={{ width: "44%", height: 14 }} />
-        <div aria-hidden="true" className="skeleton" style={{ width: "92%", height: 12 }} />
-        <div aria-hidden="true" className="skeleton" style={{ width: "84%", height: 12 }} />
-        <div aria-hidden="true" className="skeleton" style={{ width: "88%", height: 12 }} />
-        <div aria-hidden="true" className="skeleton" style={{ width: "76%", height: 12 }} />
-      </div>
+        {stateActions}
+        <div role="status" aria-busy="true" aria-label={t("fileViewer.loading")} style={{ height: "100%", display: "flex", flexDirection: "column", gap: 12, padding: 24, boxSizing: "border-box", overflow: "hidden" }}>
+          <div aria-hidden="true" className="skeleton" style={{ width: "44%", height: 14 }} />
+          <div aria-hidden="true" className="skeleton" style={{ width: "92%", height: 12 }} />
+          <div aria-hidden="true" className="skeleton" style={{ width: "84%", height: 12 }} />
+          <div aria-hidden="true" className="skeleton" style={{ width: "88%", height: 12 }} />
+          <div aria-hidden="true" className="skeleton" style={{ width: "76%", height: 12 }} />
+        </div>
       </div>
     );
   }
@@ -1067,17 +1067,17 @@ function TextFileViewer({ filePath, hostId, cwd, sourceSessionId, onOpenFile, on
   if (error) {
     return (
       <div style={{ position: "relative", height: "100%" }}>
-      {stateActions}
-      <div role="alert" style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 24, color: "var(--status-error)", fontSize: 13, textAlign: "center" }}>
-        <div>{error}</div>
-        <button
-          type="button"
-          onClick={retryContent}
-          style={{ minHeight: 36, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
-        >
-          {t("chatWindow.retry")}
-        </button>
-      </div>
+        {stateActions}
+        <div role="alert" style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 24, color: "var(--status-error)", fontSize: 13, textAlign: "center" }}>
+          <div>{error}</div>
+          <button
+            type="button"
+            onClick={retryContent}
+            style={{ minHeight: 36, padding: "6px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-panel)", color: "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+          >
+            {t("chatWindow.retry")}
+          </button>
+        </div>
       </div>
     );
   }

@@ -40,6 +40,8 @@ export function step(history: TabHistory, dir: -1 | 1, open: ReadonlySet<string>
   const index = from.lastIndexOf(target);
   const rest = from.slice(0, index);
   const skipped = from.slice(index + 1).filter((id) => kept.has(id) && id !== history.current).reverse();
-  const passed = [...to, ...(history.current === null ? [] : [history.current]), ...skipped].slice(-LIMIT);
+  const all = [...to, ...(history.current !== null && kept.has(history.current) ? [history.current] : []), ...skipped];
+  // One entry per tab, where it was seen last.
+  const passed = all.filter((id, index) => all.lastIndexOf(id) === index).slice(-LIMIT);
   return dir < 0 ? { back: rest, forward: passed, current: target } : { back: passed, forward: rest, current: target };
 }

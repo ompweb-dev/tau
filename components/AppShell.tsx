@@ -2362,8 +2362,10 @@ export function AppShell({ appName }: { appName: string }) {
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(target.id)}"] [data-tab-id="${CSS.escape(tabId)}"]`)?.focus());
   };
   // Splits off `tabId` (the group's shown tab by default) to the right or below.
+  // The tab split off is selected, so its new group is the focused one (keyboard focus follows it, see TabBar).
   const splitTabGroup = (groupId: string, dir: "row" | "column", tabId?: string) => {
     setTabLayout((layout) => splitGroup(layout, groupId, dir, tabId));
+    if (tabId && tabId !== activeStripTabId) selectStripTab(tabId);
   };
   // A group's ←/→: the tab it showed before (or after), skipping closed ones. The history moves first, so the
   // visit that the selection causes finds it already there.
