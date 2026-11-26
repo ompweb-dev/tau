@@ -1322,6 +1322,14 @@ html[data-touch-targets="accessible"] .session-item-row {
 html[data-touch-targets="accessible"] .session-item-trailing {
   height: 44px;
 }
+html[data-touch-targets="accessible"] .session-item-menu-button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+html[data-touch-targets="accessible"] .session-item-row .session-item-button {
+  align-self: stretch;
+}
 .session-item-trailing {
   height: 24px;
 }
@@ -4719,7 +4727,7 @@ html[data-touch-targets="compact"] {
 }
 html[data-touch-targets="compact"] .session-item-row {
   /* The two text lines alone: no padding around them. */
-  min-height: 32px !important;
+  min-height: var(--session-row-height) !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
 }
