@@ -1,4 +1,4 @@
-// Flat file & folder icons in var(--text-dim); a typed file's badge outline and tint carry its language's hue (--file-*).
+// Flat file & folder icons in var(--text-dim); a typed file's badge outline carries its language's hue (--file-*).
 
 interface IconProps {
   size?: number;
@@ -47,7 +47,8 @@ function LabelFileIcon({ label, size = 14, tone }: { label: string; size?: numbe
   const color = tone ? `var(--file-${tone})` : DIM;
   return (
     <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
-      <path d="M2.5 1h6l3 3v9h-9V1Z" stroke={color} strokeWidth="0.9" fill={color} fillOpacity={tone ? 0.12 : 0.07} strokeLinejoin="round" />
+      {/* No fill: a tint behind the label takes its contrast below 4.5:1 on a selected row. */}
+      <path d="M2.5 1h6l3 3v9h-9V1Z" stroke={color} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
       <path d="M8.5 1v3h3" stroke={color} strokeWidth="0.9" fill="none" strokeLinejoin="round" />
       <text
         x="7" y="9.5"
@@ -55,7 +56,7 @@ function LabelFileIcon({ label, size = 14, tone }: { label: string; size?: numbe
         fontSize={3.4 * s}
         fontFamily="var(--font-mono), monospace"
         fontWeight="600"
-        // The label stays --text-dim, as on untyped badges; the hue is the badge's outline and tint.
+        // The label stays --text-dim (4.6:1 or more on a selected row); the hue is the badge's outline.
         fill={DIM}
         letterSpacing="0"
       >{label}</text>

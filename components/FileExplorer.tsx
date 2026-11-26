@@ -1215,7 +1215,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             if (e.key === "Escape" && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
               e.preventDefault();
               if (searchQuery) setSearchQuery("");
-              else (scrollRef.current?.querySelector<HTMLElement>('[tabindex="0"]') ?? scrollRef.current)?.focus();
+              else {
+                  // Into the tree: its focused row (rendered first if it scrolled out of the virtual window), else the tree.
+                  const index = focusedIndexRef.current;
+                  if (rowsRef.current[index]?.kind === "node") goToRow(index);
+                  else scrollRef.current?.focus();
+                }
             }
           }}
           placeholder={t("fileExplorer.searchPlaceholder")}
