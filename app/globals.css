@@ -138,7 +138,8 @@
   --text-dim: #63615B;
   /* Muted blue. 6.25:1 as link on --bg, 5.95:1 on --bg-panel, 5.83:1 on --user-bg, 5.04:1 on --bg-selected */
   --accent: #3A5C8C;
-  /* File type hues (FileIcons.tsx), also the badge's label text. On --bg-panel: light 4.6-4.9:1, dark 6.1-7.8:1. */
+  /* File type hues (FileIcons.tsx): a badge's outline and tint, not text (the label stays --text-dim).
+     Non-text contrast on --bg-panel: light 4.6-4.9:1, dark 6.1-7.8:1. */
   --file-blue: #396CB1;
   --file-yellow: #86660F;
   --file-green: #367845;

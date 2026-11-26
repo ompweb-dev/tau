@@ -1207,7 +1207,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           }}
           onKeyDown={(e) => {
             // Escape clears the query (back to the tree); with none, it moves into the tree.
-            if (e.key === "Escape") {
+            if (e.key === "Escape" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               if (searchQuery) setSearchQuery("");
               else (scrollRef.current?.querySelector<HTMLElement>('[tabindex="0"]') ?? scrollRef.current)?.focus();
