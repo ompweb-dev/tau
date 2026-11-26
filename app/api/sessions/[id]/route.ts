@@ -79,10 +79,10 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const resolved = await resolveSessionHostOr404(id);
+    const searchParams = new URL(req.url).searchParams;
+    const resolved = await resolveSessionHostOr404(id, searchParams.get("hostId"));
     if ("response" in resolved) return resolved.response;
 
-    const searchParams = new URL(req.url).searchParams;
     const meta = searchParams.get("meta") === "1";
     const includeState = searchParams.has("includeState");
     // `?includeState=alive` opts into the split liveness shape; every other
@@ -204,22 +204,23 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/sessions/[id]
+// DELETE /api/sessions/[id]?hostId= (the row's host: an id copied across hosts is deleted only there)
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   try {
-    const resolved = await resolveSessionHostOr404(id);
+    const resolved = await resolveSessionHostOr404(id, new URL(req.url).searchParams.get("hostId"));
     if ("response" in resolved) return resolved.response;
     // Await the child's exit before unlinking: a running pi would
     // recreate the file on its next append.
     // Disposing a child behind a down link would wait for the link to return.
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
+    // Only this host's child: the same id live on another host is another session.
     const live = getRpcSession(id);
-    if (!live?.hostOwnedLifecycle) await live?.destroyAndWait?.("delete", true);
+    if (live && live.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("delete", true);
     // Live children are skipped by the re-parent rewrite: their pi process
     // owns the file and would clobber it on its next write.
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds());

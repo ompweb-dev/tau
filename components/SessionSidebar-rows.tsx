@@ -11,6 +11,7 @@ import { transcriptToMarkdown } from "@/lib/transcript";
 import { toast } from "./ui/toast";
 import { SessionSearchMatches, type SearchMatchTarget } from "./SessionSearchMatches";
 import { hasDraft, subscribeDrafts } from "@/lib/draft-store";
+import { LOCAL_HOST_ID, remoteHostId } from "@/lib/project-ordering";
 import {
   MAX_PROJECT_SESSIONS,
   formatRelativeTime,
@@ -769,7 +770,7 @@ const SessionItem = memo(function SessionItem({
  const handleArchive = useCallback(async () => {
  setDeleting(true);
  try {
- const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/archive`, { method: "POST" });
+ const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/archive?hostId=${encodeURIComponent(remoteHostId(session.hostId) ?? LOCAL_HOST_ID)}`, { method: "POST" });
  if (!response.ok) throw new Error("Session archive failed");
  onDeleted?.(session.id);
  } catch {
@@ -785,7 +786,7 @@ const SessionItem = memo(function SessionItem({
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}?hostId=${encodeURIComponent(remoteHostId(session.hostId) ?? LOCAL_HOST_ID)}`, { method: "DELETE" });
       if (!response.ok) throw new Error("Session deletion failed");
       onDeleted?.(session.id);
     } catch {

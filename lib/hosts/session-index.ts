@@ -166,6 +166,18 @@ export async function hostForSessionId(id: string): Promise<Host | null> {
   return null;
 }
 
+/** `host` when it holds the session (its list read again once on a miss), else null: an id copied across hosts is
+ * resolved on the one named. A miss counts only while that host's list is current (else 503, as hostForSessionId). */
+export async function hostHoldingSession(id: string, hostId: string): Promise<Host | null> {
+  const host = getHost(hostId);
+  if (!host || !isValidSessionId(id)) return null;
+  const listed = async (refresh: boolean) => (await hostSessions(hostId, refresh)).some((session) => session.id === id);
+  if (await listed(false) || await listed(true)) return host;
+  if (!isLinkUp(host.status())) throw new HostOpError(503, "host_offline", `${host.label} is offline`);
+  if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${host.label}'s sessions are unavailable`);
+  return null;
+}
+
 /** Where a session's file is and which cwd to start it in, on `host`; null when the host has no such session. */
 export async function sessionSpawnTarget(
   id: string,
