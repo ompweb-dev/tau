@@ -1335,14 +1335,15 @@ export function AppShell({ appName }: { appName: string }) {
     }
     // A standalone path is never a fallback for a pending pool placement.
     if (!cwd) return;
-    // The sidebar following the shown new chat's own workspace (a kept one taken up): nothing to switch.
-    if (!selectedSession && !newSessionPoolProject && newSessionCwd === cwd && newSessionHostId === remoteHostId(hostId)) return;
     setNewSessionPoolProject(null);
     // Skip only when the notification matches the cwd we're suppressing for.
     if (suppressCwdRef.current !== null && suppressCwdRef.current === cwd) {
       suppressCwdRef.current = null;
       return;
     }
+    // The sidebar following the shown new chat's own workspace (a kept one taken up): nothing to switch. After
+    // the suppression above, so a suppression armed for this cwd is used up.
+    if (!selectedSession && !newSessionPoolProject && newSessionCwd === cwd && newSessionHostId === remoteHostId(hostId)) return;
     // Worktrees of one repo share a project root. Moving the effective cwd
     // within the same project (e.g. switching worktree, or clicking a session
     // that lives in another worktree) must not close the open session.
