@@ -4964,3 +4964,41 @@ html[data-touch-targets="accessible"] :is(.extension-choice, .extension-field) {
     min-width: 40px;
   }
 }
+
+/* The composer's mirror layer (ChatInput-mirror.tsx): under the textarea, wrapping as it does. */
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  scrollbar-gutter: stable;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: transparent;
+  font-size: var(--chat-user-font-size);
+  line-height: var(--chat-line-height);
+}
+/* A line-range mention (@src/main.cpp:27-28) as a chip; the shadow widens it without moving the text. */
+.composer-chip {
+  color: transparent;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+/* The empty composer's hints replace the placeholder, which stays for assistive technology. */
+.composer-textarea::placeholder {
+  color: transparent;
+}
+.composer-hint-lead {
+  color: var(--text-dim);
+}
+.composer-hint {
+  margin-left: 12px;
+  color: var(--text-dim);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.composer-hint kbd {
+  font-family: inherit;
+  color: var(--text-muted);
+}
