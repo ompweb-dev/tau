@@ -47,7 +47,7 @@ function bunDirectory(execPath = process.execPath, env = process.env) {
       return false;
     }
   };
-  const candidates = [path.dirname(execPath), ...(env.PATH ?? "").split(path.delimiter).filter(Boolean)];
+  const candidates = [path.dirname(execPath), ...(env.PATH ?? "").split(path.delimiter).filter((dir) => path.isAbsolute(dir))];
   const found = candidates.find(isBun);
   if (!found) throw new Error("no executable named bun next to this Bun or on PATH: install Bun (https://bun.sh)");
   return found;

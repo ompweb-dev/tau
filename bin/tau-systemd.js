@@ -233,7 +233,7 @@ function validateHostname(value) {
 // tray or an editor can change them without reinstalling the unit. The web and
 // host units share the env file: same user, same HOME and PI_CODING_AGENT_DIR,
 // so both read the same <agent dir>/tau/host.json.
-function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath, bunDir = bunDirectory() }) {
+function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath, bunDir }) {
   const piBin = extraEnv.TAU_PI_BIN ?? null;
   const interpreterDir = piBin ? launcherInterpreterDir(piBin) : null;
   const pathDirs = [
@@ -271,12 +271,12 @@ WantedBy=default.target
 `;
 }
 
-function buildUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home) }) {
+function buildUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home), bunDir = bunDirectory() }) {
   return buildUnitText({
     description: "tau web service (oh-my-pi web UI)",
     execArgs: "",
     restart: { policy: "on-failure", delay: 3, startLimit: "StartLimitIntervalSec=60\nStartLimitBurst=5\n" },
-    tauBin, env, home, envPath,
+    tauBin, env, home, envPath, bunDir,
   });
 }
 
@@ -284,12 +284,12 @@ function buildUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(
 // server writes it at startup) and when the server revokes or outdates its
 // token. Restart=always with a 10 s delay covers all of those, and
 // StartLimitIntervalSec=0 keeps systemd from giving up while it waits.
-function buildHostUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home) }) {
+function buildHostUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home), bunDir = bunDirectory() }) {
   return buildUnitText({
     description: "tau host daemon (links this machine to an tau server)",
     execArgs: " host",
     restart: { policy: "always", delay: 10, startLimit: "StartLimitIntervalSec=0\n" },
-    tauBin, env, home, envPath,
+    tauBin, env, home, envPath, bunDir,
   });
 }
 
@@ -315,8 +315,10 @@ function systemdQuery(args) {
 
 function install(options = {}) {
   let tauBin;
+  let bunDir;
   try {
     tauBin = resolveTauBin();
+    bunDir = bunDirectory();
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
@@ -349,6 +351,7 @@ function install(options = {}) {
   const envPath = getServiceEnvPath();
   const unitOptions = {
     tauBin,
+    bunDir,
     env: piBin ? { TAU_PI_BIN: piBin } : {},
     home: HOME,
     envPath,

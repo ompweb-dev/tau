@@ -148,6 +148,7 @@ function install(pkgArg) {
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
     bunDir,
+    path.dirname(runtimeBin),
     "/usr/bin",
     "/bin",
     "/usr/sbin",
