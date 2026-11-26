@@ -1115,13 +1115,13 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
         <div
           style={{
             position: "absolute",
-            // Notices start below the pill, which stays reachable over them.
-            top: headerActions ? "var(--chat-pill-room)" : 12,
+            // Notices start below the pill's room (in every chat, so moving the pill shifts nothing).
+            top: "var(--chat-pill-room)",
             left: 0,
             right: 0,
             zIndex: 40,
             // Scrolls inside the clipped area, so a focused dismiss button below a short chat area stays reachable.
-            maxHeight: headerActions ? "calc(100% - var(--chat-pill-room))" : "calc(100% - 12px)",
+            maxHeight: "calc(100% - var(--chat-pill-room))",
             overflowY: "auto",
             padding: `0 ${CHAT_COLUMN_PADDING}px`,
             pointerEvents: "none",

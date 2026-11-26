@@ -119,6 +119,7 @@ const TreeNodeView = memo(function TreeNodeView({ node, activePathIds, depth, is
         role="button"
         tabIndex={0}
         aria-label={label}
+        data-active={isActive || undefined}
         style={{
           display: "flex",
           alignItems: "center",
@@ -259,7 +260,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
   const open = openProp !== undefined ? openProp : openInternal;
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [dropdownPos, setDropdownPos] = useState<{ top?: number; bottom?: number; left: number; width: number; height: number } | null>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   useEffect(() => {
     if (!open || !inline) return;
@@ -268,16 +269,10 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
     const update = () => {
       const rect = anchor.getBoundingClientRect();
       const width = Math.min(380, window.innerWidth - 16);
-      // Below the button, or above it when there is more room there; never past the viewport.
-      const below = window.innerHeight - rect.bottom - 14;
-      const above = rect.top - 14;
-      const down = below >= 120 || below >= above;
-      const height = Math.max(60, Math.min(260, down ? below : above));
+      // Below the button (the pill sits at the top of its chat), as tall as the space down there allows.
+      const top = rect.bottom + 6;
       const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
-      // Opening upward, the list's bottom edge sits just above the button whatever its height.
-      setDropdownPos(down
-        ? { top: Math.min(rect.bottom + 6, window.innerHeight - height - 8), left, width, height }
-        : { bottom: Math.min(window.innerHeight - rect.top + 6, window.innerHeight - height - 8), left, width, height });
+      setDropdownPos({ top, left, width, height: Math.max(0, Math.min(260, window.innerHeight - top - 8)) });
     };
     update();
     const ro = new ResizeObserver(update);
@@ -288,6 +283,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
       ro.disconnect();
       window.removeEventListener("scroll", update, true);
       window.removeEventListener("resize", update);
+      // A reopened list is placed afresh before it paints or takes focus.
+      setDropdownPos(null);
     };
   }, [open, inline]);
 
@@ -311,8 +308,10 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
       // Closing the branch menu must not also reach the window-level Esc
       // listener, which would abort a running agent.
       event.stopPropagation();
+      // Focus goes back to the button only from the list (not from wherever the user went meanwhile).
+      const fromList = panelRef.current?.contains(document.activeElement);
       closeDropdown();
-      btnRef.current?.focus();
+      if (fromList) btnRef.current?.focus();
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", onKey);
@@ -324,7 +323,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
 
   const placed = dropdownPos !== null;
   useEffect(() => {
-    if (open && inline && placed) panelRef.current?.querySelector<HTMLElement>('[tabindex="0"]')?.focus();
+    // Into the list (a portal at the end of the page): the active branch's row, else the first.
+    if (open && inline && placed) (panelRef.current?.querySelector<HTMLElement>("[data-active]") ?? panelRef.current?.querySelector<HTMLElement>('[tabindex="0"]'))?.focus();
   }, [open, inline, placed]);
 
   const activePathIds = useMemo(
@@ -335,6 +335,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
   const handleSelect = useCallback((id: string) => {
     onLeafChange(id);
     if (openProp === undefined) setOpenInternal(false);
+    // The row goes with the list: focus returns to the button.
+    btnRef.current?.focus();
   }, [onLeafChange, openProp]);
 
   const noBranchReason = useMemo(() => !hasSession
@@ -383,7 +385,6 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
           <div ref={panelRef} data-branch-panel className="dropdown-surface" style={{
             position: "fixed",
             top: dropdownPos.top,
-            bottom: dropdownPos.bottom,
             left: dropdownPos.left,
             width: dropdownPos.width,
             maxHeight: dropdownPos.height,
