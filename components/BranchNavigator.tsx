@@ -267,9 +267,12 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, open
     const update = () => {
       const rect = anchor.getBoundingClientRect();
       const width = Math.min(380, window.innerWidth - 16);
-      const top = rect.bottom + 6;
-      const height = Math.min(260, window.innerHeight - top - 8);
-      setDropdownPos({ top, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)), width, height: Math.max(60, height) });
+      // Below the button, or above it when there is more room there; never past the viewport.
+      const below = window.innerHeight - rect.bottom - 14;
+      const above = rect.top - 14;
+      const height = Math.max(0, Math.min(260, below >= 120 || below >= above ? below : above));
+      const top = below >= 120 || below >= above ? rect.bottom + 6 : rect.top - 6 - height;
+      setDropdownPos({ top, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)), width, height });
     };
     update();
     const ro = new ResizeObserver(update);

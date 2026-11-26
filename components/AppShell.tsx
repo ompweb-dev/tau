@@ -2175,9 +2175,9 @@ export function AppShell({ appName }: { appName: string }) {
     onReveal: handleRevealActiveFile,
   }), [activeFileMatchesSource, fileRevealed, handleMentionActiveFile, handleCopyActiveFilePath, handleRevealActiveFile]);
   const fileTabShown = fileShown && activeFileTab !== null;
-  // The pill's panels close with it: a file covering the chat, another chat, or Settings.
-  useEffect(() => { setActiveTopPanel(null); }, [fileTabShown, selectedSession?.id, settingsTab]);
   const selectedChatId = selectedSession ? chatTabId(selectedSession) : showChat ? NEW_CHAT_TAB_ID : null;
+  // The pill's panels close with it: a file covering the chat, another chat, or Settings.
+  useEffect(() => { setActiveTopPanel(null); }, [fileTabShown, selectedChatId, settingsTab]);
   const activeStripTabId = fileTabShown ? activeFileTabId ?? "" : selectedChatId ?? "";
   useEffect(() => {
     setTabLayout((layout) => {
