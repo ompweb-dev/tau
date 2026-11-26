@@ -1,4 +1,4 @@
-// A daemon copies this file with the modules it imports at runtime (copyHostWorkerSources). Keep its startup self-contained and load lifecycle code before any swap, from private copies or the descriptor's verified installation.
+// A daemon runs this file as one self-contained bundle beside the attempt (buildHostUpdateWorker), or a compiled binary as `host-update-worker`: either way it never loads code from the installation it replaces.
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmodSync, closeSync, constants, createReadStream, createWriteStream, existsSync, fstatSync, ftruncateSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
@@ -9,9 +9,9 @@ import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import type { ApprovedReleasePin, HostUpdateOperation, HostUpdateTarget } from "./update-types";
 import type { UpgradeLaunch, UpgradeProcess } from "../upgrade-process";
-import type * as ProcessRuntime from "../upgrade-process";
-import type * as IdentityRuntime from "../process-identity";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import * as processRuntime from "../upgrade-process";
+import * as identityRuntime from "../process-identity";
+import { fileURLToPath } from "node:url";
 
 import { setTimeout as pause } from "node:timers/promises";
 const exec = promisify(execFile);
@@ -59,29 +59,8 @@ export interface HostUpdateDescriptor {
   /** The protocol range the candidate must speak for a maintenance receipt to acknowledge it, while its application protocol may await the server's cutover. */
   receipt?: { min: number; max: number };
 }
-interface WorkerRuntime {
-  process: typeof ProcessRuntime;
-  identity: typeof IdentityRuntime;
-}
-
-async function workerRuntime(): Promise<WorkerRuntime> {
-  // Runtime-selected: a copied worker cannot import these statically (its `../` specifiers resolve outside the attempt directory).
-  const embedded = async () => ({ process: await import("../upgrade-process"), identity: await import("../process-identity") });
-  // A compiled binary embeds these modules; its worker has no copies beside it.
-  if (typeof Bun !== "undefined" && Bun.isStandaloneExecutable) return embedded();
-  // A copied worker imports the private copies the engine made beside it.
-  const directory = dirname(fileURLToPath(import.meta.url));
-  const lifecycle = join(directory, "upgrade-process.mts");
-  const identity = join(directory, "process-identity.mts");
-  if (existsSync(lifecycle) && existsSync(identity)) {
-    return { process: await import(pathToFileURL(lifecycle).href), identity: await import(pathToFileURL(identity).href) };
-  }
-  // A copy never imports outside its attempt directory: without its private copies it stops.
-  if (import.meta.url.endsWith(".mts")) throw new Error("The host update worker's lifecycle modules are missing beside it");
-  // Run from source (the web server's own runtime, tests).
-  return embedded();
-}
-
+const RUNTIME = { process: processRuntime, identity: identityRuntime };
+type WorkerRuntime = typeof RUNTIME;
 
 export function hostUpdateRoot(): string {
   const agent = process.env.PI_CODING_AGENT_DIR ? resolve(process.env.PI_CODING_AGENT_DIR) : join(homedir(), ".pi", "agent");
@@ -652,7 +631,7 @@ function removeOwnedTree(path: string): boolean {
  * code created are touched, only as direct children of the install's parent or of the update state directory, and
  * never a symlink or a directory owned by someone else. Nothing is pruned while an update is running.
  * Retained: the newest `.tau-backup-<id>` (the rollback), the latest attempt's small files, `keepAttempt`'s artifacts.
- * Deleted: older backups, every other `.tau-failed-<id>` / `.tau-staging-<id>`, copied runtimes, finished attempts.
+ * Deleted: older backups, every other `.tau-failed-<id>` / `.tau-staging-<id>`, copied runtimes and worker bundles, finished attempts.
  */
 export function pruneHostUpdateArtifacts(installDir: string, options: { keepAttempt?: string } = {}): void {
   const root = hostUpdateRoot();
@@ -693,7 +672,7 @@ export function pruneHostUpdateArtifacts(installDir: string, options: { keepAtte
   }
   for (const id of attempts.keys()) {
     const dir = join(root, id);
-    for (const heavy of readdirSync(dir)) if (/^runtime(\.exe)?$|\.mts$/.test(heavy)) { try { rmSync(join(dir, heavy), { force: true }); } catch { /* locked: retried next update */ } }
+    for (const heavy of readdirSync(dir)) if (/^runtime(\.exe)?$|^worker\.mjs$/.test(heavy)) { try { rmSync(join(dir, heavy), { force: true }); } catch { /* locked: retried next update */ } }
     if (id !== state?.operation.id && id !== keepBackup && id !== options.keepAttempt && !leftover.has(id)) removeOwnedTree(dir);
   }
 }
@@ -861,7 +840,7 @@ export async function runHostUpdateWorker(path: string): Promise<number> {
   let nonce: string | undefined;
   try {
     d = validateDescriptor(path);
-    runtime = await workerRuntime();
+    runtime = RUNTIME;
     const workerLease = join(dirname(path), "worker.lock");
     try { writeFileSync(workerLease, String(process.pid), { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return 1; throw error; }

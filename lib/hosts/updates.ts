@@ -278,35 +278,22 @@ export function hostUpdateClaimHolder(): string | undefined {
   } catch { return undefined; }
 }
 
-const RELATIVE_RUNTIME_IMPORT = /^(import|export)(?!\s+type\b)([^"';]*?)from\s+"(\.{1,2}\/[^"]+)";/gm;
 /**
- * Copies the worker `entry` and every module it imports at runtime (relative specifiers; type-only imports are erased)
- * flat into `directory` as `.mts`, rewriting each import to the copy beside it, so the worker runs alone outside the
- * install it replaces. Returns the copied entry.
+ * Bundles the host update worker and everything it imports into `directory/worker.mjs`, so it runs alone outside the
+ * install it replaces. Returns the bundle. `plugins` lets tests swap a module of the bundle.
  */
-export function copyHostWorkerSources(entry: string, directory: string): string {
-  const copies = new Map<string, string>();
-  const copy = (source: string): string => {
-    const known = copies.get(source);
-    if (known) return known;
-    const target = join(directory, source === entry ? "worker.mts" : `${basename(source, ".ts")}.mts`);
-    if ([...copies.values()].includes(target)) throw new Error(`Two worker modules would both be copied as ${basename(target)}`);
-    copies.set(source, target);
-    const text = readFileSync(source, "utf8")
-      .replace(RELATIVE_RUNTIME_IMPORT, (_whole, keyword: string, middle: string, specifier: string) => `${keyword}${middle}from "./${basename(copy(`${resolve(dirname(source), specifier)}.ts`))}";`)
-      .replace(/\bimport\("(\.{1,2}\/[^"]+)"\)/g, (_whole, specifier: string) => `import("./${basename(copy(`${resolve(dirname(source), specifier)}.ts`))}")`);
-    writeFileSync(target, text, { mode: 0o600 });
-    return target;
-  };
-  const worker = copy(entry);
-  copy(resolve(dirname(entry), "../upgrade-process.ts"));
+export async function buildHostUpdateWorker(directory: string, plugins: Bun.BunPlugin[] = []): Promise<string> {
+  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./update-worker.ts", import.meta.url))], target: "bun", format: "esm", outdir: directory, naming: "worker.mjs", plugins });
+  if (!bundle.success) throw new Error(`Could not build the host update worker: ${bundle.logs.map(String).join("; ")}`);
+  const worker = join(directory, "worker.mjs");
+  chmodSync(worker, 0o600);
   return worker;
 }
 
 /**
  * Writes the attempt's descriptor and starts its worker outside this process's tree and supervisor (the lifecycle's
  * detached launch), returning the worker's pid when known. `compiled`: this binary, copied beside the descriptor, runs
- * `host-update-worker`; otherwise the worker script (and what it imports) is copied and run with this runtime, itself
+ * `host-update-worker`; otherwise the worker is bundled beside it and run with this runtime, itself
  * copied only when it lives inside the installation being replaced. The worker outlives the swap either way.
  */
 export async function launchHostUpdateWorker(root: string, descriptor: HostUpdateDescriptor, style: "compiled" | "script"): Promise<number | undefined> {
@@ -320,7 +307,7 @@ export async function launchHostUpdateWorker(root: string, descriptor: HostUpdat
     copyFileSync(process.execPath, command, constants.COPYFILE_FICLONE);
     chmodSync(command, 0o700);
   }
-  const args = style === "compiled" ? ["host-update-worker", descriptorPath] : [copyHostWorkerSources(fileURLToPath(new URL("./update-worker.ts", import.meta.url)), attempt), "--host-update-descriptor", descriptorPath];
+  const args = style === "compiled" ? ["host-update-worker", descriptorPath] : [await buildHostUpdateWorker(attempt), "--host-update-descriptor", descriptorPath];
   const pid = await launchDetachedUpgrade({ command, args, cwd: attempt, env: createChildProcessEnvironment() });
   writeHostUpdateJson(join(root, "status.json"), { ...readHostUpdateState()!, workerPid: pid });
   return pid;
