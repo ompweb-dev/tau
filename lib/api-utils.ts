@@ -37,7 +37,7 @@ export async function resolveSessionHostOr404(
  * by id alone (watches, outbox lineage, exit marks) is that copy's too. From what is at hand, so a delete never waits. */
 export function sessionCopiedElsewhere(id: string, hostId: string): boolean {
   const live = getRpcSession(id);
-  return Boolean(live?.isAlive() && live.host.id !== hostId) || listedOnOtherHost(id, hostId);
+  return Boolean(live?.isAlive?.() && live.host.id !== hostId) || listedOnOtherHost(id, hostId);
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */
