@@ -82,19 +82,14 @@ $script:ChildProcess = $null
 $script:IsExiting = $false
 $script:CrashTimestamps = [System.Collections.Generic.List[datetime]]::new()
 
-function Find-NodeExecutable {
-    $nodeCmd = Get-Command node.exe -ErrorAction SilentlyContinue
-    if ($nodeCmd -and (Test-Path $nodeCmd.Source)) { return $nodeCmd.Source }
-    $candidates = @(
-        "$env:ProgramFiles\nodejs\node.exe",
-        "${env:ProgramFiles(x86)}\nodejs\node.exe",
-        "$env:LOCALAPPDATA\Programs\node\node.exe",
-        "$env:USERPROFILE\.bun\bin\node.exe"
-    )
-    foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
-    return "node.exe"
+function Find-BunExecutable {
+    $bunCmd = Get-Command bun.exe -ErrorAction SilentlyContinue
+    if ($bunCmd -and (Test-Path $bunCmd.Source)) { return $bunCmd.Source }
+    $candidate = "$env:USERPROFILE\.bun\bin\bun.exe"
+    if (Test-Path $candidate) { return $candidate }
+    return "bun.exe"
 }
-$NodeExe = Find-NodeExecutable
+$BunExe = Find-BunExecutable
 
 function Test-ServerHealth {
     try {
@@ -128,7 +123,7 @@ function Start-WebServer {
         Move-Item -Path $childOutLog -Destination "$childOutLog.old" -Force -ErrorAction SilentlyContinue
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $NodeExe
+    $psi.FileName = $BunExe
     $psi.WorkingDirectory = $LaunchWorkingDirectory
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
@@ -136,11 +131,11 @@ function Start-WebServer {
     $psi.RedirectStandardError = $false
     if ($EffectiveMode -eq "start") {
         $launcherJs = Join-Path $RepoRoot "bin\tau.js"
-        $inner = "`"$NodeExe`" `"$launcherJs`" -p $EffectivePort -H $EffectiveHostname --no-open"
+        $inner = "`"$BunExe`" `"$launcherJs`" -p $EffectivePort -H $EffectiveHostname --no-open"
     } else {
         # The working directory is outside the installation, so both the dev entry and the config
         # (Bun reads bunfig.toml from the working directory) are passed as absolute paths.
-        $inner = "`"$NodeExe`" `"$(Join-Path $RepoRoot 'bin\bun-runtime.js')`" `"--config=$(Join-Path $RepoRoot 'bunfig.toml')`" --hot `"$(Join-Path $RepoRoot 'server\dev.ts')`" -H $EffectiveHostname -p $EffectivePort"
+        $inner = "`"$BunExe`" `"--config=$(Join-Path $RepoRoot 'bunfig.toml')`" --hot `"$(Join-Path $RepoRoot 'server\dev.ts')`" -H $EffectiveHostname -p $EffectivePort"
     }
     $psi.FileName = $env:ComSpec
     $psi.Arguments = "/d /s /c `"$inner >> `"$childOutLog`" 2>&1`""

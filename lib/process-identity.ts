@@ -1,4 +1,4 @@
-// Copied outside the install next to the host update worker: keep it self-contained (node:* only) and Node 24 compatible.
+// Copied outside the install next to the host update worker: keep it self-contained (node:* only).
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { promisify } from "node:util";

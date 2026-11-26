@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-// The scripts under test run on Node in production. Some tests narrow PATH, so resolve it up front.
-const NODE = Bun.which("node");
+// The scripts under test run on this Bun. Some tests narrow PATH, so use its absolute path.
+const RUNTIME = process.execPath;
 const require = createRequire(import.meta.url);
 const {
   buildHostUnit,
@@ -62,6 +62,7 @@ test("writeServiceEnv creates the parent directory and a private file", () => {
 test("buildUnit points at the generated env file and keeps runtime settings out of the unit", () => {
   const unit = buildUnit({
     tauBin: "/usr/local/bin/tau",
+    bunDir: "/home/u/.bun/bin",
     env: { TAU_PI_BIN: "/home/u/.bun/bin/omp" },
     home: "/home/u",
     envPath: "/home/u/.omp/agent/web-service.env",
@@ -85,6 +86,7 @@ test("buildUnit points at the generated env file and keeps runtime settings out 
 test("buildHostUnit runs `tau host` with the web unit's env file and never gives up restarting", () => {
   const options = {
     tauBin: "/usr/local/bin/tau",
+    bunDir: "/home/u/.bun/bin",
     env: { TAU_PI_BIN: "/home/u/.bun/bin/omp" },
     home: "/home/u",
     envPath: "/home/u/.omp/agent/web-service.env",
@@ -126,12 +128,13 @@ test("buildUnit adds the launcher interpreter dir for Bun/npm installs of omp", 
 
     const unit = buildUnit({
       tauBin: "/usr/local/bin/tau",
+      bunDir: "/home/u/.bun/bin",
       env: { TAU_PI_BIN: path.join(fakeBinDir, "omp") },
       home: "/home/u",
       envPath: "/home/u/.omp/agent/web-service.env",
     });
     const pathLine = unit.split("\n").find((line) => line.startsWith("Environment="));
-    assert.ok(pathLine?.includes(`PATH=${escapeUnitValue(fakeBinDir)}${path.delimiter}`), `unit PATH missing omp dir: ${pathLine}`);
+    assert.ok(pathLine?.includes(`PATH=/home/u/.bun/bin${path.delimiter}${escapeUnitValue(fakeBinDir)}${path.delimiter}`), `unit PATH: Bun first, then the omp dir: ${pathLine}`);
     assert.ok(!pathLine?.includes(escapeUnitValue(fakeBunDir)), `unit PATH should not invent a bun dir: ${pathLine}`);
     // Native binaries have no shebang: PATH keeps the old shape.
     writeFileSync(path.join(fakeBinDir, "omp-native"), "\x7fELF-native-binary", { mode: 0o755 });
@@ -179,6 +182,8 @@ test("install creates the env file and unit with LAN settings", { skip: process.
     const fakeSystemctl = path.join(binDir, "systemctl");
     mkdirSync(home, { recursive: true });
     mkdirSync(binDir, { recursive: true });
+    // The unit PATH needs a bun for the bins' shebang; this Bun may be npm's bun.exe, which does not count.
+    writeFileSync(path.join(binDir, "bun"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeTau, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeSystemctl, "#!/bin/sh\ncase \"$*\" in *is-active*) exit 3 ;; *) exit 0 ;; esac\n", { mode: 0o755 });
     // A stock omp on PATH: pinning the services to it would replace tau's own omp, which its sessions need.
@@ -200,7 +205,7 @@ test("install creates the env file and unit with LAN settings", { skip: process.
     delete childEnv.PI_CODING_AGENT_DIR;
     delete childEnv.TAU_PI_BIN;
 
-    const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: childEnv,
       encoding: "utf8",
     });
@@ -244,6 +249,8 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
     const fakeSystemctl = path.join(binDir, "systemctl");
     mkdirSync(home, { recursive: true });
     mkdirSync(binDir, { recursive: true });
+    // The unit PATH needs a bun for the bins' shebang; this Bun may be npm's bun.exe, which does not count.
+    writeFileSync(path.join(binDir, "bun"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeTau, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
     writeFileSync(fakeSystemctl, "#!/bin/sh\ncase \"$*\" in *is-active*) exit 3 ;; *) exit 0 ;; esac\n", { mode: 0o755 });
     const base = {
@@ -258,7 +265,7 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
     delete base.TAU_PASSWORD;
 
     const provided = hashPassword("preset-password");
-    const ok = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const ok = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: { ...base, TAU_PASSWORD_HASH: provided },
       encoding: "utf8",
     });
@@ -268,7 +275,7 @@ test("install writes a pre-hashed password unchanged and rejects a broken one", 
       provided,
     );
 
-    const broken = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const broken = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: { ...base, TAU_PASSWORD_HASH: "definitely-not-a-hash" },
       encoding: "utf8",
     });
@@ -291,14 +298,14 @@ test("install fails loudly when the omp launcher interpreter is missing", () => 
 
     const childEnv = {
       ...process.env,
-      // No node dir: the spawn uses an absolute process.execPath, and adding
+      // No runtime dir: the spawn uses an absolute process.execPath, and adding
       // it breaks the premise when node and bun share a directory.
       PATH: binDir,
       TAU_SYSTEMD_BIN: fakeTau,
       TAU_PI_BIN: path.join(binDir, "omp"),
       PORT: "40123",
     };
-    const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
+    const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), "install", "--no-autostart"], {
       env: childEnv,
       encoding: "utf8",
     });
@@ -311,7 +318,7 @@ test("install fails loudly when the omp launcher interpreter is missing", () => 
 });
 
 test("main tau bin forwards the systemd subcommand", () => {
-  const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau.js"), "systemd", "--version"], {
+  const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau.js"), "systemd", "--version"], {
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr);
@@ -332,6 +339,7 @@ function runWithFakeSystemctl(command, { hostUnit = true, active = false, dir: s
   const log = path.join(dir, "systemctl.log");
   const fakeTau = path.join(binDir, "tau");
   mkdirSync(binDir, { recursive: true });
+  writeFileSync(path.join(binDir, "bun"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
   const unitDir = path.join(home, ".config", "systemd", "user");
   mkdirSync(unitDir, { recursive: true });
   writeFileSync(path.join(unitDir, "tau.service"), "[Service]\n");
@@ -345,7 +353,7 @@ function runWithFakeSystemctl(command, { hostUnit = true, active = false, dir: s
   );
   const env = { ...process.env, HOME: home, PATH: binDir, TAU_SYSTEMD_BIN: fakeTau, TAU_DISABLE_AUTOUPDATE: "1" };
   for (const key of ["PI_CODING_AGENT_DIR", "TAU_PI_BIN", "TAU_PASSWORD"]) delete env[key];
-  const result = spawnSync(NODE, [path.join(process.cwd(), "bin", "tau-systemd.js"), command], { env, encoding: "utf8" });
+  const result = spawnSync(RUNTIME, [path.join(process.cwd(), "bin", "tau-systemd.js"), command], { env, encoding: "utf8" });
   const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
   rmSync(log, { force: true });
   return { result, calls, dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };

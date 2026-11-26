@@ -282,7 +282,7 @@ const RELATIVE_RUNTIME_IMPORT = /^(import|export)(?!\s+type\b)([^"';]*?)from\s+"
 /**
  * Copies the worker `entry` and every module it imports at runtime (relative specifiers; type-only imports are erased)
  * flat into `directory` as `.mts`, rewriting each import to the copy beside it, so the worker runs alone outside the
- * install it replaces on Node or Bun. Returns the copied entry.
+ * install it replaces. Returns the copied entry.
  */
 export function copyHostWorkerSources(entry: string, directory: string): string {
   const copies = new Map<string, string>();

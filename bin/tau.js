@@ -1,8 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+require("./runtime-version").exitIfUnsupportedRuntime();
 
 // Forward service subcommands from the main bin. This makes both
 // `npx @ompweb-dev/tau@latest tau-launchd ...` and
@@ -35,7 +35,7 @@ function startLauncher() {
 // `tau preflight` (lib/hosts/preflight.ts): what an updater runs on a candidate release; it prints "preflight ok: <pi> <version>".
 if (process.argv[2] === "preflight") {
   process.env.TAU_PACKAGE_DIR ??= module.require("node:path").join(__dirname, "..");
-  module.require("jiti").createJiti(__filename).import("../lib/hosts/preflight.ts").then(
+  import("../lib/hosts/preflight.ts").then(
     ({ runPreflight }) => runPreflight().then((code) => process.exit(code)),
     (error) => {
       console.error(`preflight failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -79,8 +79,6 @@ const { isPortAvailable } = require("./port-availability");
 const { wireChildProcessLifecycle } = require("./process-lifecycle");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { getAccessibleAddresses, getBrowserUrl, formatAddressBanner, openInBrowser } = require("./network-addresses");
-// module.require: bin/ files add no new eslint-disable comments (see bin/bun-runtime.js).
-const { resolveBunBinary } = module.require("./bun-runtime");
 
 const pkgDir = path.join(__dirname, "..");
 
@@ -120,9 +118,9 @@ const hostname = launchOptions.hostname;
 const openBrowser = launchOptions.openBrowser;
 const passwordEnabled = checkLaunchSecurity(launchOptions) !== undefined;
 
-// Resolved at every spawn, so a restart after an update finds the updated Bun.
+// The Bun running this launcher runs the server too.
 function serverCommand() {
-  return [resolveBunBinary(pkgDir), path.join(pkgDir, "server", "main.ts"), "-p", String(port), "-H", String(hostname)];
+  return [process.execPath, path.join(pkgDir, "server", "main.ts"), "-p", String(port), "-H", String(hostname)];
 }
 const browserUrl = getBrowserUrl(hostname, port);
 let browserOpened = false;
@@ -167,7 +165,6 @@ function serverEnvironment() {
     ...process.env,
     TAU_PACKAGE_DIR: pkgDir,
     TAU_LAUNCHER_PID: String(process.pid),
-    TAU_NODE_BIN: process.execPath,
     TAU_PORT: port,
     TAU_HOSTNAME: hostname,
   };
@@ -203,14 +200,7 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  let command;
-  try {
-    command = serverCommand();
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
-  }
-  spawnServer(command);
+  spawnServer(serverCommand());
 }
 
 if (require.main === module) {

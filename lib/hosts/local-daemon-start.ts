@@ -52,13 +52,11 @@ async function probe(): Promise<HostControlStatus | null> {
   }
 }
 
-/** This install's host command: the standalone binary's `host`, or the package's entrypoint under the Node runtime. */
+/** This install's host command: the standalone binary's `host`, or the package's entrypoint on this Bun. */
 export function localHostLaunch(env: NodeJS.ProcessEnv = process.env): UpgradeLaunch {
   if (typeof Bun !== "undefined" && Bun.isStandaloneExecutable) return { command: process.execPath, args: ["host"], cwd: homedir() };
   const packageDir = env.TAU_PACKAGE_DIR ?? process.cwd();
-  // The daemon is Node-only: a web server running on Bun must start it with the launcher's Node binary.
-  const command = env.TAU_NODE_BIN || (process.versions.bun ? "node" : process.execPath);
-  return { command, args: [join(resolve(packageDir), "bin", "tau-host.js")], cwd: homedir() };
+  return { command: process.execPath, args: [join(resolve(packageDir), "bin", "tau-host.js")], cwd: homedir() };
 }
 
 function daemonEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

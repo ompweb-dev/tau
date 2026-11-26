@@ -32,9 +32,8 @@ also run sessions on other machines that you link to it.
 
 ## Requirements
 
-- **Node.js 24 or newer** for the npm package. The launcher (`tau`) runs on Node; the server runs on
-  [Bun](https://bun.sh) 1.4.4 or newer, which the package installs as a dependency (a `bun` on your `PATH` of at
-  least that version is used if the bundled one is missing). The [single binary](#single-binary) needs neither.
+- **[Bun](https://bun.sh) 1.4.4 or newer** on `PATH` for the npm package: everything in tau runs on it (the `tau`
+  command, the server, `tau host` and the tray). The [single binary](#single-binary) brings its own.
 - **pi**, installed on every machine that runs sessions:
 
   ```bash
@@ -49,12 +48,12 @@ also run sessions on other machines that you link to it.
 ### npm or Bun
 
 ```bash
-npm install -g @ompweb-dev/tau
+bun add -g @ompweb-dev/tau
 tau
 ```
 
-`bun add -g @ompweb-dev/tau` installs the same package; the `tau` launcher still needs Node.js 24 on `PATH`.
-`npx @ompweb-dev/tau@latest` runs it without a global install.
+`npm install -g @ompweb-dev/tau` installs the same package; its commands run on the `bun` on `PATH` either way.
+`bunx @ompweb-dev/tau@latest` runs it without a global install.
 
 tau opens `http://127.0.0.1:30187` in your browser. Sign in to your model providers in **Settings → API Keys &
 Providers** (see [Configuration](#configuration)), pick a workspace and start a session.
@@ -87,7 +86,7 @@ git clone https://github.com/ompweb-dev/tau.git
 cd tau
 npm install
 npm run build
-node bin/tau.js
+bun bin/tau.js
 ```
 
 ## Run
@@ -305,14 +304,14 @@ to other addresses; use it only on a network you trust, since the host token the
 
 ### Link another machine
 
-The other machine needs pi, and tau from npm (Node.js 24) or the single binary.
+The other machine needs pi, and tau from npm (with Bun) or the single binary.
 
 1. On the tau server, open **Settings → Hosts → Add host**, enter a name and copy the token. It is shown once; the
    server stores only its hash.
 2. On the other machine, save the link. Paste the token when asked, or pipe it in; it never appears in `ps`:
 
    ```bash
-   npx @ompweb-dev/tau@latest host login --url https://tau.example.com
+   tau host login --url https://tau.example.com
    ```
 
    The link is saved in `~/.pi/agent/tau/host.json` with mode `600`. `--add` adds a link to a further server instead
@@ -320,7 +319,7 @@ The other machine needs pi, and tau from npm (Node.js 24) or the single binary.
 3. Run the daemon and keep it running (as a service, see [Services](#services)):
 
    ```bash
-   npx @ompweb-dev/tau@latest host
+   tau host
    ```
 
 The host then shows as online, the sidebar groups its workspaces, and the new-session screen offers it. Each host keeps

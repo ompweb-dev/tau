@@ -1,8 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+const { bunDirectory, exitIfUnsupportedRuntime } = require("./runtime-version");
+exitIfUnsupportedRuntime();
 
 // Install tau as a macOS launchd user agent (starts at login, restarts on crash).
 //
@@ -103,9 +104,19 @@ function buildHostEnv({ svcPath, piBin, agentDir }) {
 }
 
 function install(pkgArg) {
-  const nodeBin = process.execPath;
-  const siblingNpx = path.join(path.dirname(nodeBin), "npx");
-  const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH"));
+  const runtimeBin = process.execPath;
+  // npx, not bunx: an in-app update recognizes npm's cache as an npm install, never bunx's.
+  const siblingNpx = path.join(path.dirname(runtimeBin), "npx");
+  const npxBin = isExecutableFile(siblingNpx) ? siblingNpx : (which("npx") ?? fail("npx not found on PATH: the launchd agents run tau through npm's npx, so install npm (Node.js)"));
+  // npm's npx is `#!/usr/bin/env node`: the agents need node's directory too.
+  const siblingNode = path.join(path.dirname(npxBin), "node");
+  const nodeBin = isExecutableFile(siblingNode) ? siblingNode : (which("node") ?? fail("node not found on PATH: npm's npx, which the launchd agents run, needs it"));
+  let bunDir;
+  try {
+    bunDir = bunDirectory();
+  } catch (error) {
+    fail(error.message);
+  }
 
   // An explicit pi for the service; without it the service finds pi on PATH.
   const piBin = process.env.TAU_PI_BIN || null;
@@ -136,10 +147,13 @@ function install(pkgArg) {
 
   const asdfBin = which("asdf");
   const svcPath = [
+    // First: the bins' `#!/usr/bin/env bun` must find this Bun, not an older one beside pi or npx.
+    bunDir,
     ...(piBin ? [path.dirname(piBin)] : []),
     ...(asdfBin ? [path.dirname(asdfBin)] : []),
     path.dirname(npxBin),
     path.dirname(nodeBin),
+    path.dirname(runtimeBin),
     "/usr/bin",
     "/bin",
     "/usr/sbin",

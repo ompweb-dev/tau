@@ -1,4 +1,4 @@
-// `npm run smoke [-- --package <dir> | --binary <path>]`: starts tau (`node <dir>/bin/tau.js`, or the compiled
+// `npm run smoke [-- --package <dir> | --binary <path>]`: starts tau (`bun <dir>/bin/tau.js`, or the compiled
 // binary) on a free port with a throwaway HOME, waits for its automatic local host, and checks the shipped
 // bundle, the SPA, a hashed asset, the API, a session listed through the daemon, a live session started through
 // `pi --mode rpc` (no model call) and the SSE stream, then stops both. pi comes from PATH unless --pi names one.
@@ -16,7 +16,7 @@ import { isProcessAlive } from "../lib/process-identity";
 const { values } = parseArgs({ args: Bun.argv.slice(2), options: { package: { type: "string" }, binary: { type: "string" }, pi: { type: "string" }, "second-server": { type: "boolean" } } });
 const binary = values.binary && path.resolve(values.binary);
 const dir = binary ? path.dirname(binary) : path.resolve(values.package ?? path.join(import.meta.dir, ".."));
-const tau = binary ? [binary] : ["node", path.join(dir, "bin", "tau.js")];
+const tau = binary ? [binary] : [process.execPath, path.join(dir, "bin", "tau.js")];
 
 let failed = false;
 async function step(name: string, run: () => unknown): Promise<boolean> {

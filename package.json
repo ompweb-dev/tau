@@ -12,7 +12,7 @@
   },
   "license": "MIT",
   "engines": {
-    "node": ">=24.0.0"
+    "bun": ">=1.4.4"
   },
   "bin": {
     "tau": "bin/tau.js",
@@ -46,24 +46,22 @@
     "test": "bun test --parallel --timeout 30000 ./app ./bin ./components ./hooks ./lib ./scripts ./server ./tests",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "tray:install": "node bin/tau-tray.js --install",
-    "tray:uninstall": "node bin/tau-tray.js --uninstall",
-    "tray:start": "node bin/tau-tray.js --start",
-    "tray:status": "node bin/tau-tray.js --status",
-    "systemd:install": "node bin/tau-systemd.js install",
-    "systemd:uninstall": "node bin/tau-systemd.js uninstall",
-    "systemd:start": "node bin/tau-systemd.js start",
-    "systemd:stop": "node bin/tau-systemd.js stop",
-    "systemd:status": "node bin/tau-systemd.js status",
+    "tray:install": "bun bin/tau-tray.js --install",
+    "tray:uninstall": "bun bin/tau-tray.js --uninstall",
+    "tray:start": "bun bin/tau-tray.js --start",
+    "tray:status": "bun bin/tau-tray.js --status",
+    "systemd:install": "bun bin/tau-systemd.js install",
+    "systemd:uninstall": "bun bin/tau-systemd.js uninstall",
+    "systemd:start": "bun bin/tau-systemd.js start",
+    "systemd:stop": "bun bin/tau-systemd.js stop",
+    "systemd:status": "bun bin/tau-systemd.js status",
     "prepack": "npm run build",
     "smoke": "bun scripts/smoke.ts",
     "release:check": "npm run typecheck && npm run lint && npm test && npm run build && npm run smoke"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "bun": "1.4.4",
     "cmdk": "^1.1.1",
-    "jiti": "^2.7.0",
     "katex": "^0.16.47",
     "lucide-react": "^1.39.0",
     "mammoth": "^1.12.2",

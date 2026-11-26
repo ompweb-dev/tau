@@ -1,8 +1,8 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+require("./runtime-version").exitIfUnsupportedRuntime();
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { parseArgs } = require("util");
@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 
 function printHelp() {
-  console.log(`Usage: node bin/tau-tray.js [command] [options]
+  console.log(`Usage: bun bin/tau-tray.js [command] [options]
        tau-tray [command] [options]
 
 Platform notes:
@@ -91,20 +91,12 @@ async function runCli(argv = process.argv.slice(2)) {
   }
 
   // Load windows-service lib
-  // lib/windows-service.ts is TypeScript: a plain require works where Node strips types, jiti covers the rest.
   let windowsService;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    windowsService = require("../lib/windows-service");
-  } catch {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const jiti = require("jiti")(__filename);
-      windowsService = jiti("../lib/windows-service");
-    } catch (e) {
-      console.error("Failed to load windows-service library:", e.message);
-      return { exitCode: 1, error: e };
-    }
+    windowsService = await import("../lib/windows-service.ts");
+  } catch (e) {
+    console.error("Failed to load windows-service library:", e.message);
+    return { exitCode: 1, error: e };
   }
 
   const isInstall = cliArgs.install || positionals.includes("install");

@@ -1,5 +1,5 @@
 // Composer upload limits and the upload id form (docs/specs/2026-11-02-file-uploads-design.md). Pure: the browser,
-// the main server and the host daemon all import it (the daemon through jiti: no `@/` imports).
+// the main server and the host daemon all import it.
 
 /** Largest file one upload may carry. */
 export const MAX_UPLOAD_BYTES = 2 * 1024 ** 3;

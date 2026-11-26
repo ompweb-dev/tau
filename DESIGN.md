@@ -22,10 +22,10 @@ merged unchanged.
 2. **Local-first by default.** The server binds to `127.0.0.1`; remote access
    is an explicit user choice and must be protected by a trusted network
    boundary and HTTPS.
-3. **Node-first installation.** A normal user installs Node.js 24+ and pi, then
-   runs `tau` from the npm package (`@ompweb-dev/tau`) or a release binary. The
-   npm package brings its own Bun for the web server, so users do not install Bun
-   themselves. tau never ships pi: it runs the `pi` on `PATH`.
+3. **Bun everywhere.** A normal user installs Bun and pi, then runs `tau` from
+   the npm package (`@ompweb-dev/tau`), or a release binary that embeds Bun.
+   Every tau process (launcher, server, host daemon, tray, updaters) runs on Bun.
+   tau never ships pi: it runs the `pi` on `PATH`.
 4. **Native compatibility over imitation.** Prefer pi's RPC mode, its extension
    API, its CLI and its documented on-disk formats to copied SDK internals. If a
    capability cannot be done safely through those boundaries, leave it out rather
@@ -56,7 +56,7 @@ merged unchanged.
 Browser
   │ HTTP / Server-Sent Events (one SharedWorker EventSource per browser)
   ▼
-tau (Bun server, started by the Node launcher)
+tau (Bun server, started by the launcher)
   ├─ serves the SPA, the API and the password gate
   └─ reaches every machine through its `tau host` daemon (the link)
        │

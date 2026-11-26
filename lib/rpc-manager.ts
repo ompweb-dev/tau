@@ -591,8 +591,6 @@ export class AgentSessionWrapper {
   private readonly fellBack: boolean;
   private unsubscribeHostStatus: (() => void) | null = null;
 
-  // Plain field assignments (not TS parameter properties) keep this module
-  // runnable under Node's strip-only TypeScript mode for probes/tests.
   constructor(
     proc: RpcProcess,
     cwd: string,

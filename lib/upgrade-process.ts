@@ -1,4 +1,4 @@
-// Copied outside the install next to the host update worker: keep it self-contained (node:* and ./process-identity only), Node 24 compatible.
+// Copied outside the install next to the host update worker: keep it self-contained (node:* and ./process-identity only).
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync, type Stats } from "node:fs";

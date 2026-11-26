@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -23,11 +24,10 @@ async function launch(env, args = []) {
     await writeFile(join(pkg, "dist", "index.html"), "<!doctype html>");
     await mkdir(join(pkg, "server"));
     const dump = join(pkg, "server-env.json");
-    // The package has no bun dependency, so the launcher runs this under the Bun on PATH: this test's own,
-    // as on Windows npm puts only a bun.cmd shim there, which a spawn without a shell cannot run.
-    await writeFile(join(pkg, "server", "main.ts"), `require("fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify(process.env));`);
-    const result = spawnSync("node", [join(pkg, "bin", "tau.js"), "--no-open", "-p", "0", ...args], {
-      env: { PATH: [dirname(process.execPath), process.env.PATH].join(delimiter), HOME: pkg, ...env },
+    // The launcher runs this on its own Bun (process.execPath).
+    await writeFile(join(pkg, "server", "main.ts"), `require("fs").writeFileSync(${JSON.stringify(dump)}, JSON.stringify({ ...process.env, RUNTIME: process.execPath }));`);
+    const result = spawnSync(process.execPath, [join(pkg, "bin", "tau.js"), "--no-open", "-p", "0", ...args], {
+      env: { PATH: process.env.PATH, HOME: pkg, ...env },
       encoding: "utf8",
       timeout: 20_000,
     });
@@ -48,6 +48,7 @@ test("launcher refuses unauthenticated non-loopback binds", async () => {
 test("launcher hands the server a hash of a plaintext TAU_PASSWORD, never the plaintext", async () => {
   const { stderr, serverEnv } = await launch({ TAU_PASSWORD: "s3cret pw" });
   assert.ok(serverEnv, stderr);
+  assert.equal(realpathSync(serverEnv.RUNTIME), realpathSync(process.execPath), "the server runs on the launcher's Bun");
   assert.equal(serverEnv.TAU_PASSWORD, undefined);
   const hash = serverEnv.TAU_PASSWORD_HASH;
   assert.equal(verifyPassword("s3cret pw", hash), true);

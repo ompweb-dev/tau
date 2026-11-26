@@ -1,7 +1,6 @@
 // Composer file uploads, the daemon's side (docs/specs/2026-11-02-file-uploads-design.md, U3 and U5): an upload is
 // staged as `<agent dir>/tau/uploads/<id>.part` plus `<id>.json`, written in order at the part's length, and on
 // attach hard-linked (or copied) into the session's `local/uploads/`.
-// Loaded by the daemon through jiti: no `@/` imports and no Bun APIs.
 import { createHash, randomUUID } from "node:crypto";
 import { constants as fsConstants, createReadStream, realpathSync } from "node:fs";
 import { appendFile, link, lstat, mkdir, open, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";

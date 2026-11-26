@@ -1,7 +1,7 @@
 // Host end of the maintenance API (maintenance-protocol.ts): dials the server's /api/hosts/maintenance with the host's
 // bearer token and answers its requests through `deps.handleRequest`. Independent of the application link
 // (daemon-link.ts): its own socket and redial loop, and nothing it meets (a server without this API, another API version,
-// a refused token) ever stops the daemon or its pi children. Node-only, relative imports.
+// a refused token) ever stops the daemon or its pi children.
 import { setTimeout as sleep } from "node:timers/promises";
 import { isRecord } from "../type-guards";
 import {

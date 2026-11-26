@@ -1,8 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 "use strict";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-require("./node-version").exitIfUnsupportedNode();
+const { bunDirectory, exitIfUnsupportedRuntime } = require("./runtime-version");
+exitIfUnsupportedRuntime();
 
 // Install tau as a Linux systemd user service.
 //
@@ -199,7 +200,7 @@ function formatExecStart(value) {
 }
 
 // Resolve the tau binary the unit will run. An explicit override wins,
-// followed by the sibling of node (npm/bun global installs), then PATH.
+// followed by the sibling of bun (bun/npm global installs), then PATH.
 function resolveTauBin(env = process.env) {
   const override = env.TAU_SYSTEMD_BIN;
   if (override) {
@@ -212,7 +213,7 @@ function resolveTauBin(env = process.env) {
 
   const onPath = which("tau", env);
   if (onPath) return onPath;
-  throw new Error("tau binary not found (next to node or on PATH); set TAU_SYSTEMD_BIN");
+  throw new Error("tau binary not found (next to bun or on PATH); set TAU_SYSTEMD_BIN");
 }
 function validatePort(value) {
   const port = Number(value);
@@ -232,17 +233,18 @@ function validateHostname(value) {
 // tray or an editor can change them without reinstalling the unit. The web and
 // host units share the env file: same user, same HOME and PI_CODING_AGENT_DIR,
 // so both read the same <agent dir>/tau/host.json.
-function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath }) {
+function buildUnitText({ description, execArgs, restart, tauBin, env: extraEnv, home, envPath, bunDir }) {
   const piBin = extraEnv.TAU_PI_BIN ?? null;
   const interpreterDir = piBin ? launcherInterpreterDir(piBin) : null;
   const pathDirs = [
+    // First: the bins' `#!/usr/bin/env bun` must find this Bun, not an older one beside pi or tau.
+    bunDir,
     ...(piBin ? [path.dirname(piBin)] : []),
     // Launcher scripts (e.g. npm global installs of pi) run through an
     // interpreter resolved via `env`; without its directory the service
     // fails with exit 127 even though the binary itself is on PATH (#116).
     ...(interpreterDir ? [interpreterDir] : []),
     path.dirname(tauBin),
-    path.dirname(process.execPath),
     path.join(home, ".local", "bin"),
     "/usr/local/bin",
     "/usr/bin",
@@ -270,12 +272,12 @@ WantedBy=default.target
 `;
 }
 
-function buildUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home) }) {
+function buildUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home), bunDir = bunDirectory() }) {
   return buildUnitText({
     description: "tau web service (oh-my-pi web UI)",
     execArgs: "",
     restart: { policy: "on-failure", delay: 3, startLimit: "StartLimitIntervalSec=60\nStartLimitBurst=5\n" },
-    tauBin, env, home, envPath,
+    tauBin, env, home, envPath, bunDir,
   });
 }
 
@@ -283,12 +285,12 @@ function buildUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(
 // server writes it at startup) and when the server revokes or outdates its
 // token. Restart=always with a 10 s delay covers all of those, and
 // StartLimitIntervalSec=0 keeps systemd from giving up while it waits.
-function buildHostUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home) }) {
+function buildHostUnit({ tauBin, env = {}, home = HOME, envPath = getServiceEnvPath(home), bunDir = bunDirectory() }) {
   return buildUnitText({
     description: "tau host daemon (links this machine to an tau server)",
     execArgs: " host",
     restart: { policy: "always", delay: 10, startLimit: "StartLimitIntervalSec=0\n" },
-    tauBin, env, home, envPath,
+    tauBin, env, home, envPath, bunDir,
   });
 }
 
@@ -314,8 +316,10 @@ function systemdQuery(args) {
 
 function install(options = {}) {
   let tauBin;
+  let bunDir;
   try {
     tauBin = resolveTauBin();
+    bunDir = bunDirectory();
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error));
   }
@@ -348,6 +352,7 @@ function install(options = {}) {
   const envPath = getServiceEnvPath();
   const unitOptions = {
     tauBin,
+    bunDir,
     env: piBin ? { TAU_PI_BIN: piBin } : {},
     home: HOME,
     envPath,

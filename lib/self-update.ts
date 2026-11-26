@@ -38,7 +38,7 @@ const ATTEMPT_FILES = ["descriptor.json", "launch-env.json", "job.json", "releas
 /** Per-attempt markers in the update root. The first two are the boot proof; the rest only older releases wrote. */
 const ATTEMPT_MARKERS = ["expect.json", "boot.json", "ready", "go", "abort.json", "armed.json", "restart-request.json", "restart-ack.json", "complete.json", "complete-ack.json"];
 /** The launcher's plumbing: a restarted launcher/server sets its own, and the helper never needs them. */
-const PLUMBING_ENV = ["TAU_PACKAGE_DIR", "TAU_LAUNCHER_PID", "TAU_RESTART_DESCRIPTOR", "TAU_NODE_BIN"];
+const PLUMBING_ENV = ["TAU_PACKAGE_DIR", "TAU_LAUNCHER_PID", "TAU_RESTART_DESCRIPTOR"];
 
 export interface PrepareResult {
   attemptId: string;
@@ -61,7 +61,7 @@ const securePrivateDirectory = (path: string): Promise<void> =>
 interface ServerInstall {
   method: ServerInstallMethod;
   installDir: string;
-  /** Node, for the package launcher and host entrypoint (a compiled server needs none). */
+  /** Bun, for the package launcher and host entrypoint (a compiled server needs none). */
   runtime: string;
 }
 
@@ -71,14 +71,6 @@ function assertOwnedWritableDirectory(path: string, what: string): void {
     throw unsupported(`${what} is not a directory owned by this user that nobody else can write, so it cannot be replaced safely`);
   }
   accessSync(path, constants.W_OK);
-}
-
-function nodeRuntime(): string {
-  if (process.env.TAU_NODE_BIN) return process.env.TAU_NODE_BIN;
-  // `npm start` runs Bun directly: the package's launcher and host are Node scripts.
-  const name = process.platform === "win32" ? "node.exe" : "node";
-  for (const directory of (process.env.PATH ?? "").split(delimiter)) if (directory && existsSync(join(directory, name))) return join(directory, name);
-  return process.execPath;
 }
 
 /** The installation this server runs from, when it can be replaced in place; otherwise the reason it cannot. */
@@ -104,7 +96,7 @@ export function resolveServerInstall(): ServerInstall {
   if (basename(installDir) !== "tau" || basename(dirname(installDir)) !== "@ompweb-dev" || basename(dirname(dirname(installDir))) !== "node_modules") {
     throw unsupported("Updates need the installed @ompweb-dev/tau package; a source checkout is updated with git");
   }
-  return { method: detectInstallMethod(installDir), installDir, runtime: nodeRuntime() };
+  return { method: detectInstallMethod(installDir), installDir, runtime: process.execPath };
 }
 
 export function getSelfUpdateSupport(): { supported: boolean; reason?: string; packageDir: string } {
@@ -407,7 +399,7 @@ async function ownsRecoveryJob(job: Partial<RecoveryJob>): Promise<boolean> {
   }
 }
 
-/** A copy of the compiled binary outside the installation, or a self-contained Node bundle of the worker: either runs after the installation it came from is replaced. */
+/** A copy of the compiled binary outside the installation, or a self-contained bundle of the worker: either runs after the installation it came from is replaced. */
 async function workerLaunch(job: CommitJob, attemptDir: string, descriptor: string): Promise<UpgradeLaunch> {
   const { install } = job;
   const env = helperEnvironment();
@@ -418,7 +410,7 @@ async function workerLaunch(job: CommitJob, attemptDir: string, descriptor: stri
     return target;
   };
   if (install.method === "binary") return { command: copyRuntime(process.execPath), args: ["server-update-worker", descriptor], cwd: installSpawnCwd(), env };
-  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./server-update-worker.ts", import.meta.url))], target: "node", format: "esm", outdir: attemptDir, naming: "worker.mjs" });
+  const bundle = await Bun.build({ entrypoints: [fileURLToPath(new URL("./server-update-worker.ts", import.meta.url))], target: "bun", format: "esm", outdir: attemptDir, naming: "worker.mjs" });
   if (!bundle.success) throw new Error(`Could not build the update worker: ${bundle.logs.map(String).join("; ")}`);
   // A runtime inside the package (Windows locks a running .exe) would be replaced under the worker.
   const runtime = insideInstall(install.installDir, install.runtime) ? copyRuntime(install.runtime) : install.runtime;

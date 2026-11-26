@@ -81,7 +81,7 @@ class TrayApplication : IDisposable
     private bool _isExiting;
     private readonly string _logFile;
     private readonly object _logLock = new();
-    private string? _nodeExe;
+    private string? _bunExe;
     private readonly string _icoPath;
     private readonly string _pngPath;
 
@@ -199,19 +199,18 @@ class TrayApplication : IDisposable
         }
     }
 
-    private string FindNodeExecutable()
+    private string FindBunExecutable()
     {
         try
         {
-            var where = Environment.GetEnvironmentVariable("PATH") ?? "";
-            // Try where node
-            var psi = new ProcessStartInfo("where", "node") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
+            var psi = new ProcessStartInfo("where", "bun.exe") { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true };
             using var p = Process.Start(psi);
             if (p != null)
             {
                 var outp = p.StandardOutput.ReadToEnd();
                 p.WaitForExit(2000);
-                var first = outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+                // Only an .exe can be started without a shell (npm puts extensionless and .cmd shims on PATH too).
+                var first = outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(line => line.Trim()).FirstOrDefault(line => line.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
                 if (!string.IsNullOrEmpty(first) && File.Exists(first)) return first;
             }
         }
@@ -219,13 +218,10 @@ class TrayApplication : IDisposable
 
         var candidates = new[]
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "node", "node.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".bun", "bin", "node.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".bun", "bin", "bun.exe"),
         };
         foreach (var c in candidates) if (File.Exists(c)) return c;
-        return "node.exe";
+        return "bun.exe";
     }
 
     // Copy an tau credential from the user (then system) environment into the child,
@@ -251,7 +247,7 @@ class TrayApplication : IDisposable
         UpdateTrayUI();
         WriteLog($"Starting web server in {_effectiveMode} mode on {_effectiveHostname}:{_effectivePort}...");
 
-        if (_nodeExe == null) _nodeExe = FindNodeExecutable();
+        if (_bunExe == null) _bunExe = FindBunExecutable();
 
         // Never from inside the installation: a cwd there blocks the next replacement on Windows.
         var workingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -267,7 +263,7 @@ class TrayApplication : IDisposable
 
         var psi = new ProcessStartInfo
         {
-            FileName = _nodeExe,
+            FileName = _bunExe,
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -282,12 +278,11 @@ class TrayApplication : IDisposable
         }
         else
         {
-            var bunLauncher = Path.Combine(_repoRoot, "bin", "bun-runtime.js");
             // The working directory is outside the installation, so both the dev entry and the config
             // (Bun reads bunfig.toml from the working directory) are passed as absolute paths.
             var bunfig = Path.Combine(_repoRoot, "bunfig.toml");
             var devEntry = Path.Combine(_repoRoot, "server", "dev.ts");
-            psi.Arguments = $"\"{bunLauncher}\" \"--config={bunfig}\" --hot \"{devEntry}\" -H {_effectiveHostname} -p {_effectivePort}";
+            psi.Arguments = $"\"--config={bunfig}\" --hot \"{devEntry}\" -H {_effectiveHostname} -p {_effectivePort}";
         }
 
         psi.EnvironmentVariables["TAU_PORT"] = _effectivePort.ToString();

@@ -1,4 +1,4 @@
-// Host daemon only (Node, loaded through jiti): relative imports, no Bun APIs.
+// Host daemon only.
 // The `auth` host op: this host's own pi logins (`<agent dir>/auth.json`), read and written by pi itself through tau's
 // companion extension (`/tau_auth`, lib/pi/tau-extension.ts). Raw keys and tokens never leave pi; only a key the user
 // types travels in, as one command argument.

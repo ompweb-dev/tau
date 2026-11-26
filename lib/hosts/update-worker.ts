@@ -1,4 +1,4 @@
-// Old daemons copy only this file. Keep its startup Node-only and load lifecycle code before any swap, from private copies or the descriptor's verified installation.
+// A daemon copies this file with the modules it imports at runtime (copyHostWorkerSources). Keep its startup self-contained and load lifecycle code before any swap, from private copies or the descriptor's verified installation.
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmodSync, closeSync, constants, createReadStream, createWriteStream, existsSync, fstatSync, ftruncateSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
@@ -69,16 +69,17 @@ async function workerRuntime(): Promise<WorkerRuntime> {
   const embedded = async () => ({ process: await import("../upgrade-process"), identity: await import("../process-identity") });
   // A compiled binary embeds these modules; its worker has no copies beside it.
   if (typeof Bun !== "undefined" && Bun.isStandaloneExecutable) return embedded();
-  // A copied worker (Node or Bun alike) imports the private copies the engine made beside it.
+  // A copied worker imports the private copies the engine made beside it.
   const directory = dirname(fileURLToPath(import.meta.url));
   const lifecycle = join(directory, "upgrade-process.mts");
   const identity = join(directory, "process-identity.mts");
   if (existsSync(lifecycle) && existsSync(identity)) {
     return { process: await import(pathToFileURL(lifecycle).href), identity: await import(pathToFileURL(identity).href) };
   }
-  // Run from source under Bun (the web server's own runtime, tests).
-  if (typeof Bun !== "undefined") return embedded();
-  throw new Error("The host update worker's lifecycle modules are missing beside it");
+  // A copy never imports outside its attempt directory: without its private copies it stops.
+  if (import.meta.url.endsWith(".mts")) throw new Error("The host update worker's lifecycle modules are missing beside it");
+  // Run from source (the web server's own runtime, tests).
+  return embedded();
 }
 
 

@@ -7,7 +7,7 @@ tau is a web UI for the [pi coding agent](https://www.npmjs.com/package/@earendi
 
 ## Setup
 
-- Node.js 24 or newer. The server runs on [Bun](https://bun.sh), which `npm install` provides (the `bun` npm package).
+- [Bun](https://bun.sh) 1.4.4 or newer on `PATH`: everything runs on it. npm installs the dependencies.
 - pi, for live sessions: `npm i -g @earendil-works/pi-coding-agent` (tau is developed against pi 1.5.2).
 
 ```bash
@@ -67,8 +67,6 @@ separate change.
 - **Every session runs through a host daemon**, this machine's included: the web server never spawns a session pi
   (the one exception is the idle-killed utility pi in `lib/pi/rpc-utility.ts`). File and Git operations go through
   `Host.workspaceOps` and run on the daemon that owns the files.
-- **The daemon runs on Node.** `bin/tau-host.js` loads `lib/hosts/host-cli.ts` through `jiti`: modules the daemon
-  loads use relative imports (no `@/` alias) and no Bun APIs. The server (`server/`) runs on Bun.
 - **Browser code** must not import `next/*` (use `lib/dynamic.tsx` and `lib/navigation.ts`) and must not call
   `AbortSignal.timeout`, `AbortSignal.any` or `Promise.withResolvers`.
 - **New API routes** are registered in `server/routes.ts` (see "Adding an API route" in `AGENTS.md`).
@@ -88,5 +86,5 @@ separate change.
 
 ## Reporting issues
 
-Please use the issue templates and include your OS, Node version, tau version, pi version (`pi --version`) and
+Please use the issue templates and include your OS, Bun version, tau version, pi version (`pi --version`) and
 browser.

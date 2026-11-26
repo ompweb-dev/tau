@@ -21,7 +21,7 @@ If applicable, add screenshots (light/dark theme noted).
 
 **Environment**
 - OS: [e.g. macOS 15.5]
-- Node.js version: [`node --version`]
+- Bun version: [`bun --version`]
 - omp version: [`omp --version`]
 - Browser: [e.g. Chrome 150]
 - omp-web version: [e.g. 0.1.0]
