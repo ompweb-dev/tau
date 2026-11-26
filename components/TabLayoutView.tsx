@@ -23,16 +23,30 @@ function place(node: TabLayout, rect: Rect, groups: Map<string, Rect>, sashes: S
 
 const percent = (n: number) => `${n * 100}%`;
 
+/** A view a group shows (a chat, a file), placed over its group's area below the strip. */
+export interface TabLayer {
+  key: string;
+  groupId: string;
+  node: ReactNode;
+  /** Kept mounted but not shown: the whole layer is hidden, so it takes no clicks meant for the views below. */
+  hidden?: boolean;
+}
+
 /**
  * The groups of a tab layout. Every group is a sibling positioned over its
- * share of the area, so a split or resize never remounts a group's content.
+ * share of the area, and so is every view the groups show (`layers`, keyed by
+ * what they show, not by group): a split, a resize or a tab moved to another
+ * group repositions a view and never remounts it.
+ * A group with tabs has its strip (`renderGroup`), `--tab-strip-height` tall,
+ * above its views.
  * With `single`, only the focused group shows, over the whole area (phones).
  */
-export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, onResize, resizeLabel }: {
+export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, layers, onResize, resizeLabel }: {
   layout: TabLayout;
   focusedGroupId: string;
   single: boolean;
   renderGroup: (group: TabGroup) => ReactNode;
+  layers: TabLayer[];
   onResize: (splitId: string, sizes: number[]) => void;
   resizeLabel: string;
 }) {
@@ -42,6 +56,9 @@ export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, onR
   const groupRects = new Map<string, Rect>();
   const sashes: Sash[] = [];
   place(layout, { x: 0, y: 0, w: 1, h: 1 }, groupRects, sashes);
+  const groups = groupsOf(layout);
+  const rectOf = (group: TabGroup) => single ? { x: 0, y: 0, w: 1, h: 1 } : groupRects.get(group.id)!;
+  const hiddenGroup = (group: TabGroup) => single && group.id !== focusedGroupId;
 
   const startDrag = (event: PointerEvent<HTMLDivElement>, sash: Sash) => {
     const area = areaRef.current?.getBoundingClientRect();
@@ -80,9 +97,9 @@ export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, onR
 
   return (
     <div ref={areaRef} style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
-      {groupsOf(layout).map((group) => {
-        const rect = single ? { x: 0, y: 0, w: 1, h: 1 } : groupRects.get(group.id)!;
-        const hidden = single && group.id !== focusedGroupId;
+      {groups.map((group) => {
+        const rect = rectOf(group);
+        const hidden = hiddenGroup(group);
         return (
           <div
             key={group.id}
@@ -90,6 +107,21 @@ export function TabLayoutView({ layout, focusedGroupId, single, renderGroup, onR
             style={{ position: "absolute", left: percent(rect.x), top: percent(rect.y), width: percent(rect.w), height: percent(rect.h), display: hidden ? "none" : "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}
           >
             {renderGroup(group)}
+          </div>
+        );
+      })}
+      {layers.map((layer) => {
+        const group = groups.find((candidate) => candidate.id === layer.groupId);
+        if (!group) return null;
+        const rect = rectOf(group);
+        const strip = group.tabs.length > 0 ? "var(--tab-strip-height)" : "0px";
+        return (
+          <div
+            key={layer.key}
+            data-layer-group={group.id}
+            style={{ position: "absolute", left: percent(rect.x), top: `calc(${percent(rect.y)} + ${strip})`, width: percent(rect.w), height: `calc(${percent(rect.h)} - ${strip})`, display: hiddenGroup(group) || layer.hidden ? "none" : "block", overflow: "hidden" }}
+          >
+            {layer.node}
           </div>
         );
       })}

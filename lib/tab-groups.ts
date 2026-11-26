@@ -97,6 +97,19 @@ export function reconcileTabs(layout: TabLayout, ids: readonly string[], targetG
   }));
 }
 
+/** Closes one tab: its group shows its neighbour, and an emptied group goes. */
+export function closeTab(layout: TabLayout, tabId: string): TabLayout {
+  return pruned(mapGroups(layout, (group) => withoutTab(group, tabId)));
+}
+
+/** Puts `toId` where `fromId` is (strip place, shown tab, chat under a file). */
+export function replaceTab(layout: TabLayout, fromId: string, toId: string): TabLayout {
+  const swap = (id: string | null | undefined) => id === fromId ? toId : id;
+  return mapGroups(layout, (group) => group.tabs.includes(fromId)
+    ? { ...group, tabs: group.tabs.map((id) => swap(id)!), active: swap(group.active) ?? null, chat: swap(group.chat) }
+    : group);
+}
+
 /** Makes `tabId` its group's shown tab. */
 export function activateTab(layout: TabLayout, tabId: string, isChat = false): TabLayout {
   return mapGroups(layout, (group) => group.tabs.includes(tabId) && (group.active !== tabId || (isChat && group.chat !== tabId))

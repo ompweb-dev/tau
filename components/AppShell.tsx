@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, type ReactNode } from "react";
 import dynamic from "@/lib/dynamic";
 import { useRouter, useSearchParams } from "@/lib/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -19,9 +19,9 @@ import { ConfirmDialog } from "./ui/field";
 import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
 import { TabBar, type StripTab, type Tab } from "./TabBar";
-import { TabLayoutView } from "./TabLayoutView";
-import { restoredLayout, syncChatTabs, activateTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
-import { FileTabToolbar, FileTabViews } from "./FileTabs";
+import { TabLayoutView, type TabLayer } from "./TabLayoutView";
+import { restoredLayout, syncChatTabs, activateTab, closeTab, replaceTab, groupOfTab, nextChatMounts, type ChatMounts, groupsOf, initialLayout, moveTab, reconcileTabs, resizeSplit, splitGroup, type TabGroup, type TabLayout } from "@/lib/tab-groups";
+import { FileTabToolbar, FileTabView } from "./FileTabs";
 import { getFileIcon } from "./FileIcons";
 import { type FileExplorerHandle } from "./FileExplorer";
 import type { RightPanelView } from "./RightPanel";
@@ -126,6 +126,8 @@ const NATIVE_SELECT_ALL_STORAGE_KEY = "tau:scope-native-select-all";
 const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 /** The transient tab of a chat not yet sent (no session yet). */
 const NEW_CHAT_TAB_ID = "chat:new";
+/** An unsent new chat's target, as it was last shown. */
+type DraftChat = { cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string; initialization?: string };
 const chatTabId = (session: SessionInfo) => `chat:${remoteHostId(session.hostId) ?? LOCAL_HOST_ID}:${session.id}`;
 /** The strips kept across reloads of this browser tab (sessionStorage: another window keeps its own). */
 const WORKBENCH_STORAGE_KEY = "tau:workbench";
@@ -184,6 +186,20 @@ export function AppShell({ appName }: { appName: string }) {
   // here uses that form (see remoteHostId).
   const [newSessionHostId, setNewSessionHostId] = useState<string | undefined>(undefined);
   const [newSessionCreation, setNewSessionCreation] = useState<{ id?: string; initialization?: string }>({});
+  // The unsent new chat, as last shown: its tab stays in its group while another group's chat is selected.
+  const [draftChat, setDraftChat] = useState<DraftChat | null>(null);
+  const draftChatRef = useRef(draftChat);
+  draftChatRef.current = draftChat;
+  // The new chat is the selected view, or kept behind another group's chat (draftKept).
+  const draftShownRef = useRef(false);
+  const draftKeptRef = useRef(false);
+  // A fresh new chat while one is kept in a group: the kept one closes (its draft stays in the store), so the
+  // fresh one opens in the focused group on a mount of its own.
+  const dropKeptDraft = useCallback(() => {
+    if (!draftChatRef.current || draftShownRef.current) return;
+    setDraftChat(null);
+    setTabLayout((layout) => closeTab(layout, NEW_CHAT_TAB_ID));
+  }, []);
   const newSessionCreationId = newSessionCreation.id;
   const handleNewSessionInitialization = useCallback((initialization: string) => {
     setNewSessionCreation((current) => current.id === newSessionCreationId && current.initialization === undefined ? { ...current, initialization } : current);
@@ -1303,6 +1319,7 @@ export function AppShell({ appName }: { appName: string }) {
       if (selectedSession?.poolId === project.poolId && selectedSession.projectId === project.projectId) return;
       if (newSessionPoolProject?.poolId === project.poolId && newSessionPoolProject.projectId === project.projectId) return;
       setNewSessionPoolProject(project);
+      dropKeptDraft();
       setNewSessionCreation({ id: randomUUID() });
       setNewSessionCwd(null);
       setNewSessionHostId(undefined);
@@ -1324,6 +1341,9 @@ export function AppShell({ appName }: { appName: string }) {
       suppressCwdRef.current = null;
       return;
     }
+    // The sidebar following the shown new chat's own workspace (a kept one taken up): nothing to switch. After
+    // the suppression above, so a suppression armed for this cwd is used up.
+    if (!selectedSession && !newSessionPoolProject && newSessionCwd === cwd && newSessionHostId === remoteHostId(hostId)) return;
     // Worktrees of one repo share a project root. Moving the effective cwd
     // within the same project (e.g. switching worktree, or clicking a session
     // that lives in another worktree) must not close the open session.
@@ -1343,6 +1363,7 @@ export function AppShell({ appName }: { appName: string }) {
       return prev;
     });
     setNewSessionHostId(remoteHostId(hostId));
+    dropKeptDraft();
     setNewSessionCreation({ id: randomUUID() });
     setSessionKey((k) => k + 1);
     setBranchTree([]);
@@ -1351,7 +1372,7 @@ export function AppShell({ appName }: { appName: string }) {
     setSystemPromptLoading(false);
     setActiveTopPanel(null);
     router.replace("/");
-  }, [router, selectedSession, newSessionPoolProject]);
+  }, [router, selectedSession, newSessionPoolProject, newSessionCwd, newSessionHostId, dropKeptDraft]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     // Re-picking the already-open session (sidebar double-click, palette
@@ -1388,6 +1409,8 @@ export function AppShell({ appName }: { appName: string }) {
   }, [router, isMobile, selectedSession]);
 
   const handleNewSession = useCallback((creationId: string, cwd: string | null, hostId?: string, project?: ManagedProject, initialization?: string) => {
+    // Taking the kept new chat up again passes its own creation id.
+    if ((creationId || undefined) !== draftChatRef.current?.creationId) dropKeptDraft();
     setSettingsTab(null);
     setFileShown(false);
     setSelectedSession(null);
@@ -1407,7 +1430,10 @@ export function AppShell({ appName }: { appName: string }) {
       requestAnimationFrame(() => chatInputRef.current?.focus());
     }
     router.replace("/");
-  }, [router, isMobile, activeCwd, activePoolProject]);
+  }, [router, isMobile, activeCwd, activePoolProject, dropKeptDraft]);
+  const takeUpDraft = useCallback((draft: DraftChat) => {
+    handleNewSession(draft.creationId ?? "", draft.cwd, draft.hostId, draft.project ?? undefined, draft.initialization);
+  }, [handleNewSession]);
 
   // ---- In-app Navigate back / forward over visited chat views ----
   // Own stack, not the browser History API (that one belongs to the mobile
@@ -1534,6 +1560,21 @@ export function AppShell({ appName }: { appName: string }) {
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
+    setDraftChat(null);
+    if (!draftShownRef.current && draftChatRef.current) {
+      // Sent, then left for another group's chat before pi answered: the new chat becomes its session in place,
+      // keeping its mount, and the selection stays where the user went.
+      // A session opened meanwhile already has its tab: the new chat's tab then just closes.
+      const id = chatTabId(session);
+      const placed = Boolean(groupOfTab(tabLayoutRef.current, id));
+      setNewSessionCwd(null);
+      setNewSessionPoolProject(null);
+      setChatTabs((tabs) => tabs.some((tab) => sameSessionTarget(tab, session)) ? tabs : [...tabs, session]);
+      setTabLayout((layout) => placed ? closeTab(layout, NEW_CHAT_TAB_ID) : replaceTab(layout, NEW_CHAT_TAB_ID, id));
+      if (!placed) setChatMounts((mounts) => ({ ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[NEW_CHAT_TAB_ID] ?? NEW_CHAT_TAB_ID } }));
+      setRefreshKey((k) => k + 1);
+      return;
+    }
     setNewSessionCwd(null);
     setNewSessionPoolProject(null);
     setSelectedSession(session);
@@ -1572,8 +1613,6 @@ export function AppShell({ appName }: { appName: string }) {
       .catch(() => window.location.assign(sessionUrl));
   }, [handleSelectSession, isCompactOverlay]);
 
-  // Full-page Settings hides the chat, so its session counts as not viewed.
-  useNotifications({ sessionId: settingsTab || fileShown ? null : selectedSession?.id ?? null, locale, onOpenSession: openSessionById });
 
   const handleAutoName = useCallback(async () => {
     if (!activeSelectedSessionId || autoNameStatus.kind === "naming") return;
@@ -1650,6 +1689,9 @@ export function AppShell({ appName }: { appName: string }) {
     setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, { id: sessionId, hostId })));
     setRefreshKey((k) => k + 1);
     if (selectedSession && sameSessionTarget(selectedSession, { id: sessionId, hostId })) {
+      // A new chat kept in another group takes its place, as when its tab closes.
+      const kept = draftKeptRef.current ? draftChatRef.current : null;
+      if (kept) { takeUpDraft(kept); return; }
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(selectedSession.poolId ? null : cwd ?? null);
@@ -1663,7 +1705,7 @@ export function AppShell({ appName }: { appName: string }) {
       setActiveTopPanel(null);
       router.replace("/");
     }
-  }, [selectedSession, router, poolProjectOf]);
+  }, [selectedSession, router, poolProjectOf, takeUpDraft]);
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
   }, []);
@@ -2097,19 +2139,36 @@ export function AppShell({ appName }: { appName: string }) {
   }, [isMobile, locale, settingsTab, showChat]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
-  const draftTabShown = showChat && !selectedSession;
   // Chats and files share the strips of the tab groups: each group holds its
   // tabs in the order they were opened or dropped there (the unsent chat's
   // tab from when it appears). The focused group is the one showing the app's
   // shown tab; new tabs open there.
   const [tabLayout, setTabLayout] = useState<TabLayout>(() => restored?.layout ?? initialLayout());
   const [lastFocusedGroupId, setLastFocusedGroupId] = useState(() => restored?.focused ?? "g0");
+  const tabLayoutRef = useRef(tabLayout);
+  tabLayoutRef.current = tabLayout;
+  const draftTabShown = showChat && !selectedSession;
+  draftShownRef.current = draftTabShown;
+  useEffect(() => {
+    if (draftTabShown) setDraftChat({ cwd: effectiveNewSessionCwd, hostId: newSessionHost, project: effectivePoolProject, creationId: newSessionCreation.id, initialization: newSessionCreation.initialization });
+  }, [draftTabShown, effectiveNewSessionCwd, newSessionHost, effectivePoolProject, newSessionCreation.id, newSessionCreation.initialization]);
+  const tabGroups = groupsOf(tabLayout);
+  // The new chat a group shows keeps its tab while the selected chat is not in that group (a chat selected into
+  // the new chat's own group replaces it, as before).
+  const draftGroup = tabGroups.find((group) => group.active === NEW_CHAT_TAB_ID || group.chat === NEW_CHAT_TAB_ID);
+  const draftKept = !draftTabShown && draftChat !== null && Boolean(draftGroup && selectedSession && !draftGroup.tabs.includes(chatTabId(selectedSession)));
+  const draftTabOpen = draftTabShown || draftKept;
+  draftKeptRef.current = draftKept;
+  // A new chat whose tab is gone (a chat selected into its group replaced it) is forgotten.
+  useEffect(() => {
+    if (!draftTabOpen) setDraftChat(null);
+  }, [draftTabOpen]);
   useEffect(() => {
     saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout: tabLayout, focused: lastFocusedGroupId });
   }, [chatTabs, fileTabs, tabLayout, lastFocusedGroupId]);
   const stripIds = useMemo(
-    () => [...chatTabs.map(chatTabId), ...(draftTabShown ? [NEW_CHAT_TAB_ID] : []), ...fileTabs.map((tab) => tab.id)],
-    [chatTabs, fileTabs, draftTabShown],
+    () => [...chatTabs.map(chatTabId), ...(draftTabOpen ? [NEW_CHAT_TAB_ID] : []), ...fileTabs.map((tab) => tab.id)],
+    [chatTabs, fileTabs, draftTabOpen],
   );
 
   const activeFileMatchesSource = activeFileTab?.hostId === workspaceHostId && (activeFileTab?.sourceSessionId ?? null) === (selectedSession?.id ?? null);
@@ -2122,7 +2181,6 @@ export function AppShell({ appName }: { appName: string }) {
       return activeStripTabId ? activateTab(next, activeStripTabId, !fileTabShown) : next;
     });
   }, [stripIds, activeStripTabId, fileTabShown, lastFocusedGroupId]);
-  const tabGroups = groupsOf(tabLayout);
   const focusedGroup = groupOfTab(tabLayout, activeStripTabId) ?? tabGroups.find((group) => group.id === lastFocusedGroupId) ?? tabGroups[0];
   useEffect(() => { setLastFocusedGroupId(focusedGroup.id); }, [focusedGroup.id]);
   // The group showing the selected chat (or the new chat, or the workspace
@@ -2135,6 +2193,13 @@ export function AppShell({ appName }: { appName: string }) {
   const groupChat = (group: TabGroup) => group.active && !fileTabIds.has(group.active) ? group.active : group.chat ?? null;
   const shownChatIds = new Set(tabGroups.flatMap((group) => groupChat(group) ?? []));
   shownChatIdsRef.current = shownChatIds;
+  // Viewed: each chat a group shows uncovered (on a phone, only the focused group's). Full-page Settings
+  // hides them all.
+  const viewedSessionIds = settingsTab ? [] : (isMobile ? [focusedGroup] : tabGroups).flatMap((group) => {
+    const session = group.active ? chatTabById(group.active) : undefined;
+    return session ? [session.id] : [];
+  });
+  useNotifications({ sessionIds: viewedSessionIds, locale, onOpenSession: openSessionById });
 
   // Focus around a file covering the focused group's chat. The chat goes inert under the file, so
   // focus in it is lost: it moves to the file, and back to where it was in the chat once the
@@ -2185,7 +2250,8 @@ export function AppShell({ appName }: { appName: string }) {
       const label = chatTabLabel(session);
       return [chatTabId(session), { id: chatTabId(session), label, title: session.name || session.firstMessage || label, icon: chatIcon, file: false }] as const;
     }),
-    ...(draftTabShown ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: false, file: false }] as const] : []),
+    // Closable only while another chat is selected: the selected new chat has nothing to give way to.
+    ...(draftTabOpen ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: !draftTabShown, file: false }] as const] : []),
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
@@ -2193,7 +2259,11 @@ export function AppShell({ appName }: { appName: string }) {
   const reachable = (session: SessionInfo) => shownChatIds.has(chatTabId(session)) || !unreachableReason(session);
   const selectStripTab = (id: string) => {
     stripActionRef.current = Date.now();
-    if (id === NEW_CHAT_TAB_ID) { setFileShown(false); return; }
+    if (id === NEW_CHAT_TAB_ID) {
+      setFileShown(false);
+      if (!draftTabShown && draftChat) takeUpDraft(draftChat);
+      return;
+    }
     const session = chatTabById(id);
     if (!session) { handleSelectFileTab(id); return; }
     // As in the sidebar: an unreachable host's conversation cannot be opened (one already shown still can be).
@@ -2214,7 +2284,10 @@ export function AppShell({ appName }: { appName: string }) {
     const otherShownChats = tabGroups.flatMap((other) => other !== group && other.active ? [other.active] : []);
     const session = chatTabById(id);
     let selected: SessionInfo | undefined;
-    if (!session) {
+    if (id === NEW_CHAT_TAB_ID) {
+      // Only another group's new chat closes (see draftKept); its draft stays in the store.
+      setDraftChat(null);
+    } else if (!session) {
       handleCloseFileTab(id);
     } else {
       setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, session)));
@@ -2234,6 +2307,8 @@ export function AppShell({ appName }: { appName: string }) {
           setTabLayout((layout) => activateTab(layout, front));
         }
         if (selected) handleSelectSession(selected);
+        // A new chat kept in a group is taken up rather than replaced (below, when it is the tab taking the place).
+        else if (draftKept && draftChat) { if (next !== NEW_CHAT_TAB_ID) takeUpDraft(draftChat); }
         else handleNewSession(randomUUID(), session.poolId ? null : session.cwd, session.hostId, poolProjectOf(session));
         // Both of those show the chat; batched, this wins.
         if (!shown && fileTabShown) setFileShown(true);
@@ -2244,7 +2319,7 @@ export function AppShell({ appName }: { appName: string }) {
     const nextGroup = groupOfTab(tabLayout, next);
     if (nextGroup && nextGroup !== group) setLastFocusedGroupId(nextGroup.id);
     const nextSession = chatTabById(next);
-    if (next === NEW_CHAT_TAB_ID) setFileShown(false);
+    if (next === NEW_CHAT_TAB_ID) selectStripTab(NEW_CHAT_TAB_ID);
     else if (nextSession) { if (nextSession !== selected && reachable(nextSession)) handleSelectSession(nextSession); }
     else handleSelectFileTab(next);
   };
@@ -2933,19 +3008,14 @@ export function AppShell({ appName }: { appName: string }) {
         </div>
 
         {/* The tab groups: open conversations and files */}
-        <TabLayoutView
-          layout={tabLayout}
-          focusedGroupId={focusedGroup.id}
-          single={isMobile}
-          onResize={resizeTabGroups}
-          resizeLabel={t("appShell.resizeTabGroups")}
-          renderGroup={(group: TabGroup) => {
+        {(() => {
+          const groupViews = new Map(tabGroups.map((group) => {
             const focused = group.id === focusedGroup.id;
             const chatPanelId = `workspace-chat-${group.id}`;
             const filePanelId = `workspace-file-tabs-${group.id}`;
             const groupTabs: StripTab[] = group.tabs.flatMap((id) => {
               const info = stripTabInfo.get(id);
-              return info ? [{ ...info, panelId: info.file ? filePanelId : chatPanelId }] : [];
+              return info ? [{ ...info, panelId: info.file ? (id === group.active ? filePanelId : undefined) : chatPanelId }] : [];
             });
             const shownFile = fileTabs.find((tab) => tab.id === group.active) ?? null;
             const primary = group.id === primaryGroupId;
@@ -2953,9 +3023,10 @@ export function AppShell({ appName }: { appName: string }) {
             const chatId = groupChat(group);
             const backgroundChat = !primary && chatId ? chatTabById(chatId) : undefined;
             const backgroundHost = backgroundChat && remoteHostId(backgroundChat.hostId) ? hosts?.find((host) => host.id === backgroundChat.hostId) : undefined;
+            const backgroundDraft = !primary && chatId === NEW_CHAT_TAB_ID && draftTabOpen ? draftChat : null;
             const chatPanelLabel = primary
               ? (selectedChatId ? stripTabInfo.get(selectedChatId)?.title : undefined) ?? (selectedSession ? chatTabLabel(selectedSession) : t("appShell.newSession"))
-              : backgroundChat ? chatTabLabel(backgroundChat) : undefined;
+              : backgroundChat ? chatTabLabel(backgroundChat) : backgroundDraft ? t("appShell.newSession") : undefined;
             const groupIndex = tabGroups.indexOf(group);
             // Pointing at another group, or typing in it, shows its tab (not a
             // chat's own programmatic focus, nor a tab's close button; Esc
@@ -2982,10 +3053,14 @@ export function AppShell({ appName }: { appName: string }) {
               </button>
               );
             };
-            return (
+            // A group's strip, and its views (placed by TabLayoutView, outside the group's own element).
+            const inGroup = (node: ReactNode) => (
+              <div data-group-focused={focused} onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ position: "absolute", inset: 0 }}>{node}</div>
+            );
+            const chrome = (
               <div data-group-focused={focused} onPointerDownCapture={focusGroup} onKeyDownCapture={focusGroup} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                {groupTabs.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", filter: focused || tabGroups.length === 1 ? undefined : "grayscale(1)" }}>
+                {group.tabs.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", flexShrink: 0, height: "var(--tab-strip-height)", boxSizing: "border-box", background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", filter: focused || tabGroups.length === 1 ? undefined : "grayscale(1)" }}>
                     {isMobile && tabGroups.length > 1 && (
                       <button
                         type="button"
@@ -3028,27 +3103,34 @@ export function AppShell({ appName }: { appName: string }) {
                     {!isMobile && <>{splitButton("row")}{splitButton("column")}</>}
                   </div>
                 )}
-                {/* A shown file covers the group's chat, which keeps its
-                    layout (and so its scroll position) underneath, inert. */}
-                <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-                  {fileTabs.some((tab) => group.tabs.includes(tab.id)) && (
-                    <FileTabViews
-                      panelId={filePanelId}
-                      fileTabs={fileTabs}
-                      tabIds={group.tabs}
-                      activeFileTab={shownFile}
-                      focused={focused}
-                      activeFileMatchesSource={activeFileMatchesSource}
-                      explorerRefreshKey={explorerRefreshKey}
-                      onMentionLines={handleFileLineMention}
-                      onOpenFile={handleOpenFile}
-                      onRevealDone={handleRevealLineDone}
-                    />
-                  )}
-                  <div id={chatPanelId} role={groupTabs.length > 0 ? "tabpanel" : undefined} aria-label={groupTabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
+              </div>
+            );
+            // A shown file covers the group's chat, which keeps its layout (and so its scroll position) underneath, inert.
+            const chatTab = primary ? (showChat ? selectedChatId ?? NEW_CHAT_TAB_ID : null) : backgroundChat ? chatTabId(backgroundChat) : backgroundDraft ? NEW_CHAT_TAB_ID : null;
+            const chatKey = chatTab && chatMountKey(chatTab);
+            const layers: TabLayer[] = fileTabs.filter((tab) => group.tabs.includes(tab.id)).map((tab) => ({
+              key: `file:${tab.id}`,
+              groupId: group.id,
+              hidden: tab.id !== shownFile?.id,
+              node: inGroup(
+                <FileTabView
+                  panelId={filePanelId}
+                  tab={tab}
+                  shown={tab.id === shownFile?.id}
+                  focused={focused}
+                  activeFileMatchesSource={activeFileMatchesSource}
+                  explorerRefreshKey={explorerRefreshKey}
+                  onMentionLines={handleFileLineMention}
+                  onOpenFile={handleOpenFile}
+                  onRevealDone={handleRevealLineDone}
+                />,
+              ),
+            }));
+            layers.unshift({ key: chatKey ? `chat:${chatKey}` : `view:${group.id}`, groupId: group.id, node: inGroup(
+                  <div id={chatPanelId} role={group.tabs.length > 0 ? "tabpanel" : undefined} aria-label={group.tabs.length > 0 ? chatPanelLabel : undefined} inert={shownFile ? true : undefined} style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
           {!primary ? (backgroundChat ? (
             <ChatWindow
-              key={chatMountKey(chatTabId(backgroundChat))}
+              key={chatKey ?? undefined}
               session={backgroundChat}
               newSessionCwd={null}
               hostStatus={backgroundHost?.status}
@@ -3068,9 +3150,31 @@ export function AppShell({ appName }: { appName: string }) {
               // No searchQuery: the search highlights are page-wide, so only the selected chat paints them.
               covered
             />
+          ) : backgroundDraft ? (
+            <ChatWindow
+              key={chatKey ?? undefined}
+              session={null}
+              newSessionCwd={backgroundDraft.cwd}
+              newSessionHostId={backgroundDraft.hostId}
+              newSessionCreationId={backgroundDraft.project?.poolId ? backgroundDraft.creationId : undefined}
+              newSessionPoolId={backgroundDraft.project?.poolId}
+              newSessionProjectId={backgroundDraft.project?.projectId}
+              newSessionInitialization={backgroundDraft.project?.poolId ? backgroundDraft.initialization : undefined}
+              onSessionCreated={handleSessionCreated}
+              onAgentEnd={handleAgentEnd}
+              modelsRefreshKey={modelsRefreshKey}
+              onOpenProviders={() => setSettingsTab("providers")}
+              toolCallsDefaultCollapsed={toolCallsDefaultCollapsed}
+              hideToolActivity={hideToolActivity}
+              neverFoldActivity={neverFoldActivity}
+              showToolCallsUnfolded={showToolCallsUnfolded}
+              expandThinkingByDefault={expandThinkingByDefault}
+              hideThinkingBlock={hideThinkingBlock}
+              covered
+            />
           ) : null) : showChat ? (
             <ChatWindow
-              key={chatMountKey(selectedChatId ?? NEW_CHAT_TAB_ID)}
+              key={chatKey ?? undefined}
               session={selectedSession}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionHostId={newSessionHost}
@@ -3264,12 +3368,22 @@ export function AppShell({ appName }: { appName: string }) {
                 </div>
               </div>
           )}
-                  </div>
-                </div>
-              </div>
-            );
-          }}
-        />
+                  </div>,
+            ) });
+            return [group.id, { chrome, layers }] as const;
+          }));
+          return (
+            <TabLayoutView
+              layout={tabLayout}
+              focusedGroupId={focusedGroup.id}
+              single={isMobile}
+              onResize={resizeTabGroups}
+              resizeLabel={t("appShell.resizeTabGroups")}
+              renderGroup={(group) => groupViews.get(group.id)?.chrome}
+              layers={[...groupViews.values()].flatMap((view) => view.layers)}
+            />
+          );
+        })()}
           </>
         )}
       </main>

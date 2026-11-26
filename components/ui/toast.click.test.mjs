@@ -108,7 +108,7 @@ test("a toast without an action keeps the default cursor", () => {
 test("a session notification toast opens its session from a card click; one without a session does not", () => {
   const sessions = [];
   render(React.createElement(ToastProvider, null));
-  renderHook(() => useNotifications({ sessionId: null, locale: "en", onOpenSession: (id) => sessions.push(id) }));
+  renderHook(() => useNotifications({ sessionIds: [], locale: "en", onOpenSession: (id) => sessions.push(id) }));
   // Toasts closed by earlier tests can still be leaving the shared manager, so
   // each card is found by its own title (the session name).
   const deliver = (sessionId, sessionName) => {
@@ -132,7 +132,7 @@ test("a session notification toast opens its session from a card click; one with
 
 test("a retraction frame closes the toast of its own request and leaves a newer dialog of the same tag", async () => {
   render(React.createElement(ToastProvider, null));
-  renderHook(() => useNotifications({ sessionId: null, locale: "en", onOpenSession: () => {} }));
+  renderHook(() => useNotifications({ sessionIds: [], locale: "en", onOpenSession: () => {} }));
   const cards = () => Array.from(document.querySelectorAll(".toast-card"));
   const titles = () => cards().map((card) => card.querySelector(".display-serif")?.textContent);
 
@@ -169,7 +169,7 @@ test("a retraction refreshes the history mirror, so a settled entry stops showin
     return { ok: true, json: async () => ({ entries: [] }) };
   };
   try {
-    renderHook(() => useNotifications({ sessionId: null, locale: "en", onOpenSession: () => {} }));
+    renderHook(() => useNotifications({ sessionIds: [], locale: "en", onOpenSession: () => {} }));
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     requests.length = 0;
     await act(async () => {
@@ -188,7 +188,7 @@ test("a notification the OS showed is listed in history", async () => {
   // Bare `Notification` in the code under test resolves to the global, not window.
   globalThis.Notification = window.Notification = class { static permission = "granted"; constructor(title) { created.push(title); } };
   try {
-    renderHook(() => useNotifications({ sessionId: null, locale: "en", onOpenSession: () => {} }));
+    renderHook(() => useNotifications({ sessionIds: [], locale: "en", onOpenSession: () => {} }));
     await act(async () => {
       deliverNotification({ kind: "os", event: { type: "error", sessionId: "s9", sessionName: "Shown by OS", detail: "boom" } });
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -213,7 +213,7 @@ test("a push the service worker showed reloads the list from the server; other m
     return { ok: true, json: async () => ({ entries }) };
   };
   try {
-    renderHook(() => useNotifications({ sessionId: null, locale: "en", onOpenSession: () => {} }));
+    renderHook(() => useNotifications({ sessionIds: [], locale: "en", onOpenSession: () => {} }));
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     requests.length = 0;
     const post = (data) => act(async () => {
