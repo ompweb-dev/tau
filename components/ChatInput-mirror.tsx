@@ -2,10 +2,10 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode, type
 import { useI18n } from "@/lib/i18n";
 
 /**
- * A line-range mention as `buildFileLineMentionText` writes it: `@path:12` or `@"a path":12-30`, at the start of the
- * text or after whitespace (as `extractAtQuery` takes an `@`), so `git@github.com:22` is not one.
+ * A line-range mention as `buildFileLineMentionText` writes it: `@path:12`, `@"a path":12-30` or
+ * `@'a "quoted" path':3`, at the start of the text or after whitespace (as `extractAtQuery` takes an `@`), so `git@github.com:22` is not one.
  */
-const LINE_MENTION = /(?<=^|\s)@(?:"[^"\n]+"|[^\s"]+):\d+(?:-\d+)?(?=\s|$)/g;
+const LINE_MENTION = /(?<=^|\s)@(?:"[^"\n]+"|'[^'\n]+'|[^\s"]+):\d+(?:-\d+)?(?=\s|$)/g;
 
 /** The composer text split into plain runs and line-range mentions. */
 export function splitLineMentions(value: string): { text: string; mention: boolean }[] {
