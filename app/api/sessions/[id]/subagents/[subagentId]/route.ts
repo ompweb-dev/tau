@@ -24,9 +24,9 @@ export async function GET(
     if (!isValidSubagentId(subagentId)) {
       return Response.json({ error: "Invalid subagent id", code: "invalid_subagent_id" }, { status: 400 });
     }
-    const resolved = await resolveSessionHostOr404(id, new URL(req.url).searchParams.get("hostId"));
-    if ("response" in resolved) return resolved.response;
     const searchParams = new URL(req.url).searchParams;
+    const resolved = await resolveSessionHostOr404(id, searchParams.get("hostId"));
+    if ("response" in resolved) return resolved.response;
     const fromByteRaw = searchParams.get("fromByte");
     const result = await resolved.host.sessionOps.readSubagentTranscript(
       id,

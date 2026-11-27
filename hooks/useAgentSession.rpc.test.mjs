@@ -2239,6 +2239,9 @@ test("a delayed running lookup cannot replace a side question's readiness wait",
   resetWorld();
   primeSession("late-btw", [userMsg("u0", "q")]);
   const w = await mountSession("late-btw");
+  // A local session's reads name this machine: without it the server falls back to host-blind resolution.
+  const reads = world.calls.filter((call) => call.method === "GET" && call.url.startsWith("/api/sessions/late-btw"));
+  assert.ok(reads.length > 0 && reads.every((call) => /[?&]hostId=local(&|$)/.test(call.raw)), JSON.stringify(reads.map((call) => call.raw)));
   let release;
   world.holds.push({
     match: (method, url) => method === "GET" && url === "/api/agent/late-btw",
