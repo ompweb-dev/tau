@@ -63,7 +63,10 @@ export async function POST(req: Request) {
   const response = parseResponse(body.response);
   if (!response) return invalid("response must be exactly one of value, confirmed, cancelled or answers");
 
-  const session = getRpcSession(body.sessionId);
+  const hostId = body.hostId;
+  if (hostId !== undefined && !isId(hostId)) return invalid("hostId must be a host id");
+  // `hostId`: only that host's copy of the id; without it, as before (this machine's copy first).
+  const session = getRpcSession(body.sessionId, hostId);
   if (!session || !session.isAlive()) return Response.json({ status: "sessionGone" });
 
   try {

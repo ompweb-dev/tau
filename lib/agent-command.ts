@@ -8,6 +8,8 @@ import { runOutboxCommand } from "@/lib/message-outbox";
 import { readClientMessageIds } from "@/lib/client-message-ids";
 import { reconcileOutboxHandoffs } from "@/lib/outbox-handoff";
 import type { MessageOrigin } from "@/lib/message-origin";
+import { sessionHostKey } from "@/lib/session-host-key";
+import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 
 // Commands that ride whatever child is alive and never spawn or replace one:
 // the side-question reads/cancel tau sends in the background (SSE connect,
@@ -48,9 +50,17 @@ function sendFences(): Map<string, Promise<void>> {
 
 /** Everything POST /api/agent/[id] does once the body is parsed; shared with
  * the browser socket. `owner`: the caller's web session (lib/web-auth.ts
- * `requestOwner`), whose uploads a prompt may attach. Never throws: failures
- * become `commandErrorResponse`. */
-export async function runAgentCommand(id: string, body: unknown, owner: string, trustedUploads?: OutboxUploadReceipt[], trustedOrigin?: MessageOrigin): Promise<Response> {
+ * `requestOwner`), whose uploads a prompt may attach. `hostId`: only that host's
+ * copy of the id; without it the live wrapper, else the host listing the id
+ * (this machine first). Never throws: failures become `commandErrorResponse`. */
+export async function runAgentCommand(
+  id: string,
+  body: unknown,
+  owner: string,
+  trustedUploads?: OutboxUploadReceipt[],
+  trustedOrigin?: MessageOrigin,
+  hostId?: string | null,
+): Promise<Response> {
   let release = () => {}; // frees this command's send fence; idempotent
   try {
     const command = body as { type?: unknown; [key: string]: unknown } | null;
@@ -66,21 +76,24 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
     if (type === "get_client_message_status") {
       const ids = readClientMessageIds(command.clientMessageIds);
       if (!ids) return Response.json({ error: "clientMessageIds must contain 1 to 32 unique valid IDs", code: "invalid_client_message_ids" }, { status: 400 });
-      return Response.json({ success: true, data: await reconcileOutboxHandoffs(id, ids) });
+      return Response.json({ success: true, data: await reconcileOutboxHandoffs(id, ids, hostId) });
     }
     // Attached files go to the session's host first; nothing reaches pi when one fails (spec U3).
     const uploads = takeUploads(command, owner, trustedUploads);
     // Hold later wrapper selection as well as dispatch behind attachment preparation, so a Stop
     // cannot overtake the preparing prompt.
-    // A moved session answers to several ids: a command through any of them waits.
-    const held = getRpcSessionKeys(id).flatMap((key) => sendFences().get(key) ?? []);
+    // A moved session answers to several ids: a command through any of them waits. Fences are per host copy;
+    // without a host, the copy a command would reach (the live wrapper's host, else this machine).
+    const fenceHost = hostId || getRpcSession(id)?.host.id || LOCAL_HOST_ID;
+    const held = getRpcSessionKeys(id, fenceHost).flatMap((key) => sendFences().get(sessionHostKey(fenceHost, key)) ?? []);
     const prior = held.length ? Promise.all(held).then(() => {}) : undefined;
     if (uploads) {
       const gate = new Promise<void>((resolve) => (release = resolve));
       const fence = prior ? prior.then(() => gate) : gate;
-      sendFences().set(id, fence);
+      const fenceKey = sessionHostKey(fenceHost, id);
+      sendFences().set(fenceKey, fence);
       void fence.then(() => {
-        if (sendFences().get(id) === fence) sendFences().delete(id);
+        if (sendFences().get(fenceKey) === fence) sendFences().delete(fenceKey);
       });
     }
     if (prior) await prior;
@@ -102,11 +115,11 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
     };
 
     // Fast path: already-running session.
-    const existing = getRpcSession(id);
+    const existing = getRpcSession(id, hostId);
     if (existing?.isAlive()) return Response.json({ success: true, data: await send(existing) });
     if (Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
 
-    const resolved = await resolveSessionHostOr404(id);
+    const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) return resolved.response;
     const { host } = resolved;
     const offline = hostOfflineResponse(host);

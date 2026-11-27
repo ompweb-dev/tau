@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { pooledWorkspaceForSession } from "./hosts/pool-starts";
 import { isValidSessionId } from "./session-file-references-core";
 import { isLinkUp, type Host } from "./hosts/host";
-import { getHost } from "./hosts/hub";
+import { getHost, listHosts } from "./hosts/hub";
 import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
 import { hostForSessionId, hostHoldingSession, hostSessions, listedOnOtherHost } from "./hosts/session-index";
@@ -20,8 +20,8 @@ export async function resolveSessionHostOr404(
   /** The host the caller's row names (`?hostId=`): the same id on another host is not this session. */
   hostId?: string | null,
 ): Promise<{ host: Host } | { response: Response }> {
-  const live = getRpcSession(id);
-  if (live?.isAlive() && (!hostId || live.host.id === hostId)) return { host: live.host };
+  const live = getRpcSession(id, hostId);
+  if (live?.isAlive()) return { host: live.host };
   try {
     const host = hostId ? await hostHoldingSession(id, hostId) : await hostForSessionId(id);
     return host ? { host } : { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
@@ -36,8 +36,8 @@ export async function resolveSessionHostOr404(
 /** A copy of the id is known on a host other than `hostId` (its child runs, or its last list names it): state kept
  * by id alone (watches, outbox lineage, exit marks) is that copy's too. From what is at hand, so a delete never waits. */
 export function sessionCopiedElsewhere(id: string, hostId: string): boolean {
-  const live = getRpcSession(id);
-  return Boolean(live?.isAlive?.() && live.host.id !== hostId) || listedOnOtherHost(id, hostId);
+  const others = [LOCAL_HOST_ID, ...listHosts().map((host) => host.id)].filter((other) => other !== hostId);
+  return others.some((other) => getRpcSession(id, other)?.isAlive?.()) || listedOnOtherHost(id, hostId);
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */

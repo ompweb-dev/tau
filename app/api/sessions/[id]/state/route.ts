@@ -38,9 +38,9 @@ async function sessionState(id: string, hostId: string | null): Promise<Response
       }
     }
 
-    const exited = getExitedRpcSession(id);
     // An exit mark is its host's: the same id on another host is another session.
-    if (exited && (!hostId || (exited.hostId ?? "local") === hostId)) return Response.json({ running: false, exited });
+    const exited = getExitedRpcSession(id, hostId);
+    if (exited) return Response.json({ running: false, exited });
 
     const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) return resolved.response;

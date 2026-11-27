@@ -119,6 +119,8 @@ export interface AgentToolCreateSessionInput {
 
 export interface AgentToolDeliverInput {
   sessionId: string;
+  /** The target copy's host when known; without it the session's host is looked up as before. */
+  hostId?: string;
   /** Already sender-attributed by executeAgentTool. */
   message: string;
   clientMessageId: string;
@@ -490,6 +492,7 @@ export async function executeAgentTool(
   const origin = sessionOrigin(ctx, "send_to_session", delivery);
   const result = await ops.deliver({
     sessionId,
+    ...(targetHostId ? { hostId: targetHostId } : {}),
     message: `${formatSessionOriginHeader(origin)}\n\n${message}`,
     clientMessageId: randomUUID(),
     origin,

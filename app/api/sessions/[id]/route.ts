@@ -109,9 +109,9 @@ export async function GET(
     // meaning: `running` there is the child's liveness, not a turn in flight.
     let agent: { running: boolean; alive?: boolean; state?: unknown } | undefined;
     if (includeState) {
-      const rpc = getRpcSession(id);
       // Only this host's child: the same id live on another host is another session.
-      if (rpc?.isAlive() && rpc.host.id === resolved.host.id) {
+      const rpc = getRpcSession(id, resolved.host.id);
+      if (rpc?.isAlive()) {
         try {
           const state = await rpc.send({ type: "get_state" });
           // The child can exit between its reply and this line: its state is
@@ -221,13 +221,14 @@ export async function DELETE(
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
     // Only this host's child: the same id live on another host is another session.
-    const live = getRpcSession(id);
-    if (live?.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("delete", true);
+    const live = getRpcSession(id, resolved.host.id);
+    if (live && !live.hostOwnedLifecycle) await live.destroyAndWait?.("delete", true);
     // Live children are skipped by the re-parent rewrite: their pi process
     // owns the file and would clobber it on its next write.
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds(resolved.host.id));
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id, id);
+    clearExitedRpcSession(id, resolved.host.id);
     // State kept by id alone belongs to every copy of the id: it stays while another host has one.
     if (!sessionCopiedElsewhere(id, resolved.host.id)) {
       // Remove only this deleted session's content-free retry-lineage metadata.
@@ -236,7 +237,6 @@ export async function DELETE(
       } catch (error) {
         console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
       }
-      clearExitedRpcSession(id);
       try {
         removeSessionWatches(id);
       } catch (error) {

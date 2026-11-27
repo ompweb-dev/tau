@@ -12,7 +12,7 @@ function timed(receivedAt: number, res: Response): Response {
   return res;
 }
 
-// POST /api/agent/[id] - Send a command to an existing session
+// POST /api/agent/[id]?hostId= - Send a command to an existing session (that host's copy when named)
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -25,7 +25,8 @@ export async function POST(
   try {
     const body = await parseJsonWithinLimit<unknown>(req, MAX_AGENT_COMMAND_REQUEST_BYTES);
     receivedAt = Date.now();
-    return timed(receivedAt, await runAgentCommand(id, body, requestOwner(req)));
+    const hostId = new URL(req.url).searchParams.get("hostId");
+    return timed(receivedAt, await runAgentCommand(id, body, requestOwner(req), undefined, undefined, hostId));
   } catch (error) {
     return timed(receivedAt ?? Date.now(), commandErrorResponse(error));
   }
@@ -39,10 +40,12 @@ export async function GET(
   const { id } = await params;
   // Default stays the full shape; `?systemPrompt=0` drops the ~13 KB prompt
   // from the 15 s state poll. Any other value (including "1") keeps it.
-  const includeSystemPrompt = new URL(req.url).searchParams.get("systemPrompt") !== "0";
+  const { searchParams } = new URL(req.url);
+  const includeSystemPrompt = searchParams.get("systemPrompt") !== "0";
 
   try {
-    const session = getRpcSession(id);
+    // `?hostId=`: only that host's copy; the same id live on another host is another session.
+    const session = getRpcSession(id, searchParams.get("hostId"));
     if (!session || !session.isAlive()) {
       return Response.json({ running: false });
     }

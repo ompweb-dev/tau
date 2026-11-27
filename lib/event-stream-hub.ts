@@ -549,7 +549,7 @@ async function openChannel(channel: EventStreamChannel, handle: SubscriptionHand
     case "notifications":
       return openNotificationsChannel(channel.clientId, handle);
     case "session":
-      return openSessionChannel(channel.sessionId, handle);
+      return openSessionChannel(channel.sessionId, channel.hostId, handle);
     case "file":
       return openFileChannel(channel.path, channel.sessionId, channel.hostId, handle);
     case "host-tools":
@@ -633,11 +633,11 @@ function openHostsChannel(handle: SubscriptionHandle): SubscribeResult {
 }
 
 // Agent events of one live pi wrapper, and the session's held messages (`outbox_update`, lib/message-outbox.ts).
-function openSessionChannel(sessionId: string, handle: SubscriptionHandle): SubscribeResult {
+function openSessionChannel(sessionId: string, hostId: string | undefined, handle: SubscriptionHandle): SubscribeResult {
   // Observer-only: opening a saved session must not create another pi
   // process for a terminal-owned session. Explicit commands use
   // POST /api/agent/[id], which starts the wrapper before this attaches.
-  const existing = getRpcSession(sessionId);
+  const existing = getRpcSession(sessionId, hostId);
   let session = existing?.isAlive() ? existing : undefined;
   // Held messages show before pi runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
   if (!session && outboxEntries(sessionId).length === 0) {
@@ -654,7 +654,7 @@ function openSessionChannel(sessionId: string, handle: SubscriptionHandle): Subs
   };
   if (session) attach(session);
   const rebind = () => {
-    const existing = getRpcSession(sessionId);
+    const existing = getRpcSession(sessionId, hostId);
     const live = existing?.isAlive() ? existing : undefined;
     if (live !== session) {
       detachSession();

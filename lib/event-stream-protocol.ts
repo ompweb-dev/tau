@@ -40,7 +40,8 @@ export type EventStreamChannel =
   | { kind: "running" }
   /** Notifications the server routes to the tab with this notification client id. */
   | { kind: "notifications"; clientId: string }
-  | { kind: "session"; sessionId: string }
+  /** `hostId`: that host's copy of the id; without it, the copy `getRpcSession` picks (this machine's first). */
+  | { kind: "session"; sessionId: string; hostId?: string }
   | { kind: "file"; path: string; hostId?: string; sessionId: string | null }
   /** Host tool calls (open_url, notify, open_file) from sessions no tab is watching. */
   | { kind: "host-tools" }
@@ -100,7 +101,9 @@ export function parseEventStreamChannel(value: unknown): EventStreamChannel | nu
     case "hosts":
       return { kind: "hosts" };
     case "session":
-      return isBoundedString(channel.sessionId, MAX_ID_LENGTH) ? { kind: "session", sessionId: channel.sessionId } : null;
+      if (!isBoundedString(channel.sessionId, MAX_ID_LENGTH)) return null;
+      if (channel.hostId !== undefined && !isBoundedString(channel.hostId, MAX_ID_LENGTH)) return null;
+      return { kind: "session", sessionId: channel.sessionId, ...(channel.hostId === undefined ? {} : { hostId: channel.hostId as string }) };
     case "file": {
       if (!isBoundedString(channel.path, MAX_PATH_LENGTH)) return null;
       const sessionId = channel.sessionId ?? null;
