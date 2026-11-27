@@ -568,11 +568,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const creationBodyRef = useRef<{ json: string } | null>(null);
   const createdOwnerRef = useRef<{ cwd: string; hostId?: string } | null>(null);
-  // The shown session's host, for its reads (`?hostId=`): an id copied across hosts is another session there.
-  const sessionHostRef = useRef("local");
-  sessionHostRef.current = session?.hostId ?? newSessionHostId ?? "local";
-  // Read when a request is made: a created owner lands in an async callback, before any render.
-  const currentSessionHost = useCallback(() => createdOwnerRef.current?.hostId ?? sessionHostRef.current, []);
   const btw = useBtw(sessionIdRef);
   const { applyEvent: applyBtwFrame, refreshHistory: refreshBtwHistory, reconcile: reconcileBtw, openHistory: openBtwHistory, ask: sendBtw } = btw;
   // A btw ask can wait seconds on spawn + SSE attach: a second Enter must not send it twice.
@@ -724,7 +719,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   if (catchUpRef.current === null) {
     catchUpRef.current = createSessionCatchUp({
       sessionId: () => sessionIdRef.current,
-      hostId: currentSessionHost,
       // The edit's HTTP completion owns its reload; old-tail sync snapshots
       // must not race that reload or republish the selected read-only branch.
       scope: () => hookAliveRef.current && !editInFlightRef.current ? `${sessionIdRef.current}:${promptRunIdRef.current}:${contextRequestSeqRef.current}` : null,
@@ -915,7 +909,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const refreshSubagentHistory = useCallback(async (sid: string) => {
     const generation = subagentRosterGenerationRef.current;
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/subagents?hostId=${encodeURIComponent(currentSessionHost())}`);
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/subagents`);
       if (!res.ok) return;
       const data = await res.json() as { subagents?: SubagentHistoryEntry[] };
       // Fence AFTER the awaited json: the session or roster generation may
@@ -926,7 +920,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch {
       // Best effort; live frames take precedence while a run is active.
     }
-  }, [mergeSubagents, currentSessionHost]);
+  }, [mergeSubagents]);
 
   // Hydrate the LIVE roster from get_subagents. The registry only holds
   // currently-running subagents, so this fills gaps after an SSE reconnect or
@@ -1015,7 +1009,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const refreshLiveModelState = useCallback(async (sid: string) => {
     const token = beginAuthoritativeModelSync();
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/state?hostId=${encodeURIComponent(currentSessionHost())}`);
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/state`);
       if (!res.ok) return;
       const agentState = await res.json() as { running: boolean; state?: AgentStateResponse };
       if (!hookAliveRef.current || sessionIdRef.current !== sid) return;
@@ -1031,7 +1025,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch {
       // Best effort; the next loadSession/reconcile re-syncs.
     }
-  }, [applyAuthoritativeModel, beginAuthoritativeModelSync, currentSessionHost]);
+  }, [applyAuthoritativeModel, beginAuthoritativeModelSync]);
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false, fenceRunId?: number) => {
     const requestSeq = ++contextRequestSeqRef.current;
@@ -1047,7 +1041,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const stateRequest = includeState ? {
       token: beginAuthoritativeModelSync(),
       queueRevision: ++queueSeqRef.current,
-      response: fetch(`/api/sessions/${encodeURIComponent(sid)}/state?hostId=${encodeURIComponent(currentSessionHost())}`).then(async (stateRes) => {
+      response: fetch(`/api/sessions/${encodeURIComponent(sid)}/state`).then(async (stateRes) => {
         const agentState = await stateRes.json().catch(() => ({})) as { running: boolean; state?: AgentStateResponse; exited?: ExitedRpcSession; outbox?: OutboxEntry[]; outboxScope?: string; outboxSettledIds?: string[]; nativeSettledIds?: string[] };
         if (hookAliveRef.current && sessionIdRef.current === sid && contextRequestSeqRef.current === requestSeq
           && promptRunIdRef.current === requestRun && (fenceRunId === undefined || promptRunIdRef.current === fenceRunId)) {
@@ -1062,7 +1056,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } : null;
     try {
       if (showLoading) setLoading(true);
-      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", hostId: currentSessionHost() });
+      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
       const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`);
       if (!hookAliveRef.current || sessionIdRef.current !== sid || contextRequestSeqRef.current !== requestSeq || promptRunIdRef.current !== requestRun) return null;
       if (res.status === 404) {
@@ -1168,7 +1162,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Ensure the flag is cleared even if the pre-state early-return path was taken
       if (showLoading && includeState && !messagesLoaded) initialHydrationPendingRef.current = false;
     }
-  }, [catchUp, refreshSubagentHistory, applyAuthoritativeModel, beginAuthoritativeModelSync, applyQueueStateSnapshot, currentSessionHost]);
+  }, [catchUp, refreshSubagentHistory, applyAuthoritativeModel, beginAuthoritativeModelSync, applyQueueStateSnapshot]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null, includePreCompaction = false): Promise<boolean> => {
     const seq = ++contextRequestSeqRef.current;
@@ -1180,7 +1174,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     eventCoalescer.reset();
     dispatch({ type: "reset" });
     try {
-      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", hostId: currentSessionHost() });
+      const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
       if (leafId) params.set("leafId", leafId);
       if (includePreCompaction) params.set("includePreCompaction", "1");
       const url = `/api/sessions/${encodeURIComponent(sid)}/context?${params}`;
@@ -1198,7 +1192,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return false;
     }
     return true;
-  }, [catchUp, eventCoalescer, currentSessionHost]);
+  }, [catchUp, eventCoalescer]);
 
   const reloadActiveSessionHistory = useCallback((sid: string) => {
     catchUp.select({ leafId: null, includePreCompaction: false });
@@ -2975,7 +2969,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Read immediately before dispatch, not from React's last rendered state:
     // the previous terminal reload or interrupted turn can still be in flight.
     // Unlike loadSession, this must not replace the optimistic user bubble.
-    const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/context?boundary=1&hostId=${encodeURIComponent(currentSessionHost())}`);
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/context?boundary=1`);
     if (res.status === 404) {
       // A session whose prompts so far were all local slash commands (skill
       // activation, …) never started an agent run, so pi wrote no session
@@ -2986,7 +2980,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const snapshot = await res.json() as { entryIds: string[] };
     return snapshot.entryIds;
-  }, [currentSessionHost]);
+  }, []);
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[], uploads?: string[], uploadProofs?: Record<string, string>, options?: PromptSendOptions): Promise<PromptSubmissionResult> => {
     const trimmedMessage = message.trim();
@@ -4274,8 +4268,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const hostStatus = hostFrame && hostFrame.sessionId === sessionIdRef.current ? hostFrame.status : null;
 
   return {
-    /** The shown session's host (the created owner's for a new chat), for reads that name it. */
-    sessionHostId: currentSessionHost(),
     // State
     data, loading, error, activeLeafId, messages, entryIds, showPreCompactionHistory, streamState,
     agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,

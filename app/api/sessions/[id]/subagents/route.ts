@@ -9,19 +9,18 @@ import { getRpcSession } from "@/lib/rpc-manager";
  * toolResults (works without a live RPC process — survives page reloads).
  */
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
   try {
-    const hostId = new URL(req.url).searchParams.get("hostId");
-    const resolved = await resolveSessionHostOr404(id, hostId);
+    const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) {
       // A brand-new session's file can land just after the prompt
       // acknowledgement; while its RPC wrapper is alive that is "no on-disk
       // history yet", not "unknown session". The client treats an empty
       // roster the same as a 404, so answer 200 to keep the console clean.
-      if (getRpcSession(id, hostId)?.isAlive()) {
+      if (getRpcSession(id)?.isAlive()) {
         return Response.json({ subagents: [] });
       }
       return resolved.response;

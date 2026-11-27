@@ -23,7 +23,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return Response.json({ error: "Invalid limit", code: "invalid_limit" }, { status: 400 });
   }
   try {
-    const resolved = await resolveSessionHostOr404(id, url.searchParams.get("hostId"));
+    const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.sessionOps.readContext(id, undefined, {
       deferThinking: true,

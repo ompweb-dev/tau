@@ -200,11 +200,9 @@ export function CompletionBlock({ completion, truncated, sourceSessionId }: { co
   );
 }
 
-export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcriptVersion, events, onClose }: {
+export function SubagentTranscriptDialog({ subagent, sessionId, transcriptVersion, events, onClose }: {
   subagent: SubagentInfo | null;
   sessionId: string | null;
-  /** The session's host: an id copied across hosts is another session there. */
-  hostId: string;
   transcriptVersion: number;
   events?: SubagentActivityEvent[];
   onClose: () => void;
@@ -233,7 +231,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcri
   const live = !fromDisk;
 
   // A pi-subagents child is read from its own session file, which its progress names.
-  const fileQuery = `${subagent?.sessionFile ? `&file=${encodeURIComponent(subagent.sessionFile)}` : ""}&hostId=${encodeURIComponent(hostId)}`;
+  const fileQuery = subagent?.sessionFile ? `&file=${encodeURIComponent(subagent.sessionFile)}` : "";
 
   const fetchCompletion = useCallback(async (): Promise<{ completion: string | null; truncated: boolean }> => {
     if (!sessionId || !subagent?.id) throw new Error("No session");
