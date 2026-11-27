@@ -98,7 +98,10 @@ function markOutboxFailed(db, id, error) {
 }
 
 /** Remove the accepted local add and its same-session, exact-intent retry lineage atomically. */
-function deleteOutboxEntry(db, id, replaces, sessionId, intent) {
+// One host's copy of a session: the same id on another host is another session (a row from before hosts is this machine's).
+const outboxSession = (entry) => `${entry.hostId ?? "local"}/${entry.sessionId}`;
+
+function deleteOutboxEntry(db, id, replaces, session, intent) {
   return new Promise((resolve, reject) => {
     const transaction = db.transaction("entries", "readwrite");
     transaction.oncomplete = () => resolve();
@@ -112,10 +115,10 @@ function deleteOutboxEntry(db, id, replaces, sessionId, intent) {
       if (lineageRoot === undefined && intent.replaces !== undefined) {
         const root = replacementRoot(intent, byId);
         const original = root === null ? undefined : byId.get(root);
-        if (original?.sessionId === sessionId && original.state === "failed" && sameOutboxIntent(original, intent)) lineageRoot = root;
+        if (original && outboxSession(original) === session && original.state === "failed" && sameOutboxIntent(original, intent)) lineageRoot = root;
       }
       for (const entry of entries) {
-        if (entry.sessionId !== sessionId) continue;
+        if (outboxSession(entry) !== session) continue;
         if (entry.id === id) {
           store.delete(entry.id);
           continue;
@@ -158,7 +161,7 @@ function replacementRoot(entry, entries) {
     if (seen.has(id)) return null;
     seen.add(id);
     const parent = entries.get(id);
-    if (!parent || parent.sessionId !== entry.sessionId || parent.state !== "failed") return id;
+    if (!parent || outboxSession(parent) !== outboxSession(entry) || parent.state !== "failed") return id;
     if (!sameOutboxIntent(parent, entry)) return null;
     if (parent.replaces === undefined) return id;
     id = parent.replaces;
@@ -231,11 +234,12 @@ async function flushOutbox() {
     entries.sort(compareOutbox);
     const waiting = new Set();
     for (const initial of entries) {
-      const { id, sessionId } = initial;
-      if (initial.state !== "sending" || waiting.has(sessionId)) continue;
+      const { id, sessionId, hostId } = initial;
+      const session = outboxSession(initial);
+      if (initial.state !== "sending" || waiting.has(session)) continue;
       // A running worker may have added or accepted an entry since our snapshot: only the shared session head can go.
       const current = await readOutboxForSync(db);
-      const head = current.filter((entry) => entry.sessionId === sessionId && entry.state === "sending").sort(compareOutbox)[0];
+      const head = current.filter((entry) => outboxSession(entry) === session && entry.state === "sending").sort(compareOutbox)[0];
       if (!head || head.id !== id) continue;
       const { scope, mode, message, images, uploads, uploadProofs, replaces, createdAt } = head;
       // Expired or unscoped rows are never rebound: they are not sent, so they stop blocking that session's later entries.
@@ -254,7 +258,8 @@ async function flushOutbox() {
         const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
         const controller = new AbortController();
         timer = setTimeout(() => controller.abort(), 40_000 + Math.ceil(body.length / 2));
-        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
+        const url = `/api/agent/${encodeURIComponent(sessionId)}${hostId ? `?hostId=${encodeURIComponent(hostId)}` : ""}`;
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
         const reply = await response.json().catch((error) => {
           if (controller.signal.aborted) throw error;
         });
@@ -268,8 +273,8 @@ async function flushOutbox() {
       }
       if (status >= 200 && status < 300) {
         const confirmedReplaces = accepted?.replaces === replaces ? accepted.replaces : undefined;
-        await deleteOutboxEntry(db, id, confirmedReplaces, sessionId, head);
-      } else if (status === 0 || status === 401 || status === 408 || status === 429 || status >= 500) waiting.add(sessionId);
+        await deleteOutboxEntry(db, id, confirmedReplaces, session, head);
+      } else if (status === 0 || status === 401 || status === 408 || status === 429 || status >= 500) waiting.add(session);
       else await markOutboxFailed(db, id, error || `HTTP ${status}`);
     }
     if (waiting.size > 0) throw new Error("tau-outbox: entries left to send");

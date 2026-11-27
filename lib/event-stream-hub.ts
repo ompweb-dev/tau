@@ -640,7 +640,9 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
   const existing = getRpcSession(sessionId, hostId);
   let session = existing?.isAlive() ? existing : undefined;
   // Held messages show before pi runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
-  if (!session && outboxEntries(sessionId).length === 0) {
+  // The held messages of this host's copy only (every host's without one): the same id on another host is another session.
+  const outboxHost = hostId ?? null;
+  if (!session && outboxEntries(sessionId, outboxHost).length === 0) {
     return { ok: false, status: 409, error: "Session is not managed by tau", code: "session_not_managed" };
   }
 
@@ -666,15 +668,15 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
   const detachRunning = subscribeRunningSessions(rebind);
   const detachOutbox = onOutboxChange(sessionId, () => {
     rebind();
-    handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId) });
-  });
+    handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, outboxHost) });
+  }, outboxHost);
   rebind();
   handle.setDetach(() => {
     detachOutbox();
     detachRunning();
     detachSession();
   });
-  if (handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId) });
+  if (handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, outboxHost) });
   return SUBSCRIBED;
 }
 

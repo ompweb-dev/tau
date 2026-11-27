@@ -77,7 +77,7 @@ async function liveChildFor(sessionId: string, ids: readonly string[], hostId?: 
   } catch (error) {
     failure = error;
   }
-  for (const owner of outboxCanonicalSessions(ids)) {
+  for (const owner of outboxCanonicalSessions(ids, hostId)) {
     if (owner === sessionId) continue;
     try {
       return await liveChild(owner, hostId);

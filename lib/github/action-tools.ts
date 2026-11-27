@@ -5,6 +5,7 @@ import { checkGh, parseGithubTarget, type GithubTarget } from "./gh";
 import type { GithubToolOps } from "./tools";
 import { listWorkflows, readWorkflow, listRuns, dispatchWorkflow, cancelRun, rerunRun } from "./actions";
 import { withActionReceipt } from "./action-receipts";
+import { sessionHostKey } from "../session-host-key";
 
 const repo = { type: "string", description: "GitHub OWNER/REPO, using the web server's gh login." };
 const workflow = { type: "string", description: "Workflow numeric ID or .yml/.yaml file name." };
@@ -61,7 +62,8 @@ export async function executeActionTool(name: string, args: Record<string, unkno
       if (!confirmed && readGithubActionsPermissionFromDisk(operation) !== "allow") throw new Error(`GitHub Actions ${operation} now requires confirmation in Settings; nothing was sent by this request.`);
       return ops.run(command, input);
     };
-    return withActionReceipt(ctx.sourceSessionId, ctx.sourceRequestId, name, args, async () => {
+    // A receipt is one host copy's: the same session id on another host is another session.
+    return withActionReceipt(sessionHostKey(ctx.sourceHostId, ctx.sourceSessionId), ctx.sourceRequestId, name, args, async () => {
       ensureEnabled();
       if (operation === "dispatch") return dispatchWorkflow(authorizedRun, repository, selectedWorkflow!, selectedRef!, inputs as Record<string, string | number | boolean>);
       if (operation === "cancel") return cancelRun(authorizedRun, runTarget!);

@@ -43,6 +43,7 @@ All notable changes to **tau** (`@ompweb-dev/tau`) are documented in this file. 
 ### Fixed
 
 - **A session id on two hosts runs as two sessions on the server.** Each host's copy has its own live process, exit mark and command queue; `POST`/`GET /api/agent/[id]?hostId=`, the `session` event channel's `hostId` and `POST /api/notifications/answer`'s `hostId` name one copy. A request without a host still takes this machine's copy first.
+- **Held messages and GitHub watches keep each host's copy of a session apart.** Outbox entries record their host (`host_id` in `outbox.db`, `hostId` on `OutboxEntry` and browser entries, posted as `?hostId=`); delivery, claims, wakes, retry lineage, archive holds and deletes act on that copy only. GitHub watches, pending updates, read grants and Actions receipts are keyed by host and session; a GitHub watch store from before this change is dropped once (pre-alpha: watches must be set again).
 - **In-app updates can replace an npm-global Windows install started by the tray.** The update stops the tray and any process still using that install and runs the install from outside the package, so Windows can rename it. (ompweb-dev/ompweb#519)
 - **A host update's failed candidate is stopped on Windows even when it got the old daemon's pid.** (ompweb-dev/ompweb#526)
 - **In-app updates work on a Windows install without administrator rights.** Task Scheduler's service host is recognized without reading its executable path. (ompweb-dev/ompweb#539)

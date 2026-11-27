@@ -594,7 +594,7 @@ async function startRun(sid, message, strictMode = false, options = {}) {
   });
   const es = lastEs();
   assert.ok(es, "an event stream must have been opened");
-  assert.deepEqual(es.channel, { kind: "session", sessionId: sid });
+  assert.deepEqual(es.channel, { kind: "session", sessionId: sid, hostId: "local" });
   await act(async () => {
     es.open(); // the dispatcher sees the session observed → prompt POST fires
     assert.deepEqual(await sendPromise, { status: "accepted" });
@@ -3668,7 +3668,7 @@ async function mountObservedEditableSession(sid, options = {}) {
   const w = await mountEditableSession(sid, options);
   const stream = lastEs();
   assert.ok(stream, "the mounted hook must attach an idle history observer");
-  assert.deepEqual(stream.channel, { kind: "session", sessionId: sid });
+  assert.deepEqual(stream.channel, { kind: "session", sessionId: sid, hostId: "local" });
   await act(async () => { stream.open(); });
   await settle();
   assert.equal(w.latest.agentRunning, false);
@@ -7414,7 +7414,7 @@ test("mounting a session with an outbox snapshot subscribes without starting omp
     produce: async () => ({ value: { running: false, outbox: [entry], outboxScope: "test-scope" } }),
   });
   const w = await mountSession(sid);
-  assert.deepEqual(lastEs()?.channel, { kind: "session", sessionId: sid });
+  assert.deepEqual(lastEs()?.channel, { kind: "session", sessionId: sid, hostId: "local" });
   assert.deepEqual(w.latest.heldMessages, [{ ...entry, local: false }]);
   await act(() => lastEs().deliver({ type: "open" }));
   assert.deepEqual(callsTo("POST", "/api/agent/"), [], "an outbox-only stream must wait for connected before talking to omp");

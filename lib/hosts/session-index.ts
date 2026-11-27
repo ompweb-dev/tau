@@ -162,11 +162,6 @@ export async function hostForSessionId(id: string): Promise<Host | null> {
   return null;
 }
 
-/** Another host's last list (as cached: nothing is read again) names the session: a copy of the id lives there. */
-export function listedOnOtherHost(id: string, hostId: string): boolean {
-  return hostIds().some((other) => other !== hostId && hostLists(other).sessions.some((session) => session.id === id));
-}
-
 /** A miss on `hostId`'s list proves absence only while that list is current: 503 otherwise. */
 function assertHostListCurrent(hostId: string): void {
   const host = getHost(hostId);

@@ -306,9 +306,9 @@ function unrecordedHeldBash<T extends { command: string; after: number }>(messag
     return !run;
   });
 }
-function reconcileConfirmedLocalOutbox(sessionId: string, localEntries: LocalOutboxEntry[], confirmedIds: ReadonlySet<string>): Promise<void> {
-  const ids = localEntries.filter((entry) => entry.sessionId === sessionId && entry.replaces !== undefined && confirmedIds.has(entry.id)).map((entry) => entry.id);
-  return ids.length ? reconcileOutbox(sessionId, ids) : Promise.resolve();
+function reconcileConfirmedLocalOutbox(sessionId: string, hostId: string, localEntries: LocalOutboxEntry[], confirmedIds: ReadonlySet<string>): Promise<void> {
+  const ids = localEntries.filter((entry) => entry.sessionId === sessionId && (entry.hostId ?? "local") === hostId && entry.replaces !== undefined && confirmedIds.has(entry.id)).map((entry) => entry.id);
+  return ids.length ? reconcileOutbox(sessionId, hostId, ids) : Promise.resolve();
 }
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
@@ -422,8 +422,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Set once connectEvents exists: the state route's held messages, and a subscription to follow them.
   const applyStateOutboxRef = useRef<(sid: string, entries: OutboxEntry[], settledIds: string[], nativeSettledIds: string[]) => void>(() => {});
   const heldMessages = useMemo(
-    () => mergeHeldMessages(session?.id ?? null, localOutbox, storedOutbox, serverOutbox),
-    [session?.id, localOutbox, storedOutbox, serverOutbox],
+    () => mergeHeldMessages(session?.id ?? null, session?.hostId ?? "local", localOutbox, storedOutbox, serverOutbox),
+    [session?.id, session?.hostId, localOutbox, storedOutbox, serverOutbox],
   );
   // False once this hook instance unmounts: background loops (prompt/bash
   // settlement polling) must not keep firing on a dead instance.
@@ -1492,7 +1492,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // A pending coalesced update belongs to the stream being replaced.
     eventCoalescer.reset();
     catchUp.disconnect();
-    const es = openEventStream({ kind: "session", sessionId: sid });
+    const es = openEventStream({ kind: "session", sessionId: sid, hostId: currentSessionHost() });
     eventSourceRef.current = es;
     const runId = promptRunIdRef.current;
 
@@ -1623,7 +1623,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // connection must be ready before they continue.
       };
     });
-}, [applyBtwFrame, catchUp, clearLiveToolResults, eventCoalescer, refreshBtwHistory, refreshAgentSnapshots]);
+}, [applyBtwFrame, catchUp, clearLiveToolResults, eventCoalescer, refreshBtwHistory, refreshAgentSnapshots, currentSessionHost]);
   observeCreatedSessionRef.current = (sid: string) => {
     if (!hookAliveRef.current || sessionIdRef.current !== sid || eventSourceRef.current) return;
     void connectEvents(sid);
@@ -1635,7 +1635,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       serverOutboxRef.current = applyOutboxSnapshot(serverOutboxRef.current, entries, settledIds, nativeSettledIds);
       setServerOutbox(serverOutboxRef.current);
     }
-    void reconcileConfirmedLocalOutbox(sid, localOutbox, serverOutboxRef.current.seen)
+    void reconcileConfirmedLocalOutbox(sid, currentSessionHost(), localOutbox, serverOutboxRef.current.seen)
       .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
     // Held messages open the session channel even without a wrapper: subscribe to follow them.
     if (entries.length > 0 && !eventSourceRef.current) void connectEvents(sid, "connected");
@@ -1646,10 +1646,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Read by a Retry before React renders: a copy waiting in IndexedDB must block another at once.
       localOutboxRef.current = event.entries;
       setLocalOutbox(event.entries);
-      serverOutboxRef.current = rememberLocalOutbox(serverOutboxRef.current, event.entries, sessionIdRef.current);
+      serverOutboxRef.current = rememberLocalOutbox(serverOutboxRef.current, event.entries, sessionIdRef.current, currentSessionHost());
       setServerOutbox(serverOutboxRef.current);
       const sid = sessionIdRef.current;
-      if (sid) void reconcileConfirmedLocalOutbox(sid, event.entries, serverOutboxRef.current.seen)
+      if (sid) void reconcileConfirmedLocalOutbox(sid, currentSessionHost(), event.entries, serverOutboxRef.current.seen)
         .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
       return;
     }
@@ -1657,14 +1657,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Server confirmation or a locally proven browser-only root retires the original before outbox_update arrives.
     if (stored.replaces) markOutboxRepresented([stored.replaces]);
     const sid = sessionIdRef.current;
-    if (stored.sessionId !== sid) return;
+    if (stored.sessionId !== sid || (stored.hostId ?? "local") !== currentSessionHost()) return;
     serverOutboxRef.current = rememberOutboxEntries(serverOutboxRef.current, [stored]);
     setServerOutbox(serverOutboxRef.current);
     // An add reply may arrive after the frame that removed its already-delivered entry: never resurrect it.
     if (!serverOutboxRef.current.seen.has(stored.id)) setStoredOutbox((current) => [...current.filter((entry) => entry.id !== stored.id), stored]);
     // The server holds it now, so the channel opens even without a wrapper (a first try may have been refused).
     if (hookAliveRef.current && !eventSourceRef.current) void connectEvents(sid, "connected");
-  }), [connectEvents, markOutboxRepresented]);
+  }), [connectEvents, currentSessionHost, markOutboxRepresented]);
 
   // ---------------------------------------------------------------------
   // Host-tool bridge: tau registers tools the AGENT can call. The server
@@ -2257,7 +2257,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           );
           setServerOutbox(serverOutboxRef.current);
           const sid = sessionIdRef.current;
-          if (sid) void reconcileConfirmedLocalOutbox(sid, localOutboxRef.current, serverOutboxRef.current.seen)
+          if (sid) void reconcileConfirmedLocalOutbox(sid, currentSessionHost(), localOutboxRef.current, serverOutboxRef.current.seen)
             .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
           // Retire only confirmations the server has listed or settled; an older empty snapshot can overtake an ACK.
           setStoredOutbox((current) => current.filter((entry) => !serverOutboxRef.current.seen.has(entry.id)));
@@ -2844,7 +2844,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiFrame(event as unknown as UiPresentationFrame);
         break;
     }
-  }, [addNotice, addUnconfirmedRunErrorNotice, catchUp, eventCoalescer, clearLiveToolResults, clearTerminalReconcileTimer, endExtensionDialog, finishPromptWithoutStream, handleExtensionUiFrame, handleHostToolCall, loadSession, reloadActiveSessionHistory, mergeSubagents, onAgentEnd, openExtensionDialog, receiveCorrelatedMessage, reconcileAgentState, refreshLiveModelState, refreshSubagentRoster, resetSubagentActivityState, applyAuthoritativeModel, beginAuthoritativeModelSync, setCompacting, setLiveToolResult, surfaceQuotaOnStream, updateQueuedMessages, applyQueueStateSnapshot]);
+  }, [addNotice, addUnconfirmedRunErrorNotice, catchUp, eventCoalescer, clearLiveToolResults, clearTerminalReconcileTimer, endExtensionDialog, finishPromptWithoutStream, handleExtensionUiFrame, handleHostToolCall, loadSession, reloadActiveSessionHistory, mergeSubagents, onAgentEnd, openExtensionDialog, receiveCorrelatedMessage, reconcileAgentState, refreshLiveModelState, refreshSubagentRoster, resetSubagentActivityState, applyAuthoritativeModel, beginAuthoritativeModelSync, setCompacting, setLiveToolResult, surfaceQuotaOnStream, updateQueuedMessages, applyQueueStateSnapshot, currentSessionHost]);
   handleAgentEventRef.current = handleAgentEvent;
   syncActionsRef.current = {
     metadata: (context, version, hasLive = liveModelMeta !== null || currentModelOverride !== null) => {
@@ -2946,6 +2946,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await addToOutbox({
         id: newOutboxId(),
         sessionId: sid,
+        hostId: currentSessionHost(),
         scope: await getOutboxScope(sid),
         mode,
         message,
@@ -2969,7 +2970,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!eventSourceRef.current) void connectEvents(sid, "connected");
     }
     return true;
-  }, [addNotice, connectEvents]);
+  }, [addNotice, connectEvents, currentSessionHost]);
 
   const snapshotRunEntries = useCallback(async (sid: string) => {
     // Read immediately before dispatch, not from React's last rendered state:
@@ -3799,10 +3800,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const serverIds = serverOutboxRef.current.seen;
       const confirmedIds = new Set(localOutboxRef.current
-        .filter((entry) => entry.sessionId === sid && entry.replaces !== undefined && serverIds.has(entry.id))
+        .filter((entry) => entry.sessionId === sid && (entry.hostId ?? "local") === currentSessionHost() && entry.replaces !== undefined && serverIds.has(entry.id))
         .map((entry) => entry.id));
       if (serverIds.has(id)) confirmedIds.add(id);
-      if (confirmedIds.size > 0) await reconcileOutbox(sid, [...confirmedIds]);
+      if (confirmedIds.size > 0) await reconcileOutbox(sid, currentSessionHost(), [...confirmedIds]);
 
       if (!hookAliveRef.current || sessionIdRef.current !== sid || editInFlightRef.current || serverOutboxRef.current.represented.has(id)) return;
       const current = heldMessagesRef.current.find((entry) => entry.id === id);
@@ -3817,7 +3818,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       heldRetriesRef.current.delete(id);
     }
-  }, [addNotice, holdMessage]);
+  }, [addNotice, currentSessionHost, holdMessage]);
 
   const handleAbortCompaction = useCallback(async () => {
     const sid = sessionIdRef.current;

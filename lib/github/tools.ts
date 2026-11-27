@@ -119,14 +119,14 @@ function parseIds(value: unknown): string[] | undefined {
 async function allowRead(ops: GithubToolOps, ctx: AgentToolContext, t: Pick<GithubTarget, "owner" | "repo">): Promise<void> {
   if (ctx.sourceHostId === "local") return;
   const repoKey = repoKeyOf(t);
-  if (hasReadGrant(ctx.sourceSessionId, repoKey)) return;
+  if (hasReadGrant(ctx.sourceSessionId, ctx.sourceHostId, repoKey)) return;
   const host = ops.listHosts().find((h) => h.id === ctx.sourceHostId);
   if (host && startsUnasked(host, ctx.sourceHostId)) return;
   if (!(await ctx.confirm(`Let this session on ${host?.label ?? ctx.sourceHostId} read ${t.owner}/${t.repo} through the server's GitHub login?`))) {
     throw new Error("The user declined GitHub access for this session.");
   }
   if (ctx.signal?.aborted) throw new Error("The tool call was cancelled before GitHub access was granted.");
-  grantRead(ctx.sourceSessionId, repoKey);
+  grantRead(ctx.sourceSessionId, ctx.sourceHostId, repoKey);
 }
 
 /** Last step before a write: a cancelled call (host_tool_cancel) must not post after the agent moved on. */
@@ -190,12 +190,12 @@ export async function executeGithubTool(name: string, args: Record<string, unkno
 
   if (name === "unwatch_github") {
     await allowRead(ops, ctx, t);
-    removeWatch(ctx.sourceSessionId, itemKeyOf(t));
+    removeWatch(ctx.sourceSessionId, ctx.sourceHostId, itemKeyOf(t));
     return { watching: false, target: label };
   }
   if (name === "watch_github") {
     const itemKey = itemKeyOf(t);
-    const intent = beginWatchIntent(ctx.sourceSessionId, itemKey);
+    const intent = beginWatchIntent(ctx.sourceSessionId, ctx.sourceHostId, itemKey);
     try {
       await checkGh(ops.run);
       await allowRead(ops, ctx, t);
@@ -213,7 +213,7 @@ export async function executeGithubTool(name: string, args: Record<string, unkno
       delete initialSnapshot.rateLimit;
       if (snapshot.state !== "open") return { watching: false, target: label, kind: snapshot.kind, state: snapshot.state, snapshot: initialSnapshot };
       if (ctx.signal?.aborted) throw new Error("The tool call was cancelled; no watch was registered.");
-      const registration = registerWatchIntent(intent, ctx.sourceSessionId, itemKey, snapshot.kind, baselineCursor(snapshot));
+      const registration = registerWatchIntent(intent, ctx.sourceSessionId, ctx.sourceHostId, itemKey, snapshot.kind, baselineCursor(snapshot));
       if (registration === "cancelled") throw new Error("The watch request was cancelled by an unwatch before registration.");
       if (registration === "limit") {
         throw new Error(`This session already watches the limit of ${MAX_WATCHES_PER_SESSION} GitHub items. Unwatch one first.`);

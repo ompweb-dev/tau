@@ -9,8 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const response = await sessionState(id, new URL(req.url).searchParams.get("hostId"));
-  const { entries, settledIds, ...settlements } = outboxSnapshot(id);
+  const hostId = new URL(req.url).searchParams.get("hostId");
+  const response = await sessionState(id, hostId);
+  const { entries, settledIds, ...settlements } = outboxSnapshot(id, hostId);
   return Response.json({
     ...(await response.json() as object),
     outbox: entries,

@@ -171,14 +171,14 @@ export async function POST(req: Request) {
         claim.release();
         if (!result.ok) return opErrorResponse(result);
         invalidateHostSessionList(hostId);
-        pumpOutbox(result.value.sessionId);
+        pumpOutbox(result.value.sessionId, hostId);
         return Response.json({ ok: true, sessionId: result.value.sessionId });
       }
       const sessionId = await restoreArchivedSession(body.key as string, undefined, undefined, claim.publish);
       invalidateSessionListCache();
       invalidateLocalSessionLists();
       // Messages held while it was archived go now (spec O6).
-      pumpOutbox(sessionId);
+      pumpOutbox(sessionId, LOCAL_HOST_ID);
       return Response.json({ ok: true, sessionId });
     }, confirmRestoreStopped);
   } catch (error) {

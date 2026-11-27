@@ -526,6 +526,8 @@ export type OutboxMode = "prompt" | "followUp" | "steer";
 export interface OutboxEntry {
   id: string;
   sessionId: string;
+  /** The session's host ("local" for this machine): the same id on another host is another session's outbox. */
+  hostId: string;
   mode: OutboxMode;
   message: string;
   images?: { type: "image"; data: string; mimeType: string }[];

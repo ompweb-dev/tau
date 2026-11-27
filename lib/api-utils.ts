@@ -2,10 +2,10 @@ import { createHash } from "crypto";
 import { pooledWorkspaceForSession } from "./hosts/pool-starts";
 import { isValidSessionId } from "./session-file-references-core";
 import { isLinkUp, type Host } from "./hosts/host";
-import { getHost, listHosts } from "./hosts/hub";
+import { getHost } from "./hosts/hub";
 import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
-import { hostForSessionId, hostHoldingSession, hostSessions, listedOnOtherHost } from "./hosts/session-index";
+import { hostForSessionId, hostHoldingSession, hostSessions } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
 import { getRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
@@ -31,13 +31,6 @@ export async function resolveSessionHostOr404(
     if (error instanceof HostOpError && error.code === "host_sessions_unavailable") return { response: apiErrorResponse(error) };
     throw error;
   }
-}
-
-/** A copy of the id is known on a host other than `hostId` (its child runs, or its last list names it): state kept
- * by id alone (watches, outbox lineage, exit marks) is that copy's too. From what is at hand, so a delete never waits. */
-export function sessionCopiedElsewhere(id: string, hostId: string): boolean {
-  const others = [LOCAL_HOST_ID, ...listHosts().map((host) => host.id)].filter((other) => other !== hostId);
-  return others.some((other) => getRpcSession(id, other)?.isAlive?.()) || listedOnOtherHost(id, hostId);
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */

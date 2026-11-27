@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404, sessionCopiedElsewhere } from "@/lib/api-utils";
+import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import type { SessionReadValue } from "@/lib/hosts/session-ops";
@@ -229,20 +229,18 @@ export async function DELETE(
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id, id);
     clearExitedRpcSession(id, resolved.host.id);
-    // State kept by id alone belongs to every copy of the id: it stays while another host has one.
-    if (!sessionCopiedElsewhere(id, resolved.host.id)) {
-      // Remove only this deleted session's content-free retry-lineage metadata.
-      try {
-        forgetSessionReplacementMappings(id);
-      } catch (error) {
-        console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      try {
-        removeSessionWatches(id);
-      } catch (error) {
-        // The delete succeeded; a watch left behind ends at the outbox's 404 for this session.
-        console.warn(`[tau] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    // Retry lineage and watches are this host's copy's: the same id on another host keeps its own.
+    // Remove only this deleted session's content-free retry-lineage metadata.
+    try {
+      forgetSessionReplacementMappings(id, resolved.host.id);
+    } catch (error) {
+      console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      removeSessionWatches(id, resolved.host.id);
+    } catch (error) {
+      // The delete succeeded; a watch left behind ends at the outbox's 404 for this session.
+      console.warn(`[tau] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
     }
     return Response.json({ ok: true, ...result.value });
   } catch (error) {

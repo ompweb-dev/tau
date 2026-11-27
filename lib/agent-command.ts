@@ -72,7 +72,7 @@ export async function runAgentCommand(
       return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
     }
     // Held messages: stored and answered here; the outbox's dispatcher sends them to pi (lib/message-outbox.ts).
-    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner);
+    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner, undefined, hostId);
     if (type === "get_client_message_status") {
       const ids = readClientMessageIds(command.clientMessageIds);
       if (!ids) return Response.json({ error: "clientMessageIds must contain 1 to 32 unique valid IDs", code: "invalid_client_message_ids" }, { status: 400 });

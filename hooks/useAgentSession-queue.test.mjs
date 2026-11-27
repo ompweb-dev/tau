@@ -11,26 +11,26 @@ test("held messages keep delivery order across the browser-to-server handoff, wh
   // Saved offline at 100 and 200 in this browser; the server accepted the first at 1000 and another device's at 1500.
   const browser = [local("first", 100, 1), local("second", 200, 2)];
   const server = applyOutboxSnapshot(EMPTY_SERVER_OUTBOX, [stored("first", 1000), stored("other-device", 1500)]);
-  assert.deepEqual(order(mergeHeldMessages("s", browser, [], server)), ["first:server", "other-device:server", "second:browser"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "local", browser, [], server)), ["first:server", "other-device:server", "second:browser"]);
 });
 
 test("a confirmation the server snapshot has not covered yet replaces the browser copy and stays ahead of later local entries", () => {
   const browser = [local("first", 100, 1), local("second", 200, 2), local("third", 300, 3)];
   const server = applyOutboxSnapshot(EMPTY_SERVER_OUTBOX, [stored("first", 1000)]);
   const confirmed = [stored("second", 1100), stored("gone", 900, "delivered")];
-  assert.deepEqual(order(mergeHeldMessages("s", browser, confirmed, server)), ["first:server", "second:server", "third:browser"]);
-  assert.deepEqual(order(mergeHeldMessages("s", [local("gone", 50, 0)], confirmed, EMPTY_SERVER_OUTBOX)), ["second:server"], "a delivered confirmation removes the browser copy");
+  assert.deepEqual(order(mergeHeldMessages("s", "local", browser, confirmed, server)), ["first:server", "second:server", "third:browser"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [local("gone", 50, 0)], confirmed, EMPTY_SERVER_OUTBOX)), ["second:server"], "a delivered confirmation removes the browser copy");
 });
 
 test("a bridge kept after the server settled its row keeps its place ahead of the rows queued after it", () => {
   const pending = applyOutboxSnapshot(EMPTY_SERVER_OUTBOX, [stored("A", 1000), stored("B", 1100)]);
   // A is dispatched and native-settled; this peer has not seen its echo yet.
   const dispatched = applyOutboxSnapshot(pending, [stored("B", 1100)], ["A"], ["A"]);
-  assert.deepEqual(order(mergeHeldMessages("s", [], [], dispatched)), ["A:server", "B:server"]);
-  assert.deepEqual(order(mergeHeldMessages("s", [local("C", 300, 3)], [], dispatched)), ["A:server", "B:server", "C:browser"],
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [], [], dispatched)), ["A:server", "B:server"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [local("C", 300, 3)], [], dispatched)), ["A:server", "B:server", "C:browser"],
     "this browser's first-leg rows still come last");
   const uncertain = markOutboxUncertain(dispatched, ["A"]);
-  const held = mergeHeldMessages("s", [], [], uncertain);
+  const held = mergeHeldMessages("s", "local", [], [], uncertain);
   assert.deepEqual(order(held), ["A:server", "B:server"], "an uncertain bridge keeps its position");
   assert.equal(held[0].state, "failed");
   assert.equal(held[0].mayHaveBeenSent, true);
@@ -40,11 +40,11 @@ test("the server snapshot's FIFO wins over the order this browser first remember
   // This browser typed A first and remembered it; the server (with another device's B ahead of it) queued [B, A].
   const remembered = rememberOutboxEntries(EMPTY_SERVER_OUTBOX, [local("A", 100, 1)], true);
   const server = applyOutboxSnapshot(remembered, [stored("B", 1000), stored("A", 1100)]);
-  assert.deepEqual(order(mergeHeldMessages("s", [], [], server)), ["B:server", "A:server"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [], [], server)), ["B:server", "A:server"]);
   // A bridge keeps its place relative to rows it was seen before, whatever order the snapshot lists them in.
   const withBridge = applyOutboxSnapshot(applyOutboxSnapshot(EMPTY_SERVER_OUTBOX, [stored("X", 900), stored("B", 1000), stored("A", 1100)]),
     [stored("A", 1100), stored("B", 1000)], ["X"], ["X"]);
-  assert.deepEqual(order(mergeHeldMessages("s", [], [], withBridge)), ["X:server", "A:server", "B:server"], "the snapshot's own order is not rewritten around a bridge");
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [], [], withBridge)), ["X:server", "A:server", "B:server"], "the snapshot's own order is not rewritten around a bridge");
 });
 
 test("queue snapshots retain aligned native client IDs, including uncorrelated slots", () => {
@@ -79,15 +79,25 @@ test("a worker replay of a browser copy never moves a server-remembered row back
     outbox = rememberOutboxEntries(outbox, [local("row", 100, 1)], true);
     assert.equal(outbox.known.get("row")?.sessionId, "moved", `replay ${replay + 1}`);
   }
-  assert.deepEqual(order(mergeHeldMessages("moved", [], [], outbox)), ["row:server"], "the moved session still shows its bridge");
+  assert.deepEqual(order(mergeHeldMessages("moved", "local", [], [], outbox)), ["row:server"], "the moved session still shows its bridge");
   // A browser-only row has nothing to protect: its replay still remembers the browser's payload.
   assert.equal(rememberOutboxEntries(EMPTY_SERVER_OUTBOX, [local("only-here", 100, 1)], true).known.get("only-here")?.sessionId, "s");
 });
 
 test("only this chat's entries from the worker's all-session list are remembered", () => {
   const elsewhere = { ...local("elsewhere", 100, 1), sessionId: "other" };
-  const remembered = rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [elsewhere, local("here", 200, 2)], "s");
+  const remembered = rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [elsewhere, local("here", 200, 2)], "s", "local");
   assert.deepEqual([...remembered.known.keys()], ["here"]);
-  assert.equal(rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [elsewhere, local("here", 200, 2)], null).known.size, 0, "a chat with no session yet remembers nothing");
+  assert.equal(rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [elsewhere, local("here", 200, 2)], null, "local").known.size, 0, "a chat with no session yet remembers nothing");
   assert.equal(rememberOutboxEntries(EMPTY_SERVER_OUTBOX, [elsewhere], true).known.has("elsewhere"), true, "the unfiltered remember is what let it pin the payload");
+});
+
+test("a chat shows and remembers only its own host's copy of a session id", () => {
+  const remote = { ...local("remote-browser", 100, 1), hostId: "box" };
+  const remoteStored = { ...stored("remote-server", 50), hostId: "box" };
+  const here = { ...local("local-browser", 200, 2), hostId: "local" };
+  const server = applyOutboxSnapshot(EMPTY_SERVER_OUTBOX, [{ ...stored("local-server", 40), hostId: "local" }]);
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [remote, here], [remoteStored], server)), ["local-server:server", "local-browser:browser"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "box", [remote, here], [remoteStored], EMPTY_SERVER_OUTBOX)), ["remote-server:server", "remote-browser:browser"]);
+  assert.deepEqual([...rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [remote, here], "s", "box").known.keys()], ["remote-browser"]);
 });
