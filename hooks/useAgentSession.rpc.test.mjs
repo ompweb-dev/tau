@@ -6109,10 +6109,13 @@ test("a kept chat that sent a builtin command creating its session keeps a tab o
   assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own");
   assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
   world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "fresh idea" } }); await sleep(60); });
   await act(async () => { h.release(); await sleep(400); });
   assert.equal([...h.view.container.querySelectorAll("textarea")].some((area) => area.value.includes("/name Early")), false, "the command, once run, is cleared from the draft it moved to");
   const stored = Object.keys(window.sessionStorage).filter((key) => window.sessionStorage.getItem(key)?.includes("/name Early"));
   assert.deepEqual(stored, [], "and from storage, where a reload would bring it back");
+  assert.equal(window.sessionStorage.getItem("tau-draft-new:pool:workers:app"), "fresh idea", "the fresh new chat's stored draft is not cleared with it");
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "" } }); await sleep(30); });
   h.view.unmount();
 });
 

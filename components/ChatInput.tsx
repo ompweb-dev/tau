@@ -913,7 +913,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     setAtQuery(null);
     setSlashMatch(null);
     setHistoryMenuOpen(false);
-    if (draftKey) clearDraft(draftKey);
+    // A composer that moved to its own sent key since (a command clearing once stored) left the workspace's key to the
+    // next new chat: it never clears that one.
+    const movedToOwn = draftKeyRef.current !== draftKey && draftKeyRef.current !== undefined && isSentDraftKey(draftKeyRef.current);
+    if (draftKey && !movedToOwn) clearDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     clearImages();
     clearTextFiles();
