@@ -235,6 +235,8 @@ export interface UseAgentSessionOptions {
   onNewSessionInitialization?: (body: string) => void;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
+  /** A send that can create the new chat's session begins (a prompt, `!cmd`, `/btw <q>`, `/compact`, `/name`). */
+  onSent?: () => void;
   onSessionForked?: (newSessionId: string) => void;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   modelsRefreshKey?: number;
@@ -311,7 +313,7 @@ function reconcileConfirmedLocalOutbox(sessionId: string, localEntries: LocalOut
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd, onSessionCreated, onSent, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
     onOpenFile, onOpenUrl,
   } = opts;
@@ -649,6 +651,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // The latest: a send in flight promotes through the shell's current handler (the chat's tab may have moved).
   const onSessionCreatedRef = useRef(onSessionCreated);
   useLayoutEffect(() => { onSessionCreatedRef.current = onSessionCreated; }, [onSessionCreated]);
+  const onSentRef = useRef(onSent);
+  useLayoutEffect(() => { onSentRef.current = onSent; }, [onSent]);
   // Raw child-session events stream at token rate; coalesce the per-subagent
   // revision bumps to one per animation frame so an open dialog only re-pages
   // once per frame instead of per event.
@@ -2989,6 +2993,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!trimmedMessage && !images?.length && !uploads?.length) return { status: "rejected" };
     if (bashRunningRef.current || editInFlightRef.current) return { status: "rejected" };
     if (initialHydrationPendingRef.current) return { status: "rejected" };
+    onSentRef.current?.();
     // Shell commands run during a turn too, as in pi's terminal: pi holds the
     // result back until a later prompt starts.
     const isBashCommand = !options?.promptOnly && !images?.length && !uploads?.length && trimmedMessage.startsWith("!");
@@ -3564,6 +3569,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const askBtw = useCallback(async (question: string, recordId?: string): Promise<boolean> => {
     if (btwAskPendingRef.current) return false;
     btwAskPendingRef.current = true;
+    onSentRef.current?.();
     try {
       const sid = sessionIdRef.current ?? await ensureNewSession();
       if (!sid) {
@@ -3620,6 +3626,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const ensureRuntime = async () => sessionIdRef.current ?? await ensureNewSession();
       switch (commandName) {
         case "compact": {
+          onSentRef.current?.();
           const sid = await ensureRuntime();
           if (!sid || isCompactingRef.current || isCompacting) return complete({ handled: true, error: translate("agentSession.noSessionToCompact") });
           ownsCompaction = true;
@@ -3652,6 +3659,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         case "name": {
+          onSentRef.current?.();
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noSessionToName") });
           if (!args) return complete({ handled: true, error: translate("agentSession.nameUsage") });

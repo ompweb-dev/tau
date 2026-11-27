@@ -6103,6 +6103,13 @@ test("a kept chat whose shell command is creating its session gets its session's
   h.view.unmount();
 });
 
+test("a kept chat that sent a builtin command creating its session keeps a tab of its own", async (t) => {
+  const h = await sentBesideFreshChat(t, undefined, "/name Early");
+  assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own");
+  assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
+  h.view.unmount();
+});
+
 test("a kept chat whose session cannot be created keeps its tab and shows the error", async (t) => {
   const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
   await act(async () => { h.release(); await sleep(300); });
@@ -6116,26 +6123,30 @@ test("a kept chat whose session cannot be created keeps its tab and shows the er
   h.view.unmount();
 });
 
-test("another new chat beside an unsent kept one: both have tabs, both can be selected", async (t) => {
+test("another new chat replaces an unsent kept one and opens fresh in the focused group", async (t) => {
   const h = await draftInItsOwnGroup(t);
   await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
   await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  assert.ok(h.newChatTab(), "kept");
   await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
-  const tabs = () => h.view.queryAllByRole("tab", { name: translate("appShell.newSession") });
-  assert.equal(tabs().length, 2, "two new chat tabs");
-  assert.equal(h.separators(), 1, "the kept chat keeps its group");
-  assert.equal(h.composerIn(h.draftGroup), h.draftComposer, "and its mount");
-  const fresh = tabs().find((tab) => h.other.contains(tab));
-  assert.equal(fresh.getAttribute("aria-selected"), "true", "the fresh one opens selected in the focused group");
-  const kept = tabs().find((tab) => h.draftGroup.contains(tab));
-  await act(async () => { fireEvent.click(kept); await sleep(120); });
-  assert.equal(kept.getAttribute("aria-selected"), "true", "the kept one can be selected");
-  assert.equal(h.focusedGroup(), h.draftGroup);
-  assert.equal(h.composerIn(h.draftGroup), h.draftComposer, "on its mount");
-  await act(async () => { fireEvent.click(tabs().find((tab) => h.other.contains(tab))); await sleep(120); });
-  assert.equal(h.focusedGroup(), h.other, "and so can the fresh one");
-  assert.equal(tabs().length, 2);
-  assert.equal(h.composerIn(h.draftGroup), h.draftComposer, "the kept one stays mounted");
+  assert.equal(h.view.queryAllByRole("tab", { name: translate("appShell.newSession") }).length, 1, "the unsent kept chat gets no tab of its own");
+  assert.equal(h.separators(), 0, "the kept new chat's group is gone");
+  assert.ok(h.other.contains(h.newChatTab()), "the new chat opens in the focused group");
+  assert.equal(h.draftComposer.isConnected, false, "as a new mount");
+  assert.equal(h.composerIn(h.other).value, "unsent idea", "with the kept chat's draft, which only one composer holds");
+  h.view.unmount();
+});
+
+test("a new chat's own tab is never saved with the workbench", async (t) => {
+  const h = await sentBesideFreshChat(t);
+  assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own, its group's only one");
+  const saved = window.sessionStorage.getItem("tau:workbench");
+  assert.ok(saved, "the workbench is saved");
+  assert.doesNotMatch(saved, /chat:draft:/, "without the new chat's own tab");
+  const groups = (layout) => layout.kind === "group" ? [layout] : layout.children.flatMap(groups);
+  const savedGroups = groups(JSON.parse(saved).layout);
+  assert.equal(savedGroups.length, 1, "the group it alone filled is not saved");
+  assert.ok(savedGroups.every((group) => group.active && group.tabs.includes(group.active)), "every saved group shows a saved tab");
   h.view.unmount();
 });
 
