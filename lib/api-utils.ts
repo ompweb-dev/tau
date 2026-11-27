@@ -71,8 +71,17 @@ export async function resolveWorkspaceHost(
   const live = getRpcSession(sessionId, named);
   const running = live?.isAlive() ? live : undefined;
   const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
-  // An unreadable named list falls through to the id's owner (and its errors).
-  const holder = !running && named && retained?.hostId !== named ? await hostHoldingSession(sessionId, named).catch(() => null) : null;
+  let holder: Host | null = null;
+  if (!running && named && retained?.hostId !== named) {
+    try {
+      holder = await hostHoldingSession(sessionId, named);
+    } catch (error) {
+      // The named host cannot say: retryable, never another host's copy.
+      if (error instanceof HostOpError && error.code === "host_offline") return { response: apiErrorResponse(new WebRpcError(error.message, "host_offline", "refused")) };
+      if (error instanceof HostOpError && error.code === "host_sessions_unavailable") return { response: apiErrorResponse(error) };
+      throw error;
+    }
+  }
   let session: { host: Host } | { response: Response };
   if (running) session = { host: running.host };
   else if (holder) session = { host: holder };
@@ -87,7 +96,7 @@ export async function resolveWorkspaceHost(
   if (hostId !== undefined && hostId !== session.host.id) {
     return { response: Response.json({ error: "The session belongs to another host", code: "workspace_host_mismatch" }, { status: 409 }) };
   }
-  const cwd = (running?.sessionId === sessionId ? running.cwd : undefined) ?? retained?.cwd
+  const cwd = (running?.sessionId === sessionId ? running.cwd : undefined) ?? (retained?.hostId === session.host.id ? retained.cwd : undefined)
     ?? (await hostSessions(session.host.id)).find((entry) => entry.id === sessionId)?.cwd;
   if (!cwd) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   return { host: session.host, sessionId,

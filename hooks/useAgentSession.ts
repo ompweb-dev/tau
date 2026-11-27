@@ -4258,6 +4258,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const hostStatus = hostFrame && hostFrame.sessionId === sessionIdRef.current ? hostFrame.status : null;
 
   return {
+    /** The shown session's host (the created owner's for a new chat), for reads that name it. */
+    sessionHostId: sessionHostRef.current,
     // State
     data, loading, error, activeLeafId, messages, entryIds, showPreCompactionHistory, streamState,
     agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
