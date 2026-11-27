@@ -2993,7 +2993,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!trimmedMessage && !images?.length && !uploads?.length) return { status: "rejected" };
     if (bashRunningRef.current || editInFlightRef.current) return { status: "rejected" };
     if (initialHydrationPendingRef.current) return { status: "rejected" };
-    onSentRef.current?.();
     // Shell commands run during a turn too, as in pi's terminal: pi holds the
     // result back until a later prompt starts.
     const isBashCommand = !options?.promptOnly && !images?.length && !uploads?.length && trimmedMessage.startsWith("!");
@@ -3001,6 +3000,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
       if (!bashCmd) return { status: "rejected" };
+      // Marked once the send is valid, before anything can create the session.
+      onSentRef.current?.();
       await executeBashRef.current?.(bashCmd, isExcluded);
       return { status: "accepted" };
     }
@@ -3027,6 +3028,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       addNotice({ type: "error", message: promptError });
       return { status: "rejected" };
     }
+    onSentRef.current?.();
 
     if (!isNew && session) {
       // The outbox owns delivery from here: Send ends once this browser has stored it, and the run state starts

@@ -1589,11 +1589,16 @@ export function AppShell({ appName }: { appName: string }) {
   // Sent, then left for another group's chat (or moved to a tab of its own) before pi answered: the new chat's tab
   // becomes its session's in place, keeping its mount, and the selection stays where the user went.
   // A session opened meanwhile already has its tab: the new chat's tab then just closes.
+  const placingRef = useRef(new Set<string>());
+  // Cleared after every commit: by then the layout shows what was placed.
+  useEffect(() => { placingRef.current.clear(); });
   const promoteUnselectedChat = useCallback((tabId: string, session: SessionInfo) => {
     // Its mount key goes to the session's tab: a later new chat given that key has sent nothing.
     sentChatsRef.current.delete(chatMountsRef.current?.keys[tabId] ?? tabId);
     const id = chatTabId(session);
-    const placed = Boolean(groupOfTab(tabLayoutRef.current, id));
+    // Also placed by an earlier promotion in this batch, which the committed layout does not show yet.
+    const placed = Boolean(groupOfTab(tabLayoutRef.current, id)) || placingRef.current.has(id);
+    placingRef.current.add(id);
     setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== tabId));
     setChatTabs((tabs) => tabs.some((tab) => sameSessionTarget(tab, session)) ? tabs : [...tabs, session]);
     setTabLayout((layout) => placed ? closeTab(layout, tabId) : replaceTab(layout, tabId, id));
