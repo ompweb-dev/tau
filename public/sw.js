@@ -24,6 +24,8 @@ self.addEventListener("push", (event) => {
     body: data.body || "",
     tag: data.tag || "",
     sessionId: data.sessionId || "",
+    // Absent on this machine; another host's copy of the id is another session.
+    ...(typeof data.hostId === "string" && data.hostId ? { hostId: data.hostId } : {}),
   };
   event.waitUntil(
     (async () => {
@@ -33,7 +35,7 @@ self.addEventListener("push", (event) => {
         badge: "/badge-96.png",
         tag: shown.tag || undefined,
         renotify: Boolean(shown.tag),
-        data: { url: data.url || "/", sessionId: shown.sessionId, ...(requestId ? { requestId } : {}) },
+        data: { url: data.url || "/", sessionId: shown.sessionId, ...(shown.hostId ? { hostId: shown.hostId } : {}), ...(requestId ? { requestId } : {}) },
       });
       // Open tabs list it in their Notifications tab, like a notification the page showed itself.
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -44,7 +46,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const { url = "/", sessionId = "" } = event.notification.data || {};
+  const { url = "/", sessionId = "", hostId } = event.notification.data || {};
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -56,7 +58,7 @@ self.addEventListener("notificationclick", (event) => {
           // other page (the sign-in screen after the cookie expired) loads the
           // session URL, which the sign-in screen carries through as `next`.
           if (new URL(client.url).pathname === "/") {
-            if (sessionId) client.postMessage({ type: "tau-open-session", sessionId });
+            if (sessionId) client.postMessage({ type: "tau-open-session", sessionId, ...(hostId ? { hostId } : {}) });
           } else {
             await client.navigate(url);
           }

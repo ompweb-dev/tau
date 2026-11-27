@@ -11,7 +11,7 @@ import { transcriptToMarkdown } from "@/lib/transcript";
 import { toast } from "./ui/toast";
 import { SessionSearchMatches, type SearchMatchTarget } from "./SessionSearchMatches";
 import { hasDraft, subscribeDrafts } from "@/lib/draft-store";
-import { LOCAL_HOST_ID } from "@/lib/project-ordering";
+import { LOCAL_HOST_ID, sessionDraftKey, sessionRowKey } from "@/lib/project-ordering";
 import {
   MAX_PROJECT_SESSIONS,
   formatRelativeTime,
@@ -100,6 +100,7 @@ interface ProjectRowProps {
   /** Sessions beyond the cap (0 when a filter is active — show all matches). */
   hiddenCount: number;
   selectedSessionKey: string | null;
+  /** The marks below are keyed by `sessionRowKey`: only the host copy that has them shows them. */
   runningSessionIds: Set<string>;
   awaitingInputIds: Set<string>;
   unreadSessionIds: Set<string>;
@@ -568,10 +569,10 @@ const SessionTreeItem = memo(function SessionTreeItem({
   // check then never re-renders unless this row's flags actually changed.
   const rowKey = sessionRowKey(node.session.hostId, sessionId);
   const isSelected = rowKey === selectedSessionKey;
-  const isRunning = runningSessionIds.has(sessionId);
-  const isAwaitingInput = awaitingInputIds.has(sessionId);
-  const isUnread = unreadSessionIds.has(sessionId);
-  const exited = exitedSessions.get(sessionId);
+  const isRunning = runningSessionIds.has(rowKey);
+  const isAwaitingInput = awaitingInputIds.has(rowKey);
+  const isUnread = unreadSessionIds.has(rowKey);
+  const exited = exitedSessions.get(rowKey);
 
   // Stable callbacks: depend only on primitives / stable parent callbacks so
   // SessionItem's React.memo stays effective across re-renders.
@@ -662,20 +663,18 @@ const SessionTreeItem = memo(function SessionTreeItem({
     // re-renders on a selection change, as for unread; a subtree key set would avoid that if trees grow large.
     if (prev.node.children.length > 0) return false;
   }
+  const rowKey = sessionRowKey(prev.node.session.hostId, prev.node.session.id);
   if (prev.runningSessionIds !== next.runningSessionIds) {
-    const id = prev.node.session.id;
-    if (prev.runningSessionIds.has(id) !== next.runningSessionIds.has(id)) return false;
+    if (prev.runningSessionIds.has(rowKey) !== next.runningSessionIds.has(rowKey)) return false;
   }
   if (prev.awaitingInputIds !== next.awaitingInputIds) {
-    const id = prev.node.session.id;
-    if (prev.awaitingInputIds.has(id) !== next.awaitingInputIds.has(id)) return false;
+    if (prev.awaitingInputIds.has(rowKey) !== next.awaitingInputIds.has(rowKey)) return false;
   }
   if (prev.unreadSessionIds !== next.unreadSessionIds) {
     // Nested rows render inside this memo boundary, so a parent must pass a
     // changed set down even when only a descendant's unread state flipped.
     if (prev.node.children.length > 0) return false;
-    const id = prev.node.session.id;
-    if (prev.unreadSessionIds.has(id) !== next.unreadSessionIds.has(id)) return false;
+    if (prev.unreadSessionIds.has(rowKey) !== next.unreadSessionIds.has(rowKey)) return false;
   }
   if (prev.exitedSessions !== next.exitedSessions) return false;
   if (prev.relativeTimeNow !== next.relativeTimeNow) return false;
@@ -737,7 +736,7 @@ const SessionItem = memo(function SessionItem({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
   // A session's composer draft is keyed by its id (ChatWindow's `draftKey`).
-  const hasUnsentDraft = useSyncExternalStore(subscribeDrafts, () => hasDraft(session.id), () => false);
+  const hasUnsentDraft = useSyncExternalStore(subscribeDrafts, () => hasDraft(sessionDraftKey(session.id, session.hostId)), () => false);
   const relativeTime = formatRelativeTime(session.modified, locale, relativeTimeNow);
   // The row's second line: what the session is doing, a draft if one waits, and its age ("Ready · 2h").
   const status = isAwaitingInput ? t("sessionSidebar.statusNeedsInput")
@@ -942,8 +941,6 @@ const SessionItem = memo(function SessionItem({
     </>
   );
 });
-/** A session row's identity: one session id can exist on two hosts (a copied session). */
-export const sessionRowKey = (hostId: string | null | undefined, id: string) => `${hostId ?? LOCAL_HOST_ID}:${id}`;
 
 export {
   HostGroup,

@@ -1,6 +1,6 @@
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
 import type { SessionInfo } from "@/lib/types";
-import { LOCAL_HOST_ID, type ProjectSortMode } from "@/lib/project-ordering";
+import { LOCAL_HOST_ID, sessionRowKey, type ProjectSortMode } from "@/lib/project-ordering";
 import { comparableProjectPath } from "@/lib/comparable-path";
 interface WorktreeEntry {
   path: string;
@@ -219,16 +219,16 @@ interface LivePlace {
 
 /** Where a live session the session list lacks gets its placeholder row: the
  *  freshest source that knows it, host included, so a remote run is never
- *  grouped under This machine; else the selected workspace. */
+ *  grouped under This machine; else the selected workspace. `key` and the maps' keys are `sessionRowKey`s. */
 function livePlace(
-  id: string,
+  key: string,
   optimistic: (LivePlace & { id: string }) | null | undefined,
   running: Readonly<Record<string, LivePlace>>,
   exited: ReadonlyMap<string, LivePlace>,
   known: ReadonlyMap<string, LivePlace>,
   selected: LivePlace,
 ): LivePlace {
-  return (optimistic?.id === id ? optimistic : undefined) ?? running[id] ?? exited.get(id) ?? known.get(id) ?? selected;
+  return (optimistic && sessionRowKey(optimistic.hostId, optimistic.id) === key ? optimistic : undefined) ?? running[key] ?? exited.get(key) ?? known.get(key) ?? selected;
 }
 /** True when a host is link-up in `next` but was not in `prev` (a host new to
  *  the list counts). On the first snapshot (`prev` null) only a linked remote

@@ -5,6 +5,7 @@ import type { PushSubscription } from "web-push";
 import { getAgentDir } from "./pi/paths";
 import {
   isValidNotificationId,
+  notificationSessionKey,
   parseNotificationPrefs,
   type NotificationEvent,
   type NotificationHistoryEntry,
@@ -248,10 +249,10 @@ export function listHistory(): NotificationHistoryEntry[] {
   });
 }
 
-/** A reused id (`<sessionId>:<type>`) replaces its entry: it is a new notification, unread unless `read` says it was seen. */
+/** A reused id (`<sessionKey>:<type>`, `notificationSessionKey`) replaces its entry: it is a new notification, unread unless `read` says it was seen. */
 export function recordHistory(event: NotificationEvent, { at = Date.now(), read = false }: { at?: number; read?: boolean } = {}): NotificationHistoryEntry {
   const database = db();
-  const id = `${event.sessionId}:${event.type}`;
+  const id = `${notificationSessionKey(event.sessionId, event.hostId)}:${event.type}`;
   transaction(database, () => {
     database.prepare("DELETE FROM history WHERE id = ?").run(id);
     database.prepare("INSERT INTO history (id, event, at, read) VALUES (?, ?, ?, ?)").run(id, JSON.stringify(event), at, read ? 1 : 0);

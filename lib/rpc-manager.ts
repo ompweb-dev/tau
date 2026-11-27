@@ -1009,6 +1009,8 @@ export class AgentSessionWrapper {
   private publishNotifications(frame: Record<string, unknown>): void {
     const session = {
       sessionId: this._sessionId,
+      // Another host's copy of the id is another session: its tags, presence and clicks name the host.
+      ...(this.host.id === LOCAL_HOST_ID ? {} : { hostId: this.host.id }),
       sessionName: this._sessionName || this.cwd.split(/[\\/]/).filter(Boolean).pop() || null,
     };
     const notifications = this.detectNotification(frame, session);
@@ -1259,8 +1261,8 @@ export class AgentSessionWrapper {
     // One server publishes a notification and its retraction: a former
     // notifier must not close what the elected one still owns.
     if (publishedSession && (!this.hostOwnedLifecycle || isNotifier(this.host.id))) {
-      if (reason === "forgotten") publishNotificationForgotten(publishedSession, id);
-      else publishNotificationDismiss(publishedSession, id);
+      if (reason === "forgotten") publishNotificationForgotten(publishedSession, id, this.host.id);
+      else publishNotificationDismiss(publishedSession, id, this.host.id);
     }
     return true;
   }
@@ -1423,7 +1425,7 @@ export class AgentSessionWrapper {
     this.emit(event);
     if (pending.crossSessionId !== undefined) {
       for (const listener of getHostToolListeners()) {
-        try { listener({ type: "host_tool_cancel", targetId: id, sessionId: pending.crossSessionId }); } catch { /* ignore listener errors */ }
+        try { listener({ type: "host_tool_cancel", targetId: id, sessionId: pending.crossSessionId, hostId: this.host.id }); } catch { /* ignore listener errors */ }
       }
     }
     return true;

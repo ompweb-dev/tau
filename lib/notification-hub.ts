@@ -5,6 +5,7 @@ import ja from "./i18n/locales/ja.json";
 import zhCN from "./i18n/locales/zh-CN.json";
 import zhTW from "./i18n/locales/zh-TW.json";
 import {
+  notificationSessionKey,
   renderNotification,
   type NotificationEvent,
   type RenderedNotification,
@@ -39,7 +40,7 @@ export interface NotificationPresence {
   clientId: string;
   deviceId: string;
   visible: boolean;
-  /** The sessions whose chats are on screen in this tab (one per tab group showing a chat). */
+  /** The sessions whose chats are on screen in this tab (one per tab group showing a chat), as `notificationSessionKey`s. */
   sessionIds: string[];
   /** Per-tab report counter: requests can arrive out of order, and only the newest counts. */
   seq: number;
@@ -55,7 +56,7 @@ export interface NotificationPresence {
  */
 export type NotificationMessage =
   | { kind: "toast" | "os"; event: NotificationEvent }
-  | { kind: "dismiss"; tag: string; sessionId: string; requestId: string };
+  | { kind: "dismiss"; tag: string; sessionId: string; hostId?: string; requestId: string };
 
 type Send = (message: NotificationMessage) => void;
 
@@ -67,7 +68,7 @@ interface HubState {
   presence: Map<string, NotificationPresence>;
   /** Open SSE streams per tab. Independent of presence: streams reconnect, overlap, and close while the tab stays put. */
   streams: Map<string, Set<Send>>;
-  /** `<sessionId>:<requestId>` → when it was retracted. A push retry of a settled dialog must deliver nothing (see `publishNotificationDismiss`). */
+  /** `<sessionKey>:<requestId>` (`notificationSessionKey`) → when it was retracted. A push retry of a settled dialog must deliver nothing (see `publishNotificationDismiss`). */
   retractions: Map<string, number>;
   /**
    * The same, for a settlement a replay may undo: a resync forgets a dialog
@@ -128,7 +129,8 @@ export function attachNotificationClient(clientId: string, send: Send): () => vo
 
 /** A visible tab is showing the event's conversation. */
 function isOnScreen(event: NotificationEvent, presence: NotificationPresence[]): boolean {
-  return presence.some((tab) => tab.visible && tab.sessionIds.includes(event.sessionId));
+  const key = notificationSessionKey(event.sessionId, event.hostId);
+  return presence.some((tab) => tab.visible && tab.sessionIds.includes(key));
 }
 
 /**
@@ -192,9 +194,9 @@ function stillSubscribed(deviceId: string, endpoint: string): boolean {
  * A temporary retraction (a resync that forgot the dialog) counts the same way
  * until the request is published again.
  */
-function isRetracted(sessionId: string, requestId: string, now: number): boolean {
+function isRetracted(sessionKey: string, requestId: string, now: number): boolean {
   const state = hub();
-  const key = `${sessionId}:${requestId}`;
+  const key = `${sessionKey}:${requestId}`;
   const at = state.retractions.get(key) ?? state.temporaryRetractions.get(key);
   return at !== undefined && now - at <= PUSH_RETRACTION_TTL_MS;
 }
@@ -220,7 +222,7 @@ async function sendPush(device: NotificationDevice, event: NotificationEvent, re
   for (let attempt = 0; ; attempt++) {
     // A retry can wake long after the dialog was answered, cancelled, expired
     // or its pi child died: delivering now would show a dead question.
-    if (event.type === "input" && event.requestId && isRetracted(event.sessionId, event.requestId, Date.now())) {
+    if (event.type === "input" && event.requestId && isRetracted(notificationSessionKey(event.sessionId, event.hostId), event.requestId, Date.now())) {
       return { ok: false, error: "dialog settled" };
     }
     try {
@@ -263,7 +265,7 @@ export function publishNotification(event: NotificationEvent): void {
   // had temporarily retracted: it is pending again, so its notification and
   // its pushes must go out as for any other question.
   if (event.type === "input" && event.requestId) {
-    const key = `${event.sessionId}:${event.requestId}`;
+    const key = `${notificationSessionKey(event.sessionId, event.hostId)}:${event.requestId}`;
     // A request settled for good is never announced again within the retraction window.
     const settledAt = state.retractions.get(key);
     if (settledAt !== undefined && Date.now() - settledAt <= PUSH_RETRACTION_TTL_MS) return;
@@ -316,8 +318,8 @@ export function publishNotification(event: NotificationEvent): void {
  *
  * Never throws: callers run on the RPC frame path.
  */
-export function publishNotificationDismiss(sessionId: string, requestId: string): void {
-  retract(sessionId, requestId, "permanent");
+export function publishNotificationDismiss(sessionId: string, requestId: string, hostId?: string): void {
+  retract(sessionId, requestId, "permanent", hostId);
 }
 
 /**
@@ -330,12 +332,14 @@ export function publishNotificationDismiss(sessionId: string, requestId: string)
  * retraction TTL. A dialog that is really gone is never replayed, and its
  * notification stays closed.
  */
-export function publishNotificationForgotten(sessionId: string, requestId: string): void {
-  retract(sessionId, requestId, "temporary");
+export function publishNotificationForgotten(sessionId: string, requestId: string, hostId?: string): void {
+  retract(sessionId, requestId, "temporary", hostId);
 }
 
-function retract(sessionId: string, requestId: string, kind: "permanent" | "temporary"): void {
-  const tag = `${sessionId}:input`;
+/** `hostId`: the session's host when it is not this machine, as on `NotificationEvent`. */
+function retract(sessionId: string, requestId: string, kind: "permanent" | "temporary", hostId?: string): void {
+  const sessionKey = notificationSessionKey(sessionId, hostId);
+  const tag = `${sessionKey}:input`;
   const state = hub();
   const now = Date.now();
   // Recorded first: a retry of that `input` push may be sleeping right now.
@@ -345,7 +349,7 @@ function retract(sessionId: string, requestId: string, kind: "permanent" | "temp
   for (const [key, at] of state.temporaryRetractions) {
     if (now - at > PUSH_RETRACTION_TTL_MS) state.temporaryRetractions.delete(key);
   }
-  const key = `${sessionId}:${requestId}`;
+  const key = `${sessionKey}:${requestId}`;
   if (kind === "permanent") {
     state.temporaryRetractions.delete(key);
     state.retractions.set(key, now);
@@ -367,7 +371,7 @@ function retract(sessionId: string, requestId: string, kind: "permanent" | "temp
   for (const sends of state.streams.values()) {
     for (const send of sends) {
       try {
-        send({ kind: "dismiss", tag, sessionId, requestId });
+        send({ kind: "dismiss", tag, sessionId, ...(hostId && hostId !== "local" ? { hostId } : {}), requestId });
       } catch {
         // A closing stream must not break delivery to the others.
       }

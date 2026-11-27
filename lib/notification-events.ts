@@ -40,6 +40,8 @@ export interface NotificationEvent {
   /** `test` is only sent by the settings "Send test notification" button. */
   type: NotificationType | "test";
   sessionId: string;
+  /** The session's host when it is not this machine (absent = this machine, as on `SessionInfo`). */
+  hostId?: string;
   sessionName: string | null;
   /** Question or error text. */
   detail?: string;
@@ -49,7 +51,15 @@ export interface NotificationEvent {
   dialog?: NotificationDialog;
 }
 
-/** One entry of the persisted notification history; `id` is the replace-tag `<sessionId>:<type>`. */
+/**
+ * A session in notification tags, history ids, retractions and presence: the bare id on this machine,
+ * `<hostId>:<id>` on another host, since the same id on two hosts is two sessions. Host ids never contain ":".
+ */
+export function notificationSessionKey(sessionId: string, hostId?: string | null): string {
+  return hostId && hostId !== "local" ? `${hostId}:${sessionId}` : sessionId;
+}
+
+/** One entry of the persisted notification history; `id` is the replace-tag `<sessionKey>:<type>` (`notificationSessionKey`). */
 export interface NotificationHistoryEntry {
   id: string;
   event: NotificationEvent;
@@ -95,6 +105,8 @@ export interface RenderedNotification {
   url: string;
   tag: string;
   sessionId: string;
+  /** The session's host when it is not this machine. */
+  hostId?: string;
 }
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
@@ -149,9 +161,10 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
   return {
     title: (event.sessionName && clip(event.sessionName, MAX_TITLE)) || t("notifications.untitledSession"),
     body,
-    url: event.sessionId ? `/?session=${encodeURIComponent(event.sessionId)}` : "/",
-    tag: `${event.sessionId}:${event.type}`,
+    url: event.sessionId ? `/?session=${encodeURIComponent(event.sessionId)}${event.hostId ? `&host=${encodeURIComponent(event.hostId)}` : ""}` : "/",
+    tag: `${notificationSessionKey(event.sessionId, event.hostId)}:${event.type}`,
     sessionId: event.sessionId,
+    ...(event.hostId ? { hostId: event.hostId } : {}),
   };
 }
 
@@ -362,7 +375,7 @@ export function isNotificationAnswerable(frame: Record<string, unknown>): boolea
   return mapped !== undefined && buildNotificationDialog(mapped) !== undefined;
 }
 
-type Detect = (frame: Record<string, unknown>, session: { sessionId: string; sessionName: string | null }) => NotificationEvent[];
+type Detect = (frame: Record<string, unknown>, session: { sessionId: string; hostId?: string; sessionName: string | null }) => NotificationEvent[];
 
 /**
  * Per-session detector: feed it every top-level RPC frame in order. Subagent
@@ -377,8 +390,8 @@ export function createNotificationDetector(): Detect {
   /** tau already reported this run's failure (from a failed `response`); its `prompt_result` must not repeat it. */
   let failureReported = false;
 
-  return (frame, { sessionId, sessionName }) => {
-    const base = { sessionId, sessionName };
+  return (frame, { sessionId, hostId, sessionName }) => {
+    const base = { sessionId, ...(hostId ? { hostId } : {}), sessionName };
     switch (frame.type) {
       case "agent_start":
         failureReported = false;

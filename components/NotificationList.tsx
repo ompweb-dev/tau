@@ -81,11 +81,11 @@ export function NotificationList() {
 function NotificationRow({ entry }: { entry: NotificationHistoryEntry }) {
   const { t, locale } = useI18n();
   const { title, body } = renderNotification(entry.event, t);
-  const { sessionId } = entry.event;
+  const { sessionId, hostId } = entry.event;
   // Following a notification is reading it.
   const open = sessionId ? () => {
     notificationHistory.markRead(entry.id);
-    window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: sessionId }));
+    window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId, hostId: hostId ?? "local" } }));
   } : undefined;
   const clickGuard = useDragClickGuard();
   const drag = useRef<{ id: number; x: number; y: number; claimed: boolean; tracker: SwipeTracker } | null>(null);

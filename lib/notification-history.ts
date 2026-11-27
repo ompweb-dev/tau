@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { NotificationEvent, NotificationHistoryEntry } from "./notification-events";
+import { notificationSessionKey, type NotificationEvent, type NotificationHistoryEntry } from "./notification-events";
 import { isRecord } from "./type-guards";
 
 /**
@@ -80,7 +80,7 @@ export const notificationHistory = {
   },
   /** A notification delivered to this tab, already recorded by the server. */
   add(event: NotificationEvent) {
-    const id = `${event.sessionId}:${event.type}`;
+    const id = `${notificationSessionKey(event.sessionId, event.hostId)}:${event.type}`;
     change([{ id, event, at: Date.now(), read: false }, ...entries.filter((entry) => entry.id !== id)].slice(0, LIMIT));
   },
   markRead(id: string) {

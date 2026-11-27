@@ -1344,7 +1344,7 @@ test("a run started elsewhere keeps its error visible while an older branch is s
   assert.deepEqual(w.latest.entryIds, ["branch-entry"], "the user is viewing the historical branch");
   world.agents.set("s1", { running: true, state: { isStreaming: true, isPromptRunning: true } });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["s1"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "s1", cwd: "/w" }] }) });
     await settle();
     lastEs().open();
     await settle();
@@ -1986,12 +1986,12 @@ test("a chat with no stream attaches when the running channel reports its sessio
     state: { isStreaming: true, isPromptRunning: true, model: { provider: "test", id: "live-model" }, thinkingLevel: "high" },
   });
   await act(async () => {
-    running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["other"] }) });
+    running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "other", cwd: "/w" }] }) });
     await settle();
   });
   assert.equal(world.esInstances.length, 0, "another session's run is not this chat's");
   await act(async () => {
-    running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["started-elsewhere"] }) });
+    running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "started-elsewhere", cwd: "/w" }] }) });
     await settle();
   });
   assert.equal(world.esInstances.length, 1, "the chat attaches its observer");
@@ -2001,13 +2001,54 @@ test("a chat with no stream attaches when the running channel reports its sessio
   assert.equal(w.latest.displayModel.modelId, "live-model", "the composer shows the run's model");
 });
 
+test("a chat on another host's copy of an id follows only that copy's run, and every read and command names that host", async () => {
+  resetWorld();
+  const sid = "copied-id";
+  primeSession(sid, [userMsg("u0", "q")]);
+  const w = await mountSession(sid, undefined, { session: { ...sessionInfo(sid), hostId: "h1" } });
+  const running = world.runningStreams.at(-1);
+  world.agents.set(sid, { running: true, state: { isStreaming: true, isPromptRunning: true } });
+  await act(async () => {
+    running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w" }] }) });
+    await settle();
+  });
+  assert.equal(world.esInstances.length, 0, "this machine's run of the id is another session");
+  await act(async () => {
+    running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w", hostId: "h1" }] }) });
+    await settle();
+  });
+  assert.equal(world.esInstances.length, 1, "its own host's run attaches");
+  assert.equal(lastEs().channel.hostId, "h1");
+  await act(async () => { await w.latest.handleCycleThinkingLevel(); });
+  const agentCalls = world.calls.filter((call) => call.raw.startsWith(`/api/agent/${sid}`));
+  assert.ok(agentCalls.some((call) => call.method === "GET") && agentCalls.some((call) => call.body?.type === "cycle_thinking_level"), "state read and command were sent");
+  assert.deepEqual(agentCalls.filter((call) => !call.raw.endsWith("?hostId=h1")).map((call) => call.raw), [], "every /api/agent call names h1");
+});
+
+test("a chat on this machine's copy names this machine on every /api/agent call", async () => {
+  resetWorld();
+  const sid = "local-copy";
+  primeSession(sid, [userMsg("u0", "q")]);
+  const w = await mountSession(sid);
+  world.agents.set(sid, { running: true, state: { isStreaming: true, isPromptRunning: true } });
+  await act(async () => {
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w", hostId: "h1" }] }) });
+    await settle();
+  });
+  assert.equal(world.esInstances.length, 0, "another host's run of the id is another session");
+  await act(async () => { await w.latest.handleCycleThinkingLevel(); });
+  const agentCalls = world.calls.filter((call) => call.raw.startsWith(`/api/agent/${sid}`));
+  assert.ok(agentCalls.length > 0);
+  assert.deepEqual(agentCalls.filter((call) => !call.raw.endsWith("?hostId=local")).map((call) => call.raw), []);
+});
+
 test("a running attachment applies compaction before its observer opens", async () => {
   resetWorld();
   primeSession("compacting-elsewhere", [userMsg("u0", "q")]);
   const w = await mountSession("compacting-elsewhere");
   world.agents.set("compacting-elsewhere", { running: true, state: { isCompacting: true } });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["compacting-elsewhere"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "compacting-elsewhere", cwd: "/w" }] }) });
     await settle();
   });
   assert.equal(lastEs().readyState, FakeStream.CONNECTING);
@@ -2027,7 +2068,7 @@ test("compaction attached from another tab settles without replacing a historica
   world.agents.set(sid, { running: true, state: { isCompacting: true } });
   t.mock.timers.enable({ apis: ["setInterval"] });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: [sid] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w" }] }) });
     await settle();
     lastEs().open();
     await settle();
@@ -2036,7 +2077,7 @@ test("compaction attached from another tab settles without replacing a historica
   assert.equal(w.latest.agentRunning, false, "manual compaction is not a prompt run");
   world.agents.set(sid, { running: true, state: { isCompacting: false } });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: [] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [] }) });
     t.mock.timers.tick(15_000);
     await settle();
   });
@@ -2053,7 +2094,7 @@ test("a refused compact command cannot unlock compaction attached from another t
   const w = await mountSession(sid);
   world.agents.set(sid, { running: true, state: { isCompacting: true } });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: [sid] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w" }] }) });
     await settle();
   });
   await act(async () => {
@@ -2072,7 +2113,7 @@ test("an idle chat reconciles auto-compaction when its completion event is lost"
   const w = await mountSession(sid);
   world.agents.set(sid, { running: true, state: {} });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: [sid] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w" }] }) });
     await settle();
     lastEs().open();
     await settle();
@@ -2121,7 +2162,7 @@ test("matching running frames received during an idle lookup trigger one fresh l
     produce: () => new Promise((resolve) => { release = () => resolve({ value: { running: false, state: {} } }); }),
   });
   const running = world.runningStreams.at(-1);
-  const frame = { type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["late-start"] }) };
+  const frame = { type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "late-start", cwd: "/w" }] }) };
   const gets = callsTo("GET", "/api/agent/late-start").length;
   await act(async () => {
     running.deliver(frame);
@@ -2146,7 +2187,7 @@ test("an idle running lookup without a newer matching frame is not retried", asy
   await mountSession("still-idle");
   const gets = callsTo("GET", "/api/agent/still-idle").length;
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["still-idle"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "still-idle", cwd: "/w" }] }) });
     await settle();
   });
   assert.equal(callsTo("GET", "/api/agent/still-idle").length, gets + 1);
@@ -2167,7 +2208,7 @@ test("a delayed running lookup cannot take ownership of a locally started shell"
     produce: () => new Promise((resolve) => { releaseBash = () => resolve({ value: { success: true, data: { output: "", exitCode: 0 } } }); }),
   });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["late-own-shell"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "late-own-shell", cwd: "/w" }] }) });
     await Promise.resolve();
   });
   let bash;
@@ -2196,7 +2237,7 @@ for (const stopped of [false, true]) {
       produce: () => new Promise((resolve) => { releaseBash = () => resolve({ value: { success: true, data: { output: "", exitCode: stopped ? 130 : 0, cancelled: stopped } } }); }),
     });
     await act(async () => {
-      world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: [sid] }) });
+      world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: sid, cwd: "/w" }] }) });
       await Promise.resolve();
     });
     let bash;
@@ -2225,7 +2266,7 @@ test("a delayed running lookup cannot attach after a newer send went to the outb
     produce: () => new Promise((resolve) => { release = () => resolve({ value: { running: true, state: { isStreaming: true } } }); }),
   });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["held-new-prompt"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "held-new-prompt", cwd: "/w" }] }) });
     await Promise.resolve();
   });
   world.outboxHold = true;
@@ -2252,7 +2293,7 @@ test("a delayed running lookup cannot replace a side question's readiness wait",
     produce: () => new Promise((resolve) => { release = () => resolve({ value: { running: true, state: { isStreaming: true } } }); }),
   });
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["late-btw"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "late-btw", cwd: "/w" }] }) });
     await Promise.resolve();
   });
   let asking;
@@ -2275,7 +2316,7 @@ test("a running frame never touches a chat that already has its stream", async (
   const streams = world.esInstances.length;
   const gets = world.calls.filter((call) => call.method === "GET" && call.url === "/api/agent/s1").length;
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["s1"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "s1", cwd: "/w" }] }) });
     await settle();
   });
   assert.equal(world.esInstances.length, streams);
@@ -2300,7 +2341,7 @@ test("a running frame leaves a shell command this idle chat runs to the chat", a
   world.agents.set("own-shell", { running: true, state: { isBashRunning: true } });
   const gets = world.calls.filter((call) => call.method === "GET" && call.url === "/api/agent/own-shell").length;
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["own-shell"] }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "own-shell", cwd: "/w" }] }) });
     await settle();
   });
   assert.equal(world.calls.filter((call) => call.method === "GET" && call.url === "/api/agent/own-shell").length, gets);
@@ -2313,7 +2354,7 @@ test("a running frame leaves a shell command this idle chat runs to the chat", a
 /** Delivers a `running` frame listing `ids` on the hook's running subscription. */
 async function deliverRunning(ids) {
   await act(async () => {
-    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ids }) });
+    world.runningStreams.at(-1).deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: ids.map((id) => ({ id, cwd: "/w" })) }) });
     await Promise.resolve();
   });
 }
@@ -5558,6 +5599,53 @@ test("equal-path file tabs retain their originating session when the selected ow
   view.unmount();
 });
 
+test("switching between two hosts' copies of one session id reloads the chat and keeps their drafts apart", async (t) => {
+  resetWorld();
+  const { sessions } = servePooledWorkspace();
+  // This machine has a copy of the h1 session "legacy".
+  sessions.push({ ...sessionInfo("legacy"), name: "Mac legacy conversation", cwd: "/shared", projectRoot: "/shared", hostId: "local" });
+  window.history.replaceState(null, "", "?session=legacy&host=h1");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Worker legacy conversation" }), "the h1 copy is shown");
+  const loads = (host) => world.calls.filter((call) => call.method === "GET" && call.raw.startsWith("/api/sessions/legacy?") && call.raw.includes(`hostId=${host}`)).length;
+  assert.ok(loads("h1") > 0);
+  assert.equal(loads("local"), 0);
+  await act(async () => { fireEvent.change(view.getByRole("textbox"), { target: { value: "draft for h1" } }); await sleep(30); });
+  await act(async () => { fireEvent.click(view.getByText("Mac legacy conversation")); await sleep(80); });
+  await until(() => loads("local") > 0, "this machine's copy loads as another session");
+  assert.equal(view.getByRole("textbox").value, "", "the other copy has its own draft");
+  await act(async () => { fireEvent.change(view.getByRole("textbox"), { target: { value: "draft here" } }); await sleep(30); });
+  await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation", { selector: ".session-item-button *" })); await sleep(80); });
+  await until(() => view.getByRole("textbox").value === "draft for h1", "the h1 copy's draft comes back");
+  await act(async () => { fireEvent.click(view.getByText("Mac legacy conversation", { selector: ".session-item-button *" })); await sleep(80); });
+  await until(() => view.getByRole("textbox").value === "draft here", "and this machine's");
+  view.unmount();
+});
+
+test("a host tool call from another host's copy of the shown session id counts as another session", async (t) => {
+  resetWorld();
+  const { sessions } = servePooledWorkspace();
+  sessions.push({ ...sessionInfo("legacy"), name: "Mac legacy conversation", cwd: "/shared", projectRoot: "/shared", hostId: "local" });
+  window.history.replaceState(null, "", "?session=legacy&host=local");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Mac legacy conversation" }), "this machine's copy is shown");
+  const stream = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  await act(async () => {
+    stream.emit({ type: "host_tool_call", id: "copy-open", sessionId: "legacy", hostId: "h1", cwd: "/legacy", toolName: "open_file", arguments: { path: "/legacy/notes.txt" } });
+    await sleep(80);
+  });
+  const answer = () => world.calls.find((call) => call.body?.type === "host_tool_result" && call.body.id === "copy-open");
+  await until(answer, "the call is answered");
+  const result = answer();
+  assert.equal(result.raw, "/api/agent/legacy?hostId=h1", "the answer goes to the calling copy");
+  assert.match(result.body.result.content[0].text, /viewing another tau session/);
+  view.unmount();
+});
+
 test("a retained foreign-source tab cannot mention its path into the selected worker chat", async (t) => {
   resetWorld();
   servePooledWorkspace();
@@ -5683,7 +5771,7 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   assert.ok(pillOn(two), "the chat controls follow the selected chat");
   const lastPresence = () => callsTo("POST", "/api/notifications/presence").at(-1)?.body;
   await until(() => lastPresence()?.sessionIds?.length === 2, "presence names every chat on screen");
-  assert.deepEqual([...lastPresence().sessionIds].sort(), ["worker-one", "worker-two"]);
+  assert.deepEqual([...lastPresence().sessionIds].sort(), ["h1:worker-one", "h2:worker-two"], "presence names each chat's host copy");
 
   // A file shown over a group's chat keeps that chat mounted when another group takes focus.
   await act(async () => { fireEvent.pointerDown(composerOne); await sleep(60); });
@@ -5698,7 +5786,7 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   assert.equal(shownSession(), "worker-two");
   assert.equal(composerIn(one), composerOne, "the chat under the file stays mounted");
   assert.equal(composerOne.closest('[id^="workspace-chat-"]').hasAttribute("inert"), true, "and inert while covered");
-  await until(() => lastPresence()?.sessionIds?.join() === "worker-two", "a covered chat is not on screen");
+  await until(() => lastPresence()?.sessionIds?.join() === "h2:worker-two", "a covered chat is not on screen");
 
   // Moving a tab to another group moves its view there without remounting it.
   const report = view.getByText("FIRST OWNER CONTENT");
@@ -5890,7 +5978,7 @@ test("Esc stops the shown chat's run, but not while a file covers it", async (t)
   // The run starts elsewhere; the chat attaches to it.
   world.agents.set("worker-one", { running: true, state: { isStreaming: true, isPromptRunning: true } });
   await act(async () => {
-    for (const running of world.runningStreams) running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessionIds: ["worker-one"] }) });
+    for (const running of world.runningStreams) running.deliver({ type: "message", data: JSON.stringify({ type: "running", runningSessions: [{ id: "worker-one", cwd: "/shared", hostId: "h1" }] }) });
     await settle();
   });
   await until(() => world.esInstances.some(({ channel }) => channel.kind === "session" && channel.sessionId === "worker-one"), "the chat follows the run");
@@ -6090,7 +6178,8 @@ test("a kept chat whose shell command is creating its session gets its session's
   let releaseBash;
   const h = await sentBesideFreshChat(t, undefined, "!echo hi");
   world.holds.push({
-    match: (method, url, body) => method === "POST" && url === "/api/agent/created" && body?.type === "bash",
+    // The session was created on h1: its commands name that copy.
+    match: (method, url, body) => method === "POST" && url === "/api/agent/created?hostId=h1" && body?.type === "bash",
     produce: () => new Promise((resolve) => { releaseBash = () => resolve({ value: { success: true, data: { output: "hi\n", exitCode: 0 } } }); }),
   });
   world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });

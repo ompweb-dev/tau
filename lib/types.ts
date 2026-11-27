@@ -503,6 +503,7 @@ export interface CrossSessionHostToolCall {
 export type CrossSessionHostToolEvent = (CrossSessionHostToolCall & { type?: "host_tool_call" }) | {
   type: "host_tool_cancel";
   sessionId: string;
+  hostId: string;
   targetId: string;
 };
 

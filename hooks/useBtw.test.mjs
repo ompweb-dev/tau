@@ -27,7 +27,7 @@ beforeEach(() => {
   globalThis.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
     commands.push(body.type);
-    assert.equal(url, "/api/agent/s1");
+    assert.equal(url, "/api/agent/s1?hostId=host-b");
     return {
       ok: true,
       json: async () => ({ success: true, data: body.type === "get_btw_history" ? historyReply : null }),
@@ -43,7 +43,7 @@ afterEach(() => {
 /** Mount the hook and return its live view plus the session ref it reads. */
 function mount() {
   const sessionIdRef = { current: "s1" };
-  return renderHook(() => useBtw(sessionIdRef)).result;
+  return renderHook(() => useBtw(sessionIdRef, () => "host-b")).result;
 }
 
 /** Apply frames and let the display-rate flush run (rAF or its 50ms fallback). */
