@@ -976,7 +976,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     // Leaving the chat's own key: what it holds goes to its session's draft when the session takes over, else back to
     // its workspace's (another workspace may be on another host, where its uploads are not).
     const leavingOwn = previousDraftKey !== undefined && isSentDraftKey(previousDraftKey);
-    const carried = leavingOwn && draftKey && !draftKey.startsWith("new:") ? captureDraft() : null;
+    const carried = leavingOwn && draftKey && !draftKey.startsWith("new:") && !isSentDraftKey(draftKey) ? captureDraft() : null;
 
     // Invalidate any attachment reads still in flight for the old session so
     // they cannot append onto the new session's composer, and drop any stale

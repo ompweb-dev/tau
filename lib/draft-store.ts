@@ -238,20 +238,21 @@ export function holdDraftOwner(owner: string, key: string): () => void {
   };
 }
 
-// NUL: no workspace path, host id or session id holds one, so no other key can look like a chat's own.
-const SENT_KEY_MARK = "\u0000sent:";
+// Its own namespace: a workspace's key starts with `new:` and a session's is its id, so neither can look like one.
+const SENT_KEY_PREFIX = "sent:";
 
-/** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. */
-function sentDraftBase(key: string): string {
-  return key.slice(0, key.lastIndexOf(SENT_KEY_MARK));
-}
-
+/** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. `chat`
+ *  holds no `:`. */
 export function sentDraftKey(base: string, chat: string): string {
-  return `${base}${SENT_KEY_MARK}${chat}`;
+  return `${SENT_KEY_PREFIX}${chat}:${base}`;
 }
 
 export function isSentDraftKey(key: string): boolean {
-  return key.includes(SENT_KEY_MARK);
+  return key.startsWith(SENT_KEY_PREFIX);
+}
+
+function sentDraftBase(key: string): string {
+  return key.slice(key.indexOf(":", SENT_KEY_PREFIX.length) + 1);
 }
 
 /** A `sentDraftKey`'s draft goes back to its workspace's (its chat is gone, or the page was reloaded): recovered into
@@ -266,10 +267,10 @@ export function foldSentDraft(key: string): void {
  *  sent moves to a key of its own, and another chat may have its old one. */
 export function recoverDraft(key: string, recovery: DraftRecovery, owner?: string): void {
   if (!recovery.text && !recovery.images?.length && !recovery.files?.length && !recovery.uploads?.length) return;
-  // The chat's draft now: its own key or its session's (same workspace, same host), never another workspace's, which
-  // may be on another host than the recovered uploads.
+  // The chat's own key over the workspace it sent on, while it shows it; never another draft, which may be another
+  // workspace's on another host than the recovered uploads (a session the send created comes as its own `key`).
   const shown = owner ? liveOwners.get(owner) : undefined;
-  if (shown && (!shown.startsWith("new:") || (isSentDraftKey(shown) && sentDraftBase(shown) === key))) key = shown;
+  if (shown && isSentDraftKey(shown) && sentDraftBase(shown) === key) key = shown;
   // A chat's own key that no composer shows any more (its chat went away): its workspace's draft takes it.
   if (isSentDraftKey(key) && ![...liveOwners.values()].includes(key)) key = sentDraftBase(key);
   if (key) {
