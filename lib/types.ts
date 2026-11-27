@@ -421,6 +421,9 @@ export interface SessionInfo {
   /** Host the session's file lives on ("local" for this machine). Set by the
    *  all-hosts session list; a host's own list leaves it out. */
   hostId?: string;
+  /** Other hosts whose lists hold the same session id (a session file copied between machines), by label.
+   *  The sidebar shows this copy and warns; tau does not keep the copies apart. */
+  alsoOnHosts?: string[];
   /** Registered logical identity; physical owner/cwd/projectRoot remain unchanged. */
   poolId?: string;
   projectId?: string;
@@ -503,7 +506,6 @@ export interface CrossSessionHostToolCall {
 export type CrossSessionHostToolEvent = (CrossSessionHostToolCall & { type?: "host_tool_call" }) | {
   type: "host_tool_cancel";
   sessionId: string;
-  hostId: string;
   targetId: string;
 };
 
@@ -527,8 +529,6 @@ export type OutboxMode = "prompt" | "followUp" | "steer";
 export interface OutboxEntry {
   id: string;
   sessionId: string;
-  /** The session's host ("local" for this machine): the same id on another host is another session's outbox. */
-  hostId: string;
   mode: OutboxMode;
   message: string;
   images?: { type: "image"; data: string; mimeType: string }[];

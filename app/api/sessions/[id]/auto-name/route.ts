@@ -2,7 +2,7 @@ import { deriveSessionTitleFromFirstMessage, sanitizeSessionTitle } from "@/lib/
 import { getRpcSession } from "@/lib/rpc-manager";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { HostOpError } from "@/lib/hosts/link-protocol";
-import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 
 /**
  * POST /api/sessions/[id]/auto-name
@@ -12,16 +12,13 @@ import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404
  * there is one, else as a session_info entry in the file). `generated` is always false.
  */
 export async function POST(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
   try {
-    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
-    if ("response" in host) return host.response;
-    const { hostId } = host;
-    const resolved = await resolveSessionHostOr404(id, hostId);
+    const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) return resolved.response;
     const { sessionOps } = resolved.host;
 
@@ -40,13 +37,12 @@ export async function POST(
     }
 
     // The session list read yielded; Edit may now own this session.
-    if (getRpcSession(id, resolved.host.id)?.isEditingHistory()) {
+    if (getRpcSession(id)?.isEditingHistory()) {
       return Response.json({ error: "Wait for the history edit to finish", code: "session_busy" }, { status: 409 });
     }
 
     // A live pi holds the session: name it there. Otherwise append to the file.
-    // The resolved host's copy: another host's live copy of the id is another session.
-    const rpc = getRpcSession(id, resolved.host.id);
+    const rpc = getRpcSession(id);
     let named = false;
     if (rpc?.isAlive?.()) {
       try {

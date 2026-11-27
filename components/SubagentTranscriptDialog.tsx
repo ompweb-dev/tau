@@ -200,11 +200,9 @@ export function CompletionBlock({ completion, truncated, sourceSessionId }: { co
   );
 }
 
-export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcriptVersion, events, onClose }: {
+export function SubagentTranscriptDialog({ subagent, sessionId, transcriptVersion, events, onClose }: {
   subagent: SubagentInfo | null;
   sessionId: string | null;
-  /** The session's host: an id copied across hosts is another session there. */
-  hostId: string;
   transcriptVersion: number;
   events?: SubagentActivityEvent[];
   onClose: () => void;
@@ -233,7 +231,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcri
   const live = !fromDisk;
 
   // A pi-subagents child is read from its own session file, which its progress names.
-  const fileQuery = `${subagent?.sessionFile ? `&file=${encodeURIComponent(subagent.sessionFile)}` : ""}&hostId=${encodeURIComponent(hostId)}`;
+  const fileQuery = subagent?.sessionFile ? `&file=${encodeURIComponent(subagent.sessionFile)}` : "";
 
   const fetchCompletion = useCallback(async (): Promise<{ completion: string | null; truncated: boolean }> => {
     if (!sessionId || !subagent?.id) throw new Error("No session");
@@ -291,7 +289,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcri
       // Live snapshots enrich the header (resolved model etc.) but carry no
       // settled output — the on-disk `<id>.md` is the completion source.
       if (found.completion === null && live) {
-        const result = await sendAgentCommand<{ subagents?: SubagentSnapshotLike[] }>(sessionId, hostId, { type: "get_subagents" });
+        const result = await sendAgentCommand<{ subagents?: SubagentSnapshotLike[] }>(sessionId, { type: "get_subagents" });
         const snap = (result.subagents ?? []).find((s) => s.id === subagent?.id);
         if (seq !== requestSeqRef.current) return;
         if (snap) setDetail(snap);
@@ -309,7 +307,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcri
     } finally {
       if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [sessionId, hostId, subagent?.id, live, fetchCompletion]);
+  }, [sessionId, subagent?.id, live, fetchCompletion]);
 
   // Load the completion whenever the dialog opens for a subagent.
   useEffect(() => {

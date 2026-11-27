@@ -14,8 +14,7 @@ type BtwFrame = { type: string; [key: string]: unknown };
 /** Side questions (`/btw`, answered by tau's pi extension) for one chat: the session's BTW history fed by
  * `btw_record`/`btw_delta` frames, the record shown in the composer panel, and
  * the history dialog. Never touches the main transcript. */
-/** `hostOf` names the shown session's host ("local" = this machine): its commands go to that copy. */
-export function useBtw(sessionIdRef: RefObject<string | null>, hostOf: () => string) {
+export function useBtw(sessionIdRef: RefObject<string | null>) {
   const [records, setRecords] = useState<BtwRecord[]>([]);
   // Synchronous mirror of `records`: what this tab already knows decides
   // auto-opening and which running records a history snapshot may interrupt.
@@ -56,11 +55,10 @@ export function useBtw(sessionIdRef: RefObject<string | null>, hostOf: () => str
 
   /** Merge the session's side-question history. Background refreshes (SSE open, reconcile, a no-op
    * cancel) stay silent: the route never starts pi for them. */
-  // `host`: read with `sid` by the caller, so an id is never paired with another copy's host after an await.
-  const refreshHistory = useCallback(async (sid: string, explicit = false, host = hostOf()) => {
+  const refreshHistory = useCallback(async (sid: string, explicit = false) => {
     const knownBefore = new Set(recordsRef.current.map((record) => record.id));
     try {
-      const data = await sendAgentCommand<{ records?: unknown[] } | null>(sid, host, { type: "get_btw_history" });
+      const data = await sendAgentCommand<{ records?: unknown[] } | null>(sid, { type: "get_btw_history" });
       if (sessionIdRef.current !== sid) return;
       const snapshot = (data?.records ?? []).filter(isBtwRecord);
       // Frames already received go first: the staleness rules then keep
@@ -74,7 +72,7 @@ export function useBtw(sessionIdRef: RefObject<string | null>, hostOf: () => str
     } catch (error) {
       if (explicit) toastBtwError(error);
     }
-  }, [commit, flushFrames, hostOf, sessionIdRef]);
+  }, [commit, flushFrames, sessionIdRef]);
 
   /** Half-open SSE recovery: re-read the history while an answer is still running. */
   const reconcile = useCallback((sid: string) => {
@@ -82,39 +80,38 @@ export function useBtw(sessionIdRef: RefObject<string | null>, hostOf: () => str
   }, [refreshHistory]);
 
   /** `/btw` alone: the history dialog. Unlike background reads, this starts pi. */
-  const openHistory = useCallback(async (sid: string, host = hostOf()) => {
+  const openHistory = useCallback(async (sid: string) => {
     setHistoryOpen(true);
     try {
-      await sendAgentCommand(sid, host, { type: "get_state" });
+      await sendAgentCommand(sid, { type: "get_state" });
     } catch (error) {
       toastBtwError(error);
       return;
     }
-    await refreshHistory(sid, true, host);
-  }, [hostOf, refreshHistory]);
+    await refreshHistory(sid, true);
+  }, [refreshHistory]);
 
   /** Resolves once tau's extension accepted the question; the answer streams via frames. Throws on refusal. */
-  const ask = useCallback(async (sid: string, question: string, recordId?: string, host = hostOf()): Promise<void> => {
-    const data = await sendAgentCommand<{ record?: unknown } | null>(sid, host, { type: "btw", question, ...(recordId ? { recordId } : {}) });
+  const ask = useCallback(async (sid: string, question: string, recordId?: string): Promise<void> => {
+    const data = await sendAgentCommand<{ record?: unknown } | null>(sid, { type: "btw", question, ...(recordId ? { recordId } : {}) });
     const record = data?.record;
     if (sessionIdRef.current !== sid || !isBtwRecord(record)) return;
     // The start state: never newer than frames, so upsert keeps streamed text.
     commit((prev) => upsertBtwRecord(prev, record));
     setActiveId(record.id);
-  }, [commit, hostOf, sessionIdRef]);
+  }, [commit, sessionIdRef]);
 
   const cancel = useCallback(async (recordId: string) => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    const host = hostOf();
     try {
-      const data = await sendAgentCommand<{ cancelled?: boolean } | null>(sid, host, { type: "btw_cancel", recordId });
+      const data = await sendAgentCommand<{ cancelled?: boolean } | null>(sid, { type: "btw_cancel", recordId });
       // Nothing was running: the shown state is stale (missed frame, lost child).
-      if (data?.cancelled === false) await refreshHistory(sid, false, host);
+      if (data?.cancelled === false) await refreshHistory(sid);
     } catch (error) {
       toastBtwError(error);
     }
-  }, [hostOf, refreshHistory, sessionIdRef]);
+  }, [refreshHistory, sessionIdRef]);
 
   return { records, activeId, setActiveId, historyOpen, setHistoryOpen, applyEvent, reconcile, refreshHistory, openHistory, ask, cancel };
 }

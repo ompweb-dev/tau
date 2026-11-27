@@ -17,8 +17,6 @@ import { OUTBOX_CHANGE_SCHEMA, OUTBOX_SCHEMA } from "./message-outbox-schema";
 import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { getAgentDir } from "./pi/paths";
 import { getRpcSession, getRpcSessionKeys, nativeWriteStarted, tapSessionFrames, type AgentEvent, type AgentSessionWrapper } from "./rpc-manager";
-import { LOCAL_HOST_ID } from "./hosts/registry";
-import { sessionHostKey, splitSessionHostKey } from "./session-host-key";
 import { isRecord } from "./type-guards";
 import type { OutboxEntry, OutboxMode } from "./types";
 import { MAX_UPLOADS_PER_MESSAGE, UPLOAD_ID_RE } from "./upload-limits";
@@ -38,12 +36,10 @@ const MAX_GLOBAL_OUTBOX_BYTES = 256 * 1024 * 1024;
 const MAX_GLOBAL_OUTBOX_ENTRIES = 1000;
 
 const ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-/** The listener key's host for a caller that names none (host ids never are "*"). */
-const ANY_HOST = "*";
 const MODES: Record<OutboxMode, true> = { prompt: true, followUp: true, steer: true };
 
 
-const COLUMNS = "id, session_id, mode, message, images, uploads, owner, state, error, may_have_been_sent, created_at, upload_receipts, previous_entry_ids, source_session_id, settlement, replacement_id, replacement_digest, payload_bytes, origin, host_id";
+const COLUMNS = "id, session_id, mode, message, images, uploads, owner, state, error, may_have_been_sent, created_at, upload_receipts, previous_entry_ids, source_session_id, settlement, replacement_id, replacement_digest, payload_bytes, origin";
 const RECEIPT_PIN_SCHEMA = "CREATE TABLE IF NOT EXISTS github_receipt_pins (session_id TEXT NOT NULL, entry_id TEXT NOT NULL, PRIMARY KEY (entry_id, session_id))";
 
 /** `owner`: the web session whose uploads the entry attaches. */
@@ -67,7 +63,6 @@ interface Row {
   replacement_digest: string | null;
   payload_bytes: number;
   origin: string | null;
-  host_id: string;
 }
 type AddResult =
   | { kind: "full" }
@@ -138,12 +133,10 @@ function db(): Database {
       database.exec(OUTBOX_SCHEMA);
       database.exec(RECEIPT_PIN_SCHEMA);
       const columns = database.prepare("PRAGMA table_info(entries)").all() as { name: string }[];
-      // Pre-alpha: rows from before hosts are this machine's.
-      for (const [name, type] of [["host_id", "TEXT NOT NULL DEFAULT 'local'"], ["dispatch_pid", "INTEGER"], ["upload_receipts", "TEXT"], ["payload_bytes", "INTEGER NOT NULL DEFAULT 0"], ["previous_entry_ids", "TEXT"], ["source_session_id", "TEXT"], ["settlement", "TEXT"], ["replacement_id", "TEXT"], ["replacement_digest", "TEXT"], ["origin", "TEXT"]]) {
+      for (const [name, type] of [["dispatch_pid", "INTEGER"], ["upload_receipts", "TEXT"], ["payload_bytes", "INTEGER NOT NULL DEFAULT 0"], ["previous_entry_ids", "TEXT"], ["source_session_id", "TEXT"], ["settlement", "TEXT"], ["replacement_id", "TEXT"], ["replacement_digest", "TEXT"], ["origin", "TEXT"]]) {
         if (!columns.some((column) => column.name === name)) database.exec(`ALTER TABLE entries ADD COLUMN ${name} ${type}`);
       }
       database.exec("CREATE INDEX IF NOT EXISTS entries_source_session ON entries (source_session_id, state)");
-      database.exec("CREATE INDEX IF NOT EXISTS entries_host_session ON entries (host_id, session_id, state)");
       const uploadColumns = database.prepare("PRAGMA table_info(completed_uploads)").all() as { name: string }[];
       for (const name of ["proof", "scope"]) {
         if (!uploadColumns.some((column) => column.name === name)) database.exec(`ALTER TABLE completed_uploads ADD COLUMN ${name} TEXT`);
@@ -282,7 +275,6 @@ function toEntry(entry: Row): OutboxEntry {
   return {
     id: entry.id,
     sessionId: entry.session_id,
-    hostId: entry.host_id,
     mode: entry.mode,
     message: entry.message,
     ...(entry.images ? { images: JSON.parse(entry.images) as OutboxEntry["images"] } : {}),
@@ -301,30 +293,28 @@ function toEntry(entry: Row): OutboxEntry {
 
 /** A session's entries not delivered yet, in submission order. An unreadable store must fail explicitly, not tell a
  * browser that its held messages have vanished. */
-export function outboxEntries(sessionId: string, hostId?: string | null): OutboxEntry[] {
-  const scope = hostId || null;
-  const keys = sessionKeys(sessionId, scope);
-  const rows = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE ${entrySessionMatch(keys)} AND state != 'delivered' ORDER BY rowid`).all(...matchArgs(scope, keys)) as Row[];
+export function outboxEntries(sessionId: string): OutboxEntry[] {
+  const keys = sessionKeys(sessionId);
+  const rows = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE ${entrySessionMatch(keys)} AND state != 'delivered' ORDER BY rowid`).all(...keys, ...keys, ...keys) as Row[];
   return rows.map((entry) => ({ ...toEntry(entry), sessionId }));
 }
 
 /** The sessions that own these ids' rows now. A native identity move re-homes a row while its browser still asks under the old id. */
-export function outboxCanonicalSessions(ids: readonly string[], hostId?: string | null): string[] {
-  const rows = db().prepare(`SELECT DISTINCT session_id FROM entries WHERE id IN (${slots(ids)})${hostId ? " AND host_id = ?" : ""}`).all(...ids, ...(hostId ? [hostId] : [])) as { session_id: string }[];
+export function outboxCanonicalSessions(ids: readonly string[]): string[] {
+  const rows = db().prepare(`SELECT DISTINCT session_id FROM entries WHERE id IN (${slots(ids)})`).all(...ids) as { session_id: string }[];
   return rows.map((row) => row.session_id);
 }
 
 /** Recent tombstones let a browser retire its first-leg bridge even if it subscribes after the message was delivered. */
-export function outboxSettlements(sessionId: string, hostId?: string | null): {
+export function outboxSettlements(sessionId: string): {
   settledIds: string[]; nativeSettledIds?: string[];
 } {
-  const scope = hostId || null;
-  const keys = sessionKeys(sessionId, scope);
+  const keys = sessionKeys(sessionId);
   const cutoff = Date.now() - KEEP_DELIVERED_MS;
   // Read both bounded windows and their dispositions in one SQLite snapshot.
   const receipts = db().prepare(`
     WITH current_receipts AS (
-      SELECT id, settlement FROM entries WHERE (? IS NULL OR host_id = ?) AND session_id IN (${slots(keys)})
+      SELECT id, settlement FROM entries WHERE session_id IN (${slots(keys)})
         AND state = 'delivered' AND done_at >= ? ORDER BY done_at DESC, rowid DESC LIMIT 256
     ), moved_receipts AS (
       SELECT id, settlement FROM entries WHERE ${entrySessionMatch(keys)}
@@ -332,7 +322,7 @@ export function outboxSettlements(sessionId: string, hostId?: string | null): {
         ORDER BY done_at DESC, rowid DESC LIMIT 256
     )
     SELECT id, settlement FROM current_receipts UNION ALL SELECT id, settlement FROM moved_receipts
-  `).all(scope, scope, ...keys, cutoff, ...matchArgs(scope, keys), ...keys, cutoff) as { id: string; settlement: string | null }[];
+  `).all(...keys, cutoff, ...keys, ...keys, ...keys, ...keys, cutoff) as { id: string; settlement: string | null }[];
   const nativeSettledIds = receipts.filter((entry) => entry.settlement === "native").map((entry) => entry.id);
   return {
     settledIds: receipts.map((entry) => entry.id),
@@ -342,31 +332,24 @@ export function outboxSettlements(sessionId: string, hostId?: string | null): {
 
 /** A session's entries and settlements read in one SQLite snapshot: a peer server retiring an entry between two separate
  * reads would leave out both the entry and its receipt (or list it as pending and settled at once). */
-export function outboxSnapshot(sessionId: string, hostId?: string | null): { entries: OutboxEntry[]; settledIds: string[]; nativeSettledIds?: string[] } {
-  return db().transaction(() => ({ entries: outboxEntries(sessionId, hostId), ...outboxSettlements(sessionId, hostId) }))();
+export function outboxSnapshot(sessionId: string): { entries: OutboxEntry[]; settledIds: string[]; nativeSettledIds?: string[] } {
+  return db().transaction(() => ({ entries: outboxEntries(sessionId), ...outboxSettlements(sessionId) }))();
 }
 
-/** Which copies of a session id a read or match covers: one host's, or null, every host's, for a caller that names none
- * (as before hosts). The dispatcher always passes a row's own host. */
-type HostScope = string | null;
-
-/** The ids one host's copy of a session answers to (its native aliases). Another host's copy of the id is another session. */
-function sessionKeys(sessionId: string, hostId: HostScope): string[] {
-  const wrapper = getRpcSession(sessionId, hostId);
-  return [...new Set([sessionId, ...getRpcSessionKeys(sessionId, hostId), ...(wrapper?.sessionId ? [wrapper.sessionId] : [])])];
+function sessionKeys(sessionId: string): string[] {
+  const wrapper = getRpcSession(sessionId);
+  return [...new Set([sessionId, ...getRpcSessionKeys(sessionId), ...(wrapper?.sessionId ? [wrapper.sessionId] : [])])];
 }
 const slots = (keys: readonly string[]) => keys.map(() => "?").join(",");
 
-/** Bound with `matchArgs(scope, keys)`. */
 function entrySessionMatch(keys: string[]): string {
   const values = slots(keys);
-  return `((? IS NULL OR host_id = ?) AND (session_id IN (${values}) OR source_session_id IN (${values}) OR id IN (SELECT entry_id FROM entry_aliases WHERE session_id IN (${values}))))`;
+  return `(session_id IN (${values}) OR source_session_id IN (${values}) OR id IN (SELECT entry_id FROM entry_aliases WHERE session_id IN (${values})))`;
 }
-const matchArgs = (scope: HostScope, keys: string[]) => [scope, scope, ...keys, ...keys, ...keys];
 
-function entryBelongsToSession(entry: Row, sessionId: string, hostId: HostScope): boolean {
-  const keys = sessionKeys(sessionId, hostId);
-  return db().prepare(`SELECT 1 FROM entries WHERE id = ? AND ${entrySessionMatch(keys)}`).get(entry.id, ...matchArgs(hostId, keys)) !== null;
+function entryBelongsToSession(entry: Row, sessionId: string): boolean {
+  const keys = sessionKeys(sessionId);
+  return db().prepare(`SELECT 1 FROM entries WHERE id = ? AND ${entrySessionMatch(keys)}`).get(entry.id, ...keys, ...keys, ...keys) !== null;
 }
 function receiptPinCondition(database: Database): string {
   return database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'github_receipt_pins'").get()
@@ -381,77 +364,68 @@ function pruneDelivered(database: Database, cutoff: number): void {
 }
 
 /** Retry mappings are content-free but needed while stale browser copies may replay this session. */
-export function forgetSessionReplacementMappings(sessionId: string, hostId: string): void {
+export function forgetSessionReplacementMappings(sessionId: string): void {
   if (!existsSync(join(getAgentDir(), "tau", "outbox.db"))) return;
   const database = db();
-  const keys = sessionKeys(sessionId, hostId);
+  const keys = sessionKeys(sessionId);
   const pinned = receiptPinCondition(database);
   database.transaction(() => {
     database.prepare(`DELETE FROM entries WHERE ${entrySessionMatch(keys)} AND state = 'delivered'
       AND replacement_id IS NOT NULL AND replacement_digest IS NOT NULL${pinned}`)
-      .run(...matchArgs(hostId, keys));
+      .run(...keys, ...keys, ...keys);
   }).immediate();
 }
 
-/** Call `listener` with one host copy's entries after every change. */
-export function onOutboxChange(sessionId: string, hostId: string | null | undefined, listener: (entries: OutboxEntry[]) => void): () => void {
+/** Call `listener` with the session's entries after every change. */
+export function onOutboxChange(sessionId: string, listener: (entries: OutboxEntry[]) => void): () => void {
   const state = outbox();
   const { listeners } = state;
-  const key = sessionHostKey(hostId || ANY_HOST, sessionId);
-  const set = listeners.get(key) ?? new Set();
+  const set = listeners.get(sessionId) ?? new Set();
   set.add(listener);
-  listeners.set(key, set);
+  listeners.set(sessionId, set);
   return () => {
     set.delete(listener);
-    if (set.size === 0 && listeners.get(key) === set) {
-      listeners.delete(key);
-      state.pendingNotifications.delete(key);
-      state.notifiedRevisions.delete(key);
-      state.listenerProgress.delete(key);
+    if (set.size === 0 && listeners.get(sessionId) === set) {
+      listeners.delete(sessionId);
+      state.pendingNotifications.delete(sessionId);
+      state.notifiedRevisions.delete(sessionId);
+      state.listenerProgress.delete(sessionId);
     }
   };
 }
 
-function publish(sessionId: string, hostId: string): void {
-  const keys = sessionKeys(sessionId, hostId);
-  const canonical = getRpcSession(sessionId, hostId)?.sessionId;
+function publish(sessionId: string): void {
+  const keys = sessionKeys(sessionId);
+  const canonical = getRpcSession(sessionId)?.sessionId;
   if (canonical && keys.length > 1) {
     // Native identity moves keep old registry keys. Ordinary branch/switch drops them and cannot migrate other rows.
-    db().prepare(`UPDATE entries SET session_id = ? WHERE host_id = ? AND session_id IN (${slots(keys)}) AND session_id != ?`).run(canonical, hostId, ...keys, canonical);
+    db().prepare(`UPDATE entries SET session_id = ? WHERE session_id IN (${slots(keys)}) AND session_id != ?`).run(canonical, ...keys, canonical);
   }
   for (const watched of [...outbox().listeners.keys()]) notifyListeners(watched);
 }
 
-/** `key`: sessionHostKey(host, id) of a watched copy. */
-function notifyListeners(key: string): void {
-  const { hostId: host, id: sessionId } = splitSessionHostKey(key);
-  const hostId = host === ANY_HOST ? null : host;
+function notifyListeners(sessionId: string): void {
   const state = outbox();
-  const listeners = state.listeners.get(key);
+  const listeners = state.listeners.get(sessionId);
   if (!listeners?.size) {
-    state.pendingNotifications.delete(key);
-    state.notifiedRevisions.delete(key);
-    state.listenerProgress.delete(key);
+    state.pendingNotifications.delete(sessionId);
+    state.notifiedRevisions.delete(sessionId);
+    state.listenerProgress.delete(sessionId);
     return;
   }
   const now = performance.now();
-  if ((state.pendingNotifications.get(key) ?? 0) > now && !state.notifiedRevisions.has(key)) return;
+  if ((state.pendingNotifications.get(sessionId) ?? 0) > now && !state.notifiedRevisions.has(sessionId)) return;
   try {
-    const keys = sessionKeys(sessionId, hostId).sort();
-    // session_changes is keyed `<host>/<id>`; every host's copy for a caller that names none.
-    const changed = hostId === null
-      ? db().prepare<{ revision: number }, string[]>(
-        `SELECT COALESCE(SUM(revision), 0) AS revision FROM session_changes WHERE substr(session_id, instr(session_id, '/') + 1) IN (${slots(keys)})`,
-      ).get(...keys)
-      : db().prepare<{ revision: number }, string[]>(
-        `SELECT COALESCE(SUM(revision), 0) AS revision FROM session_changes WHERE session_id IN (${slots(keys)})`,
-      ).get(...keys.map((id) => sessionHostKey(hostId, id)));
+    const keys = sessionKeys(sessionId).sort();
+    const changed = db().prepare<{ revision: number }, string[]>(
+      `SELECT COALESCE(SUM(revision), 0) AS revision FROM session_changes WHERE session_id IN (${slots(keys)})`,
+    ).get(...keys);
     const revision = `${keys.join("\0")}:${changed?.revision}`;
-    if (state.notifiedRevisions.get(key) === revision && (state.pendingNotifications.get(key) ?? Infinity) > now) return;
-    let progress = state.listenerProgress.get(key);
+    if (state.notifiedRevisions.get(sessionId) === revision && (state.pendingNotifications.get(sessionId) ?? Infinity) > now) return;
+    let progress = state.listenerProgress.get(sessionId);
     if (!progress) {
       progress = new WeakMap();
-      state.listenerProgress.set(key, progress);
+      state.listenerProgress.set(sessionId, progress);
     }
     let entries: OutboxEntry[] | undefined;
     let retryAt = Infinity;
@@ -459,7 +433,7 @@ function notifyListeners(key: string): void {
       const previous = progress.get(listener);
       if (previous?.revision === revision) continue;
       if (previous && previous.retryAt > now) { retryAt = Math.min(retryAt, previous.retryAt); continue; }
-      entries ??= outboxEntries(sessionId, hostId);
+      entries ??= outboxEntries(sessionId);
       try {
         listener(entries);
         progress.set(listener, { revision, retryAt: 0 });
@@ -470,12 +444,12 @@ function notifyListeners(key: string): void {
         console.warn(`[tau] outbox notification failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    state.notifiedRevisions.set(key, revision);
-    if (Number.isFinite(retryAt)) state.pendingNotifications.set(key, retryAt);
-    else state.pendingNotifications.delete(key);
+    state.notifiedRevisions.set(sessionId, revision);
+    if (Number.isFinite(retryAt)) state.pendingNotifications.set(sessionId, retryAt);
+    else state.pendingNotifications.delete(sessionId);
   } catch (error) {
-    state.notifiedRevisions.delete(key);
-    state.pendingNotifications.set(key, now + RETRY_MS);
+    state.notifiedRevisions.delete(sessionId);
+    state.pendingNotifications.set(sessionId, now + RETRY_MS);
     console.warn(`[tau] outbox notification failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
@@ -503,17 +477,15 @@ export function outboxScope(): string {
     .digest("base64url");
 }
 
-function confirmedReplacementId(entry: Row, sessionId: string, hostId: HostScope, value: unknown): string | undefined {
+function confirmedReplacementId(entry: Row, sessionId: string, value: unknown): string | undefined {
   if (typeof value !== "string" || !ENTRY_ID_RE.test(value)) return undefined;
   const original = row(value);
-  if (!original || !entryBelongsToSession(original, sessionId, hostId) || !original.replacement_id) return undefined;
+  if (!original || !entryBelongsToSession(original, sessionId) || !original.replacement_id) return undefined;
   return original.replacement_id === entry.id || (entry.replacement_id !== null && original.replacement_id === entry.replacement_id)
     ? value : undefined;
 }
-/** `outbox_add` / `outbox_remove` for `hostId`'s copy of `sessionId`, as runAgentCommand answers them. Without a host,
- * a known entry keeps its own, and a new one takes the host runAgentCommand would reach (the live wrapper's, else the
- * host listing the id), stored on the row: every later step uses that copy only. */
-export async function runOutboxCommand(sessionId: string, command: Record<string, unknown>, owner: string, { origin: originValue, hostId }: { origin?: MessageOrigin; hostId?: string | null } = {}): Promise<Response> {
+/** `outbox_add` / `outbox_remove` for `sessionId`, as runAgentCommand answers them. */
+export async function runOutboxCommand(sessionId: string, command: Record<string, unknown>, owner: string, originValue?: MessageOrigin): Promise<Response> {
   if (command.origin !== undefined) return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
   const origin = originValue === undefined ? undefined : parseMessageOrigin(originValue);
   if (originValue !== undefined && !origin) return invalid("origin is invalid");
@@ -527,12 +499,12 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
   }
   const { id } = command;
   if (typeof id !== "string" || !ENTRY_ID_RE.test(id)) return invalid("id must be 1 to 64 letters, digits, - or _");
-  if (command.type === "outbox_remove") return removeEntry(sessionId, hostId, id);
+  if (command.type === "outbox_remove") return removeEntry(sessionId, id);
 
   const known = row(id);
   if (known) {
-    if (!entryBelongsToSession(known, sessionId, hostId || known.host_id || null)) return Response.json({ error: "This message id belongs to another session", code: "outbox_id_conflict" }, { status: 409 });
-    const replaces = confirmedReplacementId(known, sessionId, hostId || known.host_id || null, command.replaces);
+    if (!entryBelongsToSession(known, sessionId)) return Response.json({ error: "This message id belongs to another session", code: "outbox_id_conflict" }, { status: 409 });
+    const replaces = confirmedReplacementId(known, sessionId, command.replaces);
     const entry = toEntry(known);
     return Response.json({ success: true, data: { entry: replaces ? { ...entry, replaces } : entry } });
   }
@@ -562,33 +534,20 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
   const uploadPayload = uploadIds.length ? JSON.stringify(uploadIds) : null;
   const digestKey = resolveWebAuthSecret().key;
   const retryDigest = createHmac("sha256", digestKey).update(JSON.stringify([mode, message, imagePayload, uploadPayload])).digest("base64url");
-  // Without a host, the owner is resolved once (a live copy first, else the host lists) and stored on the row.
-  const resolved = await resolveSessionHostOr404(sessionId, hostId);
-  let host = hostId || ("host" in resolved ? resolved.host.id : null);
-  // An archived session (on this machine or a linked host) is not gone: its entries wait on the host whose archive
-  // lists it until it is restored (spec O6), and so do a named host's whose archive could not be asked about.
-  if ("response" in resolved && resolved.response.status === 404) {
-    const archive = await archiveState(sessionId, hostId);
-    if (archive.state === "archived") host = hostId || archive.hostId || null;
-    else if (archive.state === "absent") {
-      // A restore can move the session from archive to active between these independent reads. Only a fresh active
-      // lookup may confirm deletion.
-      const current = await resolveSessionHostOr404(sessionId, hostId);
-      if ("response" in current && current.response.status === 404) return current.response;
-      if ("host" in current) host = current.host.id;
-    }
-  }
-  // No host can be named (its list is unavailable): never stored and never guessed as this machine. The retryable
-  // answer leaves the browser its copy, which it sends again.
-  if (!host) {
-    return "response" in resolved && resolved.response.status !== 404 ? resolved.response
-      : Response.json({ error: "The session's host cannot be determined yet", code: "host_sessions_unavailable" }, { status: 503 });
+  const resolved = await resolveSessionHostOr404(sessionId);
+  // Unavailable host lists cannot prove absence: retain the entry until discovery can resolve its owner. An archived
+  // session (on this machine or a linked host) is not gone either: its entries wait until it is restored (spec O6),
+  // and so do those whose archive no host could be asked about.
+  if ("response" in resolved && resolved.response.status === 404 && (await archiveState(sessionId)) === "absent") {
+    // A restore can move the session from archive to active between these independent reads. Only a fresh active
+    // lookup may confirm deletion; an owner discovered now, or uncertain discovery, keeps this intent durable.
+    const current = await resolveSessionHostOr404(sessionId);
+    if ("response" in current && current.response.status === 404) return current.response;
   }
 
   const now = Date.now();
   const database = db();
-  const hostScope = host;
-  const keys = sessionKeys(sessionId, hostScope);
+  const keys = sessionKeys(sessionId);
   let result: AddResult;
   try {
     result = database.transaction((): AddResult => {
@@ -597,15 +556,14 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
       pruneDelivered(database, now - KEEP_DELIVERED_MS);
       const concurrent = row(id);
       if (concurrent) {
-        if (!entryBelongsToSession(concurrent, sessionId, hostScope)) return { kind: "conflict" };
-        const confirmsReplacement = confirmedReplacementId(concurrent, sessionId, hostScope, replaces);
+        if (!entryBelongsToSession(concurrent, sessionId)) return { kind: "conflict" };
+        const confirmsReplacement = confirmedReplacementId(concurrent, sessionId, replaces);
         return { kind: "existing", entry: concurrent, ...(confirmsReplacement ? { replaces: confirmsReplacement } : {}) };
       }
       // Host discovery may have awaited while another server disabled the watcher.
       if (owner === GITHUB_WATCH_OUTBOX_OWNER && !readAgentToolsEnabledFromDisk()) return { kind: "paused" };
       const original = typeof replaces === "string" ? row(replaces) : null;
-      // Lineage is per host copy: another host's entry of the same id is never retired or copied here.
-      const originalMatchesSession = original !== null && entryBelongsToSession(original, sessionId, hostScope);
+      const originalMatchesSession = original !== null && entryBelongsToSession(original, sessionId);
       if (original && originalMatchesSession && original.replacement_id) {
         if (original.replacement_digest !== retryDigest) {
           throw new UploadError(409, "outbox_replacement_conflict", "A retry must keep its original mode, message and attachments");
@@ -613,8 +571,8 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         const settledAt = Date.now();
         database.prepare("UPDATE entries SET done_at = ? WHERE id = ? AND replacement_id = ?").run(settledAt, original.id, original.replacement_id);
         // Persist a matching-ID terminal receipt so this browser can replay after a lost acknowledgement.
-        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, NULL, 0, NULL, ?, ?)`)
-          .run(id, original.session_id, original.mode, original.owner, settledAt, original.source_session_id, original.replacement_id, original.host_id, settledAt);
+        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, NULL, 0, NULL, ?)`)
+          .run(id, original.session_id, original.mode, original.owner, settledAt, original.source_session_id, original.replacement_id, settledAt);
         const entry = row(id);
         if (!entry) throw new Error("The replacement receipt could not be read after commit");
         return { kind: "duplicate", entry, originalSession: original.session_id, replaces: original.id };
@@ -656,18 +614,18 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         id, sessionId, mode, message, images, uploads, origin: savedOrigin, state: "waiting_host", createdAt: now,
       })) + 8192 + (savedUploads ? Buffer.byteLength(savedUploads) : 0);
       const replacedBytes = replaceable?.payload_bytes ?? 0;
-      const total = database.prepare(`SELECT COALESCE(SUM(payload_bytes), 0) AS bytes FROM entries WHERE ${entrySessionMatch(keys)} AND state != 'delivered'`).get(...matchArgs(hostScope, keys)) as { bytes: number };
+      const total = database.prepare(`SELECT COALESCE(SUM(payload_bytes), 0) AS bytes FROM entries WHERE ${entrySessionMatch(keys)} AND state != 'delivered'`).get(...keys, ...keys, ...keys) as { bytes: number };
       if (total.bytes - replacedBytes + payloadBytes > MAX_OUTBOX_BYTES - 64 * 1024) return { kind: "full" };
       const global = database.prepare("SELECT COALESCE(SUM(payload_bytes), 0) AS bytes, COUNT(*) AS count FROM entries WHERE state != 'delivered'").get() as { bytes: number; count: number };
       if (global.bytes - replacedBytes + payloadBytes > MAX_GLOBAL_OUTBOX_BYTES
         || global.count - (replaceable ? 1 : 0) >= MAX_GLOBAL_OUTBOX_ENTRIES) return { kind: "full" };
-      database.prepare(`INSERT INTO entries (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, 'held', NULL, 0, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, ?)`).run(
+      database.prepare(`INSERT INTO entries (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, 'held', NULL, 0, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?)`).run(
         id, sessionId, mode, message,
         imagePayload,
         uploadPayload,
         entryOwner, now,
         savedUploads,
-        sessionId, retryDigest, payloadBytes, savedOriginPayload, host,
+        sessionId, retryDigest, payloadBytes, savedOriginPayload,
       );
       let retiredRoot = replaceable;
       if (replaceable) retire(replaceable.id, "none", id, retryDigest);
@@ -678,8 +636,8 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
         retiredRoot = original;
       } else if (!original && typeof replaces === "string") {
         // A browser-only root needs the same durable identity even when this copy's acknowledgement is lost.
-        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, ?, 0, NULL, ?, ?)`)
-          .run(replaces, sessionId, mode, entryOwner, now, sessionId, id, retryDigest, host, now);
+        database.prepare(`INSERT INTO entries (${COLUMNS}, done_at) VALUES (?, ?, ?, '', NULL, NULL, ?, 'delivered', NULL, 0, ?, NULL, NULL, ?, 'none', ?, ?, 0, NULL, ?)`)
+          .run(replaces, sessionId, mode, entryOwner, now, sessionId, id, retryDigest, now);
         retiredRoot = row(replaces);
         if (!retiredRoot) throw new Error("The browser retry mapping could not be read after commit");
       }
@@ -698,22 +656,22 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
     return Response.json({ success: true, data: { entry: result.replaces ? { ...entry, replaces: result.replaces } : entry } });
   }
   if (result.kind === "duplicate") {
-    publish(result.originalSession, host);
-    if (result.originalSession !== sessionId) publish(sessionId, host);
+    publish(result.originalSession);
+    if (result.originalSession !== sessionId) publish(sessionId);
     return Response.json({ success: true, data: { entry: { ...toEntry(result.entry), replaces: result.replaces } } });
   }
-  publish(sessionId, host);
-  if (result.replaced && result.replaced.session_id !== sessionId) publish(result.replaced.session_id, host);
-  pump(sessionId, host);
+  publish(sessionId);
+  if (result.replaced && result.replaced.session_id !== sessionId) publish(result.replaced.session_id);
+  pumpOutbox(sessionId);
   const entry = toEntry(result.entry);
   return Response.json({ success: true, data: { entry: result.replaced ? { ...entry, replaces: result.replaced.id } : entry } });
 }
 
-function removeEntry(sessionId: string, hostId: string | null | undefined, id: string): Response {
+function removeEntry(sessionId: string, id: string): Response {
   let removed: Row | null = null;
   const response = db().transaction(() => {
     const entry = row(id);
-    if (!entry || !entryBelongsToSession(entry, sessionId, hostId || entry.host_id || null) || entry.state === "delivered") {
+    if (!entry || !entryBelongsToSession(entry, sessionId) || entry.state === "delivered") {
       return Response.json({ success: true, data: { removed: false } });
     }
     if (entry.state === "delivering") {
@@ -724,52 +682,43 @@ function removeEntry(sessionId: string, hostId: string | null | undefined, id: s
     return Response.json({ success: true, data: { removed: true, entry: { ...toEntry(entry), sessionId } } });
   }).immediate();
   if (removed) {
-    const { session_id: removedSession, host_id: removedHost } = removed as Row;
-    publish(removedSession, removedHost);
-    if (removedSession !== sessionId) publish(sessionId, removedHost);
+    publish((removed as Row).session_id);
+    if ((removed as Row).session_id !== sessionId) publish(sessionId);
   }
   return response;
 }
 
-/** Send the oldest held entry of `hostId`'s copy of the session unless one of its entries is in flight. Another host's
- * copy of the id has its own claim. Never throws. */
-export function pumpOutbox(sessionId: string, hostId: string): void {
-  pump(sessionId, hostId);
-}
-
-/** One host copy's queue: `hostId`'s rows of the session, oldest first and one delivering at a time; another host's copy
- * of the id has its own. */
-function pump(sessionId: string, hostId: string): void {
+/** Send the session's oldest held entry unless one of its entries is in flight. Never throws. */
+export function pumpOutbox(sessionId: string): void {
   const { busy } = outbox();
-  const keys = sessionKeys(sessionId, hostId);
-  const busyKeys = keys.map((key) => sessionHostKey(hostId, key));
-  if (busyKeys.some((key) => busy.has(key))) return;
+  const keys = sessionKeys(sessionId);
+  if (keys.some((key) => busy.has(key))) return;
   let next: Row | null;
   try {
-    for (const key of keys) recoverDelivering({ sessionId: key, hostId });
-    if (db().prepare(`SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering'`).get(hostId, ...keys)) return;
-    next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as Row | null;
+    for (const key of keys) recoverDelivering(key);
+    if (db().prepare(`SELECT 1 FROM entries WHERE session_id IN (${slots(keys)}) AND state = 'delivering'`).get(...keys)) return;
+    next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(...keys) as Row | null;
   } catch (error) {
     console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
     return;
   }
   if (!next) return;
-  for (const key of busyKeys) busy.add(key);
+  for (const key of keys) busy.add(key);
   const state = outbox();
   const release = () => {
-    for (const key of busyKeys) busy.delete(key);
-    for (const key of busyKeys) if (state.wakes?.delete(key)) queueMicrotask(() => {
-      if (globalThis.__tauOutbox === state && state.started) pump(splitSessionHostKey(key).id, hostId);
+    for (const key of keys) busy.delete(key);
+    for (const key of keys) if (state.wakes?.delete(key)) queueMicrotask(() => {
+      if (globalThis.__tauOutbox === state && state.started) pumpOutbox(key);
     });
   };
   void deliver(next).then((outcome) => {
     release();
-    if (outcome === "next") pump(sessionId, hostId);
+    if (outcome === "next") pumpOutbox(sessionId);
     else if (outcome === "offline") {
-      const linkedKeys = sessionKeys(sessionId, hostId);
-      db().prepare(`UPDATE entries SET state = 'waiting_host', error = NULL WHERE (host_id = ? AND session_id IN (${slots(linkedKeys)}) AND state = 'held') OR (id = ? AND state = 'delivering' AND dispatch_pid = ?)`)
-        .run(hostId, ...linkedKeys, next.id, process.pid);
-      publish(sessionId, hostId);
+      const linkedKeys = sessionKeys(sessionId);
+      db().prepare(`UPDATE entries SET state = 'waiting_host', error = NULL WHERE session_id IN (${slots(linkedKeys)}) AND (state = 'held' OR (id = ? AND state = 'delivering' AND dispatch_pid = ?))`)
+        .run(...linkedKeys, next.id, process.pid);
+      publish(sessionId);
     }
   }).catch((error: unknown) => {
     release();
@@ -781,7 +730,7 @@ function pump(sessionId: string, hostId: string): void {
       if (state === "delivering") fail(next, message, true);
       else if (state === "held" || state === "waiting_host") retry(next);
       // Settled, but publishing or the next pump failed (a busy store): resume the session later.
-      else schedulePump(next.session_id, next.host_id);
+      else schedulePump(next.session_id);
     } catch {
       // The store itself failed; the next start settles a "delivering" row.
     }
@@ -790,8 +739,8 @@ function pump(sessionId: string, hostId: string): void {
 
 function pumpAll(): void {
   try {
-    const rows = db().prepare("SELECT DISTINCT host_id, session_id FROM entries WHERE state IN ('held', 'waiting_host', 'delivering')").all() as { host_id: string; session_id: string }[];
-    for (const { host_id, session_id } of rows) pump(session_id, host_id);
+    const rows = db().prepare("SELECT DISTINCT session_id FROM entries WHERE state IN ('held', 'waiting_host', 'delivering')").all() as { session_id: string }[];
+    for (const { session_id } of rows) pumpOutbox(session_id);
   } catch (error) {
     console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -841,19 +790,17 @@ export function startOutbox(): void {
     checking.add(hostId);
     try {
       while (dirty.delete(hostId) && attached && state.started) {
-        // Only this host's copies: the same id held for another host is another session.
-        const held = db().prepare("SELECT DISTINCT session_id FROM entries WHERE host_id = ? AND state IN ('held', 'waiting_host')").all(hostId) as { session_id: string }[];
+        const held = db().prepare("SELECT DISTINCT session_id FROM entries WHERE state IN ('held', 'waiting_host')").all() as { session_id: string }[];
         if (!held.length) continue;
         const host = getHost(hostId);
         if (!host || !isLinkUp(host.status())) continue; // the next hello resumes offline work
         const sessions = await host.sessionOps.listSessions();
         if (!attached || !state.started) return;
         const ids = new Set(sessions.map((session) => session.id));
-        for (const session_id of new Set(held.map((row) => row.session_id))) if (ids.has(session_id)) {
+        for (const { session_id } of held) if (ids.has(session_id)) {
           // A change can race the dispatcher's archive read. Leave one wake to run after that claim releases.
-          const key = sessionHostKey(hostId, session_id);
-          if (state.busy.has(key)) wakes.add(key);
-          else pump(session_id, hostId);
+          if (state.busy.has(session_id)) wakes.add(session_id);
+          else pumpOutbox(session_id);
         }
       }
     } catch {
@@ -894,8 +841,8 @@ export function startOutbox(): void {
   const maintenance = setInterval(() => {
     if (globalThis.__tauOutbox !== state) { clearInterval(maintenance); return; }
     try {
-      const rows = db().prepare("SELECT DISTINCT host_id, session_id FROM entries WHERE state = 'delivering'").all() as { host_id: string; session_id: string }[];
-      for (const { host_id, session_id } of rows) pump(session_id, host_id);
+      const rows = db().prepare("SELECT DISTINCT session_id FROM entries WHERE state = 'delivering'").all() as { session_id: string }[];
+      for (const { session_id } of rows) pumpOutbox(session_id);
     } catch (error) {
       console.warn(`[tau] outbox maintenance failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -934,12 +881,12 @@ export function startOutbox(): void {
 }
 
 /** A live instance owns its delivery. An orphaned claim is uncertain, never replayed by this dispatcher. */
-function recoverDelivering(copy?: { sessionId: string; hostId: string }, startup = false): void {
-  const inFlight = db().prepare(`SELECT id, session_id, host_id, dispatch_pid FROM entries WHERE state = 'delivering'${copy ? " AND session_id = ? AND host_id = ?" : ""}`)
-    .all(...(copy ? [copy.sessionId, copy.hostId] : [])) as { id: string; session_id: string; host_id: string; dispatch_pid: number | null }[];
+function recoverDelivering(sessionId?: string, startup = false): void {
+  const inFlight = db().prepare(`SELECT id, session_id, dispatch_pid FROM entries WHERE state = 'delivering'${sessionId ? " AND session_id = ?" : ""}`)
+    .all(...(sessionId ? [sessionId] : [])) as { id: string; session_id: string; dispatch_pid: number | null }[];
   for (const entry of inFlight) {
     // At startup a same-PID row is usually a reused PID from the last run; only a claim this process holds in memory is live.
-    if (entry.dispatch_pid === process.pid && (!startup || outbox().busy.has(sessionHostKey(entry.host_id, entry.session_id)))) continue;
+    if (entry.dispatch_pid === process.pid && (!startup || outbox().busy.has(entry.session_id))) continue;
     if (entry.dispatch_pid && entry.dispatch_pid !== process.pid) {
       try {
         process.kill(entry.dispatch_pid, 0);
@@ -951,7 +898,7 @@ function recoverDelivering(copy?: { sessionId: string; hostId: string }, startup
     // The orphaned claim exactly as inspected: a row that moved on since then is left alone.
     const orphaned = db().prepare("UPDATE entries SET state = 'failed', error = ?, may_have_been_sent = 1, previous_entry_ids = NULL WHERE id = ? AND state = 'delivering' AND dispatch_pid IS ?")
       .run("tau restarted while this message was being delivered", entry.id, entry.dispatch_pid);
-    if (orphaned.changes) publish(entry.session_id, entry.host_id);
+    if (orphaned.changes) publish(entry.session_id);
   }
 }
 
@@ -961,9 +908,8 @@ function recoverDelivering(copy?: { sessionId: string; hostId: string }, startup
 function onChildExit(wrapper: AgentSessionWrapper, event: AgentEvent): void {
   if (event.type !== "process_exit") return;
   const preparing = outbox().preparing;
-  const hostId = wrapper.host?.id ?? LOCAL_HOST_ID;
-  for (const key of sessionKeys(wrapper.sessionId, hostId)) {
-    const inFlight = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id = ? AND session_id = ? AND state = 'delivering' AND dispatch_pid = ?`).all(hostId, key, process.pid) as Row[];
+  for (const key of sessionKeys(wrapper.sessionId)) {
+    const inFlight = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE session_id = ? AND state = 'delivering' AND dispatch_pid = ?`).all(key, process.pid) as Row[];
     for (const entry of inFlight) {
       const command = preparing?.get(entry.id);
       if (!command || nativeWriteStarted(command)) fail(entry, "pi exited while this message was being delivered", true);
@@ -976,17 +922,17 @@ function onChildExit(wrapper: AgentSessionWrapper, event: AgentEvent): void {
 type Outcome = "next" | "wait" | "offline";
 
 async function deliver(entry: Row): Promise<Outcome> {
-  const { session_id: sessionId, host_id: hostId } = entry;
+  const sessionId = entry.session_id;
   if (entry.uploads && Date.now() - entry.created_at > STAGED_MAX_AGE_MS) {
     // The host's sweep has removed the staged files by now (spec O3): never send the message without them.
     return fail(entry, "The attached files are gone: attach them again", false);
   }
   // Start (or join) the session's pi first, as any command would, so the echo watch is on the wrapper that gets it.
-  const priorWrapper = getRpcSession(sessionId, hostId);
+  const priorWrapper = getRpcSession(sessionId);
   const generation = priorWrapper?.getMessageCommandGeneration() ?? 0;
   const competingPending = priorWrapper?.hasPendingMessageCommands() ?? false;
-  const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.owner, { hostId });
-  const wrapper = getRpcSession(sessionId, hostId);
+  const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.owner);
+  const wrapper = getRpcSession(sessionId);
   const current = row(entry.id);
   if (!current || (current.state !== "held" && current.state !== "waiting_host")) return "next";
   if (!started.ok) return refused(current, started, false);
@@ -1007,9 +953,9 @@ async function deliver(entry: Row): Promise<Outcome> {
   }
   // pi takes a prompt beside tau's `!!` shell command; a follow-up queued with no turn would wait for the next one.
   const idle = !wrapper.isRunning(true);
-  const keys = sessionKeys(sessionId, hostId);
+  const keys = sessionKeys(sessionId);
   // A cold start can discover native aliases. Re-select across them before claiming, so an older alias wins.
-  const oldest = db().prepare(`SELECT id FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as { id: string } | null;
+  const oldest = db().prepare(`SELECT id FROM entries WHERE session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(...keys) as { id: string } | null;
   if (oldest?.id !== current.id) return "next";
   // Give legacy accepted authority its immutable generation before transcript/attachment preparation can yield.
   for (const receipt of current.upload_receipts ? JSON.parse(current.upload_receipts) as OutboxUploadReceipt[] : []) {
@@ -1033,7 +979,7 @@ async function deliver(entry: Row): Promise<Outcome> {
     ...(current.images ? { images: JSON.parse(current.images) as unknown } : {}),
     ...(current.uploads ? { uploads: JSON.parse(current.uploads) as unknown } : {}),
   };
-  const claimed = db().prepare(`UPDATE entries SET state = 'delivering', dispatch_pid = ? WHERE id = ? AND state IN ('held', 'waiting_host') AND NOT EXISTS (SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering')`).run(process.pid, current.id, hostId, ...keys);
+  const claimed = db().prepare(`UPDATE entries SET state = 'delivering', dispatch_pid = ? WHERE id = ? AND state IN ('held', 'waiting_host') AND NOT EXISTS (SELECT 1 FROM entries WHERE session_id IN (${slots(keys)}) AND state = 'delivering')`).run(process.pid, current.id, ...keys);
   if (!claimed.changes) return "wait";
   // Claimed but not written yet: anything that stops it before a wrapper begins its native write (including
   // attachment preparation and fences inside runAgentCommand) leaves it unsent, so it is retried.
@@ -1057,7 +1003,7 @@ async function deliver(entry: Row): Promise<Outcome> {
         }
         db().prepare("UPDATE entries SET previous_entry_ids = ? WHERE id = ?").run(JSON.stringify(entryIds), current.id);
         previousEntryIds = entryIds;
-        if (Buffer.byteLength(JSON.stringify(outboxSnapshot(sessionId, hostId))) > MAX_OUTBOX_BYTES) {
+        if (Buffer.byteLength(JSON.stringify(outboxSnapshot(sessionId))) > MAX_OUTBOX_BYTES) {
           return fail(current, "The saved transcript boundary exceeds the outbox snapshot limit", false);
         }
       } catch (error) {
@@ -1070,7 +1016,7 @@ async function deliver(entry: Row): Promise<Outcome> {
       || (competingPending && !wrapper.hasPendingMessageCommands())) {
       // Another command finished during preparation, before THIS native write: discard stale mode/queue/history data.
       setState(current.id, "held");
-      publish(sessionId, hostId);
+      publish(sessionId);
       return "next";
     }
     handedOn = true;
@@ -1081,10 +1027,10 @@ async function deliver(entry: Row): Promise<Outcome> {
     if (!handedOn) preparing.delete(current.id);
   }
   const replacement = wrapper.watchMessageReplacement(command, baseline.data?.queuedMessages, priorWrapper === wrapper ? generation : 0, competingPending, previousEntryIds);
-  publish(sessionId, hostId);
+  publish(sessionId);
   try {
     // attachUploads mutates this same command before writing it: the watcher matches the final attachment block too.
-    const response = await runAgentCommand(sessionId, command, current.owner, { hostId, trustedUploads: uploadReceipts, trustedOrigin: origin });
+    const response = await runAgentCommand(sessionId, command, current.owner, uploadReceipts, origin);
     if (!response.ok) {
       // Nothing was written: a gone child is retried, and any other refusal is classified as not sent.
       const written = nativeWriteStarted(command);
@@ -1098,7 +1044,7 @@ async function deliver(entry: Row): Promise<Outcome> {
     if (!handOff.error || handOff.mayHaveBeenSent === false) wrapper.confirmMessageCommandGeneration((priorWrapper === wrapper ? generation : 0) + 1);
     if (handOff.error) return fail(current, handOff.error, handOff.mayHaveBeenSent === true);
     retire(current.id, body.data?.agentInvoked === false ? "none" : correlated ? "native" : "uncorrelated");
-    publish(sessionId, hostId);
+    publish(sessionId);
     return "next";
   } finally {
     preparing.delete(current.id);
@@ -1121,24 +1067,24 @@ function commandOf(entry: Row, running: boolean): { type: string; streamingBehav
 
 
 function fail(entry: Row, error: string, mayHaveBeenSent: boolean): Outcome {
-  if (setState(entry.id, "failed", error, mayHaveBeenSent)) publish(entry.session_id, entry.host_id);
+  if (setState(entry.id, "failed", error, mayHaveBeenSent)) publish(entry.session_id);
   return "next";
 }
 
 /** Not sent yet, for a passing reason: held again and tried after RETRY_MS. */
 function retry(entry: Row): Outcome {
   if (!setState(entry.id, "held")) return "next";
-  publish(entry.session_id, entry.host_id);
-  schedulePump(entry.session_id, entry.host_id);
+  publish(entry.session_id);
+  schedulePump(entry.session_id);
   return "wait";
 }
 
-function schedulePump(sessionId: string, hostId: string): void {
+function schedulePump(sessionId: string): void {
   const state = outbox();
   const retries = (state.retries ??= new Set());
   const timer = setTimeout(() => {
     retries.delete(timer);
-    if (globalThis.__tauOutbox === state) pump(sessionId, hostId);
+    if (globalThis.__tauOutbox === state) pumpOutbox(sessionId);
   }, RETRY_MS);
   retries.add(timer);
   timer.unref?.();
@@ -1157,7 +1103,7 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
     || (!sent && (body.code === "host_timeout" || body.code === "host_sessions_unavailable" || body.code === "session_state_timeout"))) return retry(entry);
   // Only a missing session can be an archived one; any other 404 (an upload that is gone, say) is that refusal.
   if (!sent && response.status === 404 && body.code === "session_not_found") {
-    const { state: archive } = await archiveState(entry.session_id, entry.host_id);
+    const archive = await archiveState(entry.session_id);
     // An unreadable archive cannot prove the session is gone: never failed. A passing failure is tried again; one
     // only a host's next hello can change waits for it, as for an offline host, without a timer.
     if (archive === "retry") return retry(entry);
@@ -1165,23 +1111,23 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
     if (archive === "archived") {
       // An archived session keeps its entries held until it is restored (spec O6).
       if (!setState(entry.id, "held")) return "next";
-      publish(entry.session_id, entry.host_id);
+      publish(entry.session_id);
       return "wait";
     }
     // The archive and active lists are separate reads: a restore can move the session between them after the
     // command's 404. Before declaring it gone, discover its active owner again. A discovery failure is uncertainty,
     // not deletion; a deferred host-change wake must likewise get a chance to resume this still-unsent entry.
-    const resolved = await resolveSessionHostOr404(entry.session_id, entry.host_id);
+    const resolved = await resolveSessionHostOr404(entry.session_id);
     if ("host" in resolved) {
-      if (outbox().wakes?.has(sessionHostKey(entry.host_id, entry.session_id))) {
+      if (outbox().wakes?.has(entry.session_id)) {
         if (!setState(entry.id, "held")) return "next";
-        publish(entry.session_id, entry.host_id);
+        publish(entry.session_id);
         return "wait";
       }
       return retry(entry);
     }
     if (resolved.response.status !== 404) return refused(entry, resolved.response, false);
-    if (outbox().wakes?.has(sessionHostKey(entry.host_id, entry.session_id))) return retry(entry);
+    if (outbox().wakes?.has(entry.session_id)) return retry(entry);
   }
   // A lost reply (delivery unknown), a server error or an unresponsive child after the message went: pi may have it.
   return fail(entry, error, sent && (response.status >= 500 || body.code === "session_unresponsive"));
@@ -1193,19 +1139,12 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
 type ArchiveState = "archived" | "absent" | "hello" | "retry";
 type ArchiveRead = boolean | "hello" | "retry";
 
-/** Whether `sessionId` is in an archive: this machine's, or any linked host's (as GET /api/sessions/archive lists them),
- * or only `hostId`'s when given; `hostId` in the answer is the one host whose archive lists it (none when several do,
- * or another archive could not be read). An unreadable archive is
- * never `absent`: the session may be in it. */
-async function archiveState(sessionId: string, hostId?: string | null): Promise<{ state: ArchiveState; hostId?: string }> {
-  const linked = listHosts().filter((row) => !hostId || row.id === hostId);
-  const local = !hostId || hostId === LOCAL_HOST_ID;
-  const hosts = [...(local ? [LOCAL_HOST_ID] : []), ...linked.map((row) => row.id)];
+/** Whether `sessionId` is in an archive: this machine's, or any linked host's (as GET /api/sessions/archive lists them).
+ * An unreadable archive is never `absent`: the session may be in it. */
+async function archiveState(sessionId: string): Promise<ArchiveState> {
   const reads: Promise<ArchiveRead>[] = [
-    ...(local
-      ? [listArchivedSessions().then((archives) => archives.some((archive) => archive.id === sessionId), (): ArchiveRead => "retry")]
-      : []),
-    ...linked.map(async (row): Promise<ArchiveRead> => {
+    listArchivedSessions().then((archives) => archives.some((archive) => archive.id === sessionId), (): ArchiveRead => "retry"),
+    ...listHosts().map(async (row): Promise<ArchiveRead> => {
       const host = isLinkUp(row.status) ? getHost(row.id) : null;
       if (!host) return "hello";
       try {
@@ -1216,10 +1155,6 @@ async function archiveState(sessionId: string, hostId?: string | null): Promise<
     }),
   ];
   const found = await Promise.all(reads);
-  const archivedOn = hosts.filter((_, index) => found[index] === true);
-  // Archived on more than one host, or another host's archive unreadable: which copy is meant cannot be told, so no
-  // host is named.
-  const certain = archivedOn.length === 1 && found.every((read) => typeof read === "boolean");
-  if (archivedOn.length) return { state: "archived", ...(certain ? { hostId: archivedOn[0] } : {}) };
-  return { state: found.includes("retry") ? "retry" : found.includes("hello") ? "hello" : "absent" };
+  if (found.includes(true)) return "archived";
+  return found.includes("retry") ? "retry" : found.includes("hello") ? "hello" : "absent";
 }

@@ -7,7 +7,6 @@ import { getAgentDir } from "./pi/paths";
 import { isValidSessionId } from "./session-file-references-core";
 import { isRecord } from "./type-guards";
 import { loadWebServerSettings } from "./web-settings";
-import { sessionHostKey } from "./session-host-key";
 
 /** How long a session whose pi process died stays recorded. A stop signal
  *  reaches every process in the service at once, so a child can die just
@@ -96,8 +95,7 @@ function readLeftover(): InterruptibleSession[] {
       const list = isRecord(raw) && Array.isArray(raw.sessions) ? raw.sessions : [];
       for (const entry of list) {
         if (isRecord(entry) && typeof entry.id === "string" && isValidSessionId(entry.id)) {
-          const hostId = typeof entry.hostId === "string" ? entry.hostId : "local";
-          sessions.set(sessionHostKey(hostId, entry.id), { id: entry.id, hostId });
+          sessions.set(entry.id, { id: entry.id, hostId: typeof entry.hostId === "string" ? entry.hostId : "local" });
         }
       }
     } catch {
@@ -133,7 +131,7 @@ function writeInterrupted(sessions: InterruptibleSession[]): void {
  * when its run ends normally (its process is still alive), or EXIT_GRACE_MS
  * after its process died unless tau is shutting down by then.
  */
-export function recordRunningSessions(running: InterruptibleSession[], isAlive: (session: InterruptibleSession) => boolean): void {
+export function recordRunningSessions(running: InterruptibleSession[], isAlive: (id: string) => boolean): void {
   const state = tracker();
   if (state.shuttingDown) return;
   if (!loadWebServerSettings().autoResumeSessions) {
@@ -146,33 +144,32 @@ export function recordRunningSessions(running: InterruptibleSession[], isAlive: 
     return;
   }
   let changed = false;
-  const runningKeys = new Set<string>();
+  const runningIds = new Set<string>();
   for (const session of running.filter((entry) => !hostOwnsLifecycle(entry.hostId))) {
-    const key = sessionHostKey(session.hostId, session.id);
-    runningKeys.add(key);
-    const drop = state.drops.get(key);
+    runningIds.add(session.id);
+    const drop = state.drops.get(session.id);
     if (drop) {
       clearTimeout(drop);
-      state.drops.delete(key);
+      state.drops.delete(session.id);
     }
-    if (!state.sessions.has(key)) {
-      state.sessions.set(key, session);
+    if (!state.sessions.has(session.id)) {
+      state.sessions.set(session.id, session);
       changed = true;
     }
   }
-  for (const [key, session] of state.sessions) {
-    if (runningKeys.has(key)) continue;
-    if (hostOwnsLifecycle(session.hostId) || isAlive(session)) {
-      state.sessions.delete(key);
+  for (const id of state.sessions.keys()) {
+    if (runningIds.has(id)) continue;
+    if (hostOwnsLifecycle(state.sessions.get(id)!.hostId) || isAlive(id)) {
+      state.sessions.delete(id);
       changed = true;
-    } else if (!state.drops.has(key)) {
+    } else if (!state.drops.has(id)) {
       const timer = setTimeout(() => {
-        state.drops.delete(key);
-        if (state.shuttingDown || !state.sessions.delete(key)) return;
+        state.drops.delete(id);
+        if (state.shuttingDown || !state.sessions.delete(id)) return;
         writeInterrupted([...state.sessions.values()]);
       }, EXIT_GRACE_MS);
       timer.unref?.();
-      state.drops.set(key, timer);
+      state.drops.set(id, timer);
     }
   }
   if (changed) writeInterrupted([...state.sessions.values()]);

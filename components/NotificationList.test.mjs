@@ -107,7 +107,7 @@ test("clicking or pressing Enter on a row marks it read and opens its session, b
     const { row } = mount();
     const enter = (target) => act(() => { target.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); });
     act(() => row().querySelector(".display-serif").click());
-    assert.deepEqual(opened, [{ sessionId: "n1-session", hostId: "local" }]);
+    assert.deepEqual(opened, ["n1-session"]);
     assert.equal(notificationHistory.get()[0].read, true);
     assert.equal(row().tabIndex, 0);
     assert.equal(row().style.cursor, "pointer");
@@ -145,23 +145,8 @@ test("pressing Space on a row opens its session, like Enter", () => {
   try {
     const { row } = mount();
     act(() => { row().dispatchEvent(new window.KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true })); });
-    assert.deepEqual(opened, [{ sessionId: "n1-session", hostId: "local" }]);
+    assert.deepEqual(opened, ["n1-session"]);
     assert.equal(notificationHistory.get()[0].read, true);
-  } finally {
-    window.removeEventListener(OPEN_SESSION_EVENT, onOpen);
-  }
-});
-
-test("an entry of another host's copy of a session opens that host's copy", () => {
-  const opened = [];
-  const onOpen = (event) => opened.push(event.detail);
-  window.addEventListener(OPEN_SESSION_EVENT, onOpen);
-  try {
-    act(() => { notificationHistory.add({ type: "completed", sessionId: "n1-session", hostId: "h1", sessionName: "Remote copy" }); });
-    const rows = [...render(React.createElement(NotificationList)).container.querySelectorAll("li")];
-    const remote = rows.find((row) => row.textContent.includes("Remote copy"));
-    act(() => remote.querySelector(".display-serif").click());
-    assert.deepEqual(opened, [{ sessionId: "n1-session", hostId: "h1" }]);
   } finally {
     window.removeEventListener(OPEN_SESSION_EVENT, onOpen);
   }

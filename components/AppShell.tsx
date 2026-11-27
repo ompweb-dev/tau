@@ -46,7 +46,6 @@ import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText }
 import { findSessionTarget, getInitialNavigation, sameSessionTarget, sessionNavigationUrl } from "@/lib/initial-navigation";
 import { comparableProjectPath } from "@/lib/comparable-path";
 import { foldedHostProjectKey, hostProjectKey, LOCAL_HOST_ID, remoteHostId, projectIdentity, projectTargetId } from "@/lib/project-ordering";
-import { sessionHostKey } from "@/lib/session-host-key";
 import { isClusterTarget } from "@/lib/hosts/cluster";
 import { useHostRows } from "@/hooks/useHostRows";
 import { isRecord } from "@/lib/type-guards";
@@ -847,6 +846,7 @@ export function AppShell({ appName }: { appName: string }) {
   const autoNameTimerRef = useRef<TimerHandle | undefined>(undefined);
   const activeSelectedSessionId = selectedSession?.id ?? null;
   const activeSelectedSessionHostId = selectedSession?.hostId;
+  const activeSessionIdRef = useRef<string | null>(activeSelectedSessionId);
   const activeSessionTargetRef = useRef<{ id: string; hostId?: string } | null>(
     activeSelectedSessionId ? { id: activeSelectedSessionId, hostId: activeSelectedSessionHostId } : null,
   );
@@ -854,6 +854,7 @@ export function AppShell({ appName }: { appName: string }) {
   const archiveRetryTimerRef = useRef<TimerHandle | undefined>(undefined);
   useEffect(() => () => clearTimeout(archiveRetryTimerRef.current), []);
   useLayoutEffect(() => {
+    activeSessionIdRef.current = activeSelectedSessionId;
     activeSessionTargetRef.current = activeSelectedSessionId ? { id: activeSelectedSessionId, hostId: activeSelectedSessionHostId } : null;
     activeSettingsTabRef.current = settingsTab;
   }, [activeSelectedSessionId, activeSelectedSessionHostId, settingsTab]);
@@ -1663,7 +1664,7 @@ export function AppShell({ appName }: { appName: string }) {
     setAutoNameStatus({ kind: "naming" });
 
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name?hostId=${encodeURIComponent(activeSelectedSessionHostId || LOCAL_HOST_ID)}`, {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
         method: "POST",
       });
       const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string; code?: string };
@@ -1725,7 +1726,7 @@ export function AppShell({ appName }: { appName: string }) {
   const handleSessionDeleted = useCallback((sessionId: string, hostId?: string) => {
     // The composer for this session can never be reopened, so its draft would
     // otherwise keep the exit guard armed for unreachable content.
-    clearDraft(sessionHostKey(hostId, sessionId));
+    clearDraft(sessionId);
     setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, { id: sessionId, hostId })));
     setRefreshKey((k) => k + 1);
     if (selectedSession && sameSessionTarget(selectedSession, { id: sessionId, hostId })) {
@@ -1750,7 +1751,7 @@ export function AppShell({ appName }: { appName: string }) {
     setInitialSessionRestored(true);
   }, []);
 
-  const handleArchiveRestored = useCallback(async (sessionId: string, hostId: string) => {
+  const handleArchiveRestored = useCallback(async (sessionId: string) => {
     setArchiveBrowserOpen(false);
     publishSessionsChanged([sessionId]);
     setRefreshKey((k) => k + 1);
@@ -1759,18 +1760,16 @@ export function AppShell({ appName }: { appName: string }) {
     // picks another one while we wait, and an untracked setTimeout chain would
     // keep retrying after unmount — so freeze the selection at start, bail out
     // of every attempt + the fallback when it changed, and track the timer.
-    // Host and id: picking the other host's copy of the id is picking another session.
-    const shown = () => activeSessionTargetRef.current && sessionHostKey(activeSessionTargetRef.current.hostId, activeSessionTargetRef.current.id);
-    const sessionAtRestoreStart = shown();
+    const sessionAtRestoreStart = activeSessionIdRef.current;
     const selectRestoredSession = async (attemptsLeft = 5): Promise<void> => {
-      if (shown() !== sessionAtRestoreStart) return;
+      if (activeSessionIdRef.current !== sessionAtRestoreStart) return;
       try {
         const res = await fetch("/api/sessions");
         if (res.ok) {
           const data = (await res.json()) as { sessions?: SessionInfo[] };
-          const found = data.sessions?.find((s) => sameSessionTarget(s, { id: sessionId, hostId }));
+          const found = data.sessions?.find((s) => s.id === sessionId);
           if (found) {
-            if (shown() !== sessionAtRestoreStart) return;
+            if (activeSessionIdRef.current !== sessionAtRestoreStart) return;
             handleSelectSession(found, false);
             return;
           }
@@ -1781,8 +1780,8 @@ export function AppShell({ appName }: { appName: string }) {
 
       if (attemptsLeft > 0) {
         archiveRetryTimerRef.current = setTimeout(() => void selectRestoredSession(attemptsLeft - 1), 300);
-      } else if (shown() === sessionAtRestoreStart) {
-        router.replace(sessionNavigationUrl({ id: sessionId, hostId }));
+      } else if (activeSessionIdRef.current === sessionAtRestoreStart) {
+        router.replace(`?session=${encodeURIComponent(sessionId)}`);
       }
     };
 
@@ -1809,8 +1808,7 @@ export function AppShell({ appName }: { appName: string }) {
     const absolute = filePath.startsWith("/") || filePath.startsWith("~/") || filePath.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(filePath);
     const rooted = !absolute && source.cwd ? joinFilePath(source.cwd, filePath) : filePath;
     const target = filePath.startsWith("~/") ? filePath : normalizeLocalPath(rooted);
-    // Another host's copy of a session is another source: its file tab is its own.
-    const tabId = `file:${source.sessionId ? sessionHostKey(source.hostId, source.sessionId) : hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
+    const tabId = `file:${source.sessionId ?? hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
     const revealLine = line === undefined ? undefined : { line, seq: ++revealSeqRef.current };
     setFileTabs((prev) => {
       if (!prev.some((tab) => tab.id === tabId)) {
@@ -1859,14 +1857,12 @@ export function AppShell({ appName }: { appName: string }) {
   const handleSessionOpenUrl = useCallback((url: string) => requestOpenUrl(url, selectedSession?.id ?? "", false), [requestOpenUrl, selectedSession?.id]);
   const pendingCrossHostToolsRef = useRef(new Map<string, AbortController>());
   const handleCrossSessionHostTool = useCallback(async (call: CrossSessionHostToolCall) => {
-    const key = JSON.stringify([call.hostId, call.sessionId, call.id]);
+    const key = JSON.stringify([call.sessionId, call.id]);
     if (pendingCrossHostToolsRef.current.has(key)) return;
     const controller = new AbortController();
     pendingCrossHostToolsRef.current.set(key, controller);
     // Full-page Settings hides the chat, so its session counts as not viewed.
-    // Another host's copy of the id is another session.
-    const viewing = () => Boolean(activeSessionTargetRef.current && sameSessionTarget(activeSessionTargetRef.current, { id: call.sessionId, hostId: call.hostId }))
-      && !activeSettingsTabRef.current;
+    const viewing = () => call.sessionId === activeSessionIdRef.current && !activeSettingsTabRef.current;
 
     try {
       const { text, isError } = await runHostTool(call.toolName, call.arguments, {
@@ -1878,7 +1874,7 @@ export function AppShell({ appName }: { appName: string }) {
         },
       }, controller.signal);
       if (controller.signal.aborted) return;
-      await sendAgentCommand(call.sessionId, call.hostId, {
+      await sendAgentCommand(call.sessionId, {
         type: "host_tool_result",
         id: call.id,
         isError,
@@ -1900,8 +1896,8 @@ export function AppShell({ appName }: { appName: string }) {
     source.onmessage = (e) => {
       try {
         const call = JSON.parse(e.data);
-        if (call.type === "host_tool_cancel" && typeof call.sessionId === "string" && typeof call.targetId === "string" && typeof call.hostId === "string") {
-          pending.get(JSON.stringify([call.hostId, call.sessionId, call.targetId]))?.abort();
+        if (call.type === "host_tool_cancel" && typeof call.sessionId === "string" && typeof call.targetId === "string") {
+          pending.get(JSON.stringify([call.sessionId, call.targetId]))?.abort();
         } else if (call.type === "host_tool_call" && call.sessionId && call.id && call.toolName
           && typeof call.hostId === "string" && typeof call.cwd === "string") {
           void crossSessionHostToolRef.current(call);
@@ -2054,7 +2050,7 @@ export function AppShell({ appName }: { appName: string }) {
     restoredChatsRef.current = new Set([...restoredChats].filter((chat) => !listed.has(chatTabId(chat)) && hostUnavailable(chat)));
     for (const chat of restoredChats) {
       if (listed.has(chatTabId(chat)) || hostUnavailable(chat)) continue;
-      void fetch(`/api/sessions/${encodeURIComponent(chat.id)}?meta=1&hostId=${encodeURIComponent(remoteHostId(chat.hostId) ?? LOCAL_HOST_ID)}`).then((response) => {
+      void fetch(`/api/sessions/${encodeURIComponent(chat.id)}?meta=1`).then((response) => {
         if (response.status !== 404) return;
         const now = activeSessionTargetRef.current;
         setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, chat) || Boolean(now && sameSessionTarget(tab, now))));
@@ -2080,7 +2076,7 @@ export function AppShell({ appName }: { appName: string }) {
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
     window.open(
-      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1&hostId=${encodeURIComponent(selectedSession.hostId || LOCAL_HOST_ID)}`,
+      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
       "_blank",
       "noopener,noreferrer",
     );
@@ -2263,7 +2259,7 @@ export function AppShell({ appName }: { appName: string }) {
   // hides them all.
   const viewedSessionIds = settingsTab ? [] : (isMobile ? [focusedGroup] : tabGroups).flatMap((group) => {
     const session = group.active ? chatTabById(group.active) : undefined;
-    return session ? [sessionHostKey(session.hostId, session.id)] : [];
+    return session ? [session.id] : [];
   });
   useNotifications({ sessionIds: viewedSessionIds, locale, onOpenSession: openSessionById });
 
@@ -2510,8 +2506,8 @@ export function AppShell({ appName }: { appName: string }) {
   }, []);
   // A target still pending when another session opens must not jump when its own session reopens.
   useEffect(() => {
-    setSearchMatchTarget((target) => (target && !(selectedSession && sameSessionTarget(selectedSession, { id: target.sessionId, hostId: target.hostId })) ? null : target));
-  }, [selectedSession]);
+    setSearchMatchTarget((target) => (target && target.sessionId !== selectedSession?.id ? null : target));
+  }, [selectedSession?.id]);
 
   const sidebarContent = (
     <SessionSidebar
@@ -3402,7 +3398,7 @@ export function AppShell({ appName }: { appName: string }) {
               expandThinkingByDefault={expandThinkingByDefault}
               hideThinkingBlock={hideThinkingBlock}
               searchQuery={chatSearchQuery}
-              searchTarget={searchMatchTarget && selectedSession && sameSessionTarget(selectedSession, { id: searchMatchTarget.sessionId, hostId: searchMatchTarget.hostId }) ? searchMatchTarget : null}
+              searchTarget={searchMatchTarget && searchMatchTarget.sessionId === selectedSession?.id ? searchMatchTarget : null}
               onSearchTargetHandled={clearSearchMatchTarget}
               covered={fileTabShown}
             />

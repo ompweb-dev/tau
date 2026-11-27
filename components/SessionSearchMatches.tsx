@@ -7,8 +7,6 @@ import { MAX_SEARCH_MATCHES, SEARCH_MATCH_PAGE_SIZE, type SessionSearchMatch } f
 /** The hit the chat should scroll to and mark as current; a new object per click. */
 export interface SearchMatchTarget {
   sessionId: string;
-  /** The session's host ("local" = this machine): another host's copy of the id is another session. */
-  hostId: string;
   entryId: string;
   ordinal: number;
 }
@@ -30,10 +28,8 @@ const rowStyle = (depth: number): React.CSSProperties => ({
  * One session's hits for the sidebar search, a page at a time. Mounted per
  * (session, query): a new query remounts it with an empty list.
  */
-export function SessionSearchMatches({ sessionId, hostId, query, depth, onOpen }: {
+export function SessionSearchMatches({ sessionId, query, depth, onOpen }: {
   sessionId: string;
-  /** The row's host: an id copied across hosts is another session there. */
-  hostId: string;
   query: string;
   depth: number;
   onOpen: (target: SearchMatchTarget) => void;
@@ -52,7 +48,7 @@ export function SessionSearchMatches({ sessionId, hostId, query, depth, onOpen }
     setLoading(true);
     setFailed(false);
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/matches?q=${encodeURIComponent(query)}&limit=${limit}&hostId=${encodeURIComponent(hostId)}`, { signal: controller.signal });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/matches?q=${encodeURIComponent(query)}&limit=${limit}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const page = await res.json() as { matches: SessionSearchMatch[]; total: number };
       setMatches(page.matches);
@@ -62,7 +58,7 @@ export function SessionSearchMatches({ sessionId, hostId, query, depth, onOpen }
       setFailed(true);
     }
     setLoading(false);
-  }, [sessionId, hostId, query]);
+  }, [sessionId, query]);
 
   useEffect(() => {
     // Same settle time as the sidebar's transcript search: typing must not read the session per keystroke.
@@ -88,7 +84,7 @@ export function SessionSearchMatches({ sessionId, hostId, query, depth, onOpen }
             type="button"
             className="session-search-match"
             title={`${match.before}${match.match}${match.after}`}
-            onClick={() => onOpen({ sessionId, hostId, entryId: match.entryId, ordinal: match.ordinal })}
+            onClick={() => onOpen({ sessionId, entryId: match.entryId, ordinal: match.ordinal })}
             style={{ ...rowStyle(depth), color: "var(--text-muted)", cursor: "pointer" }}
           >
             {match.before}

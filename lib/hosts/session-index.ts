@@ -83,16 +83,27 @@ export async function hostSessions(hostId: string, refresh = false): Promise<Ses
 }
 
 /** Every host's sessions, each with its `hostId`. An id on several hosts is
- * listed once: under this machine if it is here, else under the first host by label. */
+ * listed once: under this machine if it is here, else under the first host by label,
+ * with the other hosts' labels in `alsoOnHosts` so the sidebar can show the conflict. */
 export async function listSessionsAllHosts(): Promise<SessionInfo[]> {
   const bindings = poolProjectBindings(loadPools());
   const lists = await Promise.all(hostIds().map((id) => hostSessions(id)));
   const merged: SessionInfo[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
+  const counted = new Set<string>();
   for (const sessions of lists) {
     for (const session of sessions) {
-      if (seen.has(session.id)) continue;
-      seen.add(session.id);
+      const kept = seen.get(session.id);
+      if (kept !== undefined) {
+        const label = getHost(session.hostId!)?.label ?? session.hostId!;
+        const copy = `${session.hostId}\n${session.id}`;
+        if (session.hostId !== merged[kept].hostId && !counted.has(copy)) {
+          counted.add(copy);
+          merged[kept] = { ...merged[kept], alsoOnHosts: [...(merged[kept].alsoOnHosts ?? []), label] };
+        }
+        continue;
+      }
+      seen.set(session.id, merged.length);
       const binding = bindings.get(session.hostId!)?.get(comparableProjectPath(session.projectRoot ?? session.cwd));
       merged.push(binding ? {
         ...session, poolId: binding.pool.id, projectId: binding.project.id,
@@ -158,31 +169,12 @@ export async function hostForSessionId(id: string): Promise<Host | null> {
   // shortcut: every miss re-asks each linked host; throttle per host if polling for gone sessions shows up.
   const host = (await hostWithSession(id, false)) ?? (await hostWithSession(id, true));
   if (host) return host;
-  for (const hostId of hostIds()) assertHostListCurrent(hostId);
+  for (const hostId of hostIds()) {
+    const candidate = getHost(hostId);
+    if (!candidate || !isLinkUp(candidate.status())) throw new HostOpError(503, "host_offline", `${candidate?.label ?? "A host"} is offline`);
+    if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${candidate.label}'s sessions are unavailable`);
+  }
   return null;
-}
-
-/** A miss on `hostId`'s list proves absence only while that list is current: 503 otherwise. */
-function assertHostListCurrent(hostId: string): void {
-  const host = getHost(hostId);
-  if (!host || !isLinkUp(host.status())) throw new HostOpError(503, "host_offline", `${host?.label ?? "A host"} is offline`);
-  if (!hostLists(hostId).loaded) throw new HostOpError(503, "host_sessions_unavailable", `${host.label}'s sessions are unavailable`);
-}
-
-/** `host` when it holds the session (its list read again once on a miss), else null: an id copied across hosts is
- * resolved on the one named. A miss counts only while that host's list is current (else 503, as hostForSessionId). */
-export async function hostHoldingSession(id: string, hostId: string): Promise<Host | null> {
-  const host = getHost(hostId);
-  if (!host || !isValidSessionId(id)) return null;
-  const listed = async (refresh: boolean) => (await hostSessions(hostId, refresh)).some((session) => session.id === id);
-  if (await listed(false) || await listed(true)) return host;
-  assertHostListCurrent(hostId);
-  return null;
-}
-
-/** The host holding the session: `hostId`'s when named (`hostHoldingSession`), else any (`hostForSessionId`). */
-export function sessionHost(id: string, hostId?: string | null): Promise<Host | null> {
-  return hostId ? hostHoldingSession(id, hostId) : hostForSessionId(id);
 }
 
 /** Where a session's file is and which cwd to start it in, on `host`; null when the host has no such session. */

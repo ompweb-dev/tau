@@ -9,7 +9,7 @@ import { isReplyBlock } from "@/lib/message-display";
 import { resolveForkTargets } from "@/lib/chat-fork";
 import { renderTranscriptGroupRow, type RenderMessage } from "./ChatWindow-transcript-group-row";
 import { ChatLiveTail } from "./ChatWindow-live-tail";
-import { HeldMessageView, MessageView, SessionHostContext } from "./MessageView";
+import { HeldMessageView, MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ExtensionDialog } from "./ExtensionDialog";
 import { SubagentTranscriptDialog } from "./SubagentTranscriptDialog";
@@ -40,7 +40,6 @@ import {
 import { foldSentDraft, getDraftSummary, isSentDraftKey, sentDraftKey } from "@/lib/draft-store";
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
 import { newChatDraftKey } from "@/lib/project-ordering";
-import { sessionHostKey } from "@/lib/session-host-key";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { getFileName } from "@/lib/file-paths";
@@ -442,7 +441,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   const freshDraftKey = newSessionPoolId && newSessionProjectId ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined;
   const [sentOn, setSentOn] = useState<string | undefined>(undefined);
   const ownDraft = !session && freshDraftKey !== undefined && sentOn === freshDraftKey;
-  const draftKey = session ? sessionHostKey(session.hostId, session.id) : (ownDraft ? sentDraftKey(freshDraftKey, draftOwner) : freshDraftKey);
+  const draftKey = session?.id ?? (ownDraft ? sentDraftKey(freshDraftKey, draftOwner) : freshDraftKey);
   const freshDraftKeyRef = useRef(freshDraftKey);
   freshDraftKeyRef.current = freshDraftKey;
   const draftKeyRef = useRef(draftKey);
@@ -482,7 +481,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     handleToolPresetChange,
     btw, askBtw,
     resolveUploadHost,
-    sessionHostId,
   } = useAgentSession({
     session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSent: handleSent, onSessionForked,
     modelsRefreshKey, chatInputRef: composerRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
@@ -1033,7 +1031,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     <SpeechSynthesisProvider value={tts}>
     <GithubRepoContext.Provider value={githubRepo}>
     <AgentLinkContext.Provider value={openAgentLink}>
-    <SessionHostContext.Provider value={sessionHostId}>
     <WorkspaceFileContext.Provider value={fileSource}>
     <div
       className="relative flex h-full flex-col overflow-hidden"
@@ -1077,7 +1074,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       <SubagentTranscriptDialog
         subagent={selectedSubagent}
         sessionId={session?.id ?? sessionIdRef.current ?? null}
-        hostId={sessionHostId}
         transcriptVersion={selectedSubagent ? (subagentTranscriptVersions[selectedSubagent.id] ?? 0) : 0}
         events={selectedSubagent ? (subagentEvents[selectedSubagent.id] ?? []) : undefined}
         onClose={() => setSelectedSubagent(null)}
@@ -1361,7 +1357,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       )}
       </div>
     </WorkspaceFileContext.Provider>
-    </SessionHostContext.Provider>
     </AgentLinkContext.Provider>
     </GithubRepoContext.Provider>
     </SpeechSynthesisProvider>

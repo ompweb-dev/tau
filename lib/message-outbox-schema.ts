@@ -21,15 +21,13 @@ CREATE TABLE IF NOT EXISTS entries (
   settlement TEXT,
   replacement_id TEXT,
   replacement_digest TEXT,
-  origin TEXT,
-  host_id TEXT NOT NULL DEFAULT 'local'
+  origin TEXT
 );
 CREATE INDEX IF NOT EXISTS entries_session ON entries (session_id, state);
 CREATE TABLE IF NOT EXISTS completed_uploads (id TEXT PRIMARY KEY, owner TEXT NOT NULL, receipt TEXT NOT NULL, at INTEGER NOT NULL);
 `;
 
-// Install after legacy columns are migrated. Triggers also cover writes from older peer binaries. An alias row belongs to
-// its entry, whose host_id scopes every match.
+// Install after legacy columns are migrated. Triggers also cover writes from older peer binaries.
 export const OUTBOX_CHANGE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS entry_aliases (
   entry_id TEXT NOT NULL,
@@ -41,31 +39,30 @@ CREATE TABLE IF NOT EXISTS session_changes (
   session_id TEXT PRIMARY KEY,
   revision INTEGER NOT NULL
 );
--- session_changes.session_id holds sessionHostKey(host, id): the same id on two hosts is two sessions.
 DROP TRIGGER IF EXISTS outbox_insert_change;
-DROP TRIGGER IF EXISTS outbox_update_change;
-DROP TRIGGER IF EXISTS outbox_delete_change;
 CREATE TRIGGER outbox_insert_change AFTER INSERT ON entries BEGIN
   INSERT INTO session_changes (session_id, revision)
-    SELECT NEW.host_id || '/' || session_id, 1 FROM (
+    SELECT session_id, 1 FROM (
       SELECT NEW.session_id AS session_id UNION SELECT NEW.source_session_id
     ) WHERE session_id IS NOT NULL
     ON CONFLICT (session_id) DO UPDATE SET revision = revision + 1;
 END;
+DROP TRIGGER IF EXISTS outbox_update_change;
 CREATE TRIGGER outbox_update_change AFTER UPDATE ON entries BEGIN
   INSERT OR IGNORE INTO entry_aliases (entry_id, session_id)
     SELECT OLD.id, OLD.session_id WHERE OLD.session_id != NEW.session_id;
   INSERT INTO session_changes (session_id, revision)
-    SELECT host || '/' || session_id, 1 FROM (
-      SELECT OLD.host_id AS host, OLD.session_id AS session_id UNION SELECT NEW.host_id, NEW.session_id
-      UNION SELECT OLD.host_id, OLD.source_session_id UNION SELECT NEW.host_id, NEW.source_session_id
-      UNION SELECT NEW.host_id, session_id FROM entry_aliases WHERE entry_id = NEW.id
+    SELECT session_id, 1 FROM (
+      SELECT OLD.session_id AS session_id UNION SELECT NEW.session_id
+      UNION SELECT OLD.source_session_id UNION SELECT NEW.source_session_id
+      UNION SELECT session_id FROM entry_aliases WHERE entry_id = NEW.id
     ) WHERE session_id IS NOT NULL
     ON CONFLICT (session_id) DO UPDATE SET revision = revision + 1;
 END;
+DROP TRIGGER IF EXISTS outbox_delete_change;
 CREATE TRIGGER outbox_delete_change AFTER DELETE ON entries BEGIN
   INSERT INTO session_changes (session_id, revision)
-    SELECT OLD.host_id || '/' || session_id, 1 FROM (
+    SELECT session_id, 1 FROM (
       SELECT OLD.session_id AS session_id UNION SELECT OLD.source_session_id
       UNION SELECT session_id FROM entry_aliases WHERE entry_id = OLD.id
     ) WHERE session_id IS NOT NULL

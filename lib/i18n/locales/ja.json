@@ -1227,6 +1227,7 @@
   "sessionSidebar.statusStopped": "停止",
   "sessionSidebar.statusDone": "完了",
   "sessionSidebar.statusDraft": "下書き",
+  "sessionSidebar.statusAlsoOn": "{hosts} にも同じセッション",
   "sessionSidebar.selectProjectFirst": "先にプロジェクトを選択してください",
   "sessionSidebar.switchWorktree": "ワークツリーを切り替え",
   "sessionSidebar.launchConfigDirectory": "ディレクトリ",

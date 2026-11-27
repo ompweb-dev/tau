@@ -68,11 +68,54 @@ test("failed workspace rename is reported without an unhandled rejection; failed
   }
 });
 
+test("a nested row follows the selection when it moves between children of one parent", () => {
+  const noop = () => {};
+  const none = new Set();
+  const session = (id, name) => ({ id, path: `/x/${id}.jsonl`, cwd: "/srv/app", name, firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 });
+  // One tree for every render: only the selection changes, so the rows' memo comparators decide.
+  const exited = new Map();
+  const tree = [{ session: session("p1", "Parent"), children: [{ session: session("a1", "Child A"), children: [] }, { session: session("b1", "Child B"), children: [] }] }];
+  const props = (selectedSessionId) => ({
+    project: { path: "/srv/app" }, isActive: true, isExpanded: true, activity: undefined, tree, hiddenCount: 0,
+    selectedSessionId, runningSessionIds: none, awaitingInputIds: none, unreadSessionIds: none, exitedSessions: exited, relativeTimeNow: 0,
+    onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
+    onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
+    removeBusy: false, onSelectSession: noop,
+  });
+  const current = (name) => screen.getByRole("button", { name }).getAttribute("aria-current");
+  try {
+    const { rerender } = render(React.createElement(ProjectRow, props("a1")));
+    assert.equal(current("Child A"), "true");
+    rerender(React.createElement(ProjectRow, props("b1")));
+    assert.equal(current("Child A"), null);
+    assert.equal(current("Child B"), "true");
+  } finally {
+    cleanup();
+  }
+});
+
+test("a session whose id another host also lists says so in its status line", () => {
+  const noop = () => {};
+  const session = { id: "s1", path: "", cwd: "/srv/app", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1, firstMessage: "hello", alsoOnHosts: ["Build box"] };
+  try {
+    render(React.createElement(ProjectRow, {
+      project: { path: "/srv/app" }, isActive: false, isExpanded: true, activity: undefined, tree: [{ session, children: [] }], hiddenCount: 0,
+      selectedSessionId: null, runningSessionIds: new Set(), awaitingInputIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
+      onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
+      onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
+      removeBusy: false, onSelectSession: noop,
+    }));
+    assert.ok(document.body.textContent.includes(translate("sessionSidebar.statusAlsoOn", { hosts: "Build box" })));
+  } finally {
+    cleanup();
+  }
+});
+
 test("a pinned project row names its node; other rows carry no node label", () => {
   const noop = () => {};
   const row = (extra) => React.createElement(ProjectRow, {
     project: { path: "/srv/app", hostId: "h1" }, isActive: false, isExpanded: false, activity: undefined, tree: [], hiddenCount: 0,
-    selectedSessionKey: null, runningSessionIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
+    selectedSessionId: null, runningSessionIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
     onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
     onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
     removeBusy: false, onSelectSession: noop, ...extra,
@@ -94,116 +137,6 @@ test("a pinned project row names its node; other rows carry no node label", () =
     assert.equal(screen.queryByText("Build box"), null);
   } finally {
     cleanup();
-  }
-});
-
-test("a session row is selected only for its own host's copy of the id, nested rows included", () => {
-  const noop = () => {};
-  const none = new Set();
-  const exited = new Map();
-  const session = (id, name) => ({ id, hostId: "h1", path: `/x/${id}.jsonl`, cwd: "/srv/app", name, firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 });
-  // One tree for every render: only the selection changes, so the rows' memo comparators decide.
-  const tree = [{ session: session("s1", "Copied"), children: [{ session: session("c1", "Child"), children: [] }] }];
-  const props = (selectedSessionKey) => ({
-    project: { path: "/srv/app", hostId: "h1" }, isActive: true, isExpanded: true, activity: undefined, tree, hiddenCount: 0,
-    selectedSessionKey, runningSessionIds: none, awaitingInputIds: none, unreadSessionIds: none, exitedSessions: exited, relativeTimeNow: 0,
-    onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
-    onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
-    removeBusy: false, onSelectSession: noop,
-  });
-  const current = (name) => screen.getByRole("button", { name }).getAttribute("aria-current");
-  try {
-    const { rerender } = render(React.createElement(ProjectRow, props("local/s1")));
-    assert.equal(current("Copied"), null);
-    rerender(React.createElement(ProjectRow, props("h1/s1")));
-    assert.equal(current("Copied"), "true");
-    rerender(React.createElement(ProjectRow, props("h1/c1")));
-    assert.equal(current("Copied"), null);
-    assert.equal(current("Child"), "true", "a nested row follows the selection");
-    rerender(React.createElement(ProjectRow, props("local/c1")));
-    assert.equal(current("Child"), null, "not for another host's copy");
-  } finally {
-    cleanup();
-  }
-});
-
-test("the sidebar selects the selected host's copy of a session id, not this machine's", async () => {
-  const original = { fetch: globalThis.fetch, Worker: globalThis.Worker, SharedWorker: globalThis.SharedWorker, matchMedia: window.matchMedia };
-  globalThis.Worker = FakeWorker;
-  globalThis.SharedWorker = undefined;
-  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  const copy = (hostId, name) => ({ id: "s1", hostId, path: "/x/s1.jsonl", cwd: "/srv/app", name, firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 });
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input), "http://localhost");
-    if (url.pathname === "/api/hosts") return Response.json({ hosts: [{ id: "local", label: "", status: "online" }, { id: "h1", label: "Build box", status: "online" }], pools: [] });
-    if (url.pathname === "/api/projects") return Response.json({ projects: [{ path: "/srv/app", hostId: "local" }, { path: "/srv/app", hostId: "h1" }] });
-    if (url.pathname === "/api/sessions") return Response.json({ sessions: [copy("local", "Here"), copy("h1", "There")] });
-    return Response.json({});
-  };
-  // Both copies' projects are expanded, so both rows render.
-  localStorage.setItem("tau:expanded-projects", JSON.stringify(["/srv/app", "h1:/srv/app"]));
-  try {
-    render(React.createElement(SessionSidebar, {
-      selectedSessionId: "s1", selectedHostId: "h1", selectedCwd: "/srv/app", skipInitialProjectSelection: true,
-      onSelectSession() {}, addProjectOpen: false, setAddProjectOpen() {}, usageVisible: false,
-    }));
-    await waitFor(() => assert.equal(screen.getByRole("button", { name: "There" }).getAttribute("aria-current"), "true"));
-    assert.equal(screen.getByRole("button", { name: "Here" }).getAttribute("aria-current"), null, "this machine's copy is not selected");
-  } finally {
-    cleanup();
-    localStorage.removeItem("tau:expanded-projects");
-    Object.assign(globalThis, { fetch: original.fetch, Worker: original.Worker, SharedWorker: original.SharedWorker });
-    window.matchMedia = original.matchMedia;
-  }
-});
-
-test("running, needs-input, stopped and finished marks show only on the host copy of a session id that has them", async () => {
-  const original = { fetch: globalThis.fetch, Worker: globalThis.Worker, SharedWorker: globalThis.SharedWorker, matchMedia: window.matchMedia };
-  globalThis.Worker = FakeWorker;
-  globalThis.SharedWorker = undefined;
-  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  const copy = (hostId, name) => ({ id: "s1", hostId, path: "/x/s1.jsonl", cwd: "/srv/app", name, firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 });
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input), "http://localhost");
-    if (url.pathname === "/api/hosts") return Response.json({ hosts: [{ id: "local", label: "", status: "online" }, { id: "h1", label: "Build box", status: "online" }], pools: [] });
-    if (url.pathname === "/api/projects") return Response.json({ projects: [{ path: "/srv/app", hostId: "local" }, { path: "/srv/app", hostId: "h1" }] });
-    if (url.pathname === "/api/sessions") return Response.json({ sessions: [copy("local", "Here"), copy("h1", "There")], runningSessions: [] });
-    return Response.json({});
-  };
-  localStorage.setItem("tau:expanded-projects", JSON.stringify(["/srv/app", "h1:/srv/app"]));
-  const status = (name) => document.getElementById(screen.getByRole("button", { name }).getAttribute("aria-describedby")).textContent;
-  const running = (frame) => {
-    const worker = workers[0];
-    const open = worker.posted.findLast((message) => message.op === "open" && message.channel.kind === "running");
-    act(() => worker.onmessage({ data: { id: open.id, type: "message", data: JSON.stringify({ type: "running", exitedSessions: [], ...frame }) } }));
-  };
-  try {
-    render(React.createElement(SessionSidebar, {
-      selectedSessionId: null, skipInitialProjectSelection: true,
-      onSelectSession() {}, addProjectOpen: false, setAddProjectOpen() {}, usageVisible: false,
-    }));
-    await waitFor(() => assert.ok(screen.getByRole("button", { name: "There" })));
-    await waitFor(() => assert.ok(workers[0]?.posted.some((message) => message.op === "open" && message.channel.kind === "running")));
-    running({ runningSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1" }] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusRunning"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")), "this machine's copy is not running");
-    running({ runningSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1", awaitingInput: true }] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusNeedsInput"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-    // The run ends unseen: only that copy is finished and unread.
-    running({ runningSessions: [] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusDone"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-    assert.deepEqual(JSON.parse(localStorage.getItem("tau:unread-session-ids")), ["h1/s1"]);
-    running({ runningSessions: [], exitedSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1", at: 1, code: 1, signal: null, detail: "" }] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusStopped"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-  } finally {
-    cleanup();
-    localStorage.removeItem("tau:expanded-projects");
-    localStorage.removeItem("tau:unread-session-ids");
-    Object.assign(globalThis, { fetch: original.fetch, Worker: original.Worker, SharedWorker: original.SharedWorker });
-    window.matchMedia = original.matchMedia;
   }
 });
 

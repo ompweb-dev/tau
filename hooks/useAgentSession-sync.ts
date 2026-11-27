@@ -32,8 +32,6 @@ export const MISSING_BASE_RETRY_MS = 2000;
 /** One durable cursor per selected view. Live ordering is independent of disk pagination. */
 export function createSessionCatchUp(options: {
   sessionId: () => string | null;
-  /** The session's host, sent with each read: an id copied across hosts is another session there. */
-  hostId?: () => string;
   scope: () => string | null;
   history: (context: SessionContext, leafId: string | null, metadata?: { version: number; hasLive: boolean }) => void;
   live: (snapshot: SessionLiveSnapshot, fields: SessionLiveFields) => void;
@@ -103,7 +101,6 @@ export function createSessionCatchUp(options: {
           while (true) {
             const base = nextCursor;
             const params = new URLSearchParams({ sync: "1", deferThinking: "1", deferMedia: "1" });
-            if (options.hostId) params.set("hostId", options.hostId());
             if (base) params.set("cursor", JSON.stringify(base));
             if (view.leafId) params.set("leafId", view.leafId);
             if (view.includePreCompaction) params.set("includePreCompaction", "1");

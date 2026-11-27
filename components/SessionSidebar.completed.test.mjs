@@ -25,8 +25,6 @@ const SESSIONS = [
 ];
 /** What /api/sessions serves; a test may swap it before mounting. */
 let sessions = SESSIONS;
-/** Hosts whose session lists /api/sessions reports as not current. */
-let unavailableHosts = [];
 
 /** The tab side of the shared event-stream worker (lib/event-stream.ts), so a
  * test can push `running` frames on the channel the sidebar opened. */
@@ -39,16 +37,11 @@ const eventWorker = {
     else if (message.op === "close") eventStreams.delete(message.id);
   },
 };
-/** `running` lists [id, hostId?] pairs or bare ids (this machine). */
-function deliverRunning(running) {
-  const runningSessions = running.map((entry) => {
-    const [id, hostId] = Array.isArray(entry) ? entry : [entry];
-    return { id, cwd: PROJECT, ...(hostId ? { hostId } : {}) };
-  });
+function deliverRunning(runningSessionIds) {
   const id = [...eventStreams].findLast(([, channel]) => channel.kind === "running")?.[0];
   assert.ok(id, "the sidebar must hold a running channel");
   act(() => {
-    eventWorker.onmessage({ data: { id, type: "message", data: JSON.stringify({ type: "running", runningSessions, exitedSessions: [] }) } });
+    eventWorker.onmessage({ data: { id, type: "message", data: JSON.stringify({ type: "running", runningSessionIds, exitedSessions: [] }) } });
   });
 }
 
@@ -61,7 +54,7 @@ before(() => {
   globalThis.fetch = (url) => {
     const path = String(url).split("?")[0];
     const body = path === "/api/sessions"
-      ? { sessions, runningSessions: [], unavailableHosts }
+      ? { sessions, runningSessionIds: [] }
       : path === "/api/projects" ? { projects: [{ path: PROJECT }] } : {};
     const response = Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
     inflight.add(response);
@@ -76,7 +69,6 @@ afterEach(async () => {
   cleanup();
   localStorage.clear();
   sessions = SESSIONS;
-  unavailableHosts = [];
 });
 
 function Harness({ initialSelected }) {
@@ -109,7 +101,7 @@ test("a session that finishes in the background shows the check until it is open
   deliverRunning([]);
   await waitFor(() => assert.equal(hasCheck("Background task"), true));
   assert.ok(within(row("Background task")).getByLabelText(CHECK));
-  assert.deepEqual(JSON.parse(localStorage.getItem(UNREAD_KEY)), ["local/s-bg"]);
+  assert.deepEqual(JSON.parse(localStorage.getItem(UNREAD_KEY)), ["s-bg"]);
 
   await userEvent.click(screen.getByText("Background task"));
   await waitFor(() => assert.equal(hasCheck("Background task"), false));
@@ -135,28 +127,28 @@ test("recent but already seen sessions show no check and stay in the running-onl
 });
 
 test("opening the session in another tab clears the check here", async () => {
-  await mount({ unread: ["local/s-bg"] });
+  await mount({ unread: ["s-bg"] });
   assert.equal(hasCheck("Background task"), true);
 
   localStorage.removeItem(UNREAD_KEY);
-  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, oldValue: '["local/s-bg"]', newValue: null })); });
+  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, oldValue: '["s-bg"]', newValue: null })); });
   assert.equal(hasCheck("Background task"), false);
 });
 
 test("a check adopted from another tab skips the session open in this tab", async () => {
   await mount({ selected: "s-open" });
-  localStorage.setItem(UNREAD_KEY, JSON.stringify(["local/s-bg", "local/s-open"]));
-  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["local/s-bg","local/s-open"]' })); });
+  localStorage.setItem(UNREAD_KEY, JSON.stringify(["s-bg", "s-open"]));
+  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["s-bg","s-open"]' })); });
   assert.equal(hasCheck("Background task"), true);
   assert.equal(hasCheck("Open task"), false);
-  assert.deepEqual(JSON.parse(localStorage.getItem(UNREAD_KEY)), ["local/s-bg"], "the open session is written back as seen");
+  assert.deepEqual(JSON.parse(localStorage.getItem(UNREAD_KEY)), ["s-bg"], "the open session is written back as seen");
 });
 
 test("a check another tab writes for the session open here alone is written back as seen", async () => {
   await mount({ selected: "s-open" });
   // This tab's set is empty, so dropping the open session changes no state here.
-  localStorage.setItem(UNREAD_KEY, JSON.stringify(["local/s-open"]));
-  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["local/s-open"]' })); });
+  localStorage.setItem(UNREAD_KEY, JSON.stringify(["s-open"]));
+  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["s-open"]' })); });
   assert.equal(hasCheck("Open task"), false);
   assert.equal(localStorage.getItem(UNREAD_KEY), null, "the other tab is told the open session is seen");
 });
@@ -170,14 +162,8 @@ test("a nested child's check updates when only the child becomes unread", async 
     while (inflight.size > 0) await new Promise((resolve) => setTimeout(resolve, 5));
   });
 
-  localStorage.setItem(UNREAD_KEY, JSON.stringify(["local/s-child"]));
-  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["local/s-child"]' })); });
+  localStorage.setItem(UNREAD_KEY, JSON.stringify(["s-child"]));
+  act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["s-child"]' })); });
   await waitFor(() => assert.equal(hasCheck("Child task"), true));
   assert.equal(hasCheck("Background task"), false, "the parent itself stays unmarked");
-});
-
-test("a host whose session list is not current keeps its unread marks; a current host's missing session loses its", async () => {
-  unavailableHosts = ["h1"];
-  await mount({ unread: ["h1/s-remote", "local/s-gone", "local/s-bg"] });
-  await waitFor(() => assert.deepEqual(JSON.parse(localStorage.getItem(UNREAD_KEY)), ["h1/s-remote", "local/s-bg"]));
 });

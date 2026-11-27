@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, memo, useState, useId, useRef, useEffect, useLayoutEffect, useMemo, useCallback, useContext, type ComponentProps } from "react";
+import { memo, useState, useId, useRef, useEffect, useLayoutEffect, useMemo, useCallback, useContext, type ComponentProps } from "react";
 import { Copy, Check, GitFork, CornerUpLeft, ChevronRight, ChevronDown, Brain, EyeOff, CircleAlert, CircleSlash, Clock, LoaderCircle, FileText, Search, FileEdit, Terminal, CheckSquare, Bot, Code2, Globe, MessagesSquare, Wrench, Volume2, Square, Trash2, Paperclip, RotateCcw } from "lucide-react";
 import { MarkdownBody } from "./MarkdownBody";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
@@ -90,8 +90,6 @@ function ToolCategoryIcon({
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
 const thinkingContentCache = new Map<string, Promise<string>>();
-/** The shown session's host, for deferred reads: an id copied across hosts is another session there. */
-export const SessionHostContext = createContext("local");
 const MAX_MARKDOWN_CHARS = 100_000;
 
 // Cap the user "sent" bubble's height so an abnormally long message does not
@@ -136,8 +134,8 @@ export const SafeMarkdownBody = memo(function SafeMarkdownBody({ children, class
   );
 });
 
-function loadThinkingContent(sessionId: string, hostId: string, entryId: string, blockIndex: number): Promise<string> {
-  const key = `${hostId}:${sessionId}:${entryId}:${blockIndex}`;
+function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
+  const key = `${sessionId}:${entryId}:${blockIndex}`;
   const cached = thinkingContentCache.get(key);
   if (cached) {
     thinkingContentCache.delete(key);
@@ -146,7 +144,7 @@ function loadThinkingContent(sessionId: string, hostId: string, entryId: string,
   }
 
   const request = fetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}&hostId=${encodeURIComponent(hostId)}`,
+    `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
   ).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json() as { thinking?: unknown };
@@ -995,7 +993,6 @@ const ThinkingBlock = memo(function ThinkingBlock({ block, duration, sessionId, 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadingRef = useRef(false);
-  const hostId = useContext(SessionHostContext);
 
   const loadDeferredContent = useCallback(() => {
     if (!block.deferred || content !== null || loadingRef.current) return;
@@ -1007,14 +1004,14 @@ const ThinkingBlock = memo(function ThinkingBlock({ block, duration, sessionId, 
     loadingRef.current = true;
     setLoading(true);
     setError(null);
-    void loadThinkingContent(sessionId, hostId, entryId, blockIndex)
+    void loadThinkingContent(sessionId, entryId, blockIndex)
       .then((text) => setContent(text))
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         loadingRef.current = false;
         setLoading(false);
       });
-  }, [block.deferred, blockIndex, content, entryId, hostId, sessionId, t]);
+  }, [block.deferred, blockIndex, content, entryId, sessionId, t]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     setExpanded(nextOpen);

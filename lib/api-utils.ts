@@ -5,27 +5,22 @@ import { isLinkUp, type Host } from "./hosts/host";
 import { getHost } from "./hosts/hub";
 import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
-import { hostHoldingSession, hostSessions, sessionHost } from "./hosts/session-index";
+import { hostForSessionId, hostSessions } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
-import { isHostId } from "./session-host-key";
-import { getLiveRpcSession, WebRpcError } from "./rpc-manager";
+import { getRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
 
 const SESSION_NOT_FOUND = { error: "Session not found", code: "session_not_found" } as const;
 
 /** Resolve a session id to the host holding its file: a live session's own host first, then the
- * hosts' lists (only the named host's with `hostId`). A 404 JSON response only when absence is
- * confirmed (across all hosts, or on the named one); otherwise 503. */
+ * hosts' lists. A 404 JSON response only when absence is confirmed across all hosts; otherwise 503. */
 export async function resolveSessionHostOr404(
   id: string,
-  /** The host the caller's row names (`?hostId=`): the same id on another host is not this session. */
-  hostId?: string | null,
 ): Promise<{ host: Host } | { response: Response }> {
-  // Without a host, a live copy on any host: a dead wrapper on this machine must not hide it.
-  const live = getLiveRpcSession(id, hostId);
+  const live = getRpcSession(id);
   if (live?.isAlive()) return { host: live.host };
   try {
-    const host = await sessionHost(id, hostId);
+    const host = await hostForSessionId(id);
     return host ? { host } : { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   } catch (error) {
     // Nothing was sent: a command the composer holds is refused, not lost.
@@ -33,14 +28,6 @@ export async function resolveSessionHostOr404(
     if (error instanceof HostOpError && error.code === "host_sessions_unavailable") return { response: apiErrorResponse(error) };
     throw error;
   }
-}
-
-/** A request's `hostId` (`?hostId=` or a body field) at the trust boundary: absent is null, a host id is kept,
- * anything else answers 400 `invalid_host_id`. */
-export function hostIdParam(value: unknown): { hostId: string | null } | { response: Response } {
-  if (value === null || value === undefined) return { hostId: null };
-  if (isHostId(value)) return { hostId: value };
-  return { response: Response.json({ error: "hostId is not a host id", code: "invalid_host_id" }, { status: 400 }) };
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */
@@ -69,25 +56,11 @@ export async function resolveWorkspaceHost(
     return "response" in resolved ? resolved : { host: resolved.host, sessionId: null, sessionFile: null, cwd: null };
   }
   if (!isValidSessionId(sessionId)) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
-  // The named host's copy of an id first; any other copy answers 409 below.
-  const named = typeof hostId === "string" ? hostId : null;
-  // Without one, a live copy: a dead wrapper here must not hide one elsewhere.
-  const running = getLiveRpcSession(sessionId, named);
+  const live = getRpcSession(sessionId);
+  const running = live?.isAlive() ? live : undefined;
   const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
-  let holder: Host | null = null;
-  if (!running && named && retained?.hostId !== named) {
-    try {
-      holder = await hostHoldingSession(sessionId, named);
-    } catch (error) {
-      // The named host cannot say: retryable, never another host's copy.
-      if (error instanceof HostOpError && error.code === "host_offline") return { response: apiErrorResponse(new WebRpcError(error.message, "host_offline", "refused")) };
-      if (error instanceof HostOpError && error.code === "host_sessions_unavailable") return { response: apiErrorResponse(error) };
-      throw error;
-    }
-  }
   let session: { host: Host } | { response: Response };
   if (running) session = { host: running.host };
-  else if (holder) session = { host: holder };
   else if (retained) {
     const host = getHost(retained.hostId);
     if (!host) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
@@ -99,7 +72,7 @@ export async function resolveWorkspaceHost(
   if (hostId !== undefined && hostId !== session.host.id) {
     return { response: Response.json({ error: "The session belongs to another host", code: "workspace_host_mismatch" }, { status: 409 }) };
   }
-  const cwd = (running?.sessionId === sessionId ? running.cwd : undefined) ?? (retained?.hostId === session.host.id ? retained.cwd : undefined)
+  const cwd = (running?.sessionId === sessionId ? running.cwd : undefined) ?? retained?.cwd
     ?? (await hostSessions(session.host.id)).find((entry) => entry.id === sessionId)?.cwd;
   if (!cwd) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   return { host: session.host, sessionId,

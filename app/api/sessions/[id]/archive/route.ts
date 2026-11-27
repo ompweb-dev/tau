@@ -1,19 +1,17 @@
-import { apiErrorResponse, hostIdParam, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { clearExitedRpcSession, getRpcSession } from "@/lib/rpc-manager";
 
-/** POST /api/sessions/[id]/archive?hostId= — stop the live child, then archive the
- * native pi JSONL and its sibling artifacts (lib/pi/archive.ts), on the row's host. */
+/** POST /api/sessions/[id]/archive — stop the live child, then archive the
+ * native pi JSONL and its sibling artifacts (lib/pi/archive.ts). */
 export async function POST(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   try {
-    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
-    if ("response" in host) return host.response;
-    const resolved = await resolveSessionHostOr404(id, host.hostId);
+    const resolved = await resolveSessionHostOr404(id);
     if ("response" in resolved) return resolved.response;
     const { sessionOps } = resolved.host;
     // Parent-session paths are native branch metadata. Moving only a parent
@@ -32,13 +30,12 @@ export async function POST(
     // Disposing a child behind a down link would wait for the link to return.
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
-    // Only this host's child: the same id live on another host is another session.
-    const live = getRpcSession(id, resolved.host.id);
-    if (live && !live.hostOwnedLifecycle) await live.destroyAndWait?.("archive", true);
+    const live = getRpcSession(id);
+    if (!live?.hostOwnedLifecycle) await live?.destroyAndWait?.("archive", true);
     const result = await sessionOps.archiveSession(id);
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id, id);
-    clearExitedRpcSession(id, resolved.host.id);
+    clearExitedRpcSession(id);
     return Response.json({ ok: true, archived: true, archivedPath: result.value.archivedPath });
   } catch (error) {
     if (error instanceof HostOpError) return apiErrorResponse(error);

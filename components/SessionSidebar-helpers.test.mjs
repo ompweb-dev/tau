@@ -8,7 +8,7 @@ const hosts = [{ id: "local", label: "This machine" }, { id: "h1", label: "Build
 const selected = { cwd: "/here", hostId: "local" };
 
 test("a running remote session's placeholder project groups under its host, not This machine", () => {
-  const place = livePlace("h1/remote-run", null, { "h1/remote-run": { cwd: "/srv/app", hostId: "h1" } }, new Map(), new Map(), selected);
+  const place = livePlace("remote-run", null, { "remote-run": { cwd: "/srv/app", hostId: "h1" } }, new Map(), new Map(), selected);
   assert.deepEqual(place, { cwd: "/srv/app", hostId: "h1" });
   const groups = groupProjectsByHost([{ path: place.cwd, hostId: place.hostId }], hosts);
   assert.deepEqual(groups.map(({ host, projects }) => [host.id, projects.map((p) => p.path)]), [["local", []], ["h1", ["/srv/app"]]]);
@@ -16,18 +16,15 @@ test("a running remote session's placeholder project groups under its host, not 
 
 test("a live session's place comes from the freshest source, with that source's host", () => {
   const optimistic = { id: "s", cwd: "/opt", hostId: "h1" };
-  const running = { "h1/s": { cwd: "/run" } };
-  const exited = new Map([["h1/s", { cwd: "/exit", hostId: "h1" }]]);
-  const known = new Map([["h1/s", { cwd: "/known", hostId: "h1" }]]);
-  assert.deepEqual(livePlace("h1/s", optimistic, running, exited, known, selected), optimistic);
-  assert.deepEqual(livePlace("h1/s", null, running, exited, known, selected), { cwd: "/run" });
-  assert.deepEqual(livePlace("h1/s", null, {}, exited, known, selected), { cwd: "/exit", hostId: "h1" });
-  assert.deepEqual(livePlace("h1/s", null, {}, new Map(), known, selected), { cwd: "/known", hostId: "h1" });
-  // Another host's copy of the id is another session.
-  assert.deepEqual(livePlace("local/s", optimistic, running, exited, known, selected), { cwd: "/here", hostId: "local" });
-  // Nothing knows it: on the key's own host, the selected workspace's cwd only when that workspace is there.
-  assert.deepEqual(livePlace("h1/s", null, {}, new Map(), new Map(), selected), { cwd: "", hostId: "h1" });
-  assert.deepEqual(livePlace("h1/s", null, {}, new Map(), new Map(), { cwd: "/srv", hostId: "h1" }), { cwd: "/srv", hostId: "h1" });
+  const running = { s: { cwd: "/run" } };
+  const exited = new Map([["s", { cwd: "/exit", hostId: "h1" }]]);
+  const known = new Map([["s", { cwd: "/known", hostId: "h1" }]]);
+  assert.deepEqual(livePlace("s", optimistic, running, exited, known, selected), optimistic);
+  assert.deepEqual(livePlace("s", null, running, exited, known, selected), { cwd: "/run" });
+  assert.deepEqual(livePlace("s", null, {}, exited, known, selected), { cwd: "/exit", hostId: "h1" });
+  assert.deepEqual(livePlace("s", null, {}, new Map(), known, selected), { cwd: "/known", hostId: "h1" });
+  // Nothing knows it: the selected workspace, host included.
+  assert.deepEqual(livePlace("s", null, {}, new Map(), new Map(), selected), selected);
 });
 
 test("hostsCameOnline: a link-up transition, or a remote host already linked at the first snapshot", async () => {
@@ -62,28 +59,9 @@ test("sessions on different workers share one logical project while a same-path 
     ["/srv/app", ["mac"]],
     ["pool:workers:other", ["unrelated"]],
   ]);
-  assert.deepEqual([...projectActivityCounts(sessions, ["h1/worker-one", "h2/worker-two"], ["h2/worker-two", "local/mac"])], [
+  assert.deepEqual([...projectActivityCounts(sessions, ["worker-one", "worker-two"], ["worker-two", "mac"])], [
     ["pool:workers:app", { running: 2, unread: 1, exited: 0 }],
     ["/srv/app", { running: 0, unread: 1, exited: 0 }],
     ["pool:workers:other", { running: 0, unread: 0, exited: 0 }],
   ]);
-});
-
-test("buildSessionTree keeps two hosts' copies of one id apart and finds a parent on the child's host", async () => {
-  const { buildSessionTree } = await import("./SessionSidebar-helpers.ts");
-  const at = "2026-01-01T00:00:00Z";
-  const s = (id, hostId, parentSessionId) => ({ id, hostId, path: "", cwd: "/w", created: at, modified: at, messageCount: 1, firstMessage: "", ...(parentSessionId ? { parentSessionId } : {}) });
-  const tree = buildSessionTree([s("s1", "local"), s("s1", "h1"), s("fork", "h1", "s1")]);
-  assert.deepEqual(tree.map((node) => [node.session.hostId, node.session.id, node.children.map((child) => `${child.session.hostId}/${child.session.id}`)]).sort(), [
-    ["h1", "s1", ["h1/fork"]],
-    ["local", "s1", []],
-  ]);
-});
-
-test("buildSessionTree ranks each host's copy of one id by its own search score", async () => {
-  const { buildSessionTree } = await import("./SessionSidebar-helpers.ts");
-  const s = (hostId, modified) => ({ id: "s1", hostId, path: "", cwd: "/w", created: modified, modified, messageCount: 1, firstMessage: "" });
-  // The newer copy matches worse: only its own host-keyed score can put the older copy first.
-  const tree = buildSessionTree([s("h1", "2026-01-01T00:00:00Z"), s("h2", "2026-02-01T00:00:00Z")], new Map([["h1/s1", 9], ["h2/s1", 1]]));
-  assert.deepEqual(tree.map((node) => node.session.hostId), ["h1", "h2"]);
 });

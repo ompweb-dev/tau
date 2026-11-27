@@ -1249,6 +1249,7 @@
   "sessionSidebar.statusStopped": "已停止",
   "sessionSidebar.statusDone": "已完成",
   "sessionSidebar.statusDraft": "草稿",
+  "sessionSidebar.statusAlsoOn": "{hosts} 上也有同一工作階段",
   "sessionSidebar.selectProjectFirst": "請先選取專案",
   "sessionSidebar.switchWorktree": "切換工作樹",
   "sessionSidebar.launchConfigDirectory": "目錄",
