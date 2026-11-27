@@ -100,7 +100,7 @@ const MIRRORED_SECRET_FILES = ["models.json", "mcp.json"];
 
 /**
  * tau's copies of credential files: the member's own ones in `own-config/` (and its agent environment) and the staged
- * and replaced ones. A relative symlink moved into `own-config/` also names what it resolved to in the agent dir.
+ * and replaced ones. A relative symlink moved into `own-config/` or `trash/` also names what it resolved to in the agent dir.
  */
 export function tauCredentialCopies(agentDir: string, onUnavailable?: () => void): string[] {
   const tau = path.join(agentDir, "tau");
@@ -109,14 +109,17 @@ export function tauCredentialCopies(agentDir: string, onUnavailable?: () => void
     for (const dir of [path.join(tau, "own-config"), ...["stage", "trash"].map((d) => path.join(tau, "cluster-config", d))]) {
       files.push(path.join(dir, "agent", name));
     }
-    const own = path.join(tau, "own-config", "agent", name);
-    try {
-      if (!lstatSync(own).isSymbolicLink()) continue;
-      const bytes = readlinkSync(own, { encoding: "buffer" });
-      if (!isUtf8(bytes)) { onUnavailable?.(); continue; }
-      const link = bytes.toString("utf8");
-      if (!path.isAbsolute(link)) files.push(joinWithoutNormalizing(resolvedOrSelf(agentDir, onUnavailable), link));
-    } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+    // A relative link keeps its text when moved out of the agent dir (a member's own one, or one put live and then
+    // replaced): resolve it against the agent dir.
+    for (const moved of [path.join(tau, "own-config", "agent", name), path.join(tau, "cluster-config", "trash", "agent", name)]) {
+      try {
+        if (!lstatSync(moved).isSymbolicLink()) continue;
+        const bytes = readlinkSync(moved, { encoding: "buffer" });
+        if (!isUtf8(bytes)) { onUnavailable?.(); continue; }
+        const link = bytes.toString("utf8");
+        if (!path.isAbsolute(link)) files.push(joinWithoutNormalizing(resolvedOrSelf(agentDir, onUnavailable), link));
+      } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+    }
   }
   return files;
 }
