@@ -2332,10 +2332,7 @@ export function AppShell({ appName }: { appName: string }) {
       setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== id));
       setTabLayout((layout) => activateTab(replaceTab(layout, id, NEW_CHAT_TAB_ID), NEW_CHAT_TAB_ID, true));
       // Selected from the draft tab, which is shown in its group now: nextChatMounts keeps the key.
-      setChatMounts((mounts) => {
-        const { [id]: key = id, ...keys } = mounts.keys;
-        return { ...mounts, selected: id, keys: { ...keys, [NEW_CHAT_TAB_ID]: key } };
-      });
+      setChatMounts((mounts) => ({ ...moveChatMount(mounts, id, NEW_CHAT_TAB_ID), selected: id }));
       draftChatRef.current = draftTab.draft;
       setDraftChat(draftTab.draft);
       takeUpDraft(draftTab.draft);
