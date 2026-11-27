@@ -72,7 +72,7 @@ test("a pinned project row names its node; other rows carry no node label", () =
   const noop = () => {};
   const row = (extra) => React.createElement(ProjectRow, {
     project: { path: "/srv/app", hostId: "h1" }, isActive: false, isExpanded: false, activity: undefined, tree: [], hiddenCount: 0,
-    selectedSessionId: null, runningSessionIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
+    selectedSessionKey: null, runningSessionIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
     onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
     onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
     removeBusy: false, onSelectSession: noop, ...extra,
@@ -92,6 +92,26 @@ test("a pinned project row names its node; other rows carry no node label", () =
     cleanup();
     render(row({}));
     assert.equal(screen.queryByText("Build box"), null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("a session row is selected only for its own host's copy of the id", () => {
+  const noop = () => {};
+  const session = { id: "s1", hostId: "h1", path: "/x/s1.jsonl", cwd: "/srv/app", name: "Copied", firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 };
+  const row = (selectedSessionKey) => React.createElement(ProjectRow, {
+    project: { path: "/srv/app", hostId: "h1" }, isActive: true, isExpanded: true, activity: undefined, tree: [{ session, children: [] }], hiddenCount: 0,
+    selectedSessionKey, runningSessionIds: new Set(), awaitingInputIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
+    onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
+    onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
+    removeBusy: false, onSelectSession: noop,
+  });
+  try {
+    const { rerender } = render(row("local:s1"));
+    assert.equal(screen.getByRole("button", { name: "Copied" }).getAttribute("aria-current"), null);
+    rerender(row("h1:s1"));
+    assert.equal(screen.getByRole("button", { name: "Copied" }).getAttribute("aria-current"), "true");
   } finally {
     cleanup();
   }
