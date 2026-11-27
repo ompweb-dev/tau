@@ -476,7 +476,7 @@ function ProjectRow({
             <>
               {visibleRoots.map((node) => (
                 <SessionTreeItem
-                  key={node.session.id}
+                  key={`${node.session.hostId ?? LOCAL_HOST_ID}:${node.session.id}`}
                   node={node}
                   selectedSessionId={selectedSessionId}
                   runningSessionIds={runningSessionIds}
@@ -630,7 +630,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
         <div>
           {node.children.map((child) => (
             <SessionTreeItem
-              key={child.session.id}
+              key={`${child.session.hostId ?? LOCAL_HOST_ID}:${child.session.id}`}
               node={child}
               selectedSessionId={selectedSessionId}
               runningSessionIds={runningSessionIds}
