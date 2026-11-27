@@ -68,3 +68,14 @@ test("sessions on different workers share one logical project while a same-path 
     ["pool:workers:other", { running: 0, unread: 0, exited: 0 }],
   ]);
 });
+
+test("buildSessionTree keeps two hosts' copies of one id apart and finds a parent on the child's host", async () => {
+  const { buildSessionTree } = await import("./SessionSidebar-helpers.ts");
+  const at = "2026-01-01T00:00:00Z";
+  const s = (id, hostId, parentSessionId) => ({ id, hostId, path: "", cwd: "/w", created: at, modified: at, messageCount: 1, firstMessage: "", ...(parentSessionId ? { parentSessionId } : {}) });
+  const tree = buildSessionTree([s("s1", "local"), s("s1", "h1"), s("fork", "h1", "s1")]);
+  assert.deepEqual(tree.map((node) => [node.session.hostId, node.session.id, node.children.map((child) => `${child.session.hostId}/${child.session.id}`)]).sort(), [
+    ["h1", "s1", ["h1/fork"]],
+    ["local", "s1", []],
+  ]);
+});

@@ -5,7 +5,7 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
 
 self.addEventListener("message", (event) => {
-  if (event.data?.type === "tau-outbox-capability") event.ports[0]?.postMessage({ type: "tau-outbox-capability", version: 2 });
+  if (event.data?.type === "tau-outbox-capability") event.ports[0]?.postMessage({ type: "tau-outbox-capability", version: 3 });
 });
 
 self.addEventListener("push", (event) => {
@@ -58,7 +58,7 @@ self.addEventListener("notificationclick", (event) => {
           // other page (the sign-in screen after the cookie expired) loads the
           // session URL, which the sign-in screen carries through as `next`.
           if (new URL(client.url).pathname === "/") {
-            if (sessionId) client.postMessage({ type: "tau-open-session", sessionId, ...(hostId ? { hostId } : {}) });
+            if (sessionId) client.postMessage({ type: "tau-open-session", sessionId, hostId: hostId || "local" });
           } else {
             await client.navigate(url);
           }

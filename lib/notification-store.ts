@@ -156,6 +156,9 @@ function open(dir: string, path: string): Database {
     const legacy = join(dir, "notifications.json");
     const imported = transaction(database, () => {
       database.exec(SCHEMA);
+      // History ids from before host keys (`<id>:<type>`, `<host>:<id>:<type>`) would sit beside the `<host>/<id>:<type>`
+      // entry of the same notification: pre-alpha, they are dropped, not migrated.
+      database.exec("DELETE FROM history WHERE id NOT GLOB '?*/?*:?*'");
       return importLegacy(database, legacy);
     });
     if (imported) {

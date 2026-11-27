@@ -363,6 +363,7 @@ export async function reconcileOutbox(sessionId: string, hostId: string, confirm
   await transport.reconcileOutbox(sessionId, hostId, confirmedIds);
 }
 
+// Version 3: the worker posts each entry to its own host's copy (`?hostId=`); a version 2 worker predates hosts.
 function supportsOutboxSync(worker: ServiceWorker | null): Promise<boolean> {
   if (!worker) return Promise.resolve(false);
   return new Promise((resolve) => {
@@ -374,7 +375,7 @@ function supportsOutboxSync(worker: ServiceWorker | null): Promise<boolean> {
       resolve(supported);
     };
     const timer = setTimeout(() => finish(false), 1_000);
-    channel.port1.onmessage = ({ data }) => finish(data?.type === "tau-outbox-capability" && data.version === 2);
+    channel.port1.onmessage = ({ data }) => finish(data?.type === "tau-outbox-capability" && data.version === 3);
     try {
       worker.postMessage({ type: "tau-outbox-capability" }, [channel.port2]);
     } catch {

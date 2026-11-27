@@ -1809,7 +1809,8 @@ export function AppShell({ appName }: { appName: string }) {
     const absolute = filePath.startsWith("/") || filePath.startsWith("~/") || filePath.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(filePath);
     const rooted = !absolute && source.cwd ? joinFilePath(source.cwd, filePath) : filePath;
     const target = filePath.startsWith("~/") ? filePath : normalizeLocalPath(rooted);
-    const tabId = `file:${source.sessionId ?? hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
+    // Another host's copy of a session is another source: its file tab is its own.
+    const tabId = `file:${source.sessionId ? sessionHostKey(source.hostId, source.sessionId) : hostProjectKey(source.hostId, source.cwd ?? "")}:${target}`;
     const revealLine = line === undefined ? undefined : { line, seq: ++revealSeqRef.current };
     setFileTabs((prev) => {
       if (!prev.some((tab) => tab.id === tabId)) {

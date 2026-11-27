@@ -310,11 +310,12 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
           setRunningSessionPlaces(nextPlaces);
         }
       }
-      // Drop unread markers for sessions that no longer exist (e.g. deleted).
+      // Drop unread markers for sessions that no longer exist (e.g. deleted); a host whose list is not current keeps its own.
       const existingIds = new Set(data.sessions.map((s) => sessionHostKey(s.hostId, s.id)));
+      const unavailable = new Set(data.unavailableHosts ?? []);
       setUnreadSessionIds((prev) => {
         if (prev.size === 0) return prev;
-        const next = new Set([...prev].filter((id) => existingIds.has(id)));
+        const next = new Set([...prev].filter((key) => existingIds.has(key) || unavailable.has(splitSessionHostKey(key).hostId)));
         return next.size === prev.size ? prev : next;
       });
       setError(null);

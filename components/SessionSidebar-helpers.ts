@@ -165,20 +165,21 @@ interface SessionTreeNode {
 }
 
 function buildSessionTree(sessions: SessionInfo[], scores?: Map<string, number>): SessionTreeNode[] {
+  // Keyed by host and id: a pooled list can hold two hosts' copies of one id, and a parent is on its child's host.
   const byId = new Map<string, SessionTreeNode>();
   for (const s of sessions) {
-    byId.set(s.id, { session: s, children: [] });
+    byId.set(sessionHostKey(s.hostId, s.id), { session: s, children: [] });
   }
 
   // Build a map of parentSessionId chains so we can resolve missing ancestors
   const parentOf = new Map<string, string>();
   for (const s of sessions) {
-    if (s.parentSessionId) parentOf.set(s.id, s.parentSessionId);
+    if (s.parentSessionId) parentOf.set(sessionHostKey(s.hostId, s.id), sessionHostKey(s.hostId, s.parentSessionId));
   }
 
   // Walk up the parentSessionId chain to find the nearest ancestor that exists in byId
-  function resolveAncestor(id: string): string | null {
-    let cur = parentOf.get(id);
+  function resolveAncestor(key: string): string | null {
+    let cur = parentOf.get(key);
     const visited = new Set<string>();
     while (cur) {
       if (visited.has(cur)) return null; // cycle guard
@@ -191,7 +192,7 @@ function buildSessionTree(sessions: SessionInfo[], scores?: Map<string, number>)
 
   const roots: SessionTreeNode[] = [];
   for (const node of byId.values()) {
-    const ancestor = resolveAncestor(node.session.id);
+    const ancestor = resolveAncestor(sessionHostKey(node.session.hostId, node.session.id));
     if (ancestor) {
       byId.get(ancestor)!.children.push(node);
     } else {

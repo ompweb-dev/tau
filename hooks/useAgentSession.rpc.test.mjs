@@ -5317,6 +5317,7 @@ test("pooled creation uncertainty with a known id adopts the owner without resen
   let first;
   await act(async () => { first = await w.latest.handleSend("do not resend automatically"); await sleep(30); });
   assert.equal(first.status, "rejected");
+  assert.equal(first.recoveryKey, "new:pool:workers:app", "not promoted yet: the draft goes back to the new chat's composer");
   assert.equal(w.latest.sessionIdRef.current, owner.sessionId);
   assert.equal(callsTo("POST", `/api/agent/${owner.sessionId}`).filter((call) => call.body?.type === "prompt").length, 0);
   let retry;
@@ -5641,6 +5642,31 @@ test("switching between two hosts' copies of one session id reloads the chat and
   await until(() => view.getByRole("textbox").value === "draft for h1", "the h1 copy's draft comes back");
   await act(async () => { fireEvent.click(view.getByText("Mac legacy conversation", { selector: ".session-item-button *" })); await sleep(80); });
   await until(() => view.getByRole("textbox").value === "draft here", "and this machine's");
+  view.unmount();
+});
+
+test("the same file opened from two hosts' copies of one session id gets a tab for each copy", async (t) => {
+  resetWorld();
+  const { sessions } = servePooledWorkspace();
+  sessions.push({ ...sessionInfo("legacy"), name: "Mac legacy conversation", cwd: "/legacy", projectRoot: "/legacy", hostId: "local" });
+  window.history.replaceState(null, "", "?session=legacy&host=local");
+  t.after(() => window.history.replaceState(null, "", "/"));
+  const view = ownRoot(render(React.createElement(AppShell, { appName: "tau" }), { wrapper: TestRoot }));
+  await settle();
+  await until(() => view.queryByRole("tab", { name: "Mac legacy conversation" }), "this machine's copy is shown");
+  const stream = world.esInstances.find(({ channel }) => channel.kind === "host-tools");
+  const open = async (id, hostId) => {
+    await act(async () => {
+      stream.emit({ type: "host_tool_call", id, sessionId: "legacy", hostId, cwd: "/legacy", toolName: "open_file", arguments: { path: "/legacy/notes.txt" } });
+      await sleep(80);
+    });
+  };
+  await open("open-here", "local");
+  await until(() => view.queryAllByRole("tab", { name: /notes\.txt/ }).length === 1, "this machine's copy opens the file");
+  await act(async () => { fireEvent.click(view.getByText("Worker legacy conversation", { selector: ".session-item-button *" })); await sleep(80); });
+  await until(() => view.queryByRole("tab", { name: "Worker legacy conversation" }), "the h1 copy is shown");
+  await open("open-there", "h1");
+  await until(() => view.queryAllByRole("tab", { name: /notes\.txt/ }).length === 2, "the h1 copy's file is a tab of its own");
   view.unmount();
 });
 

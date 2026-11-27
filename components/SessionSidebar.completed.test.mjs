@@ -25,6 +25,8 @@ const SESSIONS = [
 ];
 /** What /api/sessions serves; a test may swap it before mounting. */
 let sessions = SESSIONS;
+/** Hosts whose session lists /api/sessions reports as not current. */
+let unavailableHosts = [];
 
 /** The tab side of the shared event-stream worker (lib/event-stream.ts), so a
  * test can push `running` frames on the channel the sidebar opened. */
@@ -59,7 +61,7 @@ before(() => {
   globalThis.fetch = (url) => {
     const path = String(url).split("?")[0];
     const body = path === "/api/sessions"
-      ? { sessions, runningSessions: [] }
+      ? { sessions, runningSessions: [], unavailableHosts }
       : path === "/api/projects" ? { projects: [{ path: PROJECT }] } : {};
     const response = Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
     inflight.add(response);
@@ -74,6 +76,7 @@ afterEach(async () => {
   cleanup();
   localStorage.clear();
   sessions = SESSIONS;
+  unavailableHosts = [];
 });
 
 function Harness({ initialSelected }) {
@@ -171,4 +174,10 @@ test("a nested child's check updates when only the child becomes unread", async 
   act(() => { window.dispatchEvent(new window.StorageEvent("storage", { key: UNREAD_KEY, newValue: '["local/s-child"]' })); });
   await waitFor(() => assert.equal(hasCheck("Child task"), true));
   assert.equal(hasCheck("Background task"), false, "the parent itself stays unmarked");
+});
+
+test("a host whose session list is not current keeps its unread marks; a current host's missing session loses its", async () => {
+  unavailableHosts = ["h1"];
+  await mount({ unread: ["h1/s-remote", "local/s-gone", "local/s-bg"] });
+  await waitFor(() => assert.deepEqual(JSON.parse(localStorage.getItem(UNREAD_KEY)), ["h1/s-remote", "local/s-bg"]));
 });

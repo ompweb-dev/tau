@@ -154,7 +154,8 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
   return {
     title: (event.sessionName && clip(event.sessionName, MAX_TITLE)) || t("notifications.untitledSession"),
     body,
-    url: event.sessionId ? `/?session=${encodeURIComponent(event.sessionId)}${event.hostId ? `&host=${encodeURIComponent(event.hostId)}` : ""}` : "/",
+    // Always names the host, as `sessionNavigationUrl` does: this machine's copy is `host=local`.
+    url: event.sessionId ? `/?session=${encodeURIComponent(event.sessionId)}&host=${encodeURIComponent(event.hostId ?? "local")}` : "/",
     tag: `${sessionHostKey(event.hostId, event.sessionId)}:${event.type}`,
     sessionId: event.sessionId,
     ...(event.hostId ? { hostId: event.hostId } : {}),

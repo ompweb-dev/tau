@@ -668,7 +668,8 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
   const detachRunning = subscribeRunningSessions(rebind);
   const detachOutbox = onOutboxChange(sessionId, hostId, () => {
     rebind();
-    handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, hostId) });
+    // A hostless channel shows the bound copy's held messages once a copy binds; every host's before that.
+    handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, boundHost) });
   });
   rebind();
   handle.setDetach(() => {
@@ -676,7 +677,7 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
     detachRunning();
     detachSession();
   });
-  if (handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, hostId) });
+  if (handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, boundHost) });
   return SUBSCRIBED;
 }
 

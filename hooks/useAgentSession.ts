@@ -3077,6 +3077,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // not a request to stop following the response that this prompt starts.
     userScrollIntentUntilRef.current = 0;
 
+    // The composer's key: the new chat's until promotion switches it to the session's (a session created but not
+    // promoted, such as a 503 with its id, is still shown under the new chat's key).
     let recoveryKey = (sessionIdRef.current ? sessionHostKey(currentSessionHost(), sessionIdRef.current) : undefined) ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
     // Set just before the prompt goes out: a lost reply from any earlier command (get_state, set_model) ran no prompt.
     let promptIssued = false;
@@ -3163,7 +3165,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       independentRunErrorRef.current = null;
       slashCommandRunRef.current = false;
       dispatch({ type: "end" });
-      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ? sessionHostKey(currentSessionHost(), sessionIdRef.current) : recoveryKey };
+      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey };
     }
   }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage, currentSessionHost]);
 
