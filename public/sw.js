@@ -261,7 +261,8 @@ async function flushOutbox() {
         const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
         const controller = new AbortController();
         timer = setTimeout(() => controller.abort(), 40_000 + Math.ceil(body.length / 2));
-        const url = `/api/agent/${encodeURIComponent(sessionId)}${hostId ? `?hostId=${encodeURIComponent(hostId)}` : ""}`;
+        // A row from before hosts is this machine's, as the chat shows it.
+        const url = `/api/agent/${encodeURIComponent(sessionId)}?hostId=${encodeURIComponent(hostId ?? "local")}`;
         const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: controller.signal });
         const reply = await response.json().catch((error) => {
           if (controller.signal.aborted) throw error;

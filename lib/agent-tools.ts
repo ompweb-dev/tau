@@ -155,6 +155,8 @@ export interface AgentToolSessionOps {
   /** Authorize the actual physical owner before any preparation or spawn. */
   createSession(input: AgentToolCreateSessionInput, authorize: (host: AgentToolHost) => Promise<boolean>): Promise<AgentToolCreateSessionResult>;
   deliver(input: AgentToolDeliverInput): Promise<AgentToolDeliverResult>;
+  /** Whether `hostId`'s copy of the session has a live process (a list may not name a session that just started). */
+  hasLiveCopy(sessionId: string, hostId: string): boolean;
   /** The host a session lives on, `preferHostId`'s copy first; null when no host has it. */
   sessionHostId(sessionId: string, preferHostId?: string): Promise<string | null>;
   /** The GitHub tools' `gh` runner, host list and write setting. */
@@ -459,7 +461,7 @@ export async function executeAgentTool(
   const listed = sessions.filter((session) => session.id === sessionId);
   const copyHost = (session: { hostId?: string }) => session.hostId ?? "local";
   const targetHostId = ctx.sourceHostId === "local"
-    ? (listed.find((session) => copyHost(session) === "local") ? "local" : listed[0]?.hostId)
+    ? (ops.hasLiveCopy(sessionId, "local") || listed.some((session) => copyHost(session) === "local") ? "local" : listed[0]?.hostId)
     : await ops.sessionHostId(sessionId, ctx.sourceHostId);
   const targetSession = listed.find((session) => copyHost(session) === (targetHostId ?? "local"));
   const hosts = ops.listHosts();

@@ -8,7 +8,7 @@ import { runOutboxCommand } from "@/lib/message-outbox";
 import { readClientMessageIds } from "@/lib/client-message-ids";
 import { reconcileOutboxHandoffs } from "@/lib/outbox-handoff";
 import type { MessageOrigin } from "@/lib/message-origin";
-import { sessionHostKey } from "@/lib/session-host-key";
+import { sessionHostKey, splitSessionHostKey } from "@/lib/session-host-key";
 import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 
 // Commands that ride whatever child is alive and never spawn or replace one:
@@ -85,8 +85,10 @@ export async function runAgentCommand(
     // behind it. Limit (hostless API callers only): a hostless prompt still resolving can be overtaken by a Stop that
     // names the host.
     const live = getLiveRpcSession(id, hostId);
-    // Never waits on host lists: there is no child to ask, so the reply is known.
-    if (!live && Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
+    // Never waits on host lists: there is no child to ask, so the reply is known. Unless a command still preparing
+    // holds this copy's fence (it may be starting the child): then wait for it below and look again.
+    const fenced = hostId ? sendFences().has(sessionHostKey(hostId, id)) : [...sendFences().keys()].some((key) => splitSessionHostKey(key).id === id);
+    if (!live && !fenced && Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
     if (!hostId) {
       if (live) hostId = live.host.id;
       else {

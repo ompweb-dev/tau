@@ -6,7 +6,7 @@ import { LOCAL_HOST_ID } from "./hosts/registry";
 import { sessionHost } from "./hosts/session-index";
 import { outboxCanonicalSessions } from "./message-outbox";
 import type { ClientMessageStatus } from "./pi-types";
-import { getRpcSession, WebRpcError } from "./rpc-manager";
+import { getLiveRpcSession, getRpcSession, WebRpcError } from "./rpc-manager";
 import { isRecord } from "./type-guards";
 import type { AgentMessage } from "./types";
 
@@ -46,11 +46,14 @@ function nativeStatus(value: unknown, ids: readonly string[]): ClientMessageStat
 /** The live child answering for `sessionId`; 409 only once its absence is established. A child another server started
  * is adopted here only after its daemon lists it, and an offline or unlisted host proves nothing: those are a retryable 503. */
 async function liveChild(sessionId: string, hostId?: string | null) {
-  let live = getRpcSession(sessionId, hostId);
+  // A live copy first (without a host, any host's: a dead wrapper here must not hide it), else the named or local
+  // wrapper for the dead-wrapper checks below.
+  const find = () => getLiveRpcSession(sessionId, hostId) ?? getRpcSession(sessionId, hostId);
+  let live = find();
   if (!live) {
     const hosts = hostId ? [hostId] : [LOCAL_HOST_ID, ...listHosts().map(({ id }) => id)];
     await Promise.all(hosts.map((id) => adoptedChild(id, sessionId)));
-    live = getRpcSession(sessionId, hostId);
+    live = find();
   }
   if (live?.isAlive()) return live;
   if (live) {

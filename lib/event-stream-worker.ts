@@ -768,7 +768,7 @@ function sameOutboxIntent(a: LocalOutboxEntry, b: LocalOutboxEntry): boolean {
 }
 
 /** One host's copy of a session: the same id on another host is another session. A row from before hosts (no `hostId`)
- * is grouped with this machine's and posted without a host, so the server resolves its host. */
+ * is this machine's: grouped with it and posted with `?hostId=local`. */
 const outboxSession = (entry: Pick<LocalOutboxEntry, "sessionId" | "hostId">): string => sessionHostKey(entry.hostId, entry.sessionId);
 
 // A local failed ancestor proves lineage only in the same session (host copy) with the exact original intent.
@@ -1143,7 +1143,8 @@ async function sendOutbox(session: string): Promise<void> {
   const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
   // A half-open POST must not block this session forever; include the body read and allow 2 KB/s for its uplink.
   withDeadline(40_000 + Math.ceil(body.length / 2), async (signal) => {
-    const response = await fetch(agentUrl(sessionId, hostId), { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+    // A row from before hosts is this machine's, as the chat shows it: the server binds it there.
+    const response = await fetch(agentUrl(sessionId, hostId ?? "local"), { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
     const reply = await response.json().catch((error) => {
       if (signal.aborted) throw error;
       return null;

@@ -220,18 +220,19 @@ interface LivePlace {
 
 /** Where a live session the session list lacks gets its placeholder row: the
  *  freshest source that knows it, host included, so a remote run is never
- *  grouped under This machine; else the selected workspace's cwd on the key's own host (never the selected host).
- *  `key` and the maps' keys are `sessionHostKey`s. */
+ *  grouped under This machine; else, on the key's own host, the selected workspace's cwd when that workspace is on the
+ *  same host, or no cwd (never another host's workspace). `key` and the maps' keys are `sessionHostKey`s. */
 function livePlace(
   key: string,
   optimistic: (LivePlace & { id: string }) | null | undefined,
   running: Readonly<Record<string, LivePlace>>,
   exited: ReadonlyMap<string, LivePlace>,
   known: ReadonlyMap<string, LivePlace>,
-  selectedCwd: string,
+  selected: LivePlace,
 ): LivePlace {
+  const { hostId } = splitSessionHostKey(key);
   return (optimistic && sessionHostKey(optimistic.hostId, optimistic.id) === key ? optimistic : undefined) ?? running[key] ?? exited.get(key) ?? known.get(key)
-    ?? { cwd: selectedCwd, hostId: splitSessionHostKey(key).hostId };
+    ?? { cwd: hostId === (selected.hostId ?? LOCAL_HOST_ID) ? selected.cwd : "", hostId };
 }
 /** True when a host is link-up in `next` but was not in `prev` (a host new to
  *  the list counts). On the first snapshot (`prev` null) only a linked remote

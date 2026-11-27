@@ -3055,6 +3055,26 @@ const DELIVERY_COMMAND: Record<AgentToolDeliverInput["delivery"], string> = { pr
  * A waited delivery registers its turn-end waiter BEFORE sending, then
  * reads the turn's final text with get_last_assistant_text.
  */
+/** `send_to_session`'s target host: the caller's own host's copy of the id first, then a live copy, then the host lists. */
+export async function agentToolSessionHostId(sessionId: string, preferHostId?: string): Promise<string | null> {
+  // The caller's own host's copy first. Only that host confirming it lacks the id lets another host's copy answer:
+  // its list being unavailable (or the host offline) is a retryable error, never a reason to pick another copy.
+  if (preferHostId) {
+    if (getLiveRpcSession(sessionId, preferHostId)) return preferHostId;
+    try {
+      if (await sessionHost(sessionId, preferHostId)) return preferHostId;
+    } catch (error) {
+      if (error instanceof HostOpError && (error.code === "host_sessions_unavailable" || error.code === "host_offline")) {
+        throw new Error(`${error.message}; try again`);
+      }
+      throw error;
+    }
+  }
+  const live = getLiveRpcSession(sessionId);
+  if (live) return live.host.id;
+  return (await hostForSessionId(sessionId))?.id ?? null;
+}
+
 function createAgentToolOps(source: AgentToolContext, replaying: boolean): AgentToolSessionOps {
   const hosts = (): AgentToolHost[] => {
     const local = getHost(LOCAL_HOST_ID);
@@ -3202,16 +3222,8 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
       };
     },
 
-    async sessionHostId(sessionId, preferHostId) {
-      // The caller's own host's copy first; its list being unavailable is no answer, so the others are asked.
-      if (preferHostId) {
-        if (getLiveRpcSession(sessionId, preferHostId)) return preferHostId;
-        if (await sessionHost(sessionId, preferHostId).catch(() => null)) return preferHostId;
-      }
-      const live = getLiveRpcSession(sessionId);
-      if (live) return live.host.id;
-      return (await hostForSessionId(sessionId))?.id ?? null;
-    },
+    hasLiveCopy: (sessionId, hostId) => Boolean(getLiveRpcSession(sessionId, hostId)),
+    sessionHostId: agentToolSessionHostId,
   };
 }
 

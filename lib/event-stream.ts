@@ -307,7 +307,8 @@ function postOutboxOnExit(): void {
     const bytes = new Blob([body]).size;
     if (bytes > left) continue;
     left -= bytes;
-    fetch(agentUrl(sessionId, hostId), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+    // A row from before hosts is this machine's, as the chat shows it.
+    fetch(agentUrl(sessionId, hostId ?? "local"), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
   }
 }
 

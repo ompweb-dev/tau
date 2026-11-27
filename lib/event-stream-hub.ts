@@ -652,8 +652,12 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
     handle.send({ type: "connected", sessionId, web: live.getStreamSnapshot().cursor });
   };
   if (session) attach(session);
+  // A hostless subscription is pinned to the host of the first copy it attaches: it never switches to another host's
+  // session of the same id.
+  let boundHost = hostId ?? session?.host?.id;
   const rebind = () => {
-    const live = getLiveRpcSession(sessionId, hostId);
+    const live = getLiveRpcSession(sessionId, boundHost);
+    boundHost ??= live?.host?.id;
     if (live !== session) {
       detachSession();
       detachSession = () => {};

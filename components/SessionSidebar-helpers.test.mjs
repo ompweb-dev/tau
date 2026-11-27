@@ -5,7 +5,7 @@ const { livePlace } = await import("./SessionSidebar-helpers.ts");
 const { groupProjectsByHost, groupSessionsByProject, projectActivityCounts } = await import("../lib/project-ordering.ts");
 
 const hosts = [{ id: "local", label: "This machine" }, { id: "h1", label: "Build box" }];
-const selected = "/here";
+const selected = { cwd: "/here", hostId: "local" };
 
 test("a running remote session's placeholder project groups under its host, not This machine", () => {
   const place = livePlace("h1/remote-run", null, { "h1/remote-run": { cwd: "/srv/app", hostId: "h1" } }, new Map(), new Map(), selected);
@@ -25,8 +25,9 @@ test("a live session's place comes from the freshest source, with that source's 
   assert.deepEqual(livePlace("h1/s", null, {}, new Map(), known, selected), { cwd: "/known", hostId: "h1" });
   // Another host's copy of the id is another session.
   assert.deepEqual(livePlace("local/s", optimistic, running, exited, known, selected), { cwd: "/here", hostId: "local" });
-  // Nothing knows it: the selected workspace's cwd, on the key's own host, never the selected host.
-  assert.deepEqual(livePlace("h1/s", null, {}, new Map(), new Map(), selected), { cwd: "/here", hostId: "h1" });
+  // Nothing knows it: on the key's own host, the selected workspace's cwd only when that workspace is there.
+  assert.deepEqual(livePlace("h1/s", null, {}, new Map(), new Map(), selected), { cwd: "", hostId: "h1" });
+  assert.deepEqual(livePlace("h1/s", null, {}, new Map(), new Map(), { cwd: "/srv", hostId: "h1" }), { cwd: "/srv", hostId: "h1" });
 });
 
 test("hostsCameOnline: a link-up transition, or a remote host already linked at the first snapshot", async () => {

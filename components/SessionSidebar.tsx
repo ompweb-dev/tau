@@ -782,7 +782,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
         placeholderTsRef.current.set(key, ts);
       }
       const isOptimistic = optimisticKey === key;
-      const place = livePlace(key, optimisticSession, runningSessionPlaces, exitedSessions, knownRunningPlacesRef.current, selectedCwd ?? "");
+      const place = livePlace(key, optimisticSession, runningSessionPlaces, exitedSessions, knownRunningPlacesRef.current, { cwd: selectedCwd ?? "", hostId: selectedHostId });
       const hostId = remoteHostId(place.hostId);
       const resolvedRoot = isOptimistic && optimisticSession
         ? (optimisticProjectRoot ?? optimisticSession.projectRoot ?? optimisticSession.cwd)
@@ -816,7 +816,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       }
     }
     return placeholders.length ? [...base, ...placeholders] : base;
-  }, [allSessions, optimisticSession, optimisticProjectRoot, runningSessionIds, runningSessionPlaces, exitedSessions, projectRootFor, selectedCwd]);
+  }, [allSessions, optimisticSession, optimisticProjectRoot, runningSessionIds, runningSessionPlaces, exitedSessions, projectRootFor, selectedCwd, selectedHostId]);
   const visibleProjects = useMemo(() => {
     let base = projects;
     const hasOpt = optimisticSession ? base.some((p) => projectIdentity(p) === hostProjectKey(optimisticSession.hostId, workspaceKeyOf(optimisticSession))) : false;
@@ -833,7 +833,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     for (const key of visibleLiveIds) {
       if (allSessions.some((s) => sessionHostKey(s.hostId, s.id) === key)) continue;
       const isOptimistic = optimisticKey === key;
-      const place = livePlace(key, optimisticSession, runningSessionPlaces, exitedSessions, knownRunningPlacesRef.current, selectedCwd ?? "");
+      const place = livePlace(key, optimisticSession, runningSessionPlaces, exitedSessions, knownRunningPlacesRef.current, { cwd: selectedCwd ?? "", hostId: selectedHostId });
       if (place.poolId) continue;
       const hostId = remoteHostId(place.hostId);
       const resolvedRoot = isOptimistic && optimisticSession
@@ -847,7 +847,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       }
     }
     return base;
-  }, [optimisticProjectRoot, projects, runningSessionIds, runningSessionPlaces, exitedSessions, allSessions, optimisticSession, projectRootFor, selectedCwd]);
+  }, [optimisticProjectRoot, projects, runningSessionIds, runningSessionPlaces, exitedSessions, allSessions, optimisticSession, projectRootFor, selectedCwd, selectedHostId]);
 
   // ---- Derived project list ---------------------------------------------------
   const selectedProject = useMemo(() => selectedPoolKey ?? projectRootFor(selectedCwd, selectedHostId), [selectedPoolKey, projectRootFor, selectedCwd, selectedHostId]);
