@@ -128,7 +128,9 @@ const OPEN_URL_AUTOMATICALLY_STORAGE_KEY = "tau:open-url-automatically";
 /** The transient tab of a chat not yet sent (no session yet). */
 const NEW_CHAT_TAB_ID = "chat:new";
 /** An unsent new chat's target, as it was last shown. */
-type DraftChat = { cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string; initialization?: string };
+/** `scope`: set once the chat sent something and moved to a tab of its own, which gives it a composer draft of its
+ *  own (ChatWindow's `draftScope`): the new chat that opens after it has the workspace's. */
+type DraftChat = { cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string; initialization?: string; scope?: string };
 const chatTabId = (session: SessionInfo) => `chat:${remoteHostId(session.hostId) ?? LOCAL_HOST_ID}:${session.id}`;
 /** The strips kept across reloads of this browser tab (sessionStorage: another window keeps its own). */
 const WORKBENCH_STORAGE_KEY = "tau:workbench";
@@ -198,6 +200,8 @@ export function AppShell({ appName }: { appName: string }) {
   // New chats that sent something, moved out of the new chat's tab: each keeps a tab of its own, and its mount, until
   // the tab closes or the chat's session takes the tab over.
   const [draftTabs, setDraftTabs] = useState<{ id: string; draft: DraftChat }[]>([]);
+  // The shown new chat's DraftChat.scope.
+  const [newChatScope, setNewChatScope] = useState<string | undefined>(undefined);
   const draftTabSeqRef = useRef(0);
   // Mount keys of the new chats that began a send which can create their session. Never cleared: a key names one
   // mount, and a sent chat stays sent.
@@ -220,7 +224,8 @@ export function AppShell({ appName }: { appName: string }) {
       return;
     }
     const id = `${DRAFT_TAB_PREFIX}${++draftTabSeqRef.current}`;
-    setDraftTabs((tabs) => [...tabs, { id, draft }]);
+    setDraftTabs((tabs) => [...tabs, { id, draft: { ...draft, scope: draft.scope ?? id } }]);
+    setNewChatScope(undefined);
     setTabLayout((layout) => replaceTab(layout, NEW_CHAT_TAB_ID, id));
     setChatMounts((mounts) => moveChatMount(mounts, NEW_CHAT_TAB_ID, id));
   }, []);
@@ -1461,6 +1466,7 @@ export function AppShell({ appName }: { appName: string }) {
   }, [router, isMobile, activeCwd, activePoolProject, dropKeptDraft]);
   const takeUpDraft = useCallback((draft: DraftChat) => {
     handleNewSession(draft.creationId ?? "", draft.cwd, draft.hostId, draft.project ?? undefined, draft.initialization);
+    setNewChatScope(draft.scope);
   }, [handleNewSession]);
 
   // ---- In-app Navigate back / forward over visited chat views ----
@@ -1609,6 +1615,7 @@ export function AppShell({ appName }: { appName: string }) {
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
     setDraftChat(null);
+    setNewChatScope(undefined);
     if (!draftShownRef.current && draftChatRef.current) {
       setNewSessionCwd(null);
       setNewSessionPoolProject(null);
@@ -2180,8 +2187,8 @@ export function AppShell({ appName }: { appName: string }) {
   const draftTabShown = showChat && !selectedSession;
   draftShownRef.current = draftTabShown;
   useEffect(() => {
-    if (draftTabShown) setDraftChat({ cwd: effectiveNewSessionCwd, hostId: newSessionHost, project: effectivePoolProject, creationId: newSessionCreation.id, initialization: newSessionCreation.initialization });
-  }, [draftTabShown, effectiveNewSessionCwd, newSessionHost, effectivePoolProject, newSessionCreation.id, newSessionCreation.initialization]);
+    if (draftTabShown) setDraftChat({ cwd: effectiveNewSessionCwd, hostId: newSessionHost, project: effectivePoolProject, creationId: newSessionCreation.id, initialization: newSessionCreation.initialization, scope: newChatScope });
+  }, [draftTabShown, effectiveNewSessionCwd, newSessionHost, effectivePoolProject, newSessionCreation.id, newSessionCreation.initialization, newChatScope]);
   const tabGroups = groupsOf(tabLayout);
   // The new chat a group shows keeps its tab while the selected chat is not in that group (a chat selected into
   // the new chat's own group replaces it, as before).
@@ -3089,7 +3096,7 @@ export function AppShell({ appName }: { appName: string }) {
             <ChatWindow
               key={key ?? undefined}
               session={null}
-              draftScope={key && key !== NEW_CHAT_TAB_ID ? key : undefined}
+              draftScope={draft.scope}
               newSessionCwd={draft.cwd}
               newSessionHostId={draft.hostId}
               newSessionCreationId={draft.project?.poolId ? draft.creationId : undefined}
@@ -3268,7 +3275,7 @@ export function AppShell({ appName }: { appName: string }) {
             <ChatWindow
               key={chatKey ?? undefined}
               session={selectedSession}
-              draftScope={chatKey && chatKey !== NEW_CHAT_TAB_ID ? chatKey : undefined}
+              draftScope={newChatScope}
               headerActions={chatPill}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionHostId={newSessionHost}

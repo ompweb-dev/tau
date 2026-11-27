@@ -53,7 +53,7 @@ interface Props {
   newSessionPoolId?: string;
   newSessionProjectId?: string;
   newSessionInitialization?: string;
-  /** Set for a new chat that is not the strip's own new chat: its draft is its own, not the workspace's. */
+  /** A new chat's draft of its own (DraftChat.scope in AppShell); without it the chat has the workspace's. */
   draftScope?: string;
   onNewSessionInitialization?: (body: string) => void;
   /** The chat's host from the `hosts` channel: the source of truth until a
@@ -970,6 +970,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       onBuiltinCommand={handleBuiltinSlashCommand}
       onAudioUnlock={unlockAudio}
       draftKey={draftKey}
+      draftKeyContinues={draftScope ? baseDraftKey : undefined}
       uploadHostId={session ? session.hostId : newSessionHostId}
       resolveUploadHost={!session && newSessionPoolId ? resolveUploadHost : undefined}
       cwd={!session && newSessionPoolId ? null : session?.cwd ?? newSessionCwd}

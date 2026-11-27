@@ -296,3 +296,11 @@ export function clearDraft(key: string): void {
     for (const listener of listeners) listener();
   }
 }
+
+/** The same chat continues under `to` (a new chat given a draft of its own): `draft` (the composer's current one)
+ *  is stored there, `from` is cleared, and submissions still in flight from `from` recover to `to`. */
+export function continueDraft(from: string, to: string, draft: ChatDraft): void {
+  clearDraft(from);
+  setDraft(to, draft);
+  for (const submission of submissions) if (submission.key === from) submission.key = to;
+}

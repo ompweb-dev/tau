@@ -6123,6 +6123,15 @@ test("a kept chat whose session cannot be created keeps its tab and shows the er
   h.view.unmount();
 });
 
+test("a kept chat whose send fails gets its text back in its own composer, not the fresh new chat's", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "fresh idea" } }); await sleep(60); });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.composerIn(h.draftGroup).value, "hello there", "the kept chat has its prompt back");
+  assert.equal(h.composerIn(h.other).value, "fresh idea", "the fresh new chat keeps only its own text");
+  h.view.unmount();
+});
+
 test("another new chat replaces an unsent kept one and opens fresh in the focused group", async (t) => {
   const h = await draftInItsOwnGroup(t);
   await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
