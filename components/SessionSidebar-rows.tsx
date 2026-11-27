@@ -658,6 +658,8 @@ const SessionTreeItem = memo(function SessionTreeItem({
     // Only re-render if THIS node's selection state flipped.
     const key = `${prev.node.session.hostId ?? LOCAL_HOST_ID}:${prev.node.session.id}`;
     if ((key === prev.selectedSessionKey) !== (key === next.selectedSessionKey)) return false;
+    // Nested rows render inside this memo boundary: a descendant's selection may have flipped.
+    if (prev.node.children.length > 0) return false;
   }
   if (prev.runningSessionIds !== next.runningSessionIds) {
     const id = prev.node.session.id;
