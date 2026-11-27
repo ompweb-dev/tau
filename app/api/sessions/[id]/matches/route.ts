@@ -1,4 +1,4 @@
-import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { listSessionMatches } from "@/lib/session-match-listing";
 import { MAX_SEARCH_MATCHES, SEARCH_MATCH_PAGE_SIZE } from "@/lib/session-search-matches";
 import type { SessionContext } from "@/lib/types";
@@ -23,7 +23,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return Response.json({ error: "Invalid limit", code: "invalid_limit" }, { status: 400 });
   }
   try {
-    const resolved = await resolveSessionHostOr404(id, url.searchParams.get("hostId"));
+    const host = hostIdParam(url.searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.sessionOps.readContext(id, undefined, {
       deferThinking: true,

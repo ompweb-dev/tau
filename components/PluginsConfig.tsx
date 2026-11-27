@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
+import { LOCAL_HOST_ID } from "@/lib/project-ordering";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -676,7 +677,8 @@ export function PluginsConfig({
     setActionError(null);
     setActionMessage(null);
     try {
-      await sendAgentCommand(sessionId, { type: "reload" });
+      // Settings passes a session only when it runs on this machine (SettingsConfig `panelSessionId`).
+      await sendAgentCommand(sessionId, LOCAL_HOST_ID, { type: "reload" });
       onReloaded?.();
       await loadPlugins();
       setActionMessage(t("pluginsConfig.sessionReloaded"));

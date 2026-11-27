@@ -1,10 +1,10 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404, sessionCopiedElsewhere } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import type { SessionReadValue } from "@/lib/hosts/session-ops";
 import { invalidateSessionCaches } from "@/lib/session-reader";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
-import { clearExitedRpcSession, getLiveRpcSessionIds, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
+import { clearExitedRpcSession, getLiveRpcSession, getLiveRpcSessionIds, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
 import { forgetSessionReplacementMappings } from "@/lib/message-outbox";
 import { removeSessionWatches } from "@/lib/github/watch-store";
 import { RpcCommandError, RpcCommandTimeoutError } from "@/lib/pi/rpc-process";
@@ -80,7 +80,9 @@ export async function GET(
   const { id } = await params;
   try {
     const searchParams = new URL(req.url).searchParams;
-    const resolved = await resolveSessionHostOr404(id, searchParams.get("hostId"));
+    const host = hostIdParam(searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
 
     const meta = searchParams.get("meta") === "1";
@@ -109,9 +111,9 @@ export async function GET(
     // meaning: `running` there is the child's liveness, not a turn in flight.
     let agent: { running: boolean; alive?: boolean; state?: unknown } | undefined;
     if (includeState) {
-      const rpc = getRpcSession(id);
       // Only this host's child: the same id live on another host is another session.
-      if (rpc?.isAlive() && rpc.host.id === resolved.host.id) {
+      const rpc = getRpcSession(id, resolved.host.id);
+      if (rpc?.isAlive()) {
         try {
           const state = await rpc.send({ type: "get_state" });
           // The child can exit between its reply and this line: its state is
@@ -154,7 +156,9 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
-    const hostId = new URL(req.url).searchParams.get("hostId");
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const { hostId } = host;
     const { name } = await parseJsonWithinLimit<{ name?: string }>(req, 64 * 1024);
     if (typeof name !== "string" || !name.trim()) {
       return Response.json({ error: "name is required", code: "session_name_required" }, { status: 400 });
@@ -164,8 +168,9 @@ export async function PATCH(
     // the path check because pi does not create the session file until the
     // history holds an assistant message.
     let renamed = false;
-    const rpc = getRpcSession(id, hostId);
-    if (rpc?.isAlive?.() && typeof rpc.send === "function") {
+    // Without a host, a live copy: a dead wrapper here must not hide one elsewhere.
+    const rpc = getLiveRpcSession(id, hostId);
+    if (rpc && typeof rpc.send === "function") {
       try {
         await rpc.send({ type: "set_session_name", name: name.trim() });
         renamed = true;
@@ -191,7 +196,7 @@ export async function PATCH(
       if ("response" in resolved) return resolved.response;
       // Resolution awaited: an Edit may have started on the current wrapper
       // since the failed native rename. Never bypass its fence with a file write.
-      if (getRpcSession(id, hostId)?.isEditingHistory()) {
+      if (getRpcSession(id, resolved.host.id)?.isEditingHistory()) {
         throw new WebRpcError("Wait for the history edit to finish", "session_busy");
       }
       const result = await resolved.host.sessionOps.renameSessionFile(id, name.trim());
@@ -213,7 +218,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const resolved = await resolveSessionHostOr404(id, new URL(req.url).searchParams.get("hostId"));
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     // Await the child's exit before unlinking: a running pi would
     // recreate the file on its next append.
@@ -221,28 +228,26 @@ export async function DELETE(
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
     // Only this host's child: the same id live on another host is another session.
-    const live = getRpcSession(id);
-    if (live?.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("delete", true);
+    const live = getRpcSession(id, resolved.host.id);
+    if (live && !live.hostOwnedLifecycle) await live.destroyAndWait?.("delete", true);
     // Live children are skipped by the re-parent rewrite: their pi process
     // owns the file and would clobber it on its next write.
     const result = await resolved.host.sessionOps.deleteSession(id, getLiveRpcSessionIds(resolved.host.id));
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id, id);
-    // State kept by id alone belongs to every copy of the id: it stays while another host has one.
-    if (!sessionCopiedElsewhere(id, resolved.host.id)) {
-      // Remove only this deleted session's content-free retry-lineage metadata.
-      try {
-        forgetSessionReplacementMappings(id);
-      } catch (error) {
-        console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      clearExitedRpcSession(id);
-      try {
-        removeSessionWatches(id);
-      } catch (error) {
-        // The delete succeeded; a watch left behind ends at the outbox's 404 for this session.
-        console.warn(`[tau] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
-      }
+    clearExitedRpcSession(id, resolved.host.id);
+    // Retry lineage and watches are this host's copy's: the same id on another host keeps its own.
+    // Remove only this deleted session's content-free retry-lineage metadata.
+    try {
+      forgetSessionReplacementMappings(id, resolved.host.id);
+    } catch (error) {
+      console.warn(`[tau] could not clear deleted-session retry metadata: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    try {
+      removeSessionWatches(id, resolved.host.id);
+    } catch (error) {
+      // The delete succeeded; a watch left behind ends at the outbox's 404 for this session.
+      console.warn(`[tau] GitHub watches of ${id} were not removed: ${error instanceof Error ? error.message : String(error)}`);
     }
     return Response.json({ ok: true, ...result.value });
   } catch (error) {

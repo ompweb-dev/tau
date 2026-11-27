@@ -24,6 +24,7 @@ import type { AgentToolHost } from "./agent-tool-hosts";
 import { createGithubToolOps, GITHUB_REPLAY_SAFE_TOOLS, GITHUB_TOOL_NAMES } from "./github/tools";
 import { markShuttingDown, recordRunningSessions, resumeOnHostLink, takeInterruptedSessions, type InterruptibleSession } from "./session-resume";
 import { RESUME_PROMPT } from "./hosts/host-resume";
+import { sessionHostKey, splitSessionHostKey } from "./session-host-key";
 import { samePath } from "./paths";
 import { isRecord } from "./type-guards";
 import type { MessageOrigin } from "./message-origin";
@@ -47,7 +48,7 @@ import { freezeHostLinks, getHost, hostOwnsLifecycle, isNotifier, lastUplinkAt, 
 import { CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, PEER_MESSAGE_FRAME } from "./hosts/link-protocol";
 import { LOCAL_HOST_ID } from "./hosts/registry";
 import type { OpResult } from "./hosts/session-ops";
-import { hostForSessionId, invalidateHostSessionList, listSessionsAllHosts, sessionSpawnTarget } from "./hosts/session-index";
+import { hostForSessionId, invalidateHostSessionList, sessionHost, listSessionsAllHosts, sessionSpawnTarget } from "./hosts/session-index";
 import { loadPools, poolProjectBindings } from "./hosts/pools";
 import { PoolStartError, requireProviderLogin, startPooledSession } from "./hosts/pool-starts";
 import { comparableProjectPath } from "./comparable-path";
@@ -989,7 +990,7 @@ export class AgentSessionWrapper {
       : null;
     // Recorded before destroy(): its running-change broadcast must carry the
     // record so sidebars that missed the notice below still see the exit.
-    if (this._sessionId) getExitedMap().set(this._sessionId, { id: this._sessionId, cwd: this.cwd, ...(this.host.id === LOCAL_HOST_ID ? {} : { hostId: this.host.id }), at: Date.now(), code, signal, detail });
+    if (this._sessionId) getExitedMap().set(sessionHostKey(this.host.id, this._sessionId), { id: this._sessionId, cwd: this.cwd, ...(this.host.id === LOCAL_HOST_ID ? {} : { hostId: this.host.id }), at: Date.now(), code, signal, detail });
     this.emit({
       type: "notice",
       level: "error",
@@ -1008,6 +1009,8 @@ export class AgentSessionWrapper {
   private publishNotifications(frame: Record<string, unknown>): void {
     const session = {
       sessionId: this._sessionId,
+      // Another host's copy of the id is another session: its tags, presence and clicks name the host.
+      ...(this.host.id === LOCAL_HOST_ID ? {} : { hostId: this.host.id }),
       sessionName: this._sessionName || this.cwd.split(/[\\/]/).filter(Boolean).pop() || null,
     };
     const notifications = this.detectNotification(frame, session);
@@ -1258,8 +1261,8 @@ export class AgentSessionWrapper {
     // One server publishes a notification and its retraction: a former
     // notifier must not close what the elected one still owns.
     if (publishedSession && (!this.hostOwnedLifecycle || isNotifier(this.host.id))) {
-      if (reason === "forgotten") publishNotificationForgotten(publishedSession, id);
-      else publishNotificationDismiss(publishedSession, id);
+      if (reason === "forgotten") publishNotificationForgotten(publishedSession, id, this.host.id);
+      else publishNotificationDismiss(publishedSession, id, this.host.id);
     }
     return true;
   }
@@ -1422,7 +1425,7 @@ export class AgentSessionWrapper {
     this.emit(event);
     if (pending.crossSessionId !== undefined) {
       for (const listener of getHostToolListeners()) {
-        try { listener({ type: "host_tool_cancel", targetId: id, sessionId: pending.crossSessionId }); } catch { /* ignore listener errors */ }
+        try { listener({ type: "host_tool_cancel", targetId: id, sessionId: pending.crossSessionId, hostId: this.host.id }); } catch { /* ignore listener errors */ }
       }
     }
     return true;
@@ -2782,7 +2785,6 @@ export interface RunningRpcSession {
 }
 
 export interface RunningSessionUpdate {
-  ids: string[];
   runningSessions: RunningRpcSession[];
   exitedSessions: ExitedRpcSession[];
   refreshSessionList: boolean;
@@ -2817,13 +2819,14 @@ export function getExitedRpcSessions(): ExitedRpcSession[] {
   return [...getExitedMap().values()];
 }
 
-export function getExitedRpcSession(sessionId: string): ExitedRpcSession | undefined {
-  return getExitedMap().get(sessionId);
+/** `hostId`: only that host's record; without it, as `getRpcSession`: this machine's, else any host's. */
+export function getExitedRpcSession(sessionId: string, hostId?: string | null): ExitedRpcSession | undefined {
+  return hostCopy(getExitedMap(), sessionId, hostId);
 }
 
 /** Clear the visible crash state once a replacement child is ready. */
-export function clearExitedRpcSession(sessionId: string): boolean {
-  const cleared = getExitedMap().delete(sessionId);
+export function clearExitedRpcSession(sessionId: string, hostId: string): boolean {
+  const cleared = getExitedMap().delete(sessionHostKey(hostId, sessionId));
   if (cleared) notifyRunningChange();
   return cleared;
 }
@@ -2850,25 +2853,49 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
   return globalThis.__tauStartLocks;
 }
 
-/** `hostId`: only that host's wrapper; the same id live on another host is another session. */
-export function getRpcSession(sessionId: string, hostId?: string | null): AgentSessionWrapper | undefined {
-  const wrapper = getRegistry().get(sessionId);
-  return !hostId || wrapper?.host.id === hostId ? wrapper : undefined;
+/** The entry of `map` (keyed by `sessionHostKey`) for one host's copy of `sessionId`. Without `hostId` (a caller that
+ * names no host): this machine's copy, else the first other host's, as before state was keyed by host. */
+function hostCopy<T>(map: Map<string, T>, sessionId: string, hostId?: string | null): T | undefined {
+  if (hostId) return map.get(sessionHostKey(hostId, sessionId));
+  const local = map.get(sessionHostKey(LOCAL_HOST_ID, sessionId));
+  if (local !== undefined) return local;
+  for (const [key, value] of map) if (splitSessionHostKey(key).id === sessionId) return value;
+  return undefined;
 }
 
-/** Every registry key of the wrapper under `sessionId` (its id and any requested alias), else `[sessionId]`. */
-export function getRpcSessionKeys(sessionId: string): string[] {
-  const wrapper = getRegistry().get(sessionId);
+/** `hostId`: only that host's wrapper; the same id live on another host is another session. */
+export function getRpcSession(sessionId: string, hostId?: string | null): AgentSessionWrapper | undefined {
+  return hostCopy(getRegistry(), sessionId, hostId);
+}
+
+/** A live copy of the id: with `hostId`, that host's wrapper if alive; without, this machine's if alive, else another
+ * host's live one. A dead wrapper never wins over a live copy elsewhere. */
+export function getLiveRpcSession(sessionId: string, hostId?: string | null): AgentSessionWrapper | undefined {
+  if (hostId) {
+    const copy = getRpcSession(sessionId, hostId);
+    return copy?.isAlive() ? copy : undefined;
+  }
+  const local = getRpcSession(sessionId, LOCAL_HOST_ID);
+  if (local?.isAlive()) return local;
+  for (const [key, live] of getRegistry()) if (splitSessionHostKey(key).id === sessionId && live.isAlive()) return live;
+  return undefined;
+}
+
+/** Every session id the wrapper under `sessionId` (on `hostId`, else as `getRpcSession`) answers to (its id and any
+ * requested alias), else `[sessionId]`. Plain ids: they all name sessions on the wrapper's host. */
+export function getRpcSessionKeys(sessionId: string, hostId?: string | null): string[] {
+  const wrapper = getRpcSession(sessionId, hostId);
   if (!wrapper) return [sessionId];
-  return [...getRegistry()].flatMap(([key, live]) => (live === wrapper ? [key] : []));
+  // Every key of one wrapper carries its host's prefix; host ids never contain "/".
+  return [...getRegistry()].flatMap(([key, live]) => (live === wrapper ? [splitSessionHostKey(key).id] : []));
 }
 
 export function getRunningRpcSessions(): RunningRpcSession[] {
   const map = new Map<string, RunningRpcSession>();
-  for (const [sessionId, session] of getRegistry()) {
+  for (const [key, session] of getRegistry()) {
     if (session.isRunning()) {
-      const id = session.sessionId || sessionId;
-      map.set(id, {
+      const id = session.sessionId || splitSessionHostKey(key).id;
+      map.set(sessionHostKey(session.host.id, id), {
         id,
         cwd: session.cwd,
         ...(session.host.id === LOCAL_HOST_ID ? {} : { hostId: session.host.id }),
@@ -2879,13 +2906,10 @@ export function getRunningRpcSessions(): RunningRpcSession[] {
   return [...map.values()];
 }
 
-export function getRunningRpcSessionIds(): string[] {
-  return getRunningRpcSessions().map((s) => s.id);
-}
-
 /** Ids of `hostId`'s sessions with a live pi process (turn running or idle); an id live on another host is another session. */
 export function getLiveRpcSessionIds(hostId: string): string[] {
-  return [...getRegistry()].filter(([, session]) => session.isAlive?.() && session.host.id === hostId).map(([sessionId]) => sessionId);
+  const prefix = sessionHostKey(hostId, "");
+  return [...getRegistry()].filter(([key, session]) => key.startsWith(prefix) && session.isAlive?.()).map(([key]) => key.slice(prefix.length));
 }
 
 // ----------------------------------------------------------------------------
@@ -2952,13 +2976,12 @@ let lastRunningSnapshot = "[[],[]]";
 export function notifyRunningChange({ refreshSessionList = false }: { refreshSessionList?: boolean } = {}): void {
   const runningSessions = getRunningRpcSessions();
   const exitedSessions = getExitedRpcSessions();
-  const ids = runningSessions.map((s) => s.id);
-  const byId = (a: { id: string }, b: { id: string }) => a.id.localeCompare(b.id);
+  const byId = (a: { id: string; hostId?: string }, b: { id: string; hostId?: string }) => a.id.localeCompare(b.id) || (a.hostId ?? "").localeCompare(b.hostId ?? "");
   const snapshot = JSON.stringify([runningSessions.slice().sort(byId), exitedSessions.slice().sort(byId)]);
   if (snapshot === lastRunningSnapshot && !refreshSessionList) return;
   lastRunningSnapshot = snapshot;
   syncInterruptibleSessions();
-  const update: RunningSessionUpdate = { ids, runningSessions, exitedSessions, refreshSessionList };
+  const update: RunningSessionUpdate = { runningSessions, exitedSessions, refreshSessionList };
   for (const listener of getRunningListeners()) {
     try { listener(update); } catch { /* ignore listener errors */ }
   }
@@ -2969,9 +2992,9 @@ export function syncInterruptibleSessions(): void {
   const registry = getRegistry();
   const running = new Map<string, InterruptibleSession>();
   for (const session of registry.values()) {
-    if (!session.hostOwnedLifecycle && session.sessionId && session.isRunning()) running.set(session.sessionId, { id: session.sessionId, hostId: session.host.id });
+    if (!session.hostOwnedLifecycle && session.sessionId && session.isRunning()) running.set(sessionHostKey(session.host.id, session.sessionId), { id: session.sessionId, hostId: session.host.id });
   }
-  recordRunningSessions([...running.values()], (id) => registry.get(id)?.isAlive() === true);
+  recordRunningSessions([...running.values()], ({ id, hostId }) => registry.get(sessionHostKey(hostId, id))?.isAlive() === true);
 }
 
 /**
@@ -3032,6 +3055,26 @@ const DELIVERY_COMMAND: Record<AgentToolDeliverInput["delivery"], string> = { pr
  * A waited delivery registers its turn-end waiter BEFORE sending, then
  * reads the turn's final text with get_last_assistant_text.
  */
+/** `send_to_session`'s target host: the caller's own host's copy of the id first, then a live copy, then the host lists. */
+export async function agentToolSessionHostId(sessionId: string, preferHostId?: string): Promise<string | null> {
+  // The caller's own host's copy first. Only that host confirming it lacks the id lets another host's copy answer:
+  // its list being unavailable (or the host offline) is a retryable error, never a reason to pick another copy.
+  if (preferHostId) {
+    if (getLiveRpcSession(sessionId, preferHostId)) return preferHostId;
+    try {
+      if (await sessionHost(sessionId, preferHostId)) return preferHostId;
+    } catch (error) {
+      if (error instanceof HostOpError && (error.code === "host_sessions_unavailable" || error.code === "host_offline")) {
+        throw new Error(`${error.message}; try again`);
+      }
+      throw error;
+    }
+  }
+  const live = getLiveRpcSession(sessionId);
+  if (live) return live.host.id;
+  return (await hostForSessionId(sessionId))?.id ?? null;
+}
+
 function createAgentToolOps(source: AgentToolContext, replaying: boolean): AgentToolSessionOps {
   const hosts = (): AgentToolHost[] => {
     const local = getHost(LOCAL_HOST_ID);
@@ -3043,9 +3086,12 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
   return {
     github: createGithubToolOps(hosts),
     async listSessions() {
-      const running = new Set(getRunningRpcSessionIds());
+      const running = new Set(getRunningRpcSessions().map((s) => sessionHostKey(s.hostId, s.id)));
       const sessions = await listSessionsAllHosts();
-      return sessions.map((s) => ({ id: s.id, name: s.name, cwd: s.cwd, running: running.has(s.id), hostId: s.hostId ?? LOCAL_HOST_ID }));
+      return sessions.map((s) => {
+        const hostId = s.hostId ?? LOCAL_HOST_ID;
+        return { id: s.id, name: s.name, cwd: s.cwd, running: running.has(sessionHostKey(hostId, s.id)), hostId };
+      });
     },
 
     listHosts: hosts,
@@ -3130,11 +3176,11 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
     },
 
     async deliver(input): Promise<AgentToolDeliverResult> {
-      const live = getRpcSession(input.sessionId);
-      let wrapper = live?.isAlive() ? live : undefined;
+      // Without a host, a live copy: a dead wrapper here must not hide one elsewhere.
+      let wrapper = getLiveRpcSession(input.sessionId, input.hostId);
       let cold = false;
       if (!wrapper) {
-        const host = await hostForSessionId(input.sessionId);
+        const host = await sessionHost(input.sessionId, input.hostId);
         const target = host && await sessionSpawnTarget(input.sessionId, host);
         if (!host || !target) throw new Error(`Session not found: ${input.sessionId}`);
         // The open's preparation lease keeps an idle shared child until the message is sent.
@@ -3176,29 +3222,28 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
       };
     },
 
-    async sessionHostId(sessionId) {
-      const live = getRpcSession(sessionId);
-      if (live?.isAlive()) return live.host.id;
-      return (await hostForSessionId(sessionId))?.id ?? null;
-    },
+    hasLiveCopy: (sessionId, hostId) => Boolean(getLiveRpcSession(sessionId, hostId)),
+    sessionHostId: agentToolSessionHostId,
   };
 }
 
 /** A creation uses the existing startup locks/registry, including a child whose handshake was interrupted. */
 export function getRpcCreationSession(creationId: string): Promise<{ session: AgentSessionWrapper; realSessionId: string }> | null {
+  // Creation ids are unique across hosts: the entry is found on whichever host it was started on.
   const key = `__new__${creationId}`;
   const locks = getLocks();
-  const pending = locks.get(key);
+  const pending = hostCopy(locks, key);
   if (pending) return pending;
-  const session = getRegistry().get(key);
+  const session = hostCopy(getRegistry(), key);
   if (!session?.isAlive()) return null;
-  if (session.sessionId && getRegistry().get(session.sessionId) === session) return Promise.resolve({ session, realSessionId: session.sessionId });
+  if (session.sessionId && getRpcSession(session.sessionId, session.host.id) === session) return Promise.resolve({ session, realSessionId: session.sessionId });
+  const lockKey = sessionHostKey(session.host.id, key);
   const recovering = session.adopt().then(() => {
     registerSession(session);
-    getRegistry().set(key, session);
+    getRegistry().set(lockKey, session);
     return { session, realSessionId: session.sessionId };
-  }).finally(() => { if (locks.get(key) === recovering) locks.delete(key); });
-  locks.set(key, recovering);
+  }).finally(() => { if (locks.get(lockKey) === recovering) locks.delete(lockKey); });
+  locks.set(lockKey, recovering);
   return recovering;
 }
 
@@ -3257,15 +3302,16 @@ export async function startRpcSession(
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const registry = getRegistry();
   const locks = getLocks();
+  const key = sessionHostKey(host.id, sessionId);
   const launch: SpawnRequest = { cwd, recordedCwd: recordedCwd ?? null, sessionFile, toolNames, ...(creationId === undefined ? {} : { creationId }) };
 
   // A child of this session the host still ran from before a restart of this
   // server is being adopted or killed. Waiting here, before the registry and
   // the lock, lets a start join an adopted child; a killed one must exit first:
   // two children must never write one session file. A live wrapper is past that.
-  if (sessionFile && !registry.get(sessionId)?.isAlive()) await orphanExit(host.id, sessionId);
+  if (sessionFile && !registry.get(key)?.isAlive()) await orphanExit(host.id, sessionId);
 
-  const existing = registry.get(sessionId);
+  const existing = registry.get(key);
   if (existing?.isAlive()) return { session: existing, realSessionId: existing.sessionId };
   // A wrapper whose pi child is still flushing/exiting must fully dispose
   // before a replacement spawns — two children touching the same .jsonl would
@@ -3273,18 +3319,18 @@ export async function startRpcSession(
   if (existing?.destroyPromise) await untilHostDown(existing.host, existing.destroyPromise);
 
   // Two pi processes appending to one session file would interleave their
-  // entry trees. Reuse the live wrapper that already reports this file.
+  // entry trees. Reuse the live wrapper that already reports this file (on this host: another host's file is another file).
   if (sessionFile && !existing) {
     for (const candidate of new Set(registry.values())) {
-      if (candidate.isAlive() && candidate.sessionFile && samePath(candidate.sessionFile, sessionFile)) {
-        registry.set(sessionId, candidate);
+      if (candidate.host.id === host.id && candidate.isAlive() && candidate.sessionFile && samePath(candidate.sessionFile, sessionFile)) {
+        registry.set(key, candidate);
         notifyRunningChange({ refreshSessionList: true });
         return { session: candidate, realSessionId: candidate.sessionId };
       }
     }
   }
 
-  const inflight = locks.get(sessionId);
+  const inflight = locks.get(key);
   if (inflight) return inflight;
 
   const starting = (async () => {
@@ -3335,7 +3381,7 @@ export async function startRpcSession(
     } catch (error) {
       if (creationId !== undefined) {
         // Its daemon may still own the child: reconciliation reuses this native wrapper, never a replacement spawn.
-        registry.set(`__new__${creationId}`, created);
+        registry.set(sessionHostKey(host.id, `__new__${creationId}`), created);
         throw error;
       }
       // Await the child's full exit before the `finally` releases the startup
@@ -3349,9 +3395,9 @@ export async function startRpcSession(
       // `--resume` child beside it. Chained on destroyPromise (set by the call
       // above), not onDestroy: a child that already exited ran no callback.
       if (sessionFile) {
-        registry.set(sessionId, created);
+        registry.set(key, created);
         void created.destroyPromise?.then(() => {
-          if (registry.get(sessionId) === created) registry.delete(sessionId);
+          if (registry.get(key) === created) registry.delete(key);
         });
       }
       await disposing;
@@ -3360,18 +3406,18 @@ export async function startRpcSession(
 
     const realSessionId = created.sessionId;
     registerSession(created);
-    if (creationId !== undefined) registry.set(`__new__${creationId}`, created);
+    if (creationId !== undefined) registry.set(sessionHostKey(host.id, `__new__${creationId}`), created);
     // A resumed child can report another id than the one requested; keep the requested id routable.
     if (sessionFile && realSessionId !== sessionId) {
-      registry.set(sessionId, created);
+      registry.set(key, created);
     }
     // A successful respawn supersedes the crash record.
-    clearExitedRpcSession(sessionId);
-    if (realSessionId !== sessionId) clearExitedRpcSession(realSessionId);
+    clearExitedRpcSession(sessionId, host.id);
+    if (realSessionId !== sessionId) clearExitedRpcSession(realSessionId, host.id);
     return { session: created, realSessionId };
-  })().finally(() => locks.delete(sessionId));
+  })().finally(() => locks.delete(key));
 
-  locks.set(sessionId, starting);
+  locks.set(key, starting);
   return starting;
 }
 
@@ -3386,10 +3432,10 @@ function registerSession(created: AgentSessionWrapper): void {
   created.onIdentityChange((_oldId, newId) => {
     // A branch/new/switch serves another conversation, so every old key goes.
     for (const [key, wrapper] of registry) if (wrapper === created) registry.delete(key);
-    registry.set(newId, created);
+    registry.set(sessionHostKey(created.host.id, newId), created);
     notifyRunningChange({ refreshSessionList: true });
   });
-  registry.set(created.sessionId, created);
+  registry.set(sessionHostKey(created.host.id, created.sessionId), created);
   notifyRunningChange({ refreshSessionList: true });
 }
 
@@ -3410,8 +3456,9 @@ export async function adoptRpcSession({ host, transport, sessionId, cwd, replay,
 }): Promise<AgentSessionWrapper> {
   const registry = getRegistry();
   const locks = getLocks();
-  const creationKey = creationId === undefined ? undefined : `__new__${creationId}`;
-  const keys = creationKey === undefined ? [sessionId] : sessionId ? [creationKey, sessionId] : [creationKey];
+  const creationKey = creationId === undefined ? undefined : sessionHostKey(host.id, `__new__${creationId}`);
+  const key = sessionHostKey(host.id, sessionId);
+  const keys = creationKey === undefined ? [key] : sessionId ? [creationKey, key] : [creationKey];
   if (keys.some((key) => locks.has(key) || registry.has(key))) {
     if (transport.hostOwnedLifecycle) transport.close?.();
     else if (creationId === undefined) transport.killTree(false);
@@ -3427,7 +3474,8 @@ export async function adoptRpcSession({ host, transport, sessionId, cwd, replay,
       await created.adopt(replay);
       // The host names a child by the session it last reported; one that has since moved
       // to a session this server already runs would be its second writer.
-      if (created.sessionId !== sessionId && (locks.has(created.sessionId) || registry.has(created.sessionId))) {
+      const movedKey = sessionHostKey(host.id, created.sessionId);
+      if (created.sessionId !== sessionId && (locks.has(movedKey) || registry.has(movedKey))) {
         throw new Error(`Session ${created.sessionId} is already started on this server`);
       }
     } catch (error) {
@@ -3439,9 +3487,9 @@ export async function adoptRpcSession({ host, transport, sessionId, cwd, replay,
       const disposing = created.destroyAndWait("adoption-failed");
       // As for a failed resume: until the child really exits, a start for this
       // session waits for it (destroyAndWait returns early behind a dropped link).
-      registry.set(sessionId, created);
+      registry.set(key, created);
       void created.destroyPromise?.then(() => {
-        if (registry.get(sessionId) === created) registry.delete(sessionId);
+        if (registry.get(key) === created) registry.delete(key);
       });
       await disposing;
       throw error;
@@ -3449,8 +3497,8 @@ export async function adoptRpcSession({ host, transport, sessionId, cwd, replay,
     registerSession(created);
     if (creationKey !== undefined) registry.set(creationKey, created);
     // The run goes on: any crash record for the session is stale.
-    clearExitedRpcSession(sessionId);
-    if (created.sessionId !== sessionId) clearExitedRpcSession(created.sessionId);
+    clearExitedRpcSession(sessionId, host.id);
+    if (created.sessionId !== sessionId) clearExitedRpcSession(created.sessionId, host.id);
     notifyRunningChange();
     return { session: created, realSessionId: created.sessionId };
   })().finally(() => {

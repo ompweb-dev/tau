@@ -1,7 +1,8 @@
+import { hostIdParam } from "@/lib/api-utils";
 import { commandErrorResponse } from "@/lib/agent-command";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import type { ExtensionUiResponse, RpcAskDialogAnswer } from "@/lib/pi-types";
-import { getRpcSession, isAskAnswers } from "@/lib/rpc-manager";
+import { getLiveRpcSession, isAskAnswers } from "@/lib/rpc-manager";
 import { isRecord } from "@/lib/type-guards";
 
 /** Answers are text; 64 KB leaves room for a long ask customInput without becoming a payload channel. */
@@ -63,7 +64,11 @@ export async function POST(req: Request) {
   const response = parseResponse(body.response);
   if (!response) return invalid("response must be exactly one of value, confirmed, cancelled or answers");
 
-  const session = getRpcSession(body.sessionId);
+  const host = hostIdParam(body.hostId);
+  if ("response" in host) return host.response;
+  const { hostId } = host;
+  // `hostId`: only that host's copy of the id; without it, as before (this machine's copy first).
+  const session = getLiveRpcSession(body.sessionId, hostId);
   if (!session || !session.isAlive()) return Response.json({ status: "sessionGone" });
 
   try {

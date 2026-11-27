@@ -212,7 +212,7 @@ async function reconcile(entry: PoolStart, host: Host): Promise<PoolStart> {
   }
   if (!live && entry.sessionId) {
     await adoptedChild(entry.hostId, entry.sessionId);
-    const session = rpc.getRpcSession(entry.sessionId);
+    const session = rpc.getRpcSession(entry.sessionId, entry.hostId);
     if (session?.isAlive()) live = { session, realSessionId: session.sessionId };
   }
   if (live) {

@@ -1,6 +1,7 @@
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
 import type { SessionInfo } from "@/lib/types";
 import { LOCAL_HOST_ID, type ProjectSortMode } from "@/lib/project-ordering";
+import { sessionHostKey, splitSessionHostKey } from "@/lib/session-host-key";
 import { comparableProjectPath } from "@/lib/comparable-path";
 interface WorktreeEntry {
   path: string;
@@ -164,20 +165,21 @@ interface SessionTreeNode {
 }
 
 function buildSessionTree(sessions: SessionInfo[], scores?: Map<string, number>): SessionTreeNode[] {
+  // Keyed by host and id: a pooled list can hold two hosts' copies of one id, and a parent is on its child's host.
   const byId = new Map<string, SessionTreeNode>();
   for (const s of sessions) {
-    byId.set(s.id, { session: s, children: [] });
+    byId.set(sessionHostKey(s.hostId, s.id), { session: s, children: [] });
   }
 
   // Build a map of parentSessionId chains so we can resolve missing ancestors
   const parentOf = new Map<string, string>();
   for (const s of sessions) {
-    if (s.parentSessionId) parentOf.set(s.id, s.parentSessionId);
+    if (s.parentSessionId) parentOf.set(sessionHostKey(s.hostId, s.id), sessionHostKey(s.hostId, s.parentSessionId));
   }
 
   // Walk up the parentSessionId chain to find the nearest ancestor that exists in byId
-  function resolveAncestor(id: string): string | null {
-    let cur = parentOf.get(id);
+  function resolveAncestor(key: string): string | null {
+    let cur = parentOf.get(key);
     const visited = new Set<string>();
     while (cur) {
       if (visited.has(cur)) return null; // cycle guard
@@ -190,7 +192,7 @@ function buildSessionTree(sessions: SessionInfo[], scores?: Map<string, number>)
 
   const roots: SessionTreeNode[] = [];
   for (const node of byId.values()) {
-    const ancestor = resolveAncestor(node.session.id);
+    const ancestor = resolveAncestor(sessionHostKey(node.session.hostId, node.session.id));
     if (ancestor) {
       byId.get(ancestor)!.children.push(node);
     } else {
@@ -200,7 +202,7 @@ function buildSessionTree(sessions: SessionInfo[], scores?: Map<string, number>)
 
   // Sort each level by search score (when searching), then modified desc
   const sort = (nodes: SessionTreeNode[]) => {
-    nodes.sort((a, b) => ((scores?.get(b.session.id) ?? 0) - (scores?.get(a.session.id) ?? 0)) || b.session.modified.localeCompare(a.session.modified));
+    nodes.sort((a, b) => ((scores?.get(sessionHostKey(b.session.hostId, b.session.id)) ?? 0) - (scores?.get(sessionHostKey(a.session.hostId, a.session.id)) ?? 0)) || b.session.modified.localeCompare(a.session.modified));
     nodes.forEach((n) => sort(n.children));
   };
   sort(roots);
@@ -219,16 +221,19 @@ interface LivePlace {
 
 /** Where a live session the session list lacks gets its placeholder row: the
  *  freshest source that knows it, host included, so a remote run is never
- *  grouped under This machine; else the selected workspace. */
+ *  grouped under This machine; else, on the key's own host, the selected workspace's cwd when that workspace is on the
+ *  same host, or no cwd (never another host's workspace). `key` and the maps' keys are `sessionHostKey`s. */
 function livePlace(
-  id: string,
+  key: string,
   optimistic: (LivePlace & { id: string }) | null | undefined,
   running: Readonly<Record<string, LivePlace>>,
   exited: ReadonlyMap<string, LivePlace>,
   known: ReadonlyMap<string, LivePlace>,
   selected: LivePlace,
 ): LivePlace {
-  return (optimistic?.id === id ? optimistic : undefined) ?? running[id] ?? exited.get(id) ?? known.get(id) ?? selected;
+  const { hostId } = splitSessionHostKey(key);
+  return (optimistic && sessionHostKey(optimistic.hostId, optimistic.id) === key ? optimistic : undefined) ?? running[key] ?? exited.get(key) ?? known.get(key)
+    ?? { cwd: hostId === (selected.hostId ?? LOCAL_HOST_ID) ? selected.cwd : "", hostId };
 }
 /** True when a host is link-up in `next` but was not in `prev` (a host new to
  *  the list counts). On the first snapshot (`prev` null) only a linked remote

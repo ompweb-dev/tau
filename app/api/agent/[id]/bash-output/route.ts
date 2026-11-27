@@ -1,4 +1,4 @@
-import { apiErrorResponse, opErrorResponse, resolveWorkspaceHost } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveWorkspaceHost } from "@/lib/api-utils";
 import { workspaceReadStream } from "@/lib/workspace-http";
 
 export async function GET(
@@ -10,7 +10,9 @@ export async function GET(
     const query = new URL(request.url).searchParams;
     const path = query.get("path");
     if (!path) return Response.json({ error: "path required" }, { status: 400 });
-    const resolved = await resolveWorkspaceHost(query.get("hostId") ?? undefined, id);
+    const named = hostIdParam(query.get("hostId"));
+    if ("response" in named) return named.response;
+    const resolved = await resolveWorkspaceHost(named.hostId ?? undefined, id);
     if ("response" in resolved) return resolved.response;
     const { host } = resolved;
     if (query.get("download") === "1") {

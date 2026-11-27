@@ -1,6 +1,7 @@
 "use client";
 
 import { randomUUID } from "./random-uuid";
+import { agentUrl, sessionHostKey } from "./session-host-key";
 import type { ConnectionDiagnostics, EventStreamChannel } from "./event-stream-protocol";
 import { registerNotificationWorker } from "./notification-client";
 import type { OutboxEntry, OutboxMode } from "./types";
@@ -43,6 +44,8 @@ const DIAGNOSTICS_TIMEOUT_MS = 2000;
 export interface LocalOutboxEntry {
   id: string;
   sessionId: string;
+  /** The session's host: posted as `?hostId=`, and lineage never crosses hosts. Absent only on preexisting rows. */
+  hostId?: string;
   /** Captured at submission: never rebound to a later installation or sign-in. */
   scope: string;
   mode: OutboxMode;
@@ -173,11 +176,11 @@ class Transport {
       this.port.postMessage({ op: "outbox_drop", n, id });
     });
   }
-  reconcileOutbox(sessionId: string, confirmedIds: string[]): Promise<void> {
+  reconcileOutbox(sessionId: string, hostId: string, confirmedIds: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
       const n = this.nextId++;
       this.outboxWrites.set(n, { resolve, reject });
-      this.port.postMessage({ op: "outbox_reconcile", n, sessionId, confirmedIds });
+      this.port.postMessage({ op: "outbox_reconcile", n, sessionId, hostId, confirmedIds });
     });
   }
 
@@ -295,15 +298,17 @@ function postOutboxOnExit(): void {
   if (outboxPartial) return;
   let left = KEEPALIVE_BYTES;
   const sessions = new Set<string>();
-  for (const { id, sessionId, scope, mode, message, images, uploads, uploadProofs, replaces, state, createdAt } of outboxEntries ?? []) {
-    if (state !== "sending" || typeof scope !== "string" || !scope || Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000 || sessions.has(sessionId)) continue;
-    sessions.add(sessionId);
+  for (const { id, sessionId, hostId, scope, mode, message, images, uploads, uploadProofs, replaces, state, createdAt } of outboxEntries ?? []) {
+    const session = sessionHostKey(hostId, sessionId);
+    if (state !== "sending" || typeof scope !== "string" || !scope || Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000 || sessions.has(session)) continue;
+    sessions.add(session);
     if (!addedHere.has(id)) continue;
     const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
     const bytes = new Blob([body]).size;
     if (bytes > left) continue;
     left -= bytes;
-    fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+    // A row from before hosts is this machine's, as the chat shows it.
+    fetch(agentUrl(sessionId, hostId ?? "local"), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
   }
 }
 
@@ -352,12 +357,13 @@ export async function addToOutbox(entry: Omit<LocalOutboxEntry, "state" | "error
   await transport.addToOutbox(entry);
   void registerOutboxSync();
 }
-/** Removes local copies whose server acceptance is authoritative for this session. */
-export async function reconcileOutbox(sessionId: string, confirmedIds: string[]): Promise<void> {
+/** Removes local copies whose server acceptance is authoritative for this host's copy of the session. */
+export async function reconcileOutbox(sessionId: string, hostId: string, confirmedIds: string[]): Promise<void> {
   transport ??= connectTransport();
-  await transport.reconcileOutbox(sessionId, confirmedIds);
+  await transport.reconcileOutbox(sessionId, hostId, confirmedIds);
 }
 
+// Version 3: the worker posts each entry to its own host's copy (`?hostId=`); a version 2 worker predates hosts.
 function supportsOutboxSync(worker: ServiceWorker | null): Promise<boolean> {
   if (!worker) return Promise.resolve(false);
   return new Promise((resolve) => {
@@ -369,7 +375,7 @@ function supportsOutboxSync(worker: ServiceWorker | null): Promise<boolean> {
       resolve(supported);
     };
     const timer = setTimeout(() => finish(false), 1_000);
-    channel.port1.onmessage = ({ data }) => finish(data?.type === "tau-outbox-capability" && data.version === 2);
+    channel.port1.onmessage = ({ data }) => finish(data?.type === "tau-outbox-capability" && data.version === 3);
     try {
       worker.postMessage({ type: "tau-outbox-capability" }, [channel.port2]);
     } catch {

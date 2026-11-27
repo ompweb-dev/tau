@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404, sessionCopiedElsewhere } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { clearExitedRpcSession, getRpcSession } from "@/lib/rpc-manager";
@@ -11,7 +11,9 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const resolved = await resolveSessionHostOr404(id, new URL(req.url).searchParams.get("hostId"));
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     const { sessionOps } = resolved.host;
     // Parent-session paths are native branch metadata. Moving only a parent
@@ -31,12 +33,12 @@ export async function POST(
     const offline = hostOfflineResponse(resolved.host);
     if (offline) return offline;
     // Only this host's child: the same id live on another host is another session.
-    const live = getRpcSession(id);
-    if (live?.host.id === resolved.host.id && !live.hostOwnedLifecycle) await live.destroyAndWait?.("archive", true);
+    const live = getRpcSession(id, resolved.host.id);
+    if (live && !live.hostOwnedLifecycle) await live.destroyAndWait?.("archive", true);
     const result = await sessionOps.archiveSession(id);
     if (!result.ok) return opErrorResponse(result);
     invalidateHostSessionList(resolved.host.id, id);
-    if (!sessionCopiedElsewhere(id, resolved.host.id)) clearExitedRpcSession(id);
+    clearExitedRpcSession(id, resolved.host.id);
     return Response.json({ ok: true, archived: true, archivedPath: result.value.archivedPath });
   } catch (error) {
     if (error instanceof HostOpError) return apiErrorResponse(error);

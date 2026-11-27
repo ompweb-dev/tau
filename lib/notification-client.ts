@@ -192,8 +192,13 @@ async function subscribeForPush(): Promise<boolean> {
   return syncNotificationDevice(subscription.toJSON());
 }
 
-/** Window event (detail: session id) asking the app to open a notification's session. */
+/** Window event (detail: `{ sessionId, hostId }`) asking the app to open a session. */
 export const OPEN_SESSION_EVENT = "tau-open-session";
+
+/** Open one host's copy of a session in this tab (no host: this machine's, never another host's copy of the id). */
+export function openSessionView(sessionId: string, hostId?: string | null): void {
+  window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId, hostId: hostId ?? "local" } }));
+}
 
 /**
  * Show a system notification the same way the service worker shows pushes.
@@ -208,7 +213,7 @@ export async function showSystemNotification(notification: RenderedNotification,
     tag: notification.tag,
     // A dismiss closes only the notification of the same request id, so a
     // shown dialog must carry it too.
-    data: { url: notification.url, sessionId: notification.sessionId, ...(requestId ? { requestId } : {}) },
+    data: { url: notification.url, sessionId: notification.sessionId, ...(notification.hostId ? { hostId: notification.hostId } : {}), ...(requestId ? { requestId } : {}) },
   };
   try {
     const registration = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
@@ -221,7 +226,7 @@ export async function showSystemNotification(notification: RenderedNotification,
     fallback.onclick = () => {
       fallback.close();
       window.focus();
-      window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: notification.sessionId }));
+      openSessionView(notification.sessionId, notification.hostId);
     };
     return true;
   } catch {

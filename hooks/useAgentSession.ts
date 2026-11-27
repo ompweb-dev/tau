@@ -26,6 +26,7 @@ import { HostOfflineError, getOutboxScope, rememberOutboxScope, sendAgentCommand
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
+import { agentUrl, sessionHostKey } from "@/lib/session-host-key";
 import { recoverDraft, setDraft } from "@/lib/draft-store";
 import { formatExitedSessionNotice, translate } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -65,7 +66,7 @@ import {
 export type { SubagentInfo } from "@/lib/subagent-types";
 
 // Pure helpers extracted to sibling modules (extraction only — no logic changes).
-import { EMPTY_QUEUE, EMPTY_SERVER_OUTBOX, applyOutboxSnapshot, markOutboxUncertain, mergeHeldMessages, rememberLocalOutbox, rememberOutboxEntries, representOutboxIds } from "./useAgentSession-queue";
+import { EMPTY_QUEUE, EMPTY_SERVER_OUTBOX, applyOutboxSnapshot, markOutboxUncertain, mergeHeldMessages, rememberLocalOutbox, rememberOutboxEntries, representOutboxIds, sameCopy } from "./useAgentSession-queue";
 import { readQueueSnapshot } from "@/lib/client-message-ids";
 import type { QueuedMessages, ServerOutbox } from "./useAgentSession-queue";
 import {
@@ -306,9 +307,9 @@ function unrecordedHeldBash<T extends { command: string; after: number }>(messag
     return !run;
   });
 }
-function reconcileConfirmedLocalOutbox(sessionId: string, localEntries: LocalOutboxEntry[], confirmedIds: ReadonlySet<string>): Promise<void> {
-  const ids = localEntries.filter((entry) => entry.sessionId === sessionId && entry.replaces !== undefined && confirmedIds.has(entry.id)).map((entry) => entry.id);
-  return ids.length ? reconcileOutbox(sessionId, ids) : Promise.resolve();
+function reconcileConfirmedLocalOutbox(sessionId: string, hostId: string, localEntries: LocalOutboxEntry[], confirmedIds: ReadonlySet<string>): Promise<void> {
+  const ids = localEntries.filter((entry) => sameCopy(entry, sessionId, hostId) && entry.replaces !== undefined && confirmedIds.has(entry.id)).map((entry) => entry.id);
+  return ids.length ? reconcileOutbox(sessionId, hostId, ids) : Promise.resolve();
 }
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
@@ -422,8 +423,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Set once connectEvents exists: the state route's held messages, and a subscription to follow them.
   const applyStateOutboxRef = useRef<(sid: string, entries: OutboxEntry[], settledIds: string[], nativeSettledIds: string[]) => void>(() => {});
   const heldMessages = useMemo(
-    () => mergeHeldMessages(session?.id ?? null, localOutbox, storedOutbox, serverOutbox),
-    [session?.id, localOutbox, storedOutbox, serverOutbox],
+    () => mergeHeldMessages(session?.id ?? null, session?.hostId ?? "local", localOutbox, storedOutbox, serverOutbox),
+    [session?.id, session?.hostId, localOutbox, storedOutbox, serverOutbox],
   );
   // False once this hook instance unmounts: background loops (prompt/bash
   // settlement polling) must not keep firing on a dead instance.
@@ -573,7 +574,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   sessionHostRef.current = session?.hostId ?? newSessionHostId ?? "local";
   // Read when a request is made: a created owner lands in an async callback, before any render.
   const currentSessionHost = useCallback(() => createdOwnerRef.current?.hostId ?? sessionHostRef.current, []);
-  const btw = useBtw(sessionIdRef);
+  const btw = useBtw(sessionIdRef, currentSessionHost);
   const { applyEvent: applyBtwFrame, refreshHistory: refreshBtwHistory, reconcile: reconcileBtw, openHistory: openBtwHistory, ask: sendBtw } = btw;
   // A btw ask can wait seconds on spawn + SSE attach: a second Enter must not send it twice.
   const btwAskPendingRef = useRef(false);
@@ -876,8 +877,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setActiveGoal(null);
       return;
     }
-    setActiveGoal(parseActiveGoal(sessionStorage.getItem(`tau:goal:${sid}`)));
-  }, [session?.id]);
+    setActiveGoal(parseActiveGoal(sessionStorage.getItem(`tau:goal:${sessionHostKey(session?.hostId, sid)}`)));
+  }, [session?.id, session?.hostId]);
 
   // A plan request is in progress only for its current agent turn.
   useEffect(() => {
@@ -936,7 +937,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const runId = promptRunIdRef.current;
     const generation = subagentRosterGenerationRef.current;
     try {
-      const result = await sendAgentCommand<{ subagents?: SubagentSnapshotLike[] }>(sid, { type: "get_subagents" });
+      const result = await sendAgentCommand<{ subagents?: SubagentSnapshotLike[] }>(sid, currentSessionHost(), { type: "get_subagents" });
       // Fence: the request may resolve after the user switched sessions, the
       // run ended and a new prompt started, or the roster was cleared — its
       // snapshot belongs to a different roster generation and must not merge
@@ -966,7 +967,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch {
       // Best effort: subagent_lifecycle/progress frames are the primary source.
     }
-  }, [mergeSubagents, refreshSubagentHistory]);
+  }, [mergeSubagents, refreshSubagentHistory, currentSessionHost]);
 
   // Clear per-run activity state at run end. MUST also cancel the pending
   // version-flush rAF: a queued subagent_event flush would otherwise repopulate
@@ -1335,10 +1336,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current ?? await ensureNewSession();
     if (!sid) return;
 
-    const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" });
+    const state = await sendAgentCommand<AgentStateResponse>(sid, currentSessionHost(), { type: "get_state" });
     if (!hookAliveRef.current || sessionIdRef.current !== sid) return;
     setSystemPrompt(state.systemPrompt ?? "");
-  }, [ensureNewSession]);
+  }, [ensureNewSession, currentSessionHost]);
 
   const loadSlashCommands = useCallback(async () => {
     const sid = sessionIdRef.current ?? await ensureNewSession();
@@ -1349,7 +1350,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     setSlashCommandsLoading(true);
     try {
-      const data = await sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
+      const data = await sendAgentCommand<SlashCommandsResponse>(sid, currentSessionHost(), { type: "get_commands" });
       const available = Array.isArray(data?.commands) ? data.commands : [];
       // Keep any builtins too: they are hidden from the palette but must not
       // be reported as unknown (#167).
@@ -1369,7 +1370,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       setSlashCommandsLoading(false);
     }
-  }, [ensureNewSession]);
+  }, [ensureNewSession, currentSessionHost]);
 
   // File notifications cover terminal-owned sessions and native message_end
   // arriving before persistence. An attached SSE stream does not replace this
@@ -1391,17 +1392,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const refreshAgentSnapshots = useCallback(async (sid: string) => {
     const queueRevision = ++queueSeqRef.current;
     try {
-      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+      const res = await fetch(agentUrl(sid, currentSessionHost()));
       if (!res.ok || !hookAliveRef.current || sessionIdRef.current !== sid) return;
       const data = await res.json() as { state?: AgentStateResponse };
       applyQueueStateSnapshot(queueRevision, data.state?.queuedMessages);
     } catch {
       // The next live update or state snapshot heals these views.
     }
-  }, [applyQueueStateSnapshot]);
+  }, [applyQueueStateSnapshot, currentSessionHost]);
 
   const reconcileHandoff = useCallback(async () => {
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     if (!sid || !hookAliveRef.current || catchUp.view().leafId) return;
     const current = serverOutboxRef.current;
     const ids = [...current.nativeSettled].filter((id) =>
@@ -1431,7 +1433,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const queueRevision = ++queueSeqRef.current;
         let status: ClientMessageStatus | null;
         try {
-          status = await sendAgentCommand<ClientMessageStatus>(sid, { type: "get_client_message_status", clientMessageIds });
+          status = await sendAgentCommand<ClientMessageStatus>(sid, host, { type: "get_client_message_status", clientMessageIds });
         } catch (error) {
           if ((error as { code?: unknown })?.code !== "handoff_child_unavailable" || !owned()) throw error;
           // The child ended: only its saved history can still show these messages.
@@ -1456,7 +1458,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (handoffReadRef.current === token) handoffReadRef.current = null;
     }
-  }, [applyQueueStateSnapshot, catchUp, markOutboxRepresented, receiveCorrelatedMessage]);
+  }, [applyQueueStateSnapshot, catchUp, markOutboxRepresented, receiveCorrelatedMessage, currentSessionHost]);
   reconcileHandoffRef.current = reconcileHandoff;
 
   useEffect(() => {
@@ -1492,7 +1494,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // A pending coalesced update belongs to the stream being replaced.
     eventCoalescer.reset();
     catchUp.disconnect();
-    const es = openEventStream({ kind: "session", sessionId: sid });
+    const es = openEventStream({ kind: "session", sessionId: sid, hostId: currentSessionHost() });
     eventSourceRef.current = es;
     const runId = promptRunIdRef.current;
 
@@ -1623,7 +1625,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // connection must be ready before they continue.
       };
     });
-}, [applyBtwFrame, catchUp, clearLiveToolResults, eventCoalescer, refreshBtwHistory, refreshAgentSnapshots]);
+}, [applyBtwFrame, catchUp, clearLiveToolResults, eventCoalescer, refreshBtwHistory, refreshAgentSnapshots, currentSessionHost]);
   observeCreatedSessionRef.current = (sid: string) => {
     if (!hookAliveRef.current || sessionIdRef.current !== sid || eventSourceRef.current) return;
     void connectEvents(sid);
@@ -1635,7 +1637,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       serverOutboxRef.current = applyOutboxSnapshot(serverOutboxRef.current, entries, settledIds, nativeSettledIds);
       setServerOutbox(serverOutboxRef.current);
     }
-    void reconcileConfirmedLocalOutbox(sid, localOutbox, serverOutboxRef.current.seen)
+    void reconcileConfirmedLocalOutbox(sid, currentSessionHost(), localOutbox, serverOutboxRef.current.seen)
       .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
     // Held messages open the session channel even without a wrapper: subscribe to follow them.
     if (entries.length > 0 && !eventSourceRef.current) void connectEvents(sid, "connected");
@@ -1646,10 +1648,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Read by a Retry before React renders: a copy waiting in IndexedDB must block another at once.
       localOutboxRef.current = event.entries;
       setLocalOutbox(event.entries);
-      serverOutboxRef.current = rememberLocalOutbox(serverOutboxRef.current, event.entries, sessionIdRef.current);
+      serverOutboxRef.current = rememberLocalOutbox(serverOutboxRef.current, event.entries, sessionIdRef.current, currentSessionHost());
       setServerOutbox(serverOutboxRef.current);
       const sid = sessionIdRef.current;
-      if (sid) void reconcileConfirmedLocalOutbox(sid, event.entries, serverOutboxRef.current.seen)
+      if (sid) void reconcileConfirmedLocalOutbox(sid, currentSessionHost(), event.entries, serverOutboxRef.current.seen)
         .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
       return;
     }
@@ -1657,14 +1659,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Server confirmation or a locally proven browser-only root retires the original before outbox_update arrives.
     if (stored.replaces) markOutboxRepresented([stored.replaces]);
     const sid = sessionIdRef.current;
-    if (stored.sessionId !== sid) return;
+    if (!sid || !sameCopy(stored, sid, currentSessionHost())) return;
     serverOutboxRef.current = rememberOutboxEntries(serverOutboxRef.current, [stored]);
     setServerOutbox(serverOutboxRef.current);
     // An add reply may arrive after the frame that removed its already-delivered entry: never resurrect it.
     if (!serverOutboxRef.current.seen.has(stored.id)) setStoredOutbox((current) => [...current.filter((entry) => entry.id !== stored.id), stored]);
     // The server holds it now, so the channel opens even without a wrapper (a first try may have been refused).
     if (hookAliveRef.current && !eventSourceRef.current) void connectEvents(sid, "connected");
-  }), [connectEvents, markOutboxRepresented]);
+  }), [connectEvents, currentSessionHost, markOutboxRepresented]);
 
   // ---------------------------------------------------------------------
   // Host-tool bridge: tau registers tools the AGENT can call. The server
@@ -1710,11 +1712,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
    * has them available (set_host_tools is per-wrapper, not persisted). */
   const registerHostTools = useCallback(async (sid: string) => {
     try {
-      await sendAgentCommand(sid, { type: "set_host_tools", tools: HOST_TOOL_DEFINITIONS });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_host_tools", tools: HOST_TOOL_DEFINITIONS });
     } catch {
       // A refused registration leaves the UI passive.
     }
-  }, [HOST_TOOL_DEFINITIONS]);
+  }, [HOST_TOOL_DEFINITIONS, currentSessionHost]);
 
   reconnectActionsRef.current = (sid: string) => {
     void registerHostTools(sid);
@@ -1724,7 +1726,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   /** Answer a host_tool_call with a toolResult payload. */
   const respondHostTool = useCallback(async (sid: string, id: string, text: string, isError = false) => {
     try {
-      await sendAgentCommand(sid, {
+      await sendAgentCommand(sid, currentSessionHost(), {
         type: "host_tool_result",
         id,
         isError,
@@ -1733,7 +1735,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to send host tool result:", e);
     }
-  }, []);
+  }, [currentSessionHost]);
 
   const handleHostToolCall = useCallback(async (id: string, toolName: string, args: Record<string, unknown>) => {
     const sid = sessionIdRef.current;
@@ -1791,7 +1793,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // when a genuinely new request arrives.
     locallyAnsweredDialogRef.current = request.id;
     try {
-      await sendAgentCommand(sid, { type: "ui_response", id: request.id, value });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "ui_response", id: request.id, value });
       if (!hookAliveRef.current || sessionIdRef.current !== sid) return true;
       // Keep the answered panel mounted briefly while the next question arrives.
       clearTimeout(extensionDialogClearTimerRef.current ?? undefined);
@@ -1810,7 +1812,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (locallyAnsweredDialogRef.current === request.id) locallyAnsweredDialogRef.current = null;
       return false;
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   const dismissNotice = useCallback((id: string) => {
     dispatchNotice({ type: "remove", id });
@@ -2013,7 +2015,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ) {
       if (runId !== undefined && promptRunIdRef.current !== runId) return;
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const res = await fetch(agentUrl(sid, currentSessionHost()));
         if (res.ok) {
           const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
           const state = data.state;
@@ -2027,7 +2029,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       await delay(PROMPT_SETTLE_POLL_MS);
     }
-  }, [finishPromptWithoutStream]);
+  }, [finishPromptWithoutStream, currentSessionHost]);
 
   const waitForBashSettlement = useCallback(async (sid: string) => {
     const recoveryId = bashRecoveryIdRef.current + 1;
@@ -2040,7 +2042,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ) {
       await delay(BASH_STATE_RECONCILE_MS);
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const res = await fetch(agentUrl(sid, currentSessionHost()));
         if (!res.ok) continue;
         const data = await res.json() as { state?: AgentStateResponse };
         if (data.state?.isBashRunning) continue;
@@ -2055,7 +2057,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // Keep polling while the page is mounted; network recovery is transparent.
       }
     }
-  }, [loadSession]);
+  }, [loadSession, currentSessionHost]);
 
   // Reconcile client streaming state with the server. When SSE events are
   // missed (network drop, mobile tab backgrounded, half-open connection),
@@ -2075,7 +2077,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (token === null) return;
     try {
       const queueRevision = ++queueSeqRef.current;
-      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+      const res = await fetch(agentUrl(sid, currentSessionHost()));
       if (!res.ok) return;
       const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
       // A slow response can straddle a run boundary (previous run finished
@@ -2123,7 +2125,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         void reconcileAgentState(sid);
       }
     }
-  }, [applyNativeCompacting, applyQueueStateSnapshot, finishPromptWithoutStream, refreshSubagentRoster]);
+  }, [applyNativeCompacting, applyQueueStateSnapshot, finishPromptWithoutStream, refreshSubagentRoster, currentSessionHost]);
 
   // Recovery net for missed SSE events: while a prompt or compaction runs, verify
   // against the server periodically and whenever the tab returns to the
@@ -2201,7 +2203,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const removal = { sessionId: sid };
     queuedRemovalRef.current = removal;
     try {
-      const result = await sendAgentCommand<{ steering?: unknown; followUp?: unknown }>(sid, { type: "clear_queue" });
+      const result = await sendAgentCommand<{ steering?: unknown; followUp?: unknown }>(sid, currentSessionHost(), { type: "clear_queue" });
       return [result?.steering, result?.followUp].flatMap((queue) => (Array.isArray(queue) ? queue : []))
         .filter((text): text is string => typeof text === "string" && text.length > 0);
     } catch (error) {
@@ -2212,7 +2214,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (queuedRemovalRef.current === removal) queuedRemovalRef.current = null;
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     if ((event.type === "message_start" || event.type === "message_end") && typeof event.clientMessageId === "string" && event.message) {
@@ -2257,7 +2259,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           );
           setServerOutbox(serverOutboxRef.current);
           const sid = sessionIdRef.current;
-          if (sid) void reconcileConfirmedLocalOutbox(sid, localOutboxRef.current, serverOutboxRef.current.seen)
+          if (sid) void reconcileConfirmedLocalOutbox(sid, currentSessionHost(), localOutboxRef.current, serverOutboxRef.current.seen)
             .catch((error) => console.warn(`[tau] browser outbox reconciliation failed: ${error instanceof Error ? error.message : String(error)}`));
           // Retire only confirmations the server has listed or settled; an older empty snapshot can overtake an ACK.
           setStoredOutbox((current) => current.filter((entry) => !serverOutboxRef.current.seen.has(entry.id)));
@@ -2380,7 +2382,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           void loadSession(endedSid, false, false, endedRunId);
           const endToken = beginAuthoritativeModelSync();
           const queueRevision = ++queueSeqRef.current;
-          fetch(`/api/agent/${encodeURIComponent(endedSid)}`)
+          fetch(agentUrl(endedSid, currentSessionHost()))
             .then((r) => (r.ok ? r.json() as Promise<{ state?: AgentStateResponse }> : null))
             .then((d) => {
               // Stale terminal snapshot: the user switched sessions or started
@@ -2844,7 +2846,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiFrame(event as unknown as UiPresentationFrame);
         break;
     }
-  }, [addNotice, addUnconfirmedRunErrorNotice, catchUp, eventCoalescer, clearLiveToolResults, clearTerminalReconcileTimer, endExtensionDialog, finishPromptWithoutStream, handleExtensionUiFrame, handleHostToolCall, loadSession, reloadActiveSessionHistory, mergeSubagents, onAgentEnd, openExtensionDialog, receiveCorrelatedMessage, reconcileAgentState, refreshLiveModelState, refreshSubagentRoster, resetSubagentActivityState, applyAuthoritativeModel, beginAuthoritativeModelSync, setCompacting, setLiveToolResult, surfaceQuotaOnStream, updateQueuedMessages, applyQueueStateSnapshot]);
+  }, [addNotice, addUnconfirmedRunErrorNotice, catchUp, eventCoalescer, clearLiveToolResults, clearTerminalReconcileTimer, endExtensionDialog, finishPromptWithoutStream, handleExtensionUiFrame, handleHostToolCall, loadSession, reloadActiveSessionHistory, mergeSubagents, onAgentEnd, openExtensionDialog, receiveCorrelatedMessage, reconcileAgentState, refreshLiveModelState, refreshSubagentRoster, resetSubagentActivityState, applyAuthoritativeModel, beginAuthoritativeModelSync, setCompacting, setLiveToolResult, surfaceQuotaOnStream, updateQueuedMessages, applyQueueStateSnapshot, currentSessionHost]);
   handleAgentEventRef.current = handleAgentEvent;
   syncActionsRef.current = {
     metadata: (context, version, hasLive = liveModelMeta !== null || currentModelOverride !== null) => {
@@ -2942,11 +2944,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   /** Holds a message in the outbox (docs/specs/2026-11-04-message-outbox-design.md): true once this browser has
    * stored it, after which tau delivers it whatever this tab does next. It shows as a held bubble until pi has it. */
   const holdMessage = useCallback(async (sid: string, mode: OutboxMode, message: string, images?: Pick<AttachedImage, "data" | "mimeType">[], uploads?: string[], uploadProofs?: Record<string, string>, replaces?: string) => {
+    const host = currentSessionHost();
     try {
       await addToOutbox({
         id: newOutboxId(),
         sessionId: sid,
-        scope: await getOutboxScope(sid),
+        hostId: host,
+        scope: await getOutboxScope(sid, host),
         mode,
         message,
         ...(images?.length ? { images: images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })) } : {}),
@@ -2969,7 +2973,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!eventSourceRef.current) void connectEvents(sid, "connected");
     }
     return true;
-  }, [addNotice, connectEvents]);
+  }, [addNotice, connectEvents, currentSessionHost]);
 
   const snapshotRunEntries = useCallback(async (sid: string) => {
     // Read immediately before dispatch, not from React's last rendered state:
@@ -3073,7 +3077,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // not a request to stop following the response that this prompt starts.
     userScrollIntentUntilRef.current = 0;
 
-    let recoveryKey = sessionIdRef.current ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
+    // The composer's key: the new chat's until promotion switches it to the session's (a session created but not
+    // promoted, such as a 503 with its id, is still shown under the new chat's key).
+    let recoveryKey = (sessionIdRef.current ? sessionHostKey(currentSessionHost(), sessionIdRef.current) : undefined) ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
     // Set just before the prompt goes out: a lost reply from any earlier command (get_state, set_model) ran no prompt.
     let promptIssued = false;
     try {
@@ -3082,6 +3088,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         const sid = existingSid ?? await ensureNewSession();
+        const host = currentSessionHost();
         // Spawning takes seconds: the user may have opened another chat while
         // it was in flight (this instance is unmounted). Deliver their prompt
         // in the background, but never promote — switching the fresh chat
@@ -3093,12 +3100,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // Promote now so the sidebar can show this active session during streaming.
           if (!ownerGone) {
             promoteNewSession(1, message);
-            if (onSessionCreated) recoveryKey = sid;
+            if (onSessionCreated) recoveryKey = sessionHostKey(host, sid);
           }
           if (selectedModel) {
             setPendingModel(selectedModel);
             if (existingSid) {
-              await sendAgentCommand(sid, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
+              await sendAgentCommand(sid, host, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
             }
           }
           // No UI left to update on a dead instance — and attaching an
@@ -3113,7 +3120,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             if (promptRunIdRef.current === promptRunId) runPreviousEntryIdsRef.current = previousEntryIds;
           }
           promptIssued = true;
-          await sendAgentCommand(sid, {
+          await sendAgentCommand(sid, host, {
             type: "prompt",
             message,
             ...(piImages?.length ? { images: piImages } : {}),
@@ -3158,9 +3165,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       independentRunErrorRef.current = null;
       slashCommandRunRef.current = false;
       dispatch({ type: "end" });
-      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ?? recoveryKey };
+      // ensureNewSession itself promotes a session created before its host went offline, then throws.
+      if (isNew && onSessionCreated && newSessionPromotedRef.current && sessionIdRef.current) recoveryKey = sessionHostKey(currentSessionHost(), sessionIdRef.current);
+      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey };
     }
-  }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
+  }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage, currentSessionHost]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (bashRunningRef.current || editInFlightRef.current) return;
@@ -3174,7 +3183,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
       if (!sid) throw new Error(translate("agentSession.shellSessionFailed"));
-      const result = await sendAgentCommand<BashResultInfo>(sid, {
+      const result = await sendAgentCommand<BashResultInfo>(sid, currentSessionHost(), {
         type: "bash",
         command,
         excludeFromContext,
@@ -3212,10 +3221,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setPendingBash(null);
       setBashRunning(false);
     }
-  }, [addNotice, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session]);
+  }, [addNotice, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session, currentSessionHost]);
   executeBashRef.current = executeBash;
 
   const withdrawAndAbort = useCallback(async (sid: string) => {
+    const host = currentSessionHost();
     // Captured at the click: a retry must not reach a run that started
     // since (this client's next prompt or another device's).
     const runId = promptRunIdRef.current;
@@ -3233,7 +3243,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Retrying the same command is safe: it returns whatever is still queued.
     for (let attempt = 0; attempt < 2 && restoredQueue === undefined && (attempt === 0 || sameRun()); attempt++) {
       try {
-        restoredQueue = (await sendAgentCommand<RestoredQueue>(sid, { type: "abort_and_restore_queue" })) ?? null;
+        restoredQueue = (await sendAgentCommand<RestoredQueue>(sid, host, { type: "abort_and_restore_queue" })) ?? null;
       } catch {
         failures += 1;
       }
@@ -3243,13 +3253,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const texts = [...steering, ...followUp]
       .map((entry) => entry.text)
       .filter((text): text is string => typeof text === "string" && text.length > 0);
-    if (texts.length > 0) recoverDraft(sid, { text: texts.join("\n\n"), promptOnly: true });
+    if (texts.length > 0) recoverDraft(sessionHostKey(host, sid), { text: texts.join("\n\n"), promptOnly: true });
     // A failed attempt may have withdrawn messages whose texts were in the
     // lost response; say so unless the retry brought texts back.
     if (failures > 0 && texts.length === 0 && hookAliveRef.current && sessionIdRef.current === sid) {
       addNotice({ type: "warning", message: translate("agentSession.queueRestoreUncertain") });
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   // Button, Esc, and the global shortcut can all fire while a withdrawal is
   // in flight: one Stop at a time, or two recoveries interleave their text.
@@ -3260,7 +3270,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // A running turn is stopped first; a `!` command beside it keeps running.
     if (bashRunningRef.current && !agentRunningRef.current) {
       try {
-        await sendAgentCommand(sid, { type: "abort_bash" });
+        await sendAgentCommand(sid, currentSessionHost(), { type: "abort_bash" });
       } catch (e) {
         console.error("Failed to abort bash:", e);
       }
@@ -3272,7 +3282,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const stop: Promise<void> = withdrawAndAbort(sid).finally(release);
     stopInFlightRef.current = stop;
     return stop;
-  }, [withdrawAndAbort]);
+  }, [withdrawAndAbort, currentSessionHost]);
 
   const handleEdit = useCallback(async (entryId: string, content: string): Promise<boolean> => {
     const sid = sessionIdRef.current;
@@ -3287,7 +3297,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     catchUp.invalidate();
     const isCurrent = () => hookAliveRef.current && sessionIdRef.current === edit.sessionId && editInFlightRef.current === edit;
     try {
-      const result = await sendAgentCommand<{ cancelled: boolean; leafId: string | null; sessionId: string }>(sid, {
+      const result = await sendAgentCommand<{ cancelled: boolean; leafId: string | null; sessionId: string }>(sid, currentSessionHost(), {
         type: "edit_message",
         entryId,
       });
@@ -3338,24 +3348,26 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       }
     }
-  }, [addNotice, catchUp, isNew, opts.chatInputRef, reloadActiveSessionHistory]);
+  }, [addNotice, catchUp, isNew, opts.chatInputRef, reloadActiveSessionHistory, currentSessionHost]);
 
   // editPrompt: pi's `fork` drops the chosen user prompt from the fork and
   // returns its text — put it in the fork's composer (edit-and-resend).
   const handleFork = useCallback(async (entryId: string, editPrompt: boolean) => {
     if (bashRunningRef.current || agentRunningRef.current || forkInFlightRef.current || editInFlightRef.current) return;
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     if (!sid) return;
     forkInFlightRef.current = true;
     setForkingEntryId(entryId);
     try {
-      const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string; text?: string }>(sid, {
+      const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string; text?: string }>(sid, host, {
         type: "fork",
         entryId,
       });
       const { cancelled, newSessionId, text } = result ?? {};
       if (!cancelled && newSessionId) {
-        if (editPrompt && text) setDraft(newSessionId, { value: text, images: [], files: [], promptOnly: true });
+        // The fork is a session of the same host.
+        if (editPrompt && text) setDraft(sessionHostKey(host, newSessionId), { value: text, images: [], files: [], promptOnly: true });
         onSessionForked?.(newSessionId);
       }
     } catch (e) {
@@ -3364,7 +3376,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       forkInFlightRef.current = false;
       setForkingEntryId(null);
     }
-  }, [onSessionForked]);
+  }, [onSessionForked, currentSessionHost]);
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     if (bashRunningRef.current || agentRunningRef.current || editInFlightRef.current) return;
@@ -3385,7 +3397,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setPendingModel({ provider, modelId });
         const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         if (!sid) return;
-        await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+        await sendAgentCommand(sid, currentSessionHost(), { type: "set_model", provider, modelId });
         // A spawned new session reports /slow support per model.
         await refreshLiveModelState(sid);
         return;
@@ -3394,7 +3406,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!sid) return;
       // Show the pick at once: set_model may wait for pi to start.
       setCurrentModelOverride(choice);
-      await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_model", provider, modelId });
       await refreshLiveModelState(sid);
     } catch (e) {
       // A failed switch (e.g. a provider without credentials) must not
@@ -3411,7 +3423,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       modelCommandPendingRef.current -= 1;
     }
-  }, [isNew, setNewSessionModel, refreshLiveModelState, addNotice]);
+  }, [isNew, setNewSessionModel, refreshLiveModelState, addNotice, currentSessionHost]);
 
   /** Toggle automatic retry for transient model failures. */
   const handleAutoRetryChange = useCallback(async (enabled: boolean) => {
@@ -3419,12 +3431,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     setAutoRetryEnabled(enabled);
     try {
-      await sendAgentCommand(sid, { type: "set_auto_retry", enabled });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_auto_retry", enabled });
     } catch (error) {
       setAutoRetryEnabled((current) => (current === enabled ? !enabled : current));
       addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   /** Toggle automatic context compaction on the live session. */
   const handleAutoCompactionChange = useCallback(async (enabled: boolean) => {
@@ -3432,12 +3444,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     setAutoCompactionEnabled(enabled);
     try {
-      await sendAgentCommand(sid, { type: "set_auto_compaction", enabled });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_auto_compaction", enabled });
     } catch (error) {
       console.error("Failed to change auto-compaction:", error);
       addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   /** Change how queued steering messages are delivered (all at once / one at a time). */
   const handleSteeringModeChange = useCallback(async (mode: "all" | "one-at-a-time") => {
@@ -3445,12 +3457,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     setSteeringMode(mode);
     try {
-      await sendAgentCommand(sid, { type: "set_steering_mode", mode });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_steering_mode", mode });
     } catch (error) {
       console.error("Failed to change steering mode:", error);
       addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   /** Change how queued follow-up messages are delivered. */
   const handleFollowUpModeChange = useCallback(async (mode: "all" | "one-at-a-time") => {
@@ -3458,12 +3470,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     setFollowUpMode(mode);
     try {
-      await sendAgentCommand(sid, { type: "set_follow_up_mode", mode });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_follow_up_mode", mode });
     } catch (error) {
       console.error("Failed to change follow-up mode:", error);
       addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   /** Cycle to the next available model (⌘/Ctrl+Alt+M). */
   const handleCycleModel = useCallback(async () => {
@@ -3473,7 +3485,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     modelPickSeqRef.current += 1;
     modelCommandPendingRef.current += 1;
     try {
-      await sendAgentCommand(sid, { type: "cycle_model" });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "cycle_model" });
       await refreshLiveModelState(sid);
     } catch (error) {
       console.error("Failed to cycle model:", error);
@@ -3481,7 +3493,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       modelCommandPendingRef.current -= 1;
     }
-  }, [addNotice, refreshLiveModelState]);
+  }, [addNotice, refreshLiveModelState, currentSessionHost]);
 
   /** Cycle to the next thinking level (⌘/Ctrl+Alt+T). */
   const handleCycleThinkingLevel = useCallback(async () => {
@@ -3490,7 +3502,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     authoritativeModelSeqRef.current += 1;
     modelCommandPendingRef.current += 1;
     try {
-      await sendAgentCommand(sid, { type: "cycle_thinking_level" });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "cycle_thinking_level" });
       await refreshLiveModelState(sid);
     } catch (error) {
       console.error("Failed to cycle thinking level:", error);
@@ -3498,7 +3510,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       modelCommandPendingRef.current -= 1;
     }
-  }, [addNotice, refreshLiveModelState]);
+  }, [addNotice, refreshLiveModelState, currentSessionHost]);
 
   /** Stop an in-progress automatic retry from the retry banner. */
   const handleAbortRetry = useCallback(async () => {
@@ -3506,12 +3518,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!sid) return;
     setRetryInfo(null);
     try {
-      await sendAgentCommand(sid, { type: "abort_retry" });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "abort_retry" });
     } catch (error) {
       console.error("Failed to abort retry:", error);
       addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
     }
-  }, [addNotice]);
+  }, [addNotice, currentSessionHost]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -3520,7 +3532,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setCompactError(null);
     setCompactResult(null);
     try {
-      const result = await sendAgentCommand<CompactCommandResult>(sid, { type: "compact" });
+      const result = await sendAgentCommand<CompactCommandResult>(sid, currentSessionHost(), { type: "compact" });
       setCompactResult(readCompactResult(result, "manual"));
       await loadSession(sid, true);
       void refreshLiveModelState(sid);
@@ -3530,7 +3542,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       endLocalCompaction();
     }
-  }, [beginLocalCompaction, endLocalCompaction, isCompacting, loadSession, refreshLiveModelState]);
+  }, [beginLocalCompaction, endLocalCompaction, isCompacting, loadSession, refreshLiveModelState, currentSessionHost]);
 
   // A remote workspace's path means nothing on this machine: its models come from the global list.
   const remoteWorkspace = session ? remoteHostId(session.hostId) !== undefined : newSessionHostId !== undefined;
@@ -3574,6 +3586,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     onSentRef.current?.();
     try {
       const sid = sessionIdRef.current ?? await ensureNewSession();
+      const host = currentSessionHost();
       if (!sid) {
         toast.error(translate("agentSession.noActiveSession"));
         return false;
@@ -3586,10 +3599,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // The session channel is observer-only: start the wrapper and attach
       // before asking, so the first deltas are not missed.
       if (!ownerGone && eventSourceRef.current?.readyState !== EVENT_STREAM_OPEN) {
-        await sendAgentCommand(sid, { type: "get_state" });
+        await sendAgentCommand(sid, host, { type: "get_state" });
         await ensureEventsConnected(sid);
       }
-      await sendBtw(sid, question, recordId);
+      await sendBtw(sid, question, recordId, host);
       const ownerCurrent = hookAliveRef.current && sessionIdRef.current === sid;
       // pi wrote the session to disk to ask: leave the unsaved new-chat view
       // (URL, sidebar) like a first prompt does. No-op for existing sessions.
@@ -3601,7 +3614,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       btwAskPendingRef.current = false;
     }
-  }, [ensureEventsConnected, ensureNewSession, promoteNewSession, sendBtw]);
+  }, [ensureEventsConnected, ensureNewSession, promoteNewSession, sendBtw, currentSessionHost]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (editInFlightRef.current) return { handled: true, retainInput: true };
@@ -3635,7 +3648,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           beginLocalCompaction();
           setCompactError(null);
           setCompactResult(null);
-          const result = await sendAgentCommand<CompactCommandResult>(sid, {
+          const result = await sendAgentCommand<CompactCommandResult>(sid, currentSessionHost(), {
             type: "compact",
             ...(args ? { customInstructions: args } : {}),
           });
@@ -3651,7 +3664,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         case "reload": {
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noSessionToReload") });
-          await sendAgentCommand(sid, { type: "reload" });
+          await sendAgentCommand(sid, currentSessionHost(), { type: "reload" });
           await Promise.all([
             loadSession(sid, false, true),
             loadSlashCommands(),
@@ -3666,7 +3679,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           onSentRef.current?.();
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noSessionToName") });
-          await sendAgentCommand(sid, { type: "set_session_name", name: args });
+          await sendAgentCommand(sid, currentSessionHost(), { type: "set_session_name", name: args });
           await loadSession(sid);
           promoteNewSession();
           return complete({ handled: true, message: translate("agentSession.sessionRenamed", { name: args }) });
@@ -3675,7 +3688,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         case "session": {
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noActiveSession") });
-          const stats = await sendAgentCommand<SessionStatsInfo>(sid, { type: "get_session_stats" });
+          const stats = await sendAgentCommand<SessionStatsInfo>(sid, currentSessionHost(), { type: "get_session_stats" });
           if (stats) {
             setSessionStatsOverride(stats);
           }
@@ -3697,7 +3710,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         case "copy": {
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noActiveSession") });
-          const data = await sendAgentCommand<LastAssistantTextResponse>(sid, { type: "get_last_assistant_text" });
+          const data = await sendAgentCommand<LastAssistantTextResponse>(sid, currentSessionHost(), { type: "get_last_assistant_text" });
           const textToCopy = data?.text ?? "";
           if (!textToCopy) return complete({ handled: true, error: translate("agentSession.noMessageToCopy") });
           await navigator.clipboard.writeText(textToCopy);
@@ -3731,7 +3744,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             const goal = createActiveGoal(args);
             setActiveGoal(goal);
             const activeSessionId = sessionIdRef.current;
-            if (activeSessionId) sessionStorage.setItem(`tau:goal:${activeSessionId}`, JSON.stringify(goal));
+            if (activeSessionId) sessionStorage.setItem(`tau:goal:${sessionHostKey(currentSessionHost(), activeSessionId)}`, JSON.stringify(goal));
           }
           return { handled: true };
         }
@@ -3744,7 +3757,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         endLocalCompaction();
       }
     }
-  }, [addNotice, askBtw, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen]);
+  }, [addNotice, askBtw, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen, currentSessionHost]);
 
   // A steer or follow-up is held in the outbox like a prompt: its held bubble becomes pi's queue chip (queue_update)
   // or, delivered at once, the user message pi echoes. A slash command keeps its text; the server sends it as a
@@ -3767,6 +3780,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
    * worker saw its add receipt) leaves IndexedDB, and the row hides once that commits: a reload cannot bring it back. */
   const deleteHeldMessage = useCallback(async (id: string) => {
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     const held = heldMessagesRef.current.find((entry) => entry.id === id);
     if (!sid || !held || held.state === "sending" || held.state === "delivering" || heldDeletionsRef.current.has(id)) return;
     heldDeletionsRef.current.add(id);
@@ -3777,13 +3791,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setStoredOutbox((entries) => entries.filter((entry) => entry.id !== id));
         setLocalOutbox((entries) => entries.filter((entry) => entry.id !== id));
       } else if (held.local) await dropFromOutbox(id);
-      else await sendAgentCommand(sid, { type: "outbox_remove", id });
+      else await sendAgentCommand(sid, host, { type: "outbox_remove", id });
     } catch (e) {
       if (hookAliveRef.current && sessionIdRef.current === sid) addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
     } finally {
       heldDeletionsRef.current.delete(id);
     }
-  }, [addNotice, markOutboxRepresented]);
+  }, [addNotice, markOutboxRepresented, currentSessionHost]);
 
   const heldRetriesRef = useRef(new Set<string>());
   /** Retry keeps the failed bubble's exact mode and payload, and records its lineage in IndexedDB. The server
@@ -3791,6 +3805,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
    * local lineage. A refused copy leaves the root intact, and the IDB transaction makes concurrent retries reuse one copy. */
   const retryHeldMessage = useCallback(async (id: string) => {
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     const held = heldMessagesRef.current.find((entry) => entry.id === id);
     if (!sid || !held || held.state !== "failed" || editInFlightRef.current || heldRetriesRef.current.has(id) || heldDeletionsRef.current.has(id)) return;
     if (serverOutboxRef.current.represented.has(id)) return;
@@ -3799,10 +3814,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const serverIds = serverOutboxRef.current.seen;
       const confirmedIds = new Set(localOutboxRef.current
-        .filter((entry) => entry.sessionId === sid && entry.replaces !== undefined && serverIds.has(entry.id))
+        .filter((entry) => sameCopy(entry, sid, host) && entry.replaces !== undefined && serverIds.has(entry.id))
         .map((entry) => entry.id));
       if (serverIds.has(id)) confirmedIds.add(id);
-      if (confirmedIds.size > 0) await reconcileOutbox(sid, [...confirmedIds]);
+      if (confirmedIds.size > 0) await reconcileOutbox(sid, host, [...confirmedIds]);
 
       if (!hookAliveRef.current || sessionIdRef.current !== sid || editInFlightRef.current || serverOutboxRef.current.represented.has(id)) return;
       const current = heldMessagesRef.current.find((entry) => entry.id === id);
@@ -3817,17 +3832,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       heldRetriesRef.current.delete(id);
     }
-  }, [addNotice, holdMessage]);
+  }, [addNotice, currentSessionHost, holdMessage]);
 
   const handleAbortCompaction = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      await sendAgentCommand(sid, { type: "abort_compaction" });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "abort_compaction" });
     } catch (e) {
       console.error("Failed to abort compaction:", e);
     }
-  }, []);
+  }, [currentSessionHost]);
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     authoritativeModelSeqRef.current += 1;
@@ -3837,14 +3852,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
       if (!sid) return;
-      await sendAgentCommand(sid, { type: "set_thinking_level", level });
+      await sendAgentCommand(sid, currentSessionHost(), { type: "set_thinking_level", level });
       await refreshLiveModelState(sid);
     } catch (e) {
       console.error("Failed to set thinking level:", e);
     } finally {
       modelCommandPendingRef.current -= 1;
     }
-  }, [refreshLiveModelState]);
+  }, [refreshLiveModelState, currentSessionHost]);
 
   const handleToolPresetChange = useCallback(async (preset: ToolPreset) => {
     setToolPresetState(preset);
@@ -3941,7 +3956,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const generation = () => `${promptRunIdRef.current}:${bashRecoveryIdRef.current}:${editGenRef.current}:${compactionGenRef.current}`;
     const before = generation();
     const compactionGen = compactionGenRef.current;
-    void fetch(`/api/agent/${encodeURIComponent(sid)}`)
+    void fetch(agentUrl(sid, currentSessionHost()))
       .then((res) => (res.ok ? res.json() as Promise<{ running?: boolean; state?: AgentStateResponse }> : null))
       .then((data) => {
         if (!data?.running || !hookAliveRef.current || sessionIdRef.current !== sid || eventSourceRef.current !== source
@@ -3999,7 +4014,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const compactionGen = compactionGenRef.current;
       const framesBefore = frames;
       let failed = false;
-      void fetch(`/api/agent/${encodeURIComponent(sid)}`)
+      void fetch(agentUrl(sid, currentSessionHost()))
         .then((res) => (res.ok ? res.json() as Promise<{ running?: boolean; state?: AgentStateResponse }> : null))
         .then((data) => {
           if (!data) {
@@ -4028,9 +4043,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     runningRecheckRef.current = checkRunning;
     source.onmessage = (e) => {
       try {
-        const frame = JSON.parse(e.data) as { type?: string; runningSessionIds?: unknown };
-        if (frame.type !== "running" || !Array.isArray(frame.runningSessionIds)) return;
-        wanted = frame.runningSessionIds.includes(sid);
+        const frame = JSON.parse(e.data) as { type?: string; runningSessions?: unknown };
+        if (frame.type !== "running" || !Array.isArray(frame.runningSessions)) return;
+        // Only this host's copy of the id: another host's run of it is another session (absent hostId = this machine).
+        const host = currentSessionHost();
+        wanted = frame.runningSessions.some((running: { id?: unknown; hostId?: unknown }) => Boolean(running) && running.id === sid && (running.hostId ?? "local") === host);
         frames += 1;
         failures = 0;
         checkRunning();
@@ -4044,7 +4061,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (runningRecheckRef.current === checkRunning) runningRecheckRef.current = null;
       source.close();
     };
-  }, [session?.id]);
+  }, [session?.id, currentSessionHost]);
   // A local operation releasing the session rechecks a running frame it held back.
   useEffect(() => {
     runningRecheckRef.current?.();

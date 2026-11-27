@@ -1,4 +1,4 @@
-import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { getContentDisposition } from "@/lib/content-disposition";
 import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 
@@ -12,7 +12,9 @@ export async function GET(
   const inline = query.get("inline") === "1";
 
   try {
-    const resolved = await resolveSessionHostOr404(id, query.get("hostId"));
+    const host = hostIdParam(query.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.sessionOps.exportSession(id);
     if (!result.ok) return opErrorResponse(result);

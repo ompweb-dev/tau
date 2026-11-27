@@ -1,6 +1,6 @@
 import { buildSessionContext } from "@/lib/session-reader";
-import { apiErrorResponse, ifNoneMatchSatisfied, opErrorResponse, resolveSessionHostOr404, strongEtag } from "@/lib/api-utils";
-import { getRpcSession } from "@/lib/rpc-manager";
+import { apiErrorResponse, hostIdParam, ifNoneMatchSatisfied, opErrorResponse, resolveSessionHostOr404, strongEtag } from "@/lib/api-utils";
+import { getLiveRpcSession } from "@/lib/rpc-manager";
 import { MAX_SYNC_MESSAGES, parseHistoryCursor, selectSessionHistory, type SessionHistoryCursor, type SessionHistoryPage, type SessionSyncResponse } from "@/lib/session-sync";
 
 /**
@@ -29,7 +29,9 @@ export async function GET(
   const { id } = await params;
   const url = new URL(req.url);
   const leafId = url.searchParams.get("leafId") ?? undefined;
-  const hostId = url.searchParams.get("hostId");
+  const host = hostIdParam(url.searchParams.get("hostId"));
+  if ("response" in host) return host.response;
+  const { hostId } = host;
   const deferThinking = url.searchParams.has("deferThinking");
   const deferToolResultImages = url.searchParams.has("deferMedia");
   // Read-only transcript mode: include entries omitted from the active agent context.
@@ -80,7 +82,7 @@ export async function GET(
       // and its persisted boundary is empty (the next prompt must not 404).
       // Never replace previously confirmed history when its file is missing.
       const notFound = "response" in result ? result.response.status === 404 : result.status === 404;
-      const session = notFound && (boundary === "1" || (sync === "1" && !cursor?.lastEntryId && leafId === undefined)) ? getRpcSession(id, hostId) : undefined;
+      const session = notFound && (boundary === "1" || (sync === "1" && !cursor?.lastEntryId && leafId === undefined)) ? getLiveRpcSession(id, "host" in resolved ? resolved.host.id : hostId) : undefined;
       if (session?.isAlive() && !(await session.host.sessionFileExists(session.sessionFile))) {
         if (boundary === "1") {
           return jsonBodyResponse(req, { entryIds: [] }, "no-store");
@@ -102,7 +104,7 @@ export async function GET(
       const page = result.value as { history: SessionHistoryPage; leafId: string | null; tipId: string | null };
       // Sample AFTER the disk read: a quiet active run still supplies its most
       // recent partial output, and events arriving during the read win.
-      const session = getRpcSession(id, hostId);
+      const session = "host" in resolved ? getLiveRpcSession(id, resolved.host.id) : undefined;
       const live = session?.isAlive() && (leafId === undefined || leafId === page.tipId)
         ? session.getStreamSnapshot()
         : null;

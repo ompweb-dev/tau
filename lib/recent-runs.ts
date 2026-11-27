@@ -1,5 +1,8 @@
+import { sessionHostKey } from "@/lib/session-host-key";
+
 export interface RecentRunEntry {
-  sessionId: string;
+  /** `sessionHostKey(hostId, id)`: each host's copy of a session id has its own entry. */
+  key: string;
   completedAt: number;
 }
 
@@ -19,7 +22,7 @@ export function loadRecentRuns(storage?: Storage, maxLimit = 100): RecentRunEntr
         (item): item is RecentRunEntry =>
           typeof item === "object" &&
           item !== null &&
-          typeof (item as RecentRunEntry).sessionId === "string" &&
+          typeof (item as RecentRunEntry).key === "string" &&
           typeof (item as RecentRunEntry).completedAt === "number",
       )
       .slice(0, maxLimit);
@@ -43,7 +46,7 @@ export function saveRecentRuns(
 }
 
 export function seedRecentRuns(
-  allSessions: Array<{ id: string; modified: string; messageCount?: number; firstMessage?: string; name?: string }>,
+  allSessions: Array<{ id: string; hostId?: string; modified: string; messageCount?: number; firstMessage?: string; name?: string }>,
   limit = MAX_RECENT_COMPLETED_RUNS,
 ): RecentRunEntry[] {
   return [...allSessions]
@@ -51,7 +54,7 @@ export function seedRecentRuns(
     .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
     .slice(0, limit)
     .map((s) => ({
-      sessionId: s.id,
+      key: sessionHostKey(s.hostId, s.id),
       completedAt: new Date(s.modified).getTime() || Date.now(),
     }));
 }
@@ -59,27 +62,27 @@ export function seedRecentRuns(
 
 export function recordCompletedRun(
   current: RecentRunEntry[],
-  completedId: string,
+  completedKey: string,
   now = Date.now(),
   maxLimit = MAX_RECENT_COMPLETED_RUNS,
 ): RecentRunEntry[] {
   const effectiveNow = now ?? Date.now();
-  const newEntry: RecentRunEntry = { sessionId: completedId, completedAt: effectiveNow };
-  const filtered = current.filter((entry) => entry.sessionId !== completedId);
+  const newEntry: RecentRunEntry = { key: completedKey, completedAt: effectiveNow };
+  const filtered = current.filter((entry) => entry.key !== completedKey);
   return [newEntry, ...filtered].slice(0, maxLimit);
 }
 
 export function removeActiveFromCompleted(
   current: RecentRunEntry[],
-  activeRunningIds: Set<string>,
+  activeRunningKeys: Set<string>,
 ): RecentRunEntry[] {
-  return current.filter((entry) => !activeRunningIds.has(entry.sessionId));
+  return current.filter((entry) => !activeRunningKeys.has(entry.key));
 }
 
 export function extractRecentCompletedSet(entries: RecentRunEntry[]): Set<string> {
-  return new Set(entries.map((entry) => entry.sessionId));
+  return new Set(entries.map((entry) => entry.key));
 }
 
-export function isRecentlyCompleted(entries: RecentRunEntry[], sessionId: string): boolean {
-  return entries.some((entry) => entry.sessionId === sessionId);
+export function isRecentlyCompleted(entries: RecentRunEntry[], key: string): boolean {
+  return entries.some((entry) => entry.key === key);
 }

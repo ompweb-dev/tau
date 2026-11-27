@@ -1,5 +1,5 @@
 import { apiErrorResponse, hostOfflineResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
-import { startRpcSession, getRpcSession, getRpcSessionKeys, WebRpcError, type AgentSessionWrapper } from "@/lib/rpc-manager";
+import { startRpcSession, getLiveRpcSession, getRpcSessionKeys, WebRpcError, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { sessionSpawnTarget } from "@/lib/hosts/session-index";
 import { RpcCommandError } from "@/lib/pi/rpc-process";
 import { RequestBodyTooLargeError } from "@/lib/bounded-form-data";
@@ -8,6 +8,8 @@ import { runOutboxCommand } from "@/lib/message-outbox";
 import { readClientMessageIds } from "@/lib/client-message-ids";
 import { reconcileOutboxHandoffs } from "@/lib/outbox-handoff";
 import type { MessageOrigin } from "@/lib/message-origin";
+import { sessionHostKey, splitSessionHostKey } from "@/lib/session-host-key";
+import { LOCAL_HOST_ID } from "@/lib/hosts/registry";
 
 // Commands that ride whatever child is alive and never spawn or replace one:
 // the side-question reads/cancel tau sends in the background (SSE connect,
@@ -48,9 +50,15 @@ function sendFences(): Map<string, Promise<void>> {
 
 /** Everything POST /api/agent/[id] does once the body is parsed; shared with
  * the browser socket. `owner`: the caller's web session (lib/web-auth.ts
- * `requestOwner`), whose uploads a prompt may attach. Never throws: failures
- * become `commandErrorResponse`. */
-export async function runAgentCommand(id: string, body: unknown, owner: string, trustedUploads?: OutboxUploadReceipt[], trustedOrigin?: MessageOrigin): Promise<Response> {
+ * `requestOwner`), whose uploads a prompt may attach. `hostId`: only that host's
+ * copy of the id; without it the host it resolves to (a live copy, else the host listing the id,
+ * this machine first). Never throws: failures become `commandErrorResponse`. */
+export async function runAgentCommand(
+  id: string,
+  body: unknown,
+  owner: string,
+  { hostId, trustedUploads, trustedOrigin }: { hostId?: string | null; trustedUploads?: OutboxUploadReceipt[]; trustedOrigin?: MessageOrigin } = {},
+): Promise<Response> {
   let release = () => {}; // frees this command's send fence; idempotent
   try {
     const command = body as { type?: unknown; [key: string]: unknown } | null;
@@ -62,25 +70,42 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
       return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
     }
     // Held messages: stored and answered here; the outbox's dispatcher sends them to pi (lib/message-outbox.ts).
-    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner);
+    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner, { hostId });
     if (type === "get_client_message_status") {
       const ids = readClientMessageIds(command.clientMessageIds);
       if (!ids) return Response.json({ error: "clientMessageIds must contain 1 to 32 unique valid IDs", code: "invalid_client_message_ids" }, { status: 400 });
-      return Response.json({ success: true, data: await reconcileOutboxHandoffs(id, ids) });
+      return Response.json({ success: true, data: await reconcileOutboxHandoffs(id, ids, hostId) });
     }
     // Attached files go to the session's host first; nothing reaches pi when one fails (spec U3).
     const uploads = takeUploads(command, owner, trustedUploads);
     // Hold later wrapper selection as well as dispatch behind attachment preparation, so a Stop
     // cannot overtake the preparing prompt.
-    // A moved session answers to several ids: a command through any of them waits.
-    const held = getRpcSessionKeys(id).flatMap((key) => sendFences().get(key) ?? []);
+    // A moved session answers to several ids: a command through any of them waits. Fences are per host copy;
+    // without a host, the live copy's host, else the host it resolves to, so a later Stop naming that host waits
+    // behind it. Limit (hostless API callers only): a hostless prompt still resolving can be overtaken by a Stop that
+    // names the host.
+    const live = getLiveRpcSession(id, hostId);
+    // Never waits on host lists: there is no child to ask, so the reply is known. Unless a command still preparing
+    // holds this copy's fence (it may be starting the child): then wait for it below and look again.
+    const fenced = hostId ? sendFences().has(sessionHostKey(hostId, id)) : [...sendFences().keys()].some((key) => splitSessionHostKey(key).id === id);
+    if (!live && !fenced && Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
+    if (!hostId) {
+      if (live) hostId = live.host.id;
+      else {
+        const early = await resolveSessionHostOr404(id);
+        if ("host" in early) hostId = early.host.id;
+      }
+    }
+    const fenceHost = hostId || LOCAL_HOST_ID;
+    const held = getRpcSessionKeys(id, fenceHost).flatMap((key) => sendFences().get(sessionHostKey(fenceHost, key)) ?? []);
     const prior = held.length ? Promise.all(held).then(() => {}) : undefined;
     if (uploads) {
       const gate = new Promise<void>((resolve) => (release = resolve));
       const fence = prior ? prior.then(() => gate) : gate;
-      sendFences().set(id, fence);
+      const fenceKey = sessionHostKey(fenceHost, id);
+      sendFences().set(fenceKey, fence);
       void fence.then(() => {
-        if (sendFences().get(id) === fence) sendFences().delete(id);
+        if (sendFences().get(fenceKey) === fence) sendFences().delete(fenceKey);
       });
     }
     if (prior) await prior;
@@ -102,11 +127,11 @@ export async function runAgentCommand(id: string, body: unknown, owner: string, 
     };
 
     // Fast path: already-running session.
-    const existing = getRpcSession(id);
-    if (existing?.isAlive()) return Response.json({ success: true, data: await send(existing) });
+    const existing = getLiveRpcSession(id, hostId);
+    if (existing) return Response.json({ success: true, data: await send(existing) });
     if (Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
 
-    const resolved = await resolveSessionHostOr404(id);
+    const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) return resolved.response;
     const { host } = resolved;
     const offline = hostOfflineResponse(host);
