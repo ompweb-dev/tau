@@ -90,11 +90,35 @@ export function getConfigAgentRoots(): string[] {
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
-export const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
+export const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~][\s\S]*|-(?:backup|bak|old)(?:[.~-][\s\S]*)?)?$/i;
 const PI_SECRET_FILES = ["auth.json", "mcp-auth.json", "oauth.json", "models.json", "mcp.json", "tau-settings.json"];
 /** tau's key files, checked by identity too: a hard link of one outside `tau/` is still that secret. */
 const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "host-control.json",
   ...["notifications.db", "outbox.db"].flatMap((db) => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`])];
+/** Subtrees of `<agent dir>/tau/` holding copies of pi configuration (cluster config objects and backups). */
+const TAU_CONFIG_COPY_DIRS = ["cluster-config", "own-config"];
+
+/** Every regular file under `<agent dir>/tau/`'s config-copy trees, symlinks not followed, for identity checks. */
+export function tauConfigCopyFiles(agentDir: string, onUnavailable?: () => void): string[] {
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    let entries: Buffer[];
+    try { entries = readdirSync(dir, { encoding: "buffer" }); }
+    catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); return; }
+    for (const entry of entries) {
+      // tau writes only UTF-8 names here; another one cannot be named back to stat it.
+      if (!isUtf8(entry)) { onUnavailable?.(); continue; }
+      const file = path.join(dir, entry.toString("utf8"));
+      try {
+        const info = lstatSync(file);
+        if (info.isDirectory()) walk(file);
+        else if (info.isFile()) files.push(file);
+      } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+    }
+  };
+  for (const name of TAU_CONFIG_COPY_DIRS) walk(path.join(agentDir, "tau", name));
+  return files;
+}
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
 
 /** Request metadata failures retain a 404; incomplete credential ownership metadata throws a 503. */
@@ -134,7 +158,9 @@ export function isPiSecretFile(filePath: string): boolean {
     } catch (error) {
       if (!isMissingPathError(error)) metadataUnavailable = true;
     }
-    const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name))];
+    const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name)),
+      // A hard link of a config copy deeper in tau/ is that copy: walked only for a hard-linked request.
+      ...(identity ? tauConfigCopyFiles(dir, markUnavailable) : [])];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;

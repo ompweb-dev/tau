@@ -8,7 +8,7 @@ import { isUtf8 } from "node:buffer";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
 import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
-import { existingPathWithinRootsCheckerAsync, isPiSecretFile, PI_SECRET_NAME } from "./file-access";
+import { existingPathWithinRootsCheckerAsync, isPiSecretFile, PI_SECRET_NAME, tauConfigCopyFiles } from "./file-access";
 import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
 import { HostOpError } from "./hosts/link-protocol";
 import { getAgentDir, getConfigRoot } from "./pi/paths";
@@ -235,6 +235,10 @@ async function credentialCandidates(): Promise<(filePath: string, info: BigIntSt
       try { const target = statSync(path.join(dir, name), { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
       catch (error) { if (!missing(error)) unknown = true; }
     }
+  }
+  for (const file of agentDirs.flatMap((dir) => tauConfigCopyFiles(dir, () => { unknown = true; }))) {
+    try { const target = statSync(file, { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
+    catch (error) { if (!missing(error)) unknown = true; }
   }
   return async (filePath, info) => unknown || targets.has(`${info.dev}:${info.ino}`) || await inDirs(filePath);
 }
