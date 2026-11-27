@@ -20,8 +20,6 @@ export const MAX_WATCHES_PER_SESSION = 20;
 
 export interface Watch {
   sessionId: string;
-  /** The session's host: the same id on another host is another session, with its own watches. */
-  hostId: string;
   itemKey: string;
   kind: ItemKind;
   cursor: WatchCursor;
@@ -57,14 +55,13 @@ declare global {
   var __tauGithubWatchStore: { path: string; db: Database } | undefined;
 }
 
-// Session state is keyed by (host_id, session_id): the same id on two hosts is two sessions.
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS watches (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, kind TEXT NOT NULL, cursor_json TEXT NOT NULL, created_at INTEGER NOT NULL, registration_id TEXT NOT NULL, PRIMARY KEY (host_id, session_id, item_key));
-CREATE TABLE IF NOT EXISTS pending (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, entry_id TEXT NOT NULL, message TEXT NOT NULL, cursor_json TEXT NOT NULL, final INTEGER NOT NULL, batches_json TEXT NOT NULL, batch_index INTEGER NOT NULL, PRIMARY KEY (host_id, session_id, item_key));
-CREATE TABLE IF NOT EXISTS watch_intents (token TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS watch_intents_host_session_item ON watch_intents (host_id, session_id, item_key);
+CREATE TABLE IF NOT EXISTS watches (session_id TEXT NOT NULL, item_key TEXT NOT NULL, kind TEXT NOT NULL, cursor_json TEXT NOT NULL, created_at INTEGER NOT NULL, registration_id TEXT NOT NULL DEFAULT '', PRIMARY KEY (session_id, item_key));
+CREATE TABLE IF NOT EXISTS pending (session_id TEXT NOT NULL, item_key TEXT NOT NULL, entry_id TEXT NOT NULL, message TEXT NOT NULL, cursor_json TEXT NOT NULL, final INTEGER NOT NULL, batches_json TEXT NOT NULL DEFAULT '[]', batch_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (session_id, item_key));
+CREATE TABLE IF NOT EXISTS watch_intents (token TEXT NOT NULL PRIMARY KEY, session_id TEXT NOT NULL, item_key TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS watch_intents_session_item ON watch_intents (session_id, item_key);
 CREATE TABLE IF NOT EXISTS posted (item_key TEXT NOT NULL, comment_id TEXT NOT NULL, PRIMARY KEY (item_key, comment_id));
-CREATE TABLE IF NOT EXISTS read_grants (host_id TEXT NOT NULL, session_id TEXT NOT NULL, repo_key TEXT NOT NULL, PRIMARY KEY (host_id, session_id, repo_key));
+CREATE TABLE IF NOT EXISTS read_grants (session_id TEXT NOT NULL, repo_key TEXT NOT NULL, PRIMARY KEY (session_id, repo_key));
 CREATE TABLE IF NOT EXISTS active_posts (item_key TEXT NOT NULL, token TEXT NOT NULL PRIMARY KEY, lease_until INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS active_posts_item_lease ON active_posts (item_key, lease_until);
 `;
@@ -133,12 +130,18 @@ function open(dir: string, path: string): Database {
     // NORMAL is the documented safe pairing with WAL: no corruption, only the last commits can be lost on power failure.
     database.exec("PRAGMA synchronous = NORMAL");
     transaction(database, () => {
-      // Pre-alpha: a store from before host keys is dropped, not migrated (its primary keys lack the host).
-      const columns = database.prepare<{ name: string }, []>("PRAGMA table_info(watches)").all();
-      if (columns.length && !columns.some(({ name }) => name === "host_id")) {
-        database.exec("DROP TABLE IF EXISTS watches; DROP TABLE IF EXISTS pending; DROP TABLE IF EXISTS watch_intents; DROP TABLE IF EXISTS read_grants");
-      }
       database.exec(SCHEMA);
+      const columns = database.prepare<{ name: string }, []>("PRAGMA table_info(watches)").all();
+      if (!columns.some(({ name }) => name === "registration_id")) database.exec("ALTER TABLE watches ADD COLUMN registration_id TEXT NOT NULL DEFAULT ''");
+      const unregistered = database.prepare<{ session_id: string; item_key: string }, []>("SELECT session_id, item_key FROM watches WHERE registration_id = ''").all();
+      const assign = database.prepare("UPDATE watches SET registration_id = ? WHERE session_id = ? AND item_key = ? AND registration_id = ''");
+      for (const watch of unregistered) assign.run(randomUUID(), watch.session_id, watch.item_key);
+      const pendingColumns = database.prepare<{ name: string }, []>("PRAGMA table_info(pending)").all();
+      if (!pendingColumns.some(({ name }) => name === "batches_json")) database.exec("ALTER TABLE pending ADD COLUMN batches_json TEXT NOT NULL DEFAULT '[]'");
+      if (!pendingColumns.some(({ name }) => name === "batch_index")) database.exec("ALTER TABLE pending ADD COLUMN batch_index INTEGER NOT NULL DEFAULT 0");
+      const legacyPending = database.prepare<{ session_id: string; item_key: string; entry_id: string; message: string }, []>("SELECT session_id, item_key, entry_id, message FROM pending WHERE batches_json = '[]'").all();
+      const backfill = database.prepare("UPDATE pending SET batches_json = ? WHERE session_id = ? AND item_key = ? AND batches_json = '[]'");
+      for (const pending of legacyPending) backfill.run(JSON.stringify([{ entryId: pending.entry_id, message: pending.message }]), pending.session_id, pending.item_key);
     });
     return database;
   } catch (error) {
@@ -149,11 +152,10 @@ function open(dir: string, path: string): Database {
 
 // ---------------------------------------------------------------- watches
 
-type WatchRow = { host_id: string; session_id: string; item_key: string; kind: ItemKind; cursor_json: string; registration_id: string; created_at: number };
+type WatchRow = { session_id: string; item_key: string; kind: ItemKind; cursor_json: string; registration_id: string; created_at: number };
 
 const toWatch = (row: WatchRow): Watch => ({
   sessionId: row.session_id,
-  hostId: row.host_id,
   itemKey: row.item_key,
   kind: row.kind,
   cursor: JSON.parse(row.cursor_json) as WatchCursor,
@@ -161,25 +163,22 @@ const toWatch = (row: WatchRow): Watch => ({
   createdAt: row.created_at,
 });
 
-function insertWatch(d: Database, sessionId: string, hostId: string, itemKey: string, kind: ItemKind, baseline: WatchCursor): "added" | "exists" | "limit" {
-  if (d.prepare("SELECT 1 FROM watches WHERE host_id = ? AND session_id = ? AND item_key = ?").get(hostId, sessionId, itemKey)) return "exists";
-  const { n } = d.prepare<{ n: number }, [string, string]>("SELECT COUNT(*) AS n FROM watches WHERE host_id = ? AND session_id = ?").get(hostId, sessionId)!;
-  if (n >= MAX_WATCHES_PER_SESSION) return "limit";
-  d.prepare("INSERT INTO watches (host_id, session_id, item_key, kind, cursor_json, created_at, registration_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(hostId, sessionId, itemKey, kind, JSON.stringify(baseline), Date.now(), randomUUID());
-  return "added";
-}
-
 /** `exists` leaves the stored cursor as it is; `limit` refuses the watch beyond MAX_WATCHES_PER_SESSION. */
-export function addWatch(sessionId: string, hostId: string, itemKey: string, kind: ItemKind, baseline: WatchCursor): "added" | "exists" | "limit" {
+export function addWatch(sessionId: string, itemKey: string, kind: ItemKind, baseline: WatchCursor): "added" | "exists" | "limit" {
   const d = db();
-  return transaction(d, () => insertWatch(d, sessionId, hostId, itemKey, kind, baseline));
+  return transaction(d, () => {
+    if (d.prepare("SELECT 1 FROM watches WHERE session_id = ? AND item_key = ?").get(sessionId, itemKey)) return "exists";
+    const { n } = d.prepare<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM watches WHERE session_id = ?").get(sessionId)!;
+    if (n >= MAX_WATCHES_PER_SESSION) return "limit";
+    d.prepare("INSERT INTO watches (session_id, item_key, kind, cursor_json, created_at, registration_id) VALUES (?, ?, ?, ?, ?, ?)").run(sessionId, itemKey, kind, JSON.stringify(baseline), Date.now(), randomUUID());
+    return "added";
+  });
 }
 
 /** Records one in-flight registration so a later unwatch can invalidate it across server processes. */
-export function beginWatchIntent(sessionId: string, hostId: string, itemKey: string): string {
+export function beginWatchIntent(sessionId: string, itemKey: string): string {
   const token = randomUUID();
-  db().prepare("INSERT INTO watch_intents (token, host_id, session_id, item_key) VALUES (?, ?, ?, ?)").run(token, hostId, sessionId, itemKey);
+  db().prepare("INSERT INTO watch_intents (token, session_id, item_key) VALUES (?, ?, ?)").run(token, sessionId, itemKey);
   return token;
 }
 
@@ -194,34 +193,43 @@ export function cancelWatchIntent(token: string): void {
 export function registerWatchIntent(
   token: string,
   sessionId: string,
-  hostId: string,
   itemKey: string,
   kind: ItemKind,
   baseline: WatchCursor,
 ): "added" | "exists" | "limit" | "cancelled" {
   const d = db();
   return transaction(d, () => {
-    const intent = d.prepare("SELECT 1 FROM watch_intents WHERE token = ? AND host_id = ? AND session_id = ? AND item_key = ?").get(token, hostId, sessionId, itemKey);
+    const intent = d.prepare("SELECT 1 FROM watch_intents WHERE token = ? AND session_id = ? AND item_key = ?").get(token, sessionId, itemKey);
     if (!intent) return "cancelled";
-    const result = insertWatch(d, sessionId, hostId, itemKey, kind, baseline);
+    let result: "added" | "exists" | "limit";
+    if (d.prepare("SELECT 1 FROM watches WHERE session_id = ? AND item_key = ?").get(sessionId, itemKey)) {
+      result = "exists";
+    } else {
+      const { n } = d.prepare<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM watches WHERE session_id = ?").get(sessionId)!;
+      if (n >= MAX_WATCHES_PER_SESSION) result = "limit";
+      else {
+        d.prepare("INSERT INTO watches (session_id, item_key, kind, cursor_json, created_at, registration_id) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(sessionId, itemKey, kind, JSON.stringify(baseline), Date.now(), randomUUID());
+        result = "added";
+      }
+    }
     d.prepare("DELETE FROM watch_intents WHERE token = ?").run(token);
     return result;
   });
 }
 
-export function removeWatch(sessionId: string, hostId: string, itemKey: string): boolean {
+export function removeWatch(sessionId: string, itemKey: string): boolean {
   const d = db();
   return transaction(d, () => {
-    d.prepare("DELETE FROM pending WHERE host_id = ? AND session_id = ? AND item_key = ?").run(hostId, sessionId, itemKey);
-    d.prepare("DELETE FROM watch_intents WHERE host_id = ? AND session_id = ? AND item_key = ?").run(hostId, sessionId, itemKey);
-    return d.prepare("DELETE FROM watches WHERE host_id = ? AND session_id = ? AND item_key = ?").run(hostId, sessionId, itemKey).changes > 0;
+    d.prepare("DELETE FROM pending WHERE session_id = ? AND item_key = ?").run(sessionId, itemKey);
+    d.prepare("DELETE FROM watch_intents WHERE session_id = ? AND item_key = ?").run(sessionId, itemKey);
+    return d.prepare("DELETE FROM watches WHERE session_id = ? AND item_key = ?").run(sessionId, itemKey).changes > 0;
   });
 }
 
-/** The session (this host's copy) is gone: its watches, pending updates and read grants go. */
+/** The session is gone: its watches, pending updates and read grants go. */
 export function removeSessionWatches(
   sessionId: string,
-  hostId: string,
   expected?: { itemKey: string; registrationId: string; entryId?: string },
 ): void {
   const d = existingDb();
@@ -229,52 +237,53 @@ export function removeSessionWatches(
   transaction(d, () => {
     if (expected) {
       const match = expected.entryId === undefined
-        ? d.prepare("SELECT 1 FROM watches WHERE host_id = ? AND session_id = ? AND item_key = ? AND registration_id = ?").get(hostId, sessionId, expected.itemKey, expected.registrationId)
-        : d.prepare("SELECT 1 FROM watches w JOIN pending p USING (host_id, session_id, item_key) WHERE w.host_id = ? AND w.session_id = ? AND w.item_key = ? AND w.registration_id = ? AND p.entry_id = ?").get(hostId, sessionId, expected.itemKey, expected.registrationId, expected.entryId);
+        ? d.prepare("SELECT 1 FROM watches WHERE session_id = ? AND item_key = ? AND registration_id = ?").get(sessionId, expected.itemKey, expected.registrationId)
+        : d.prepare("SELECT 1 FROM watches w JOIN pending p USING (session_id, item_key) WHERE w.session_id = ? AND w.item_key = ? AND w.registration_id = ? AND p.entry_id = ?").get(sessionId, expected.itemKey, expected.registrationId, expected.entryId);
       if (!match) return;
     }
-    for (const table of ["watch_intents", "pending", "watches", "read_grants"]) {
-      d.prepare(`DELETE FROM ${table} WHERE host_id = ? AND session_id = ?`).run(hostId, sessionId);
-    }
+    d.prepare("DELETE FROM watch_intents WHERE session_id = ?").run(sessionId);
+    d.prepare("DELETE FROM pending WHERE session_id = ?").run(sessionId);
+    d.prepare("DELETE FROM watches WHERE session_id = ?").run(sessionId);
+    d.prepare("DELETE FROM read_grants WHERE session_id = ?").run(sessionId);
   });
 }
 
 export function listWatches(): Watch[] {
-  return db().prepare<WatchRow, []>("SELECT host_id, session_id, item_key, kind, cursor_json, registration_id, created_at FROM watches ORDER BY created_at").all().map(toWatch);
+  return db().prepare<WatchRow, []>("SELECT session_id, item_key, kind, cursor_json, registration_id, created_at FROM watches ORDER BY created_at").all().map(toWatch);
 }
 
 /** Commits the cursor or removes a final watch only after all persisted batches are accepted. */
-export function commitUpdate(sessionId: string, hostId: string, itemKey: string, registrationId: string, entryId: string, cursor: WatchCursor, final: boolean): boolean {
+export function commitUpdate(sessionId: string, itemKey: string, registrationId: string, entryId: string, cursor: WatchCursor, final: boolean): boolean {
   const d = db();
   return transaction(d, () => {
     const match = d.prepare(
-      "SELECT 1 FROM watches JOIN pending USING (host_id, session_id, item_key) WHERE watches.host_id = ? AND watches.session_id = ? AND watches.item_key = ? AND watches.registration_id = ? AND pending.entry_id = ? AND pending.batch_index > 0 AND pending.batch_index = json_array_length(pending.batches_json)",
-    ).get(hostId, sessionId, itemKey, registrationId, entryId);
+      "SELECT 1 FROM watches JOIN pending USING (session_id, item_key) WHERE watches.session_id = ? AND watches.item_key = ? AND watches.registration_id = ? AND pending.entry_id = ? AND pending.batch_index > 0 AND pending.batch_index = json_array_length(pending.batches_json)",
+    ).get(sessionId, itemKey, registrationId, entryId);
     if (!match) return false;
-    d.prepare("DELETE FROM pending WHERE host_id = ? AND session_id = ? AND item_key = ? AND entry_id = ?").run(hostId, sessionId, itemKey, entryId);
-    if (final) d.prepare("DELETE FROM watches WHERE host_id = ? AND session_id = ? AND item_key = ? AND registration_id = ?").run(hostId, sessionId, itemKey, registrationId);
-    else d.prepare("UPDATE watches SET cursor_json = ? WHERE host_id = ? AND session_id = ? AND item_key = ? AND registration_id = ?").run(JSON.stringify(cursor), hostId, sessionId, itemKey, registrationId);
+    d.prepare("DELETE FROM pending WHERE session_id = ? AND item_key = ? AND entry_id = ?").run(sessionId, itemKey, entryId);
+    if (final) d.prepare("DELETE FROM watches WHERE session_id = ? AND item_key = ? AND registration_id = ?").run(sessionId, itemKey, registrationId);
+    else d.prepare("UPDATE watches SET cursor_json = ? WHERE session_id = ? AND item_key = ? AND registration_id = ?").run(JSON.stringify(cursor), sessionId, itemKey, registrationId);
     return true;
   });
 }
 
 /** Commits one accepted batch only if it is still the expected batch for this registration. */
-export function advancePendingBatch(sessionId: string, hostId: string, itemKey: string, registrationId: string, entryId: string, expectedIndex: number): boolean {
+export function advancePendingBatch(sessionId: string, itemKey: string, registrationId: string, entryId: string, expectedIndex: number): boolean {
   const { changes } = db()
     .prepare(
-      "UPDATE pending SET batch_index = batch_index + 1 WHERE host_id = ? AND session_id = ? AND item_key = ? AND entry_id = ? AND batch_index = ? AND batch_index < json_array_length(batches_json) AND EXISTS (SELECT 1 FROM watches WHERE watches.host_id = pending.host_id AND watches.session_id = pending.session_id AND watches.item_key = pending.item_key AND watches.registration_id = ?)",
+      "UPDATE pending SET batch_index = batch_index + 1 WHERE session_id = ? AND item_key = ? AND entry_id = ? AND batch_index = ? AND batch_index < json_array_length(batches_json) AND EXISTS (SELECT 1 FROM watches WHERE watches.session_id = pending.session_id AND watches.item_key = pending.item_key AND watches.registration_id = ?)",
     )
-    .run(hostId, sessionId, itemKey, entryId, expectedIndex, registrationId);
+    .run(sessionId, itemKey, entryId, expectedIndex, registrationId);
   return changes > 0;
 }
 
 /** Advances a quiet cursor only from the exact state that was fetched and diffed. */
-export function advanceCursor(sessionId: string, hostId: string, itemKey: string, registrationId: string, baseCursor: WatchCursor, cursor: WatchCursor): boolean {
+export function advanceCursor(sessionId: string, itemKey: string, registrationId: string, baseCursor: WatchCursor, cursor: WatchCursor): boolean {
   const { changes } = db()
     .prepare(
-      "UPDATE watches SET cursor_json = ? WHERE host_id = ? AND session_id = ? AND item_key = ? AND registration_id = ? AND cursor_json = ? AND NOT EXISTS (SELECT 1 FROM pending WHERE pending.host_id = watches.host_id AND pending.session_id = watches.session_id AND pending.item_key = watches.item_key) AND NOT EXISTS (SELECT 1 FROM active_posts WHERE active_posts.item_key = watches.item_key AND active_posts.lease_until > ?)",
+      "UPDATE watches SET cursor_json = ? WHERE session_id = ? AND item_key = ? AND registration_id = ? AND cursor_json = ? AND NOT EXISTS (SELECT 1 FROM pending WHERE pending.session_id = watches.session_id AND pending.item_key = watches.item_key) AND NOT EXISTS (SELECT 1 FROM active_posts WHERE active_posts.item_key = watches.item_key AND active_posts.lease_until > ?)",
     )
-    .run(JSON.stringify(cursor), hostId, sessionId, itemKey, registrationId, JSON.stringify(baseCursor), Date.now());
+    .run(JSON.stringify(cursor), sessionId, itemKey, registrationId, JSON.stringify(baseCursor), Date.now());
   return changes > 0;
 }
 
@@ -296,7 +305,6 @@ const toPending = (row: PendingRow): PendingUpdate => ({
  */
 export function claimPending(
   sessionId: string,
-  hostId: string,
   itemKey: string,
   registrationId: string,
   baseCursor: WatchCursor,
@@ -310,30 +318,52 @@ export function claimPending(
     d.prepare("DELETE FROM active_posts WHERE lease_until <= ?").run(now);
     const { changes } = d
       .prepare(
-        "INSERT INTO pending (host_id, session_id, item_key, entry_id, message, cursor_json, final, batches_json, batch_index) SELECT ?, ?, ?, ?, ?, ?, ?, ?, 0 WHERE EXISTS (SELECT 1 FROM watches WHERE host_id = ? AND session_id = ? AND item_key = ? AND registration_id = ? AND cursor_json = ?) AND NOT EXISTS (SELECT 1 FROM pending WHERE host_id = ? AND session_id = ? AND item_key = ?) AND NOT EXISTS (SELECT 1 FROM active_posts WHERE item_key = ? AND lease_until > ?) AND NOT EXISTS (SELECT 1 FROM posted WHERE item_key = ? AND comment_id IN (SELECT value FROM json_each(?)))",
+        "INSERT INTO pending (session_id, item_key, entry_id, message, cursor_json, final, batches_json, batch_index) SELECT ?, ?, ?, ?, ?, ?, ?, 0 WHERE EXISTS (SELECT 1 FROM watches WHERE session_id = ? AND item_key = ? AND registration_id = ? AND cursor_json = ?) AND NOT EXISTS (SELECT 1 FROM pending WHERE session_id = ? AND item_key = ?) AND NOT EXISTS (SELECT 1 FROM active_posts WHERE item_key = ? AND lease_until > ?) AND NOT EXISTS (SELECT 1 FROM posted WHERE item_key = ? AND comment_id IN (SELECT value FROM json_each(?)))",
       )
-      .run(hostId, sessionId, itemKey, pending.entryId, pending.batches[0].message, JSON.stringify(pending.cursor), pending.final ? 1 : 0, JSON.stringify(pending.batches), hostId, sessionId, itemKey, registrationId, JSON.stringify(baseCursor), hostId, sessionId, itemKey, itemKey, now, itemKey, JSON.stringify(eventIds));
+      .run(sessionId, itemKey, pending.entryId, pending.batches[0].message, JSON.stringify(pending.cursor), pending.final ? 1 : 0, JSON.stringify(pending.batches), sessionId, itemKey, registrationId, JSON.stringify(baseCursor), sessionId, itemKey, itemKey, now, itemKey, JSON.stringify(eventIds));
     if (changes === 0) return null;
     const row = d
-      .prepare<PendingRow, [string, string, string]>("SELECT entry_id, cursor_json, final, batches_json, batch_index FROM pending WHERE host_id = ? AND session_id = ? AND item_key = ?")
-      .get(hostId, sessionId, itemKey);
+      .prepare<PendingRow, [string, string]>("SELECT entry_id, cursor_json, final, batches_json, batch_index FROM pending WHERE session_id = ? AND item_key = ?")
+      .get(sessionId, itemKey);
     return row ? toPending(row) : null;
   });
 }
 
-export function getPending(sessionId: string, hostId: string, itemKey: string, registrationId?: string): PendingUpdate | null {
+export function getPending(sessionId: string, itemKey: string, registrationId?: string): PendingUpdate | null {
+  const d = db();
+  const select = d.prepare<PendingRow, [string, string, string | null, string | null]>(
+    "SELECT entry_id, message, cursor_json, final, batches_json, batch_index FROM pending p WHERE p.session_id = ? AND p.item_key = ? AND (? IS NULL OR EXISTS (SELECT 1 FROM watches w WHERE w.session_id = p.session_id AND w.item_key = p.item_key AND w.registration_id = ?))",
+  );
   const registration = registrationId ?? null;
-  const row = db().prepare<PendingRow, [string, string, string, string | null, string | null]>(
-    "SELECT entry_id, message, cursor_json, final, batches_json, batch_index FROM pending p WHERE p.host_id = ? AND p.session_id = ? AND p.item_key = ? AND (? IS NULL OR EXISTS (SELECT 1 FROM watches w WHERE w.host_id = p.host_id AND w.session_id = p.session_id AND w.item_key = p.item_key AND w.registration_id = ?))",
-  ).get(hostId, sessionId, itemKey, registration, registration);
-  return row ? toPending(row) : null;
+  const row = select.get(sessionId, itemKey, registration, registration);
+  if (!row) return null;
+  if (row.batches_json !== "[]") return toPending(row);
+
+  return transaction(d, () => {
+    const current = select.get(sessionId, itemKey, registration, registration);
+    if (!current) return null;
+    if (current.batches_json !== "[]") return toPending(current);
+    const batchesJson = JSON.stringify([{ entryId: current.entry_id, message: current.message }]);
+    const { changes } = d
+      .prepare("UPDATE pending SET batches_json = ?, batch_index = 0 WHERE session_id = ? AND item_key = ? AND entry_id = ? AND batches_json = '[]'")
+      .run(batchesJson, sessionId, itemKey, current.entry_id);
+    if (!changes) {
+      const refreshed = select.get(sessionId, itemKey, registration, registration);
+      return refreshed ? toPending(refreshed) : null;
+    }
+    return toPending({ ...current, batches_json: batchesJson, batch_index: 0 });
+  });
 }
 
 /** One SQLite snapshot of every current pending batch that has not yet been acknowledged. */
 export function pendingBatchEntryIds(): Set<string> {
   const rows = db().prepare<{ entry_id: string }, []>(
-    `SELECT json_extract(batch.value, '$.entryId') AS entry_id
-       FROM watches w JOIN pending p USING (host_id, session_id, item_key)
+    `SELECT p.entry_id AS entry_id
+       FROM watches w JOIN pending p USING (session_id, item_key)
+      WHERE p.batches_json = '[]'
+     UNION ALL
+     SELECT json_extract(batch.value, '$.entryId') AS entry_id
+       FROM watches w JOIN pending p USING (session_id, item_key)
        JOIN json_each(p.batches_json) AS batch
       WHERE CAST(batch.key AS INTEGER) >= p.batch_index`,
   ).all();
@@ -397,11 +427,11 @@ export function postedIds(itemKey: string): Set<string> {
 
 // ---------------------------------------------------------------- read grants
 
-export function hasReadGrant(sessionId: string, hostId: string, repoKey: string): boolean {
-  return db().prepare("SELECT 1 FROM read_grants WHERE host_id = ? AND session_id = ? AND repo_key = ?").get(hostId, sessionId, repoKey) !== null;
+export function hasReadGrant(sessionId: string, repoKey: string): boolean {
+  return db().prepare("SELECT 1 FROM read_grants WHERE session_id = ? AND repo_key = ?").get(sessionId, repoKey) !== null;
 }
 
-export function grantRead(sessionId: string, hostId: string, repoKey: string): void {
-  db().prepare("INSERT OR IGNORE INTO read_grants (host_id, session_id, repo_key) VALUES (?, ?, ?)").run(hostId, sessionId, repoKey);
+export function grantRead(sessionId: string, repoKey: string): void {
+  db().prepare("INSERT OR IGNORE INTO read_grants (session_id, repo_key) VALUES (?, ?)").run(sessionId, repoKey);
 }
 

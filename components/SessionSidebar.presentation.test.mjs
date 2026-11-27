@@ -113,14 +113,14 @@ test("a session row is selected only for its own host's copy of the id, nested r
   });
   const current = (name) => screen.getByRole("button", { name }).getAttribute("aria-current");
   try {
-    const { rerender } = render(React.createElement(ProjectRow, props("local/s1")));
+    const { rerender } = render(React.createElement(ProjectRow, props("local:s1")));
     assert.equal(current("Copied"), null);
-    rerender(React.createElement(ProjectRow, props("h1/s1")));
+    rerender(React.createElement(ProjectRow, props("h1:s1")));
     assert.equal(current("Copied"), "true");
-    rerender(React.createElement(ProjectRow, props("h1/c1")));
+    rerender(React.createElement(ProjectRow, props("h1:c1")));
     assert.equal(current("Copied"), null);
     assert.equal(current("Child"), "true", "a nested row follows the selection");
-    rerender(React.createElement(ProjectRow, props("local/c1")));
+    rerender(React.createElement(ProjectRow, props("local:c1")));
     assert.equal(current("Child"), null, "not for another host's copy");
   } finally {
     cleanup();
@@ -152,56 +152,6 @@ test("the sidebar selects the selected host's copy of a session id, not this mac
   } finally {
     cleanup();
     localStorage.removeItem("tau:expanded-projects");
-    Object.assign(globalThis, { fetch: original.fetch, Worker: original.Worker, SharedWorker: original.SharedWorker });
-    window.matchMedia = original.matchMedia;
-  }
-});
-
-test("running, needs-input, stopped and finished marks show only on the host copy of a session id that has them", async () => {
-  const original = { fetch: globalThis.fetch, Worker: globalThis.Worker, SharedWorker: globalThis.SharedWorker, matchMedia: window.matchMedia };
-  globalThis.Worker = FakeWorker;
-  globalThis.SharedWorker = undefined;
-  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-  const copy = (hostId, name) => ({ id: "s1", hostId, path: "/x/s1.jsonl", cwd: "/srv/app", name, firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 });
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input), "http://localhost");
-    if (url.pathname === "/api/hosts") return Response.json({ hosts: [{ id: "local", label: "", status: "online" }, { id: "h1", label: "Build box", status: "online" }], pools: [] });
-    if (url.pathname === "/api/projects") return Response.json({ projects: [{ path: "/srv/app", hostId: "local" }, { path: "/srv/app", hostId: "h1" }] });
-    if (url.pathname === "/api/sessions") return Response.json({ sessions: [copy("local", "Here"), copy("h1", "There")], runningSessions: [] });
-    return Response.json({});
-  };
-  localStorage.setItem("tau:expanded-projects", JSON.stringify(["/srv/app", "h1:/srv/app"]));
-  const status = (name) => document.getElementById(screen.getByRole("button", { name }).getAttribute("aria-describedby")).textContent;
-  const running = (frame) => {
-    const worker = workers[0];
-    const open = worker.posted.findLast((message) => message.op === "open" && message.channel.kind === "running");
-    act(() => worker.onmessage({ data: { id: open.id, type: "message", data: JSON.stringify({ type: "running", exitedSessions: [], ...frame }) } }));
-  };
-  try {
-    render(React.createElement(SessionSidebar, {
-      selectedSessionId: null, skipInitialProjectSelection: true,
-      onSelectSession() {}, addProjectOpen: false, setAddProjectOpen() {}, usageVisible: false,
-    }));
-    await waitFor(() => assert.ok(screen.getByRole("button", { name: "There" })));
-    await waitFor(() => assert.ok(workers[0]?.posted.some((message) => message.op === "open" && message.channel.kind === "running")));
-    running({ runningSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1" }] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusRunning"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")), "this machine's copy is not running");
-    running({ runningSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1", awaitingInput: true }] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusNeedsInput"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-    // The run ends unseen: only that copy is finished and unread.
-    running({ runningSessions: [] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusDone"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-    assert.deepEqual(JSON.parse(localStorage.getItem("tau:unread-session-ids")), ["h1/s1"]);
-    running({ runningSessions: [], exitedSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1", at: 1, code: 1, signal: null, detail: "" }] });
-    await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusStopped"))));
-    assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-  } finally {
-    cleanup();
-    localStorage.removeItem("tau:expanded-projects");
-    localStorage.removeItem("tau:unread-session-ids");
     Object.assign(globalThis, { fetch: original.fetch, Worker: original.Worker, SharedWorker: original.SharedWorker });
     window.matchMedia = original.matchMedia;
   }

@@ -162,6 +162,11 @@ export async function hostForSessionId(id: string): Promise<Host | null> {
   return null;
 }
 
+/** Another host's last list (as cached: nothing is read again) names the session: a copy of the id lives there. */
+export function listedOnOtherHost(id: string, hostId: string): boolean {
+  return hostIds().some((other) => other !== hostId && hostLists(other).sessions.some((session) => session.id === id));
+}
+
 /** A miss on `hostId`'s list proves absence only while that list is current: 503 otherwise. */
 function assertHostListCurrent(hostId: string): void {
   const host = getHost(hostId);
@@ -178,11 +183,6 @@ export async function hostHoldingSession(id: string, hostId: string): Promise<Ho
   if (await listed(false) || await listed(true)) return host;
   assertHostListCurrent(hostId);
   return null;
-}
-
-/** The host holding the session: `hostId`'s when named (`hostHoldingSession`), else any (`hostForSessionId`). */
-export function sessionHost(id: string, hostId?: string | null): Promise<Host | null> {
-  return hostId ? hostHoldingSession(id, hostId) : hostForSessionId(id);
 }
 
 /** Where a session's file is and which cwd to start it in, on `host`; null when the host has no such session. */

@@ -72,14 +72,8 @@ export function rememberOutboxEntries(current: ServerOutbox, entries: (OutboxEnt
 
 /** The worker lists every session's browser entries; only this chat's are remembered, since the rest are never shown
  * here and would pin their payloads (images included) for as long as the chat lives. */
-export function rememberLocalOutbox(current: ServerOutbox, entries: LocalOutboxEntry[], sessionId: string | null, hostId: string): ServerOutbox {
-  return rememberOutboxEntries(current, entries.filter((entry) => sameCopy(entry, sessionId, hostId)), true);
-}
-
-/** This chat's host copy: the same id on another host is another session. A browser row from before hosts has no
- *  `hostId`: it is this machine's, as the worker and sw.js group it. */
-export function sameCopy(entry: { sessionId: unknown; hostId?: unknown }, sessionId: string | null, hostId: string): boolean {
-  return entry.sessionId === sessionId && (entry.hostId ?? "local") === hostId;
+export function rememberLocalOutbox(current: ServerOutbox, entries: LocalOutboxEntry[], sessionId: string | null): ServerOutbox {
+  return rememberOutboxEntries(current, entries.filter((entry) => entry.sessionId === sessionId), true);
 }
 
 export function markOutboxUncertain(current: ServerOutbox, ids: Iterable<string>): ServerOutbox {
@@ -111,25 +105,24 @@ export function applyOutboxSnapshot(current: ServerOutbox, entries: OutboxEntry[
  * server settled its row sits before the first snapshot row this browser saw after it (`server.known` order), else after
  * the last. This browser's first-leg entries follow in the worker's submission order. The two `createdAt` clocks are
  * never compared. */
-export function mergeHeldMessages(sessionId: string | null, hostId: string, local: LocalOutboxEntry[], stored: OutboxEntry[], server: ServerOutbox): HeldMessage[] {
+export function mergeHeldMessages(sessionId: string | null, local: LocalOutboxEntry[], stored: OutboxEntry[], server: ServerOutbox): HeldMessage[] {
   const rows: HeldMessage[] = [];
   const bridges: HeldMessage[] = [];
   const firstLeg: HeldMessage[] = [];
   const known = new Set<string>();
-  // The server's snapshot is already this copy's (the channel and state route are host-scoped); a stored ACK may be any copy's.
-  for (const entry of [...server.entries.filter((entry) => entry.sessionId === sessionId), ...stored.filter((entry) => !server.seen.has(entry.id) && sameCopy(entry, sessionId, hostId))]) {
+  for (const entry of [...server.entries, ...stored.filter((entry) => !server.seen.has(entry.id))]) {
+    if (entry.sessionId !== sessionId) continue;
     if (server.represented.has(entry.id)) continue;
     known.add(entry.id);
     if (entry.state !== "delivered") rows.push({ ...entry, state: entry.state, local: false });
   }
   for (const entry of local) {
-    if (sameCopy(entry, sessionId, hostId) && !server.represented.has(entry.id) && !server.seen.has(entry.id) && !known.has(entry.id)) {
+    if (entry.sessionId === sessionId && !server.represented.has(entry.id) && !server.seen.has(entry.id) && !known.has(entry.id)) {
       known.add(entry.id);
       firstLeg.push({ ...entry, local: true });
     }
   }
   for (const [id, entry] of server.known) {
-    // `server.known` holds only this copy's rows: snapshots are scoped and rememberLocalOutbox filters by host.
     if (entry.sessionId !== sessionId || known.has(id) || server.represented.has(id)) continue;
     if (server.uncertain.has(id)) bridges.push({ ...entry, state: "failed", mayHaveBeenSent: true, local: false });
     else if (server.nativeSettled.has(id)) bridges.push({ ...entry, state: "delivering", local: false });

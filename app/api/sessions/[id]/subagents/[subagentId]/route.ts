@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { isValidSubagentId } from "@/lib/hosts/session-ops";
 
@@ -25,9 +25,7 @@ export async function GET(
       return Response.json({ error: "Invalid subagent id", code: "invalid_subagent_id" }, { status: 400 });
     }
     const searchParams = new URL(req.url).searchParams;
-    const host = hostIdParam(searchParams.get("hostId"));
-    if ("response" in host) return host.response;
-    const resolved = await resolveSessionHostOr404(id, host.hostId);
+    const resolved = await resolveSessionHostOr404(id, searchParams.get("hostId"));
     if ("response" in resolved) return resolved.response;
     const fromByteRaw = searchParams.get("fromByte");
     const result = await resolved.host.sessionOps.readSubagentTranscript(

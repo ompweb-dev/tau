@@ -1,5 +1,3 @@
-import { isHostId, splitSessionHostKey } from "./session-host-key";
-
 export interface ChatDraftImage {
   data: string;
   mimeType: string;
@@ -67,9 +65,6 @@ const MAX_DRAFTS = 50;
 const STORAGE_PREFIX = "tau-draft-";
 const UPLOADS_STORAGE_PREFIX = "tau-uploads-draft-";
 const PROMPT_STORAGE_PREFIX = "tau-prompt-draft-";
-// A sent chat's own drafts (`sentDraftKey`): a workspace's key starts with `new:` and a session's is `<host>/<id>`,
-// so neither can look like one. Read at load, so it is declared before the stored drafts are.
-const SENT_KEY_PREFIX = "sent:";
 
 function isDraftUpload(value: unknown): value is ChatDraftUpload {
   if (!value || typeof value !== "object") return false;
@@ -81,15 +76,6 @@ function isDraftUpload(value: unknown): value is ChatDraftUpload {
 
 const drafts: Map<string, ChatDraft> = (globalThis.__tauChatDrafts ??= readStoredDrafts());
 
-/** A key this build writes: a workspace's `new:…`, a sent chat's `sent:…` or a session's `<host>/<id>`
- *  (`sessionHostKey`). Older keys (a bare `<id>`, `<host>:<id>`) are dropped: nothing reads them, and they would keep
- *  the exit guard armed and take draft slots. */
-function isCurrentDraftKey(key: string): boolean {
-  if (key.startsWith("new:") || isSentDraftKey(key)) return true;
-  const { hostId, id } = splitSessionHostKey(key);
-  return key.includes("/") && isHostId(hostId) && id.length > 0 && !id.includes("/");
-}
-
 function readStoredDrafts(): Map<string, ChatDraft> {
   const stored = new Map<string, ChatDraft>();
   try {
@@ -97,7 +83,7 @@ function readStoredDrafts(): Map<string, ChatDraft> {
     const storageKeys = Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i));
     for (const storageKey of storageKeys) {
       if (!storageKey?.startsWith(STORAGE_PREFIX)) continue;
-      if (stored.size >= MAX_DRAFTS || !isCurrentDraftKey(storageKey.slice(STORAGE_PREFIX.length))) {
+      if (stored.size >= MAX_DRAFTS) {
         sessionStorage.removeItem(storageKey);
         sessionStorage.removeItem(PROMPT_STORAGE_PREFIX + storageKey.slice(STORAGE_PREFIX.length));
         continue;
@@ -120,7 +106,7 @@ function readStoredDrafts(): Map<string, ChatDraft> {
       } catch {
         uploads = null;
       }
-      const draft = stored.get(key) ?? (stored.size < MAX_DRAFTS && isCurrentDraftKey(key) ? { value: "", images: [], files: [] } : null);
+      const draft = stored.get(key) ?? (stored.size < MAX_DRAFTS ? { value: "", images: [], files: [] } : null);
       if (!draft || !Array.isArray(uploads) || !uploads.every(isDraftUpload) || uploads.length === 0) {
         sessionStorage.removeItem(storageKey);
         continue;
@@ -259,6 +245,8 @@ export function holdDraftOwner(owner: string, key: string): () => void {
   };
 }
 
+// Its own namespace: a workspace's key starts with `new:` and a session's is its id, so neither can look like one.
+const SENT_KEY_PREFIX = "sent:";
 
 /** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. `chat`
  *  holds no `:`. */

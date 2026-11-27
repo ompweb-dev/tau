@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { listSessionsAllHosts, unavailableSessionHosts } from "@/lib/hosts/session-index";
 import { getRunningRpcSessions } from "@/lib/rpc-manager";
 
-// The session list mixes on-disk sessions with the live running sessions,
+// The session list mixes on-disk sessions with the live runningSessionIds set,
 // which changes on every agent turn, so it must never be cached by proxies or
 // the browser. An ETag is still computed so conditional GETs short-circuit to
 // a 304 when nothing changed (cheap client-side polling, server-side response
@@ -18,10 +18,11 @@ export async function GET(req: Request) {
 
     const sessions = await listSessionsAllHosts();
     const runningSessions = getRunningRpcSessions();
+    const runningSessionIds = runningSessions.map((s) => s.id);
 
     if (filterId) {
       const matched = sessions.filter((s) => s.id === filterId);
-      const body = { sessions: matched, runningSessions };
+      const body = { sessions: matched, runningSessionIds, runningSessions };
       const bodyJson = JSON.stringify(body);
       return new Response(bodyJson, {
         headers: { "Content-Type": "application/json", ...SESSION_LIST_HEADERS },
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
     }
 
     // Hosts whose sessions may be missing from the list: a browser must not take a missing one as deleted.
-    const body = { sessions, runningSessions, unavailableHosts: unavailableSessionHosts() };
+    const body = { sessions, runningSessionIds, runningSessions, unavailableHosts: unavailableSessionHosts() };
     const bodyJson = JSON.stringify(body);
     const etag = `"${createHash("sha1").update(bodyJson).digest("hex").slice(0, 16)}"`;
 

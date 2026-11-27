@@ -5,10 +5,9 @@ import { isLinkUp, type Host } from "./hosts/host";
 import { getHost } from "./hosts/hub";
 import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
-import { hostHoldingSession, hostSessions, sessionHost } from "./hosts/session-index";
+import { hostForSessionId, hostHoldingSession, hostSessions, listedOnOtherHost } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
-import { isHostId } from "./session-host-key";
-import { getLiveRpcSession, WebRpcError } from "./rpc-manager";
+import { getRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
 
 const SESSION_NOT_FOUND = { error: "Session not found", code: "session_not_found" } as const;
@@ -21,11 +20,10 @@ export async function resolveSessionHostOr404(
   /** The host the caller's row names (`?hostId=`): the same id on another host is not this session. */
   hostId?: string | null,
 ): Promise<{ host: Host } | { response: Response }> {
-  // Without a host, a live copy on any host: a dead wrapper on this machine must not hide it.
-  const live = getLiveRpcSession(id, hostId);
-  if (live?.isAlive()) return { host: live.host };
+  const live = getRpcSession(id);
+  if (live?.isAlive() && (!hostId || live.host.id === hostId)) return { host: live.host };
   try {
-    const host = await sessionHost(id, hostId);
+    const host = hostId ? await hostHoldingSession(id, hostId) : await hostForSessionId(id);
     return host ? { host } : { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   } catch (error) {
     // Nothing was sent: a command the composer holds is refused, not lost.
@@ -35,12 +33,11 @@ export async function resolveSessionHostOr404(
   }
 }
 
-/** A request's `hostId` (`?hostId=` or a body field) at the trust boundary: absent is null, a host id is kept,
- * anything else answers 400 `invalid_host_id`. */
-export function hostIdParam(value: unknown): { hostId: string | null } | { response: Response } {
-  if (value === null || value === undefined) return { hostId: null };
-  if (isHostId(value)) return { hostId: value };
-  return { response: Response.json({ error: "hostId is not a host id", code: "invalid_host_id" }, { status: 400 }) };
+/** A copy of the id is known on a host other than `hostId` (its child runs, or its last list names it): state kept
+ * by id alone (watches, outbox lineage, exit marks) is that copy's too. From what is at hand, so a delete never waits. */
+export function sessionCopiedElsewhere(id: string, hostId: string): boolean {
+  const live = getRpcSession(id);
+  return Boolean(live?.isAlive?.() && live.host.id !== hostId) || listedOnOtherHost(id, hostId);
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */
@@ -71,8 +68,8 @@ export async function resolveWorkspaceHost(
   if (!isValidSessionId(sessionId)) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   // The named host's copy of an id first; any other copy answers 409 below.
   const named = typeof hostId === "string" ? hostId : null;
-  // Without one, a live copy: a dead wrapper here must not hide one elsewhere.
-  const running = getLiveRpcSession(sessionId, named);
+  const live = getRpcSession(sessionId, named);
+  const running = live?.isAlive() ? live : undefined;
   const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
   let holder: Host | null = null;
   if (!running && named && retained?.hostId !== named) {

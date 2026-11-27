@@ -7,8 +7,6 @@ import { MAX_SEARCH_MATCHES, SEARCH_MATCH_PAGE_SIZE, type SessionSearchMatch } f
 /** The hit the chat should scroll to and mark as current; a new object per click. */
 export interface SearchMatchTarget {
   sessionId: string;
-  /** The session's host ("local" = this machine): another host's copy of the id is another session. */
-  hostId: string;
   entryId: string;
   ordinal: number;
 }
@@ -88,7 +86,7 @@ export function SessionSearchMatches({ sessionId, hostId, query, depth, onOpen }
             type="button"
             className="session-search-match"
             title={`${match.before}${match.match}${match.after}`}
-            onClick={() => onOpen({ sessionId, hostId, entryId: match.entryId, ordinal: match.ordinal })}
+            onClick={() => onOpen({ sessionId, entryId: match.entryId, ordinal: match.ordinal })}
             style={{ ...rowStyle(depth), color: "var(--text-muted)", cursor: "pointer" }}
           >
             {match.before}

@@ -119,8 +119,6 @@ export interface AgentToolCreateSessionInput {
 
 export interface AgentToolDeliverInput {
   sessionId: string;
-  /** The target copy's host when known; without it the session's host is looked up as before. */
-  hostId?: string;
   /** Already sender-attributed by executeAgentTool. */
   message: string;
   clientMessageId: string;
@@ -155,10 +153,8 @@ export interface AgentToolSessionOps {
   /** Authorize the actual physical owner before any preparation or spawn. */
   createSession(input: AgentToolCreateSessionInput, authorize: (host: AgentToolHost) => Promise<boolean>): Promise<AgentToolCreateSessionResult>;
   deliver(input: AgentToolDeliverInput): Promise<AgentToolDeliverResult>;
-  /** Whether `hostId`'s copy of the session has a live process (a list may not name a session that just started). */
-  hasLiveCopy(sessionId: string, hostId: string): boolean;
-  /** The host a session lives on, `preferHostId`'s copy first; null when no host has it. */
-  sessionHostId(sessionId: string, preferHostId?: string): Promise<string | null>;
+  /** The host a session lives on; null when no host has it. */
+  sessionHostId(sessionId: string): Promise<string | null>;
   /** The GitHub tools' `gh` runner, host list and write setting. */
   github: GithubToolOps;
 }
@@ -457,14 +453,9 @@ export async function executeAgentTool(
   const { wait, waitTimeoutMs } = parseWait(record);
   const depth = ctx.guard.checkChainDepth(ctx.sourceSessionId);
   const sessions = await ops.listSessions();
-  // The caller's own host's copy of the id first: the same id on another host is another session.
-  const listed = sessions.filter((session) => session.id === sessionId);
-  const copyHost = (session: { hostId?: string }) => session.hostId ?? "local";
-  const targetHostId = ctx.sourceHostId === "local"
-    ? (ops.hasLiveCopy(sessionId, "local") || listed.some((session) => copyHost(session) === "local") ? "local" : listed[0]?.hostId)
-    : await ops.sessionHostId(sessionId, ctx.sourceHostId);
-  const targetSession = listed.find((session) => copyHost(session) === (targetHostId ?? "local"));
+  const targetSession = sessions.find((session) => session.id === sessionId);
   const hosts = ops.listHosts();
+  const targetHostId = ctx.sourceHostId === "local" ? targetSession?.hostId : await ops.sessionHostId(sessionId);
   if (ctx.sourceHostId !== "local" && !targetHostId) throw new Error(`Session not found: ${sessionId}`);
   const targetHost = targetHostId ? hosts.find((host) => host.id === targetHostId) : undefined;
   const targetRef = targetSession && targetHostId ? {
@@ -499,7 +490,6 @@ export async function executeAgentTool(
   const origin = sessionOrigin(ctx, "send_to_session", delivery);
   const result = await ops.deliver({
     sessionId,
-    ...(targetHostId ? { hostId: targetHostId } : {}),
     message: `${formatSessionOriginHeader(origin)}\n\n${message}`,
     clientMessageId: randomUUID(),
     origin,

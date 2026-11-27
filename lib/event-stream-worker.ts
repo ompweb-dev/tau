@@ -41,7 +41,6 @@ import {
 import type { LocalOutboxEntry } from "./event-stream";
 import { diagnosticStats } from "./transport-stats";
 import { isRecord } from "./type-guards";
-import { agentUrl, sessionHostKey } from "./session-host-key";
 
 const CONNECTING = 0;
 const OPEN = 1;
@@ -767,11 +766,7 @@ function sameOutboxIntent(a: LocalOutboxEntry, b: LocalOutboxEntry): boolean {
   return true;
 }
 
-/** One host's copy of a session: the same id on another host is another session. A row from before hosts (no `hostId`)
- * is this machine's: grouped with it and posted with `?hostId=local`. */
-const outboxSession = (entry: Pick<LocalOutboxEntry, "sessionId" | "hostId">): string => sessionHostKey(entry.hostId, entry.sessionId);
-
-// A local failed ancestor proves lineage only in the same session (host copy) with the exact original intent.
+// A local failed ancestor proves lineage only in the same session with the exact original intent.
 function replacementRoot(entry: LocalOutboxEntry, entries: ReadonlyMap<string, LocalOutboxEntry>): string | null {
   if (entry.replaces === undefined) return entry.id;
   const seen = new Set([entry.id]);
@@ -781,7 +776,7 @@ function replacementRoot(entry: LocalOutboxEntry, entries: ReadonlyMap<string, L
     if (seen.has(id)) return null;
     seen.add(id);
     const parent = entries.get(id);
-    if (!parent || outboxSession(parent) !== outboxSession(entry) || parent.state !== "failed") return id;
+    if (!parent || parent.sessionId !== entry.sessionId || parent.state !== "failed") return id;
     if (!sameOutboxIntent(parent, entry)) return null;
     if (parent.replaces === undefined) return id;
     id = parent.replaces;
@@ -796,7 +791,7 @@ function replacementDescendsFrom(entry: LocalOutboxEntry, ancestorId: string, en
     if (seen.has(id)) return false;
     seen.add(id);
     const parent = entries.get(id);
-    if (!parent || outboxSession(parent) !== outboxSession(entry) || parent.state !== "failed"
+    if (!parent || parent.sessionId !== entry.sessionId || parent.state !== "failed"
       || !sameOutboxIntent(parent, entry) || parent.replaces === undefined) return false;
     id = parent.replaces;
   }
@@ -815,7 +810,7 @@ interface OutboxItem {
 
 /** Every entry this browser holds, by id. */
 const outboxItems = new Map<string, OutboxItem>();
-/** One shared-store head read per session (host copy, `outboxSession`) at a time, including while several local entries commit. */
+/** One shared-store head read per session at a time, including while several local entries commit. */
 const outboxReading = new Set<string>();
 const outboxDropping = new Set<string>();
 /** A session whose shared-list read failed reads again after this delay (1 s doubling to 30 s): no send goes before it. */
@@ -900,7 +895,7 @@ async function loadOutbox(db: IDBDatabase | null): Promise<boolean> {
   const stored = await readOutbox(db);
   if (!stored) return false;
   for (const entry of stored) outboxItems.set(entry.id, { entry, inFlight: false, retryTimer: undefined, retryMs: RECONNECT_MIN_MS });
-  await Promise.all([...new Set(stored.map(outboxSession))].map((session) => sendOutbox(session)));
+  await Promise.all([...new Set(stored.map((entry) => entry.sessionId))].map((sessionId) => sendOutbox(sessionId)));
   return true;
 }
 
@@ -961,7 +956,7 @@ function addOutbox(client: Client, n: number, entry: LocalOutboxEntry): void {
         if (entry.replaces !== undefined) {
           let pending: LocalOutboxEntry | undefined;
           for (const saved of entries) {
-            if (outboxSession(saved) !== outboxSession(entry) || saved.state !== "sending" || saved.replaces === undefined
+            if (saved.sessionId !== entry.sessionId || saved.state !== "sending" || saved.replaces === undefined
               || replacementRoot(saved, byId) !== root) continue;
             if (!pending || compareOutbox(saved, pending) < 0) pending = saved;
           }
@@ -971,7 +966,7 @@ function addOutbox(client: Client, n: number, entry: LocalOutboxEntry): void {
             return;
           }
           const localRoot = byId.get(root);
-          if (localRoot && outboxSession(localRoot) === outboxSession(entry)
+          if (localRoot?.sessionId === entry.sessionId
             && (localRoot.state !== "failed" || !sameOutboxIntent(localRoot, normalized))) {
             invalidRetry = true;
             return;
@@ -998,7 +993,7 @@ function addOutbox(client: Client, n: number, entry: LocalOutboxEntry): void {
       broadcastOutbox();
       post(client, { outboxAdded: n });
       // A peer may commit and exit before sending; replaying the existing ID remains idempotent.
-      sendOutbox(outboxSession(reused));
+      sendOutbox(reused.sessionId);
       return;
     }
     // Committed: the entry is accepted whatever follows, or a resend from the composer would duplicate it under a new id.
@@ -1008,7 +1003,7 @@ function addOutbox(client: Client, n: number, entry: LocalOutboxEntry): void {
     await refreshOutbox();
     broadcastOutbox();
     post(client, { outboxAdded: n });
-    sendOutbox(outboxSession(item.entry));
+    sendOutbox(item.entry.sessionId);
   });
 }
 
@@ -1026,12 +1021,11 @@ function dropOutbox(client: Client, n: number, id: string): void {
     outboxItems.delete(id);
     post(client, { outboxDropped: n });
     broadcastOutbox();
-    if (item) sendOutbox(outboxSession(item.entry));
+    if (item) sendOutbox(item.entry.sessionId);
   });
 }
 /** Server identity snapshots can prove a browser's local copy was accepted even when its POST reply was lost. */
-function reconcileOutbox(client: Client, n: number, sessionId: string, hostId: string, value: unknown): void {
-  const session = outboxSession({ sessionId, hostId });
+function reconcileOutbox(client: Client, n: number, sessionId: string, value: unknown): void {
   void ensureOutboxReady().then(async (loaded) => {
     if (!loaded || !Array.isArray(value) || !value.every((id) => typeof id === "string")) {
       post(client, { outboxReconciled: n, error: "The browser outbox could not be reconciled. Retry again." });
@@ -1045,16 +1039,16 @@ function reconcileOutbox(client: Client, n: number, sessionId: string, hostId: s
         const entries = request.result as LocalOutboxEntry[];
         const byId = new Map(entries.map((entry) => [entry.id, entry] as const));
         for (const entry of entries) {
-          if (outboxSession(entry) !== session || !confirmed.has(entry.id)) continue;
+          if (entry.sessionId !== sessionId || !confirmed.has(entry.id)) continue;
           removedIds.add(entry.id);
           store.delete(entry.id);
           if (entry.replaces === undefined) continue;
           const root = replacementRoot(entry, byId);
           if (root === null) continue;
           const original = byId.get(root);
-          if (!original || outboxSession(original) !== session || original.state !== "failed" || !sameOutboxIntent(original, entry)) continue;
+          if (!original || original.sessionId !== sessionId || original.state !== "failed" || !sameOutboxIntent(original, entry)) continue;
           for (const candidate of entries) {
-            if (candidate.id === entry.id || outboxSession(candidate) !== session || candidate.state !== "failed"
+            if (candidate.id === entry.id || candidate.sessionId !== sessionId || candidate.state !== "failed"
               || !sameOutboxIntent(candidate, entry) || replacementDescendsFrom(candidate, entry.id, byId)) continue;
             if (candidate.id !== root && replacementRoot(candidate, byId) !== root) continue;
             removedIds.add(candidate.id);
@@ -1074,7 +1068,7 @@ function reconcileOutbox(client: Client, n: number, sessionId: string, hostId: s
     await refreshOutbox();
     broadcastOutbox();
     post(client, { outboxReconciled: n });
-    if (removedIds.size > 0) sendOutbox(session);
+    if (removedIds.size > 0) sendOutbox(sessionId);
   });
 }
 
@@ -1108,29 +1102,28 @@ async function refreshOutbox(): Promise<boolean | null> {
   return changed;
 }
 
-/** Every attempt reads the shared store: dedicated workers and old/new SharedWorkers must agree on the session head.
- * `session`: one host's copy (`outboxSession`). */
-async function sendOutbox(session: string): Promise<void> {
-  if (outboxReading.has(session)) return;
-  outboxReading.add(session);
+/** Every attempt reads the shared store: dedicated workers and old/new SharedWorkers must agree on the session head. */
+async function sendOutbox(sessionId: string): Promise<void> {
+  if (outboxReading.has(sessionId)) return;
+  outboxReading.add(sessionId);
   const changed = await refreshOutbox();
-  outboxReading.delete(session);
+  outboxReading.delete(sessionId);
   if (changed === null) {
-    const retry = outboxReadRetry.get(session) ?? { timer: undefined, ms: RECONNECT_MIN_MS };
-    outboxReadRetry.set(session, retry);
+    const retry = outboxReadRetry.get(sessionId) ?? { timer: undefined, ms: RECONNECT_MIN_MS };
+    outboxReadRetry.set(sessionId, retry);
     if (retry.timer !== undefined) return;
     retry.timer = setTimeout(() => {
       retry.timer = undefined;
-      sendOutbox(session);
+      sendOutbox(sessionId);
     }, retry.ms);
     retry.ms = Math.min(retry.ms * 2, RECONNECT_MAX_MS);
     return;
   }
-  clearTimeout(outboxReadRetry.get(session)?.timer);
-  outboxReadRetry.delete(session);
+  clearTimeout(outboxReadRetry.get(sessionId)?.timer);
+  outboxReadRetry.delete(sessionId);
   if (changed) broadcastOutbox();
   const entries = outboxList();
-  const head = entries.find((entry) => outboxSession(entry) === session && entry.state === "sending");
+  const head = entries.find((entry) => entry.sessionId === sessionId && entry.state === "sending");
   const item = head && outboxItems.get(head.id);
   if (!item || item.inFlight || item.retryTimer !== undefined || outboxDropping.has(item.entry.id)) return;
   if (item?.entry.replaces !== undefined && replacementRoot(item.entry, new Map(entries.map((entry) => [entry.id, entry] as const))) === null) {
@@ -1139,12 +1132,11 @@ async function sendOutbox(session: string): Promise<void> {
   if (Date.now() - item.entry.createdAt > OUTBOX_MAX_AGE_MS) return failOutbox(item, "Not sent within 7 days.");
   if (typeof item.entry.scope !== "string" || !item.entry.scope) return failOutbox(item, "This message has no saved installation or sign-in scope and cannot be sent.");
   item.inFlight = true;
-  const { id, sessionId, hostId, scope, mode, message, images, uploads, uploadProofs, replaces } = item.entry;
+  const { id, scope, mode, message, images, uploads, uploadProofs, replaces } = item.entry;
   const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
   // A half-open POST must not block this session forever; include the body read and allow 2 KB/s for its uplink.
   withDeadline(40_000 + Math.ceil(body.length / 2), async (signal) => {
-    // A row from before hosts is this machine's, as the chat shows it: the server binds it there.
-    const response = await fetch(agentUrl(sessionId, hostId ?? "local"), { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+    const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
     const reply = await response.json().catch((error) => {
       if (signal.aborted) throw error;
       return null;
@@ -1179,8 +1171,7 @@ function acceptedOutboxEntry(body: unknown, id: string): unknown {
  * delay. Any other refusal is final (O6): "failed" until a tab drops it, and the session's next entry goes.
  */
 async function outboxAnswer(item: OutboxItem, status: number, body: unknown): Promise<void> {
-  const { id, replaces } = item.entry;
-  const session = outboxSession(item.entry);
+  const { id, sessionId, replaces } = item.entry;
   if (outboxItems.get(id) !== item) return;
   const reply = (body ?? {}) as { error?: unknown };
   const accepted = acceptedOutboxEntry(body, id);
@@ -1200,13 +1191,13 @@ async function outboxAnswer(item: OutboxItem, status: number, body: unknown): Pr
         if (lineageRoot === undefined && replaces !== undefined) {
           const localRoot = replacementRoot(item.entry, byId);
           const original = localRoot === null ? undefined : byId.get(localRoot);
-          if (localRoot !== null && original && outboxSession(original) === session && original.state === "failed" && sameOutboxIntent(original, item.entry)) {
+          if (localRoot !== null && original?.sessionId === sessionId && original.state === "failed" && sameOutboxIntent(original, item.entry)) {
             lineageRoot = localRoot;
             localReplaces = localRoot;
           }
         } else localReplaces = confirmedReplaces;
         for (const entry of entries) {
-          if (outboxSession(entry) !== session) continue;
+          if (entry.sessionId !== sessionId) continue;
           if (entry.id === id) {
             removedIds.add(entry.id);
             store.delete(entry.id);
@@ -1240,7 +1231,7 @@ async function outboxAnswer(item: OutboxItem, status: number, body: unknown): Pr
     item.inFlight = false;
     item.retryTimer = setTimeout(() => {
       item.retryTimer = undefined;
-      sendOutbox(session);
+      sendOutbox(sessionId);
     }, item.retryMs);
     item.retryMs = Math.min(item.retryMs * 2, RECONNECT_MAX_MS);
     return;
@@ -1248,14 +1239,14 @@ async function outboxAnswer(item: OutboxItem, status: number, body: unknown): Pr
     return failOutbox(item, typeof reply.error === "string" ? reply.error : `HTTP ${status}`);
   }
   broadcastOutbox();
-  sendOutbox(session);
+  sendOutbox(sessionId);
 }
 
 /** Final: "failed" until a tab drops it, and the session's next entry goes. Written only over a row still "sending" in
  * the same transaction: another worker (or the service worker) may have had a 200 and deleted it meanwhile. */
 async function failOutbox(item: OutboxItem, error: string): Promise<void> {
   item.inFlight = true;
-  const { id } = item.entry;
+  const { id, sessionId } = item.entry;
   const failed: LocalOutboxEntry = { ...item.entry, state: "failed", error };
   const read: { stored?: LocalOutboxEntry } = {};
   const committed = await writeOutbox((store) => {
@@ -1273,7 +1264,7 @@ async function failOutbox(item: OutboxItem, error: string): Promise<void> {
     outboxItems.delete(id);
   } else item.entry = read.stored.state === "sending" ? failed : read.stored;
   broadcastOutbox();
-  sendOutbox(outboxSession(item.entry));
+  sendOutbox(sessionId);
 }
 
 /** The network or the page is back: every waiting entry goes again now, from the shortest delay. */
@@ -1283,7 +1274,7 @@ function retryOutbox(): void {
     item.retryTimer = undefined;
     item.retryMs = RECONNECT_MIN_MS;
   }
-  for (const item of [...outboxItems.values()]) sendOutbox(outboxSession(item.entry));
+  for (const item of [...outboxItems.values()]) sendOutbox(item.entry.sessionId);
 }
 
 function attach(port: Port): void {
@@ -1335,7 +1326,7 @@ function attach(port: Port): void {
         dropOutbox(client, Number(data.n), String(data.id));
         break;
       case "outbox_reconcile":
-        reconcileOutbox(client, Number(data.n), typeof data.sessionId === "string" ? data.sessionId : "", typeof data.hostId === "string" ? data.hostId : "local", data.confirmedIds);
+        reconcileOutbox(client, Number(data.n), typeof data.sessionId === "string" ? data.sessionId : "", data.confirmedIds);
         break;
       case "lock":
         // MessagePort has no close event. The tab holds this lock for its

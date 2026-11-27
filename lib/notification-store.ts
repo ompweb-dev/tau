@@ -1,4 +1,3 @@
-import { sessionHostKey } from "./session-host-key";
 import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { Database } from "bun:sqlite";
@@ -156,9 +155,6 @@ function open(dir: string, path: string): Database {
     const legacy = join(dir, "notifications.json");
     const imported = transaction(database, () => {
       database.exec(SCHEMA);
-      // History ids from before host keys (`<id>:<type>`, `<host>:<id>:<type>`) would sit beside the `<host>/<id>:<type>`
-      // entry of the same notification: pre-alpha, they are dropped, not migrated.
-      database.exec("DELETE FROM history WHERE id NOT GLOB '?*/?*:?*'");
       return importLegacy(database, legacy);
     });
     if (imported) {
@@ -252,10 +248,10 @@ export function listHistory(): NotificationHistoryEntry[] {
   });
 }
 
-/** A reused id (`<sessionHostKey>:<type>`) replaces its entry: it is a new notification, unread unless `read` says it was seen. */
+/** A reused id (`<sessionId>:<type>`) replaces its entry: it is a new notification, unread unless `read` says it was seen. */
 export function recordHistory(event: NotificationEvent, { at = Date.now(), read = false }: { at?: number; read?: boolean } = {}): NotificationHistoryEntry {
   const database = db();
-  const id = `${sessionHostKey(event.hostId, event.sessionId)}:${event.type}`;
+  const id = `${event.sessionId}:${event.type}`;
   transaction(database, () => {
     database.prepare("DELETE FROM history WHERE id = ?").run(id);
     database.prepare("INSERT INTO history (id, event, at, read) VALUES (?, ?, ?, ?)").run(id, JSON.stringify(event), at, read ? 1 : 0);

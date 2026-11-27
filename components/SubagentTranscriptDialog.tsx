@@ -291,7 +291,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcri
       // Live snapshots enrich the header (resolved model etc.) but carry no
       // settled output — the on-disk `<id>.md` is the completion source.
       if (found.completion === null && live) {
-        const result = await sendAgentCommand<{ subagents?: SubagentSnapshotLike[] }>(sessionId, hostId, { type: "get_subagents" });
+        const result = await sendAgentCommand<{ subagents?: SubagentSnapshotLike[] }>(sessionId, { type: "get_subagents" });
         const snap = (result.subagents ?? []).find((s) => s.id === subagent?.id);
         if (seq !== requestSeqRef.current) return;
         if (snap) setDetail(snap);
@@ -309,7 +309,7 @@ export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcri
     } finally {
       if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [sessionId, hostId, subagent?.id, live, fetchCompletion]);
+  }, [sessionId, subagent?.id, live, fetchCompletion]);
 
   // Load the completion whenever the dialog opens for a subagent.
   useEffect(() => {

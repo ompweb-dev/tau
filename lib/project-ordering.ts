@@ -1,4 +1,3 @@
-import { sessionHostKey } from "./session-host-key";
 import { comparableProjectPath } from "./comparable-path";
 import type { ManagedProject, SessionInfo } from "./types";
 import { workspaceKeyOf } from "./workspace-memory";
@@ -147,7 +146,6 @@ export function nextPinOrder(projects: ManagedProject[]): number {
  *  look up with foldedHostProjectKey(project.hostId, project.path). */
 export function projectActivityCounts(
   sessions: SessionInfo[],
-  // Keyed by sessionHostKey, as the sidebar's marks.
   runningIds: Iterable<string>,
   unreadIds: Iterable<string>,
   exitedIds: Iterable<string> = [],
@@ -161,10 +159,9 @@ export function projectActivityCounts(
     if (!key) continue;
     const folded = foldedHostProjectKey(session.hostId, session.projectKey ?? key);
     const current = result.get(folded) ?? { running: 0, unread: 0, exited: 0 };
-    const rowKey = sessionHostKey(session.hostId, session.id);
-    if (running.has(rowKey)) current.running += 1;
-    if (unread.has(rowKey)) current.unread += 1;
-    if (exited.has(rowKey)) current.exited += 1;
+    if (running.has(session.id)) current.running += 1;
+    if (unread.has(session.id)) current.unread += 1;
+    if (exited.has(session.id)) current.exited += 1;
     result.set(folded, current);
   }
   return result;

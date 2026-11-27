@@ -7,7 +7,7 @@ import { mock } from "bun:test";
 
 const agentCommands = [];
 mock.module("@/lib/agent-client", () => ({
-  sendAgentCommand: (_sessionId, _hostId, command) => {
+  sendAgentCommand: (_sessionId, command) => {
     agentCommands.push(command);
     return new Promise(() => {});
   },

@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { MAX_AGENT_COMMAND_REQUEST_BYTES } from "../image-attachments";
 import { ORIGIN_MAX_BYTES, type MessageOrigin } from "../message-origin";
 import { readAgentToolsEnabledFromDisk } from "../web-settings";
-import { sessionHostKey, splitSessionHostKey } from "../session-host-key";
 import { fetchSnapshot } from "./api";
 import { diffSnapshot, formatUpdate, githubMessageOrigin, splitUpdateEvents, updateEntryId } from "./events";
 import { checkGh, defaultGhRunner, formatTarget, GhUnavailableError, parseGithubTarget, type GhRunner } from "./gh";
@@ -20,7 +19,7 @@ export type Delivery = "ok" | "gone" | "retry" | { rejected: string };
 
 export interface WatcherDeps {
   run?: GhRunner;
-  deliver?: (sessionId: string, hostId: string, entryId: string, message: string, origin?: MessageOrigin) => Promise<Delivery>;
+  deliver?: (sessionId: string, entryId: string, message: string, origin?: MessageOrigin) => Promise<Delivery>;
   now?: () => number;
   /** Runs `fn` after `ms`; the returned function cancels it. */
   schedule?: (fn: () => void, ms: number) => () => void;
@@ -47,7 +46,6 @@ const MAX_UPDATE_MESSAGE_CONTENT_BYTES = MAX_AGENT_COMMAND_REQUEST_BYTES - EMPTY
 interface Outage {
   message: string;
   minute: number;
-  /** sessionHostKey(host, id) of the copies told. */
   paused: Set<string>;
   recovered?: { minute: number; told: Set<string> };
 }
@@ -69,11 +67,11 @@ declare global {
   var __tauGithubWatcher: WatcherState | undefined;
 }
 
-async function defaultDeliver(sessionId: string, hostId: string, id: string, message: string, origin?: MessageOrigin): Promise<Delivery> {
+async function defaultDeliver(sessionId: string, id: string, message: string, origin?: MessageOrigin): Promise<Delivery> {
   try {
     // Lazy: message-outbox pulls in rpc-manager, which will load the agent tools that load this module.
     const { runOutboxCommand, outboxScope, GITHUB_WATCH_OUTBOX_OWNER } = await import("../message-outbox");
-    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, GITHUB_WATCH_OUTBOX_OWNER, { origin, hostId }));
+    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, GITHUB_WATCH_OUTBOX_OWNER, origin));
   } catch {
     return "retry";
   }
@@ -117,26 +115,26 @@ const warn = (what: string, error: unknown) => console.warn(`[tau] github watche
  * Delivers persisted batches in order; only the final accepted batch commits the cursor or removes a final watch.
  */
 async function deliverPending(state: WatcherState, watch: Watch, pending: PendingUpdate): Promise<void> {
-  const { sessionId, hostId, itemKey, registrationId } = watch;
+  const { sessionId, itemKey, registrationId } = watch;
   while (true) {
     if (state.stopped || !readAgentToolsEnabledFromDisk()) return;
     if (pending.batchIndex === pending.batches.length) {
-      commitUpdate(sessionId, hostId, itemKey, registrationId, pending.entryId, pending.cursor, pending.final);
+      commitUpdate(sessionId, itemKey, registrationId, pending.entryId, pending.cursor, pending.final);
       return;
     }
     const batch = pending.batches[pending.batchIndex];
     const { pinOutboxReceipt } = await outboxReceipts();
     pinOutboxReceipt(sessionId, batch.entryId);
     if (state.stopped || !readAgentToolsEnabledFromDisk()) return;
-    const outcome = await state.deps.deliver(sessionId, hostId, batch.entryId, batch.message, batch.origin);
+    const outcome = await state.deps.deliver(sessionId, batch.entryId, batch.message, batch.origin);
     if (state.stopped) return;
     if (outcome === "gone") {
-      if (readAgentToolsEnabledFromDisk()) removeSessionWatches(sessionId, hostId, { itemKey, registrationId, entryId: pending.entryId });
+      if (readAgentToolsEnabledFromDisk()) removeSessionWatches(sessionId, { itemKey, registrationId, entryId: pending.entryId });
       return;
     }
     if (outcome === "retry") return;
     if (outcome !== "ok") {
-      const watchKey = `${sessionHostKey(hostId, sessionId)}\0${itemKey}`;
+      const watchKey = `${sessionId}\0${itemKey}`;
       if (outcome.rejected.startsWith("413")) {
         const sizeKey = `${watchKey}\0size`;
         if (!state.refused.has(sizeKey)) {
@@ -151,10 +149,10 @@ async function deliverPending(state: WatcherState, watch: Watch, pending: Pendin
       }
     }
     if (state.stopped) return;
-    if (!advancePendingBatch(sessionId, hostId, itemKey, registrationId, pending.entryId, pending.batchIndex)) return;
+    if (!advancePendingBatch(sessionId, itemKey, registrationId, pending.entryId, pending.batchIndex)) return;
     const { releaseOutboxReceipt } = await outboxReceipts();
     releaseOutboxReceipt(batch.entryId);
-    const next = getPending(sessionId, hostId, itemKey, registrationId);
+    const next = getPending(sessionId, itemKey, registrationId);
     if (!next) return;
     pending = next;
   }
@@ -167,7 +165,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
     // A stored update is redelivered as it is; only watches without one are diffed anew.
     const fresh: Watch[] = [];
     for (const watch of watches) {
-      const pending = getPending(watch.sessionId, watch.hostId, itemKey, watch.registrationId);
+      const pending = getPending(watch.sessionId, itemKey, watch.registrationId);
       if (pending) await deliverPending(state, watch, pending);
       else fresh.push(watch);
     }
@@ -214,7 +212,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
       if (state.stopped || !readAgentToolsEnabledFromDisk() || isPosting(itemKey)) return;
       diff = diffSnapshot(watch.cursor, snapshot, postedIds(itemKey));
       if (!diff.events.length) {
-        advanceCursor(watch.sessionId, watch.hostId, itemKey, watch.registrationId, watch.cursor, diff.cursor);
+        advanceCursor(watch.sessionId, itemKey, watch.registrationId, watch.cursor, diff.cursor);
         continue;
       }
 
@@ -238,7 +236,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
           return { entryId, message, origin };
         });
       } catch (error) {
-        const watchKey = `${sessionHostKey(watch.hostId, watch.sessionId)}\0${itemKey}`;
+        const watchKey = `${watch.sessionId}\0${itemKey}`;
         if (!state.refused.has(watchKey)) {
           state.refused.add(watchKey);
           warn(`${itemKey} has an event that exceeds the agent command size limit`, error);
@@ -257,7 +255,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
         if (event.kind === "review" && event.databaseId !== undefined) return [event.id, `review:${event.databaseId}`];
         return [event.id];
       });
-      const claimed = claimPending(watch.sessionId, watch.hostId, itemKey, watch.registrationId, watch.cursor, update, eventIds);
+      const claimed = claimPending(watch.sessionId, itemKey, watch.registrationId, watch.cursor, update, eventIds);
       if (claimed) await deliverPending(state, watch, claimed);
     }
   } catch (error) {
@@ -266,25 +264,22 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
     state.inFlight.delete(itemKey);
   }
 }
-/** `key`: sessionHostKey(host, id) of one watching copy; another host's copy of the id is told on its own. */
-async function notify(state: WatcherState, key: string, kind: "paused" | "resumed", minute: number, text: string): Promise<boolean> {
+async function notify(state: WatcherState, sessionId: string, kind: "paused" | "resumed", minute: number, text: string): Promise<boolean> {
   if (state.stopped || !readAgentToolsEnabledFromDisk()) return false;
-  const { hostId, id: sessionId } = splitSessionHostKey(key);
-  const id = `gh-${createHash("sha256").update(`${hostId}\0${sessionId}\0${kind}\0${minute}`).digest("base64url").slice(0, 40)}`;
-  const outcome = await state.deps.deliver(sessionId, hostId, id, `GitHub update (tau): ${text}`);
+  const id = `gh-${createHash("sha256").update(`${sessionId}\0${kind}\0${minute}`).digest("base64url").slice(0, 40)}`;
+  const outcome = await state.deps.deliver(sessionId, id, `GitHub update (tau): ${text}`);
   if (state.stopped || !readAgentToolsEnabledFromDisk()) return false;
-  if (outcome === "gone") removeSessionWatches(sessionId, hostId);
+  if (outcome === "gone") removeSessionWatches(sessionId);
   return outcome !== "retry";
 }
 
-const watchingCopies = (): Set<string> => new Set(listWatches().map((w) => sessionHostKey(w.hostId, w.sessionId)));
 
 async function announcePaused(state: WatcherState, message: string): Promise<void> {
   if (!state.outage || state.outage.recovered) state.outage = { message, minute: Math.floor(state.deps.now() / 60_000), paused: new Set() };
   const outage = state.outage;
-  for (const key of watchingCopies()) {
-    if (outage.paused.has(key)) continue;
-    if (await notify(state, key, "paused", outage.minute, `watching paused: ${outage.message}`)) outage.paused.add(key);
+  for (const sessionId of new Set(listWatches().map((w) => w.sessionId))) {
+    if (outage.paused.has(sessionId)) continue;
+    if (await notify(state, sessionId, "paused", outage.minute, `watching paused: ${outage.message}`)) outage.paused.add(sessionId);
   }
 }
 
@@ -293,14 +288,14 @@ async function announceResumed(state: WatcherState): Promise<void> {
   if (!outage) return;
   outage.recovered ??= { minute: Math.floor(state.deps.now() / 60_000), told: new Set() };
   const { recovered } = outage;
-  for (const key of outage.paused) {
-    if (!watchingCopies().has(key)) {
-      outage.paused.delete(key);
-      recovered.told.delete(key);
+  for (const sessionId of outage.paused) {
+    if (!listWatches().some((watch) => watch.sessionId === sessionId)) {
+      outage.paused.delete(sessionId);
+      recovered.told.delete(sessionId);
       continue;
     }
-    if (recovered.told.has(key)) continue;
-    if (await notify(state, key, "resumed", recovered.minute, "watching resumed")) recovered.told.add(key);
+    if (recovered.told.has(sessionId)) continue;
+    if (await notify(state, sessionId, "resumed", recovered.minute, "watching resumed")) recovered.told.add(sessionId);
   }
   if (recovered.told.size === outage.paused.size) state.outage = undefined;
 }

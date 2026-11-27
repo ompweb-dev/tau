@@ -12,7 +12,6 @@ import {
   hasStoredNotificationPrefs,
   notificationClientId,
   OPEN_SESSION_EVENT,
-  openSessionView,
   showSystemNotification,
   subscribeNotificationPrefs,
   syncNotificationDevice,
@@ -39,7 +38,7 @@ export function useNotificationPrefs() {
  * - keeps the server's copy of this device's prefs and push subscription current.
  *
  * `sessionIds` are the sessions whose chats are on screen, one per tab group
- * showing a chat (none while Settings covers them all), as `sessionHostKey`s.
+ * showing a chat (none while Settings covers them all).
  */
 export function useNotifications({ sessionIds, locale, onOpenSession }: { sessionIds: readonly string[]; locale: string; onOpenSession: (sessionId: string, hostId?: string) => void }) {
   const openRef = useRef(onOpenSession);
@@ -117,7 +116,7 @@ export function useNotifications({ sessionIds, locale, onOpenSession }: { sessio
   // Delivery to this tab and notification clicks. Every open goes through
   // OPEN_SESSION_EVENT, so listeners such as the bell popover see each one.
   useEffect(() => {
-    const openSession = openSessionView;
+    const openSession = (sessionId: string) => window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: sessionId }));
     // Request id of the toast each tag currently shows. A retraction names the
     // request it closes, so a toast replaced by the next dialog of that tag stays.
     const toastRequests = new Map<string, string | undefined>();
@@ -130,7 +129,7 @@ export function useNotifications({ sessionIds, locale, onOpenSession }: { sessio
         id: rendered.tag,
         onClick: target ? () => {
           notificationHistory.markRead(rendered.tag);
-          openSession(target, rendered.hostId);
+          openSession(target);
         } : undefined,
       });
     };
@@ -171,7 +170,8 @@ export function useNotifications({ sessionIds, locale, onOpenSession }: { sessio
     };
     const onOpen = (raw: Event) => {
       if (!(raw instanceof CustomEvent)) return;
-      if (isRecord(raw.detail) && typeof raw.detail.sessionId === "string") {
+      if (typeof raw.detail === "string" && raw.detail) openRef.current(raw.detail);
+      else if (isRecord(raw.detail) && typeof raw.detail.sessionId === "string") {
         openRef.current(raw.detail.sessionId, typeof raw.detail.hostId === "string" ? raw.detail.hostId : undefined);
       }
     };
@@ -179,7 +179,7 @@ export function useNotifications({ sessionIds, locale, onOpenSession }: { sessio
       const data: unknown = message.data;
       if (!isRecord(data)) return;
       if (data.type === "tau-open-session" && typeof data.sessionId === "string") {
-        openSession(data.sessionId, typeof data.hostId === "string" ? data.hostId : undefined);
+        openSession(data.sessionId);
         return;
       }
       // A push the service worker showed while this tab was open: the server recorded it; fetch the list.

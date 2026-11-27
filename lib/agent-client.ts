@@ -9,7 +9,6 @@
 
 import { recordTransportSample } from "@/lib/event-stream";
 import { formatApiError } from "@/lib/i18n/api-error";
-import { agentUrl } from "@/lib/session-host-key";
 
 const OUTBOX_SCOPE_KEY = "tau:outbox-scope";
 let outboxScope: string | null = null;
@@ -20,12 +19,12 @@ export function rememberOutboxScope(scope: string): void {
   try { localStorage.setItem(OUTBOX_SCOPE_KEY, scope); } catch { /* Storage blocked: this page still knows it. */ }
 }
 
-export async function getOutboxScope(sessionId: string, hostId: string): Promise<string> {
+export async function getOutboxScope(sessionId: string): Promise<string> {
   if (!outboxScope) {
     try { outboxScope = localStorage.getItem(OUTBOX_SCOPE_KEY); } catch { /* Ask the server instead. */ }
   }
   if (!outboxScope) {
-    const result = await sendAgentCommand<{ scope: string }>(sessionId, hostId, { type: "outbox_scope" });
+    const result = await sendAgentCommand<{ scope: string }>(sessionId, { type: "outbox_scope" });
     if (!result?.scope) throw new Error("The message cannot be saved until tau has confirmed this installation.");
     rememberOutboxScope(result.scope);
     return result.scope;
@@ -58,7 +57,6 @@ export class HostOfflineError extends Error {
 
 export async function sendAgentCommand<T = unknown>(
   sessionId: string,
-  hostId: string,
   command: Record<string, unknown>,
 ): Promise<T> {
   // The sample's request id; no crypto.randomUUID (insecure LAN origins lack it).
@@ -69,7 +67,7 @@ export async function sendAgentCommand<T = unknown>(
   const sample = { metric: "action", req, type, session: sessionId, bytes: json.length, sentAt: Date.now() };
   let reply: Awaited<ReturnType<typeof postAgentCommand>>;
   try {
-    reply = await postAgentCommand(sessionId, hostId, json, req, type);
+    reply = await postAgentCommand(sessionId, json, req, type);
   } catch (error) {
     // The POST got no answer at all (offline, connection reset).
     recordTransportSample({ ...sample, via: "http", socket: "http", status: 0, outcome: "error", gotAt: Date.now() });
@@ -109,7 +107,7 @@ export async function sendAgentCommand<T = unknown>(
   return body.data as T;
 }
 
-async function postAgentCommand(sessionId: string, hostId: string, body: string, req: string, type: string) {
+async function postAgentCommand(sessionId: string, body: string, req: string, type: string) {
   let behindSameBytes = 0;
   let behindOtherBytes = 0;
   for (const other of inFlightPosts) {
@@ -122,7 +120,7 @@ async function postAgentCommand(sessionId: string, hostId: string, body: string,
   const waitedMs = HANG_AFTER_MS + Math.ceil((behindSameBytes + behindOtherBytes + body.length) / 32);
   const hang = setTimeout(() => recordTransportSample({ metric: "hang", socket: "http", req, type, via: "http", bytes: body.length, waitedMs }), waitedMs);
   try {
-    const res = await fetch(agentUrl(sessionId, hostId), {
+    const res = await fetch(`/api/agent/${encodeURIComponent(sessionId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,

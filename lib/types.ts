@@ -503,7 +503,6 @@ export interface CrossSessionHostToolCall {
 export type CrossSessionHostToolEvent = (CrossSessionHostToolCall & { type?: "host_tool_call" }) | {
   type: "host_tool_cancel";
   sessionId: string;
-  hostId: string;
   targetId: string;
 };
 
@@ -527,8 +526,6 @@ export type OutboxMode = "prompt" | "followUp" | "steer";
 export interface OutboxEntry {
   id: string;
   sessionId: string;
-  /** The session's host ("local" for this machine): the same id on another host is another session's outbox. */
-  hostId: string;
   mode: OutboxMode;
   message: string;
   images?: { type: "image"; data: string; mimeType: string }[];

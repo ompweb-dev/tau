@@ -1,9 +1,8 @@
-import { getLiveRpcSession, WebRpcError } from "@/lib/rpc-manager";
+import { getRpcSession, WebRpcError } from "@/lib/rpc-manager";
 import { commandErrorResponse, runAgentCommand } from "@/lib/agent-command";
 import { parseJsonWithinLimit } from "@/lib/bounded-form-data";
 import { MAX_AGENT_COMMAND_REQUEST_BYTES } from "@/lib/image-attachments";
 import { requestOwner } from "@/lib/web-auth";
-import { hostIdParam } from "@/lib/api-utils";
 
 /** Stamp when the handler had the request and when it answered, so the browser
  * can split network time from server time. */
@@ -13,7 +12,7 @@ function timed(receivedAt: number, res: Response): Response {
   return res;
 }
 
-// POST /api/agent/[id]?hostId= - Send a command to an existing session (that host's copy when named)
+// POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -26,9 +25,7 @@ export async function POST(
   try {
     const body = await parseJsonWithinLimit<unknown>(req, MAX_AGENT_COMMAND_REQUEST_BYTES);
     receivedAt = Date.now();
-    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
-    if ("response" in host) return timed(receivedAt, host.response);
-    return timed(receivedAt, await runAgentCommand(id, body, requestOwner(req), { hostId: host.hostId }));
+    return timed(receivedAt, await runAgentCommand(id, body, requestOwner(req)));
   } catch (error) {
     return timed(receivedAt ?? Date.now(), commandErrorResponse(error));
   }
@@ -42,15 +39,10 @@ export async function GET(
   const { id } = await params;
   // Default stays the full shape; `?systemPrompt=0` drops the ~13 KB prompt
   // from the 15 s state poll. Any other value (including "1") keeps it.
-  const { searchParams } = new URL(req.url);
-  const includeSystemPrompt = searchParams.get("systemPrompt") !== "0";
+  const includeSystemPrompt = new URL(req.url).searchParams.get("systemPrompt") !== "0";
 
-  const host = hostIdParam(searchParams.get("hostId"));
-  if ("response" in host) return host.response;
   try {
-    // `?hostId=`: only that host's copy; the same id live on another host is another session.
-    // Without one, a live copy: a dead wrapper on this machine must not hide a live one elsewhere.
-    const session = getLiveRpcSession(id, host.hostId);
+    const session = getRpcSession(id);
     if (!session || !session.isAlive()) {
       return Response.json({ running: false });
     }
