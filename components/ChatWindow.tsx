@@ -74,6 +74,8 @@ interface Props {
   hideThinkingBlock?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
+  /** True while this new chat's session is being created, false once that settles or the chat unmounts. */
+  onCreatingChange?: (creating: boolean) => void;
   /** A file tab covers this chat: its window-level keys (Esc stop, model and thinking cycling, dictation) stay off. */
   covered?: boolean;
   onSessionForked?: (newSessionId: string) => void;
@@ -394,7 +396,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
   );
 });
 
-export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onCreatingChange, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
   const { t, tn } = useI18n();
   const fileSource = useMemo<WorkspaceFileSource>(() => ({
     hostId: session?.hostId ?? newSessionHostId ?? "local",
@@ -456,6 +458,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     handleToolPresetChange,
     btw, askBtw,
     resolveUploadHost,
+    creatingSession,
   } = useAgentSession({
     session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef: composerRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
@@ -517,6 +520,12 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     setGenerationSpeed({ average: recent.reduce((sum, sample) => sum + sample, 0) / recent.length });
   }, [messages, sessionBusy, session?.id, newSessionCwd]);
 
+
+  useEffect(() => {
+    if (!creatingSession || !onCreatingChange) return;
+    onCreatingChange(true);
+    return () => onCreatingChange(false);
+  }, [creatingSession, onCreatingChange]);
 
   // Register the abort handler for the global Esc shortcut. The cleanup
   // matters: unmounting mid-run must not leave the module-global handler

@@ -640,7 +640,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     completionScrollAllowedRef.current = false;
   }, []);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
+  // A new chat's session being created: the shell keeps the chat's tab until it settles.
+  const [creatingSession, setCreatingSession] = useState(false);
   const newSessionPromotedRef = useRef(false);
+  // The latest: a send in flight promotes through the shell's current handler (the chat's tab may have moved).
+  const onSessionCreatedRef = useRef(onSessionCreated);
+  onSessionCreatedRef.current = onSessionCreated;
   // Raw child-session events stream at token rate; coalesce the per-subagent
   // revision bumps to one per animation frame so an open dialog only re-pages
   // once per frame instead of per event.
@@ -1216,7 +1221,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!isNew || !sid || newSessionPromotedRef.current) return;
     if (pooled && (!createdOwnerRef.current?.hostId || !createdOwnerRef.current.cwd)) return;
     newSessionPromotedRef.current = true;
-    onSessionCreated?.({
+    onSessionCreatedRef.current?.({
       id: sid,
       path: "",
       cwd: createdOwnerRef.current?.cwd ?? newSessionCwd ?? "",
@@ -1228,7 +1233,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ...(createdOwnerRef.current?.hostId ? { hostId: createdOwnerRef.current.hostId } : newSessionHostId ? { hostId: newSessionHostId } : {}),
       ...(pooled ? { poolId: newSessionPoolId, projectId: newSessionProjectId, projectKey: `pool:${newSessionPoolId}:${newSessionProjectId}` } : {}),
     });
-  }, [isNew, newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId, pooled, onSessionCreated]);
+  }, [isNew, newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId, pooled]);
 
   // Assigned after connectEvents is defined. A runtime created for an empty
   // chat emits its startup frames before any stream exists, so it must be
@@ -1301,10 +1306,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
 
     ensuringNewSessionRef.current = promise;
+    setCreatingSession(true);
     try {
       return await promise;
     } finally {
       ensuringNewSessionRef.current = null;
+      if (hookAliveRef.current) setCreatingSession(false);
     }
   }, [isNew, pooled, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, newSessionModel, newSessionDefaultModel, toolPreset, thinkingLevel, promoteNewSession, addNotice]);
 
@@ -4256,7 +4263,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, showPreCompactionHistory, streamState,
-    agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
+    agentRunning, creatingSession, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
     liveModelMeta,
     retryInfo, contextUsage, systemPrompt, forkingEntryId, editingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,

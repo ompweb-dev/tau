@@ -6040,6 +6040,36 @@ test("a new chat sent and left for another group's chat becomes its session ther
   h.view.unmount();
 });
 
+test("another new chat while a kept one is being created keeps the kept chat's tab until its session takes it", async (t) => {
+  const h = await draftInItsOwnGroup(t);
+  let release;
+  world.holds.push({
+    match: (method, url) => method === "POST" && url === "/api/agent/new",
+    produce: () => new Promise((resolve) => { release = () => resolve({ value: { sessionId: "created", hostId: "h1", cwd: "/shared" } }); }),
+  });
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "hello there" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.draftComposer, { key: "Enter" }); await sleep(60); });
+  await until(() => release, "the new chat is being created");
+  const viewIn = (group) => h.view.container.querySelector(`[data-layer-group="${group.dataset.groupId}"] [id^="workspace-chat-"]`);
+  const newChatTabs = () => h.view.queryAllByRole("tab", { name: translate("appShell.newSession") });
+  const sending = viewIn(h.draftGroup);
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(newChatTabs().length, 2, "the kept chat keeps its tab beside the fresh one");
+  assert.ok(newChatTabs().some((tab) => h.other.contains(tab) && tab.getAttribute("aria-selected") === "true"), "the fresh one opens selected in the focused group");
+  assert.equal(h.separators(), 1, "the kept chat keeps its group");
+  assert.equal(viewIn(h.draftGroup), sending, "and its mount");
+  const freshComposer = h.composerIn(h.other);
+  await act(async () => { release(); await sleep(300); });
+  assert.equal(newChatTabs().length, 1, "the kept chat's tab is its session's now");
+  assert.ok(h.other.contains(newChatTabs()[0]), "the fresh new chat stays");
+  assert.equal(h.draftGroup.querySelectorAll('[role="tab"]').length, 1);
+  assert.equal(viewIn(h.draftGroup), sending, "on the same mount");
+  assert.equal(h.composerIn(h.other), freshComposer, "the fresh new chat keeps its own");
+  assert.equal(h.shownSession(), null, "and stays selected");
+  h.view.unmount();
+});
+
 test("a chat tab on an offline host says so instead of opening", async (t) => {
   resetWorld();
   toastCalls.length = 0;
