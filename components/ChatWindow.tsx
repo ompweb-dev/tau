@@ -39,7 +39,7 @@ import {
 } from "@/lib/chat-lazy-load";
 import { getDraftSummary } from "@/lib/draft-store";
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
-import { freshChatDraftKey, scopedDraftKey } from "@/lib/project-ordering";
+import { effectiveDraftKey, freshChatDraftKey } from "@/lib/project-ordering";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { getFileName } from "@/lib/file-paths";
@@ -53,8 +53,10 @@ interface Props {
   newSessionPoolId?: string;
   newSessionProjectId?: string;
   newSessionInitialization?: string;
-  /** A new chat's draft of its own (DraftChat.scope in AppShell); without it the chat has the workspace's. */
+  /** A new chat's draft key of its own (DraftChat.scope in AppShell); without it the chat has the workspace's. */
   draftScope?: string;
+  /** This chat across remounts (AppShell's mount key): its sends in flight move with its draft. */
+  draftOwner?: string;
   onNewSessionInitialization?: (body: string) => void;
   /** The chat's host from the `hosts` channel: the source of truth until a
    *  `host_status` frame reports a change, and for a chat opened mid-outage. */
@@ -398,7 +400,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
   );
 });
 
-export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, draftScope, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSent, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, draftScope, draftOwner, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSent, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
   const { t, tn } = useI18n();
   const fileSource = useMemo<WorkspaceFileSource>(() => ({
     hostId: session?.hostId ?? newSessionHostId ?? "local",
@@ -557,9 +559,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
   const prevSessionKeyForPagingRef = useRef<string | null>(null);
   const freshDraftKey = freshChatDraftKey(newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId);
-  // This chat, across remounts of its composer.
-  const [draftOwner] = useState(() => ({}));
-  const draftKey = session?.id ?? (freshDraftKey && draftScope ? scopedDraftKey(freshDraftKey, draftScope) : freshDraftKey);
+  const draftKey = session?.id ?? effectiveDraftKey(freshDraftKey, draftScope);
   const sessionKeyForPaging = draftKey ?? "empty";
   useEffect(() => {
     if (prevSessionKeyForPagingRef.current !== sessionKeyForPaging) {
@@ -972,7 +972,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       onBuiltinCommand={handleBuiltinSlashCommand}
       onAudioUnlock={unlockAudio}
       draftKey={draftKey}
-      draftKeyContinues={!session && draftScope ? freshDraftKey : undefined}
+      draftKeyContinues={!session && draftKey !== freshDraftKey ? freshDraftKey : undefined}
       draftOwner={draftOwner}
       uploadHostId={session ? session.hostId : newSessionHostId}
       resolveUploadHost={!session && newSessionPoolId ? resolveUploadHost : undefined}

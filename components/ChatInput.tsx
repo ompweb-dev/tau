@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, foldDraft, moveDraftSubmissions, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, foldDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -184,8 +184,8 @@ interface Props {
   /** The key `draftKey` replaces for the same chat (a new chat given a draft of its own): a change from it keeps the
    *  composer's content and moves its pending recoveries along, instead of loading another draft. */
   draftKeyContinues?: string;
-  /** Identifies the chat across remounts of this composer (ChatWindow's): its sends move with it to a key of its own. */
-  draftOwner?: object;
+  /** Identifies the chat across remounts of this composer (AppShell's mount key): its sends move with its draft. */
+  draftOwner?: string;
   /** Owning host for file uploads and the @ file index (this machine when absent). */
   uploadHostId?: string;
   /** Lazily bind a pool's real owner before staging any file bytes. Failure never falls back locally. */
@@ -968,9 +968,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     const leftBase = scopeBaseRef.current;
     scopeBaseRef.current = draftKeyContinues;
     if (previousDraftKey && draftKey && previousDraftKey === draftKeyContinues) {
-      // The same chat under a key of its own: AppShell moved its draft there (continueDraft); keep the composer as is.
-      moveDraftSubmissions(previousDraftKey, draftKey, draftOwner);
+      // The same chat under a key of its own: AppShell moved its draft and sends there (continueDraft); keep the
+      // composer as is, with any edit of this commit.
       draftKeyRef.current = draftKey;
+      setDraft(draftKey, captureDraft());
       draftRecoveryIdentityRef.current = { key: draftKey };
       return;
     }
@@ -1010,7 +1011,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       for (const upload of prev) if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
       return draftUploadsToAttachedUploads(draft?.uploads);
     });
-  }, [draftKey, draftKeyContinues, draftOwner, setPromptOnly, captureDraft]);
+  }, [draftKey, draftKeyContinues, setPromptOnly, captureDraft]);
 
   useLayoutEffect(() => subscribeDraftRecovery((key, recovery) => {
     if (draftKeyRef.current !== key) return;

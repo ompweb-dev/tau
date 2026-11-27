@@ -54,7 +54,8 @@ declare global {
   var __tauChatDrafts: Map<string, ChatDraft> | undefined;
   var __tauChatDraftListeners: Set<() => void> | undefined;
   var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
-  var __tauChatDraftTransientKeys: Set<string> | undefined;
+  var __tauChatDraftTransientKeys: Map<string, string> | undefined;
+  var __tauChatDraftPagehide: boolean | undefined;
   var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
   var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
   var __tauChatDraftSubmissions: Set<DraftSubmission> | undefined;
@@ -152,11 +153,11 @@ export function markDraftEdited(key: string): void {
 
 /** A submission waiting for its durable commit, owned by this store (not by the composer mount that sent it, which may
  *  be gone by the time the commit lands). `edited` records any edit since it was sent. */
-export interface DraftSubmission { key: string | undefined; snapshot: ChatDraft | null; revision: number; edited: boolean; owner?: object }
+export interface DraftSubmission { key: string | undefined; snapshot: ChatDraft | null; revision: number; edited: boolean; owner?: string }
 
 /** Starts tracking the draft at `key`. Every submission MUST be ended (`endDraftSubmission`) once its commit settles,
  *  whether it was stored, refused or failed. */
-export function beginDraftSubmission(key: string | undefined, owner?: object): DraftSubmission {
+export function beginDraftSubmission(key: string | undefined, owner?: string): DraftSubmission {
   const submission: DraftSubmission = { key, snapshot: key ? getDraft(key) : null, revision: key ? getDraftRevision(key) : -1, edited: false, owner };
   submissions.add(submission);
   return submission;
@@ -298,24 +299,40 @@ export function clearDraft(key: string): void {
   }
 }
 
-/** Keys of drafts that live only as long as this page (`continueDraft`): kept out of sessionStorage, since nothing
- *  reopens them after a reload. */
-const transientKeys = (globalThis.__tauChatDraftTransientKeys ??= new Set<string>());
+/** Keys of drafts that live only as long as this page (`continueDraft`), with the key each continues: kept out of
+ *  sessionStorage, where their text is added to that key's as the page is hidden (a reload reopens no such key). */
+const transientKeys = (globalThis.__tauChatDraftTransientKeys ??= new Map<string, string>());
+if (typeof window !== "undefined" && !globalThis.__tauChatDraftPagehide) {
+  globalThis.__tauChatDraftPagehide = true;
+  window.addEventListener("pagehide", () => {
+    const texts = new Map<string, string>();
+    for (const [key, base] of transientKeys) {
+      const text = drafts.get(key)?.value;
+      if (text) texts.set(base, mergeRecoveredText(texts.get(base) ?? drafts.get(base)?.value ?? "", { text }));
+    }
+    try {
+      for (const [base, text] of texts) sessionStorage.setItem(STORAGE_PREFIX + base, text);
+    } catch {
+      // Storage may be unavailable.
+    }
+  });
+}
 
 /** Submissions in flight from `from` (only `owner`'s, when given) recover to `to` from now on. */
-export function moveDraftSubmissions(from: string, to: string, owner?: object): void {
-  for (const submission of submissions) if (submission.key === from && (!owner || submission.owner === owner)) submission.key = to;
+function moveDraftSubmissions(from: string, to: string, owner?: string): void {
+  for (const submission of submissions) if (submission.key === from && (owner === undefined || submission.owner === owner)) submission.key = to;
 }
 
 /** The same chat continues under `to`, a key of its own for this page only (a new chat that sent and moved to a tab of
- *  its own): `from`'s draft moves there. Call it before the chat that takes `from` over renders; that chat's composer
- *  moves its own submissions (`moveDraftSubmissions`). */
-export function continueDraft(from: string, to: string): void {
-  transientKeys.add(to);
+ *  its own): `from`'s draft moves there, and so do the sends in flight that `owner`'s composer began. Call it before
+ *  the chat that takes `from` over renders. */
+export function continueDraft(from: string, to: string, owner: string | undefined): void {
+  transientKeys.set(to, from);
   const draft = getDraft(from);
   clearDraft(from);
   if (draft) setDraft(to, draft);
   else clearDraft(to);
+  if (owner !== undefined) moveDraftSubmissions(from, to, owner);
 }
 
 /** `continueDraft` undone once that key ends (its tab closed, its chat left it): what it holds is recovered into

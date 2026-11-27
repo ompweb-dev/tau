@@ -6144,6 +6144,9 @@ test("text typed into a kept chat after it sent stays with it when another new c
   await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
   assert.equal(h.composerIn(h.other).value, "", "the fresh new chat starts empty");
   assert.equal(h.composerIn(h.draftGroup).value, "and more", "the kept chat keeps what was typed into it");
+  assert.equal(window.sessionStorage.getItem("tau-draft-new:pool:workers:app#chat:draft:1"), null, "its own key is not reopened after a reload");
+  window.dispatchEvent(new Event("pagehide"));
+  assert.match(window.sessionStorage.getItem("tau-draft-new:pool:workers:app") ?? "", /and more/, "a reload finds its text in the workspace's draft");
   // Closing the kept chat's tab gives its text and its failed prompt back to the workspace's new chat.
   const kept = within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") });
   await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("button", { name: translate("tabBar.closeTab", { label: kept.textContent || translate("appShell.newSession") }) })); await sleep(120); });
