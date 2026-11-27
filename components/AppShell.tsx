@@ -3089,6 +3089,7 @@ export function AppShell({ appName }: { appName: string }) {
             <ChatWindow
               key={key ?? undefined}
               session={null}
+              draftScope={key && key !== NEW_CHAT_TAB_ID ? key : undefined}
               newSessionCwd={draft.cwd}
               newSessionHostId={draft.hostId}
               newSessionCreationId={draft.project?.poolId ? draft.creationId : undefined}
@@ -3267,6 +3268,7 @@ export function AppShell({ appName }: { appName: string }) {
             <ChatWindow
               key={chatKey ?? undefined}
               session={selectedSession}
+              draftScope={chatKey && chatKey !== NEW_CHAT_TAB_ID ? chatKey : undefined}
               headerActions={chatPill}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionHostId={newSessionHost}

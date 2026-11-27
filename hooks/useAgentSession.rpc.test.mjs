@@ -5137,7 +5137,7 @@ test("a rejected saved launch configuration is shown on a fresh chat and leaves 
   const w = await mountSession(null, undefined, { newSessionCwd: "/workspace" });
   let receipt;
   await act(async () => { receipt = await w.latest.handleSend("keep this draft"); });
-  assert.deepEqual(receipt, { status: "rejected", recoveryKey: "new:/workspace" });
+  assert.deepEqual(receipt, { status: "rejected", recoveryKey: undefined });
   assert.ok(w.latest.notices.some((notice) => notice.type === "error" && notice.message.includes(translate("errors.stored_reserved_launch_arg"))));
   assert.equal(world.calls.some((call) => call.body?.type === "prompt"), false);
 });
@@ -5152,8 +5152,7 @@ test("a fresh chat on a remote host creates its session there and toasts when th
   const w = await mountSession(null, undefined, { newSessionCwd: "/remote/work", newSessionHostId: "h1" });
   let receipt;
   await act(async () => { receipt = await w.latest.handleSend("first"); await sleep(30); });
-  // Drafts for one path on two hosts must not share a composer key.
-  assert.deepEqual(receipt, { status: "rejected", recoveryKey: "new:h1:/remote/work" });
+  assert.deepEqual(receipt, { status: "rejected", recoveryKey: undefined });
   assert.deepEqual(callsTo("POST", "/api/agent/new").map((call) => [call.body.cwd, call.body.hostId]), [["/remote/work", "h1"]]);
   assert.equal(toastCalls[0]?.[0], "error");
   assert.equal(w.latest.notices.length, 0);
@@ -6229,7 +6228,7 @@ test("workspace file search stays in its source session rather than a same-path 
   view.unmount();
 });
 
-test("a fresh local chat sends no host id and keeps the pre-hosts draft key", async () => {
+test("a fresh local chat sends no host id and leaves a failed send to the composer's own draft key", async () => {
   resetWorld();
   world.holds.push({
     match: (method, url) => method === "POST" && url === "/api/agent/new",
@@ -6239,7 +6238,7 @@ test("a fresh local chat sends no host id and keeps the pre-hosts draft key", as
   let receipt;
   await act(async () => { receipt = await w.latest.handleSend("first"); await sleep(30); });
   assert.equal("hostId" in callsTo("POST", "/api/agent/new")[0].body, false);
-  assert.deepEqual(receipt, { status: "rejected", recoveryKey: "new:/workspace" });
+  assert.deepEqual(receipt, { status: "rejected", recoveryKey: undefined });
 });
 
 for (const [name, method, mode, message] of [
