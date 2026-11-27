@@ -39,14 +39,16 @@ CREATE TABLE IF NOT EXISTS session_changes (
   session_id TEXT PRIMARY KEY,
   revision INTEGER NOT NULL
 );
-CREATE TRIGGER IF NOT EXISTS outbox_insert_change AFTER INSERT ON entries BEGIN
+DROP TRIGGER IF EXISTS outbox_insert_change;
+CREATE TRIGGER outbox_insert_change AFTER INSERT ON entries BEGIN
   INSERT INTO session_changes (session_id, revision)
     SELECT session_id, 1 FROM (
       SELECT NEW.session_id AS session_id UNION SELECT NEW.source_session_id
     ) WHERE session_id IS NOT NULL
     ON CONFLICT (session_id) DO UPDATE SET revision = revision + 1;
 END;
-CREATE TRIGGER IF NOT EXISTS outbox_update_change AFTER UPDATE ON entries BEGIN
+DROP TRIGGER IF EXISTS outbox_update_change;
+CREATE TRIGGER outbox_update_change AFTER UPDATE ON entries BEGIN
   INSERT OR IGNORE INTO entry_aliases (entry_id, session_id)
     SELECT OLD.id, OLD.session_id WHERE OLD.session_id != NEW.session_id;
   INSERT INTO session_changes (session_id, revision)
@@ -57,7 +59,8 @@ CREATE TRIGGER IF NOT EXISTS outbox_update_change AFTER UPDATE ON entries BEGIN
     ) WHERE session_id IS NOT NULL
     ON CONFLICT (session_id) DO UPDATE SET revision = revision + 1;
 END;
-CREATE TRIGGER IF NOT EXISTS outbox_delete_change AFTER DELETE ON entries BEGIN
+DROP TRIGGER IF EXISTS outbox_delete_change;
+CREATE TRIGGER outbox_delete_change AFTER DELETE ON entries BEGIN
   INSERT INTO session_changes (session_id, revision)
     SELECT session_id, 1 FROM (
       SELECT OLD.session_id AS session_id UNION SELECT OLD.source_session_id

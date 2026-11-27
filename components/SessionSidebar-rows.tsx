@@ -734,14 +734,14 @@ const SessionItem = memo(function SessionItem({
   // A session's composer draft is keyed by its id (ChatWindow's `draftKey`).
   const hasUnsentDraft = useSyncExternalStore(subscribeDrafts, () => hasDraft(session.id), () => false);
   const relativeTime = formatRelativeTime(session.modified, locale, relativeTimeNow);
-  // The row's second line: what the session is doing, a draft if one waits, and its age ("Ready · 2h").
+  // The row's second line: what the session is doing, a draft if one waits, other hosts listing its id, and its age ("Ready · 2h").
   const status = isAwaitingInput ? t("sessionSidebar.statusNeedsInput")
     : isRunning ? t("sessionSidebar.statusRunning")
       : exited ? t("sessionSidebar.statusStopped")
         : isUnread ? t("sessionSidebar.statusDone")
           : t("sessionSidebar.statusReady");
   const statusId = useId();
-  const alsoOn = session.alsoOnHosts?.length ? t("sessionSidebar.statusAlsoOn", { hosts: session.alsoOnHosts.join(", ") }) : null;
+  const alsoOn = session.alsoOnHosts ? t("sessionSidebar.statusAlsoOn", { hosts: session.alsoOnHosts.join(", ") }) : null;
   const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, alsoOn, relativeTime].filter(Boolean).join(" · ");
   const rowBackground = isSelected
     ? "color-mix(in srgb, var(--bg-selected) 70%, transparent)"

@@ -95,7 +95,8 @@ export async function listSessionsAllHosts(): Promise<SessionInfo[]> {
       const kept = seen.get(session.id);
       if (kept !== undefined) {
         const label = getHost(session.hostId!)?.label ?? session.hostId!;
-        merged[kept] = { ...merged[kept], alsoOnHosts: [...(merged[kept].alsoOnHosts ?? []), label] };
+        const also = merged[kept].alsoOnHosts ?? [];
+        if (session.hostId !== merged[kept].hostId && !also.includes(label)) merged[kept] = { ...merged[kept], alsoOnHosts: [...also, label] };
         continue;
       }
       seen.set(session.id, merged.length);

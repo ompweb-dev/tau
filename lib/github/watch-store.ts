@@ -130,6 +130,9 @@ function open(dir: string, path: string): Database {
     // NORMAL is the documented safe pairing with WAL: no corruption, only the last commits can be lost on power failure.
     database.exec("PRAGMA synchronous = NORMAL");
     transaction(database, () => {
+      // A store a host-keyed build (#37, reverted) created has host_id NOT NULL in its keys; its watches are set again.
+      const hostKeyed = database.prepare<{ name: string }, []>("PRAGMA table_info(watches)").all().some(({ name }) => name === "host_id");
+      if (hostKeyed) database.exec("DROP TABLE IF EXISTS watches; DROP TABLE IF EXISTS pending; DROP TABLE IF EXISTS watch_intents; DROP TABLE IF EXISTS read_grants;");
       database.exec(SCHEMA);
       const columns = database.prepare<{ name: string }, []>("PRAGMA table_info(watches)").all();
       if (!columns.some(({ name }) => name === "registration_id")) database.exec("ALTER TABLE watches ADD COLUMN registration_id TEXT NOT NULL DEFAULT ''");
