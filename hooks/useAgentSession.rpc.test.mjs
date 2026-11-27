@@ -406,6 +406,10 @@ const { MessageView } = await import("@/components/MessageView");
 const { translate } = await import("@/lib/i18n");
 const { ChatWindow } = await import("@/components/ChatWindow");
 const { SessionSidebar } = await import("@/components/SessionSidebar");
+// As app/boot.ts does before the app loads: the sidebar history hook handles its own traversals (and puts the
+// current address back on the entry it returns to) ahead of the router's popstate listener.
+const { SIDEBAR_HISTORY_BRIDGE_SCRIPT } = await import("@/lib/sidebar-history-bridge");
+(0, eval)(SIDEBAR_HISTORY_BRIDGE_SCRIPT);
 const { AppShell } = await import("@/components/AppShell");
 const { FileExplorer } = await import("@/components/FileExplorer");
 // Edit only opens a confirm dialog; the edit starts from its confirm button.
@@ -6026,6 +6030,7 @@ test("a new chat sent and left for another group's chat becomes its session ther
   assert.equal(viewIn(h.draftGroup), sending, "the sending chat stays mounted in its group");
   await act(async () => { release(); await sleep(300); });
   assert.equal(h.focusedGroup(), h.other, "the selection stays where the user went");
+  assert.equal(h.shownSession(), "worker-two", "and so does the address");
   assert.equal(h.newChatTab(), null, "the new chat's tab is its session's now");
   assert.ok(h.draftGroup.querySelector('[role="tab"]'), "in its own group");
   assert.equal(h.draftGroup.querySelectorAll('[role="tab"]').length, 1);
