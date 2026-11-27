@@ -640,9 +640,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     completionScrollAllowedRef.current = false;
   }, []);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
-  // A send creating the new chat's session (prompt, `!`, side question, /compact, /name): from its start until the
-  // chat is promoted, or the send ends without promoting it. The shell keeps the chat's tab meanwhile.
-  const [creatingSession, setCreatingSession] = useState(false);
   const newSessionPromotedRef = useRef(false);
   // The latest: a send in flight promotes through the shell's current handler (the chat's tab may have moved).
   const onSessionCreatedRef = useRef(onSessionCreated);
@@ -1222,7 +1219,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!isNew || !sid || newSessionPromotedRef.current) return;
     if (pooled && (!createdOwnerRef.current?.hostId || !createdOwnerRef.current.cwd)) return;
     newSessionPromotedRef.current = true;
-    setCreatingSession(false);
     onSessionCreatedRef.current?.({
       id: sid,
       path: "",
@@ -1236,12 +1232,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ...(pooled ? { poolId: newSessionPoolId, projectId: newSessionProjectId, projectKey: `pool:${newSessionPoolId}:${newSessionProjectId}` } : {}),
     });
   }, [isNew, newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId, pooled]);
-  /** Starts a send that may create the new chat's session; the returned function ends it. */
-  const beginCreatingSend = useCallback(() => {
-    if (!isNew || sessionIdRef.current || newSessionPromotedRef.current) return () => {};
-    setCreatingSession(true);
-    return () => { if (hookAliveRef.current) setCreatingSession(false); };
-  }, [isNew]);
 
   // Assigned after connectEvents is defined. A runtime created for an empty
   // chat emits its startup frames before any stream exists, so it must be
@@ -3073,7 +3063,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let recoveryKey = sessionIdRef.current ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
     // Set just before the prompt goes out: a lost reply from any earlier command (get_state, set_model) ran no prompt.
     let promptIssued = false;
-    const endCreating = beginCreatingSend();
     try {
       let sentSessionId: string | null = null;
       if (isNew) {
@@ -3157,10 +3146,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       slashCommandRunRef.current = false;
       dispatch({ type: "end" });
       return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ?? recoveryKey };
-    } finally {
-      endCreating();
     }
-  }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, beginCreatingSend, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
+  }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (bashRunningRef.current || editInFlightRef.current) return;
@@ -3171,7 +3158,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setPendingBash({ command, excludeFromContext });
     setBashRunning(true);
     const after = newestStampRef.current;
-    const endCreating = beginCreatingSend();
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
       if (!sid) throw new Error(translate("agentSession.shellSessionFailed"));
@@ -3209,12 +3195,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!alreadyReported && mayHaveRun === null) addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
       if (!mayHaveRun) opts.chatInputRef?.current?.insertIfEmpty(inputText);
     } finally {
-      endCreating();
       bashRunningRef.current = false;
       setPendingBash(null);
       setBashRunning(false);
     }
-  }, [addNotice, beginCreatingSend, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session]);
+  }, [addNotice, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session]);
   executeBashRef.current = executeBash;
 
   const withdrawAndAbort = useCallback(async (sid: string) => {
@@ -3573,7 +3558,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const askBtw = useCallback(async (question: string, recordId?: string): Promise<boolean> => {
     if (btwAskPendingRef.current) return false;
     btwAskPendingRef.current = true;
-    const endCreating = beginCreatingSend();
     try {
       const sid = sessionIdRef.current ?? await ensureNewSession();
       if (!sid) {
@@ -3601,10 +3585,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!(error instanceof Error && reportedCreationErrorsRef.current.has(error))) toastBtwError(error);
       return false;
     } finally {
-      endCreating();
       btwAskPendingRef.current = false;
     }
-  }, [beginCreatingSend, ensureEventsConnected, ensureNewSession, promoteNewSession, sendBtw]);
+  }, [ensureEventsConnected, ensureNewSession, promoteNewSession, sendBtw]);
 
   const handleBuiltinSlashCommand = useCallback(async (text: string): Promise<BuiltinSlashCommandResult> => {
     if (editInFlightRef.current) return { handled: true, retainInput: true };
@@ -3625,14 +3608,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
 
     let ownsCompaction = false;
-    let endCreating = () => {};
     try {
       // Commands that talk to the runtime create it here. /btw <question> and the web
       // prompt commands create it inside askBtw/handleSend, which attach their own stream.
       const ensureRuntime = async () => sessionIdRef.current ?? await ensureNewSession();
       switch (commandName) {
         case "compact": {
-          endCreating = beginCreatingSend();
           const sid = await ensureRuntime();
           if (!sid || isCompactingRef.current || isCompacting) return complete({ handled: true, error: translate("agentSession.noSessionToCompact") });
           ownsCompaction = true;
@@ -3665,7 +3646,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         case "name": {
-          endCreating = beginCreatingSend();
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noSessionToName") });
           if (!args) return complete({ handled: true, error: translate("agentSession.nameUsage") });
@@ -3743,12 +3723,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (e instanceof Error && reportedCreationErrorsRef.current.has(e)) return { handled: true, error: e.message };
       return complete({ handled: true, error: e instanceof Error ? e.message : String(e) });
     } finally {
-      endCreating();
       if (ownsCompaction) {
         endLocalCompaction();
       }
     }
-  }, [addNotice, askBtw, beginCreatingSend, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen]);
+  }, [addNotice, askBtw, beginLocalCompaction, endLocalCompaction, ensureNewSession, handleSend, isCompacting, loadModels, loadSession, loadSlashCommands, openBtwHistory, promoteNewSession, onSessionStatsPanelOpen]);
 
   // A steer or follow-up is held in the outbox like a prompt: its held bubble becomes pi's queue chip (queue_update)
   // or, delivered at once, the user message pi echoes. A slash command keeps its text; the server sends it as a
@@ -4280,7 +4259,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, showPreCompactionHistory, streamState,
-    agentRunning, creatingSession, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
+    agentRunning, modelNames, modelList, modelsLoading, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel, autoRetryEnabled, autoCompactionEnabled, steeringMode, followUpMode,
     liveModelMeta,
     retryInfo, contextUsage, systemPrompt, forkingEntryId, editingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, isAutoModelSelection: !displayModel, sessionStats, agentPhase,

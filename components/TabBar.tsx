@@ -33,8 +33,6 @@ export interface StripTab {
   icon: ReactNode;
   /** False hides the close button (the transient New chat tab). */
   closable?: boolean;
-  /** Shown but not selectable (a chat whose session is still being created). */
-  disabled?: boolean;
   /** The panel the tab shows (aria-controls). */
   panelId?: string;
 }
@@ -437,7 +435,6 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
             role="tab"
             tabIndex={focusable ? 0 : -1}
             aria-selected={isActive}
-            aria-disabled={tab.disabled || undefined}
             aria-label={tab.title}
             aria-controls={tab.panelId}
             draggable={onDropTab ? true : undefined}
@@ -468,9 +465,9 @@ export function TabBar({ tabs = [], activeTabId = "", onSelectTab, onCloseTab, a
               paddingRight: tab.closable === false ? 12 : 6,
               borderRight: "1px solid var(--border)",
               background: isActive ? "var(--bg)" : "var(--bg-panel)",
-              cursor: tab.disabled ? "default" : "pointer",
+              cursor: "pointer",
               fontSize: "var(--text-sm)",
-              color: isActive ? "var(--text)" : tab.disabled ? "var(--text-dim)" : "var(--text-muted)",
+              color: isActive ? "var(--text)" : "var(--text-muted)",
               whiteSpace: "nowrap",
               maxWidth: 180,
               minWidth: 80,

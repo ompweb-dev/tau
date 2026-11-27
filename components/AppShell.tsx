@@ -194,35 +194,29 @@ export function AppShell({ appName }: { appName: string }) {
   // The new chat is the selected view, or kept behind another group's chat (draftKept).
   const draftShownRef = useRef(false);
   const draftKeptRef = useRef(false);
-  // The new chat's session is being created (reported by its chat).
-  const draftCreatingRef = useRef(false);
-  const handleDraftCreating = useCallback((creating: boolean) => { draftCreatingRef.current = creating; }, []);
-  // Kept new chats whose session was still being created when another new chat started: each keeps its tab
-  // (and mount) under an id of its own until its session takes the tab over.
-  const [creatingChats, setCreatingChats] = useState<{ id: string; draft: DraftChat }[]>([]);
-  const creatingChatsRef = useRef(creatingChats);
-  creatingChatsRef.current = creatingChats;
-  const creatingChatSeqRef = useRef(0);
-  // A fresh new chat while one is kept in a group: the kept one closes (its draft stays in the store), so the
-  // fresh one opens in the focused group on a mount of its own. One being created moves to a tab of its own.
-  const dropKeptDraft = useCallback(() => {
-    const kept = draftChatRef.current;
-    if (!kept || draftShownRef.current) return;
+  // New chats moved out of the new chat's tab: each keeps a tab of its own, and its mount, until the tab closes or
+  // the chat's session takes the tab over. Two of them on one workspace share its draft in the store.
+  const [draftTabs, setDraftTabs] = useState<{ id: string; draft: DraftChat }[]>([]);
+  const draftTabSeqRef = useRef(0);
+  /** Moves the new chat (sent or not) to a tab of its own, with its mount. */
+  const moveDraftToTab = useCallback(() => {
+    const draft = draftChatRef.current;
+    if (!draft) return;
+    draftChatRef.current = null; // Moved once, even if called again before the render.
     setDraftChat(null);
-    if (draftCreatingRef.current) {
-      draftCreatingRef.current = false;
-      const id = `chat:creating:${++creatingChatSeqRef.current}`;
-      setCreatingChats((chats) => [...chats, { id, draft: kept }]);
-      setTabLayout((layout) => replaceTab(layout, NEW_CHAT_TAB_ID, id));
-      // The mount goes with it: a fresh new chat must not reuse its key, and so its ChatWindow.
-      setChatMounts((mounts) => {
-        const { [NEW_CHAT_TAB_ID]: key = NEW_CHAT_TAB_ID, ...keys } = mounts.keys;
-        return { ...mounts, keys: { ...keys, [id]: key } };
-      });
-      return;
-    }
-    setTabLayout((layout) => closeTab(layout, NEW_CHAT_TAB_ID));
+    const id = `chat:draft:${++draftTabSeqRef.current}`;
+    setDraftTabs((tabs) => [...tabs, { id, draft }]);
+    setTabLayout((layout) => replaceTab(layout, NEW_CHAT_TAB_ID, id));
+    setChatMounts((mounts) => {
+      const { [NEW_CHAT_TAB_ID]: key = id, ...keys } = mounts.keys;
+      return { ...mounts, keys: { ...keys, [id]: key } };
+    });
   }, []);
+  // A fresh new chat while one is kept in a group: the kept one moves to a tab of its own, so the fresh one opens
+  // in the focused group on a mount of its own.
+  const dropKeptDraft = useCallback(() => {
+    if (!draftShownRef.current) moveDraftToTab();
+  }, [moveDraftToTab]);
   const newSessionCreationId = newSessionCreation.id;
   const handleNewSessionInitialization = useCallback((initialization: string) => {
     setNewSessionCreation((current) => current.id === newSessionCreationId && current.initialization === undefined ? { ...current, initialization } : current);
@@ -1580,37 +1574,21 @@ export function AppShell({ appName }: { appName: string }) {
       .catch(() => {});
   }, []);
 
-  // Sent, then left for another group's chat before pi answered: the new chat's tab becomes its session's in
-  // place, keeping its mount, and the selection stays where the user went.
+  // Sent, then left for another group's chat (or moved to a tab of its own) before pi answered: the new chat's tab
+  // becomes its session's in place, keeping its mount, and the selection stays where the user went.
   // A session opened meanwhile already has its tab: the new chat's tab then just closes.
   const promoteUnselectedChat = useCallback((tabId: string, session: SessionInfo) => {
     const id = chatTabId(session);
     const placed = Boolean(groupOfTab(tabLayoutRef.current, id));
+    setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== tabId));
     setChatTabs((tabs) => tabs.some((tab) => sameSessionTarget(tab, session)) ? tabs : [...tabs, session]);
     setTabLayout((layout) => placed ? closeTab(layout, tabId) : replaceTab(layout, tabId, id));
     if (!placed) setChatMounts((mounts) => ({ ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[tabId] ?? tabId } }));
     setRefreshKey((k) => k + 1);
   }, []);
-  // Its tab closes with it.
-  const dropCreatingChat = useCallback((tabId: string) => {
-    setCreatingChats((chats) => chats.filter((chat) => chat.id !== tabId));
-  }, []);
-  // Its send ended without a session to show (its chat's notice goes with it): say so, then close it. The
-  // composer recovers the message into the draft it was sent from.
-  const failCreatingChat = useCallback((tabId: string) => {
-    if (!creatingChatsRef.current.some((chat) => chat.id === tabId)) return; // Promoted or closed.
-    toast.error(t("appShell.creatingSessionFailed"));
-    dropCreatingChat(tabId);
-  }, [t, dropCreatingChat]);
-  const handleCreatingChatCreated = useCallback((tabId: string, session: SessionInfo) => {
-    dropCreatingChat(tabId);
-    promoteUnselectedChat(tabId, session);
-  }, [dropCreatingChat, promoteUnselectedChat]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
-    // Created: a fresh new chat started before this commits must not take it for one still being created.
-    draftCreatingRef.current = false;
     setDraftChat(null);
     if (!draftShownRef.current && draftChatRef.current) {
       setNewSessionCwd(null);
@@ -2199,8 +2177,8 @@ export function AppShell({ appName }: { appName: string }) {
     saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout: tabLayout, focused: lastFocusedGroupId });
   }, [chatTabs, fileTabs, tabLayout, lastFocusedGroupId]);
   const stripIds = useMemo(
-    () => [...chatTabs.map(chatTabId), ...(draftTabOpen ? [NEW_CHAT_TAB_ID] : []), ...creatingChats.map((chat) => chat.id), ...fileTabs.map((tab) => tab.id)],
-    [chatTabs, fileTabs, draftTabOpen, creatingChats],
+    () => [...chatTabs.map(chatTabId), ...(draftTabOpen ? [NEW_CHAT_TAB_ID] : []), ...draftTabs.map((tab) => tab.id), ...fileTabs.map((tab) => tab.id)],
+    [chatTabs, fileTabs, draftTabOpen, draftTabs],
   );
 
   const activeFileMatchesSource = activeFileTab?.hostId === workspaceHostId && (activeFileTab?.sourceSessionId ?? null) === (selectedSession?.id ?? null);
@@ -2312,7 +2290,7 @@ export function AppShell({ appName }: { appName: string }) {
     }),
     // Closable only while another chat is selected: the selected new chat has nothing to give way to.
     ...(draftTabOpen ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: !draftTabShown, file: false }] as const] : []),
-    ...creatingChats.map((chat) => [chat.id, { id: chat.id, label: t("appShell.creatingSession"), title: t("appShell.creatingSession"), icon: chatIcon, disabled: true, file: false }] as const),
+    ...draftTabs.map((tab) => [tab.id, { id: tab.id, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, file: false }] as const),
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
@@ -2330,8 +2308,23 @@ export function AppShell({ appName }: { appName: string }) {
       if (!draftTabShown && draftChat) takeUpDraft(draftChat);
       return;
     }
-    // A chat still being created is not selectable until its session takes the tab over.
-    if (creatingChats.some((chat) => chat.id === id)) return;
+    const draftTab = draftTabs.find((tab) => tab.id === id);
+    if (draftTab) {
+      // It becomes the new chat, on its mount, where its tab is; the new chat it replaces moves to a tab of its own.
+      setFileShown(false);
+      moveDraftToTab();
+      setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== id));
+      setTabLayout((layout) => activateTab(replaceTab(layout, id, NEW_CHAT_TAB_ID), NEW_CHAT_TAB_ID, true));
+      // Selected from the draft tab, which is shown in its group now: nextChatMounts keeps the key.
+      setChatMounts((mounts) => {
+        const { [id]: key = id, ...keys } = mounts.keys;
+        return { ...mounts, selected: id, keys: { ...keys, [NEW_CHAT_TAB_ID]: key } };
+      });
+      draftChatRef.current = draftTab.draft;
+      setDraftChat(draftTab.draft);
+      takeUpDraft(draftTab.draft);
+      return;
+    }
     const session = chatTabById(id);
     if (!session) { handleSelectFileTab(id); return; }
     // As in the sidebar: an unreachable host's conversation cannot be opened (one already shown still can be).
@@ -2355,9 +2348,8 @@ export function AppShell({ appName }: { appName: string }) {
     if (id === NEW_CHAT_TAB_ID) {
       // Only another group's new chat closes (see draftKept); its draft stays in the store.
       setDraftChat(null);
-    } else if (creatingChats.some((chat) => chat.id === id)) {
-      // Its session is still created and listed, as for any chat left while sending.
-      dropCreatingChat(id);
+    } else if (draftTabs.some((tab) => tab.id === id)) {
+      setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== id));
     } else if (!session) {
       handleCloseFileTab(id);
     } else {
@@ -2390,7 +2382,7 @@ export function AppShell({ appName }: { appName: string }) {
     const nextGroup = groupOfTab(tabLayout, next);
     if (nextGroup && nextGroup !== group) setLastFocusedGroupId(nextGroup.id);
     const nextSession = chatTabById(next);
-    if (next === NEW_CHAT_TAB_ID) selectStripTab(NEW_CHAT_TAB_ID);
+    if (next === NEW_CHAT_TAB_ID || draftTabs.some((tab) => tab.id === next)) selectStripTab(next);
     else if (nextSession) { if (nextSession !== selected && reachable(nextSession)) handleSelectSession(nextSession); }
     else handleSelectFileTab(next);
   };
@@ -3069,8 +3061,8 @@ export function AppShell({ appName }: { appName: string }) {
 
         {/* The tab groups: open conversations and files */}
         {(() => {
-          // A new chat another group shows behind its selection, or one being created (creatingId).
-          const draftChatWindow = (draft: DraftChat, key: string | null, creatingId?: string) => (
+          // A new chat a group shows behind its selection: the kept one, or one with a tab of its own (tabId).
+          const draftChatWindow = (draft: DraftChat, key: string | null, tabId?: string) => (
             <ChatWindow
               key={key ?? undefined}
               session={null}
@@ -3080,8 +3072,7 @@ export function AppShell({ appName }: { appName: string }) {
               newSessionPoolId={draft.project?.poolId}
               newSessionProjectId={draft.project?.projectId}
               newSessionInitialization={draft.project?.poolId ? draft.initialization : undefined}
-              onSessionCreated={creatingId ? (session) => handleCreatingChatCreated(creatingId, session) : handleSessionCreated}
-              onCreatingChange={creatingId ? (creating) => { if (!creating) failCreatingChat(creatingId); } : handleDraftCreating}
+              onSessionCreated={tabId ? (session) => promoteUnselectedChat(tabId, session) : handleSessionCreated}
               onAgentEnd={handleAgentEnd}
               modelsRefreshKey={modelsRefreshKey}
               onOpenProviders={() => setSettingsTab("providers")}
@@ -3108,11 +3099,11 @@ export function AppShell({ appName }: { appName: string }) {
             const chatId = groupChat(group);
             const backgroundChat = !primary && chatId ? chatTabById(chatId) : undefined;
             const backgroundHost = backgroundChat && remoteHostId(backgroundChat.hostId) ? hosts?.find((host) => host.id === backgroundChat.hostId) : undefined;
-            const creatingChat = !primary ? creatingChats.find((chat) => chat.id === chatId) : undefined;
-            const backgroundDraft = creatingChat?.draft ?? (!primary && chatId === NEW_CHAT_TAB_ID && draftTabOpen ? draftChat : null);
+            const draftTab = !primary ? draftTabs.find((tab) => tab.id === chatId) : undefined;
+            const backgroundDraft = draftTab?.draft ?? (!primary && chatId === NEW_CHAT_TAB_ID && draftTabOpen ? draftChat : null);
             const chatPanelLabel = primary
               ? (selectedChatId ? stripTabInfo.get(selectedChatId)?.title : undefined) ?? (selectedSession ? chatTabLabel(selectedSession) : t("appShell.newSession"))
-              : backgroundChat ? chatTabLabel(backgroundChat) : creatingChat ? t("appShell.creatingSession") : backgroundDraft ? t("appShell.newSession") : undefined;
+              : backgroundChat ? chatTabLabel(backgroundChat) : backgroundDraft ? t("appShell.newSession") : undefined;
             const groupIndex = tabGroups.indexOf(group);
             // Pointing at another group, or typing in it, shows its tab (not a
             // chat's own programmatic focus, nor a tab's close button; Esc
@@ -3248,7 +3239,7 @@ export function AppShell({ appName }: { appName: string }) {
               // No searchQuery: the search highlights are page-wide, so only the selected chat paints them.
               covered
             />
-          ) : backgroundDraft ? draftChatWindow(backgroundDraft, chatKey, creatingChat?.id) : null) : showChat ? (
+          ) : backgroundDraft ? draftChatWindow(backgroundDraft, chatKey, draftTab?.id) : null) : showChat ? (
             <ChatWindow
               key={chatKey ?? undefined}
               session={selectedSession}
@@ -3362,7 +3353,6 @@ export function AppShell({ appName }: { appName: string }) {
               )}
               onAgentEnd={handleAgentEnd}
               onSessionCreated={handleSessionCreated}
-              onCreatingChange={handleDraftCreating}
               onSessionForked={handleSessionForked}
               modelsRefreshKey={modelsRefreshKey}
               chatInputRef={chatInputRef}
@@ -3451,13 +3441,13 @@ export function AppShell({ appName }: { appName: string }) {
             return [group.id, { chrome, layers }] as const;
           }));
           const layers = [...groupViews.values()].flatMap((view) => view.layers);
-          // A chat being created stays mounted, hidden, while no group shows it, so its session still gets its tab.
-          // Same layer key and element shape as a group's chat layer: moving between the two keeps the mount.
-          for (const chat of creatingChats) {
-            const key = chatMountKey(chat.id);
+          // A new chat with a tab of its own stays mounted, hidden, while no group shows it, so a send in flight
+          // still promotes it. Same layer key and element shape as a group's chat layer: showing it keeps the mount.
+          for (const tab of draftTabs) {
+            const key = chatMountKey(tab.id);
             if (layers.some((layer) => layer.key === `chat:${key}`)) continue;
-            layers.push({ key: `chat:${key}`, groupId: groupOfTab(tabLayout, chat.id)?.id ?? focusedGroup.id, hidden: true, node: (
-              <div style={{ position: "absolute", inset: 0 }}><div inert style={{ position: "absolute", inset: 0 }}>{draftChatWindow(chat.draft, key, chat.id)}</div></div>
+            layers.push({ key: `chat:${key}`, groupId: groupOfTab(tabLayout, tab.id)?.id ?? focusedGroup.id, hidden: true, node: (
+              <div style={{ position: "absolute", inset: 0 }}><div inert style={{ position: "absolute", inset: 0 }}>{draftChatWindow(tab.draft, key, tab.id)}</div></div>
             ) });
           }
           return (

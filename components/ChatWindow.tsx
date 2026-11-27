@@ -1,6 +1,6 @@
 "use client";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { ArrowDown, ChevronDown, ChevronUp, Paperclip, Square } from "lucide-react";
 import type { AgentMessage, AssistantMessage, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
 import { translate, useI18n } from "@/lib/i18n";
@@ -74,8 +74,6 @@ interface Props {
   hideThinkingBlock?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
-  /** True from a send that creates this new chat's session until the chat is promoted or the send ends; false on unmount too. */
-  onCreatingChange?: (creating: boolean) => void;
   /** A file tab covers this chat: its window-level keys (Esc stop, model and thinking cycling, dictation) stay off. */
   covered?: boolean;
   onSessionForked?: (newSessionId: string) => void;
@@ -396,7 +394,7 @@ const CommittedTranscript = memo(function CommittedTranscript({
   );
 });
 
-export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onCreatingChange, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, hostStatus: channelHostStatus, hostLabel, newSessionWorkspace, headerActions, toolCallsDefaultCollapsed = true, hideToolActivity = true, neverFoldActivity = false, showToolCallsUnfolded = false, expandThinkingByDefault = false, hideThinkingBlock = false, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, sessionInfoContainer, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onGenerationSpeedChange, onOpenFile: onOpenWorkspaceFile, onOpenUrl, onOpenProviders, searchQuery = "", searchTarget = null, onSearchTargetHandled, covered = false }: Props) {
   const { t, tn } = useI18n();
   const fileSource = useMemo<WorkspaceFileSource>(() => ({
     hostId: session?.hostId ?? newSessionHostId ?? "local",
@@ -458,7 +456,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     handleToolPresetChange,
     btw, askBtw,
     resolveUploadHost,
-    creatingSession,
   } = useAgentSession({
     session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef: composerRef, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
@@ -520,15 +517,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
     setGenerationSpeed({ average: recent.reduce((sum, sample) => sum + sample, 0) / recent.length });
   }, [messages, sessionBusy, session?.id, newSessionCwd]);
 
-
-  // The latest handler reports the end: the chat's tab (and so its handler) may change while its session is created.
-  const onCreatingChangeRef = useRef(onCreatingChange);
-  useLayoutEffect(() => { onCreatingChangeRef.current = onCreatingChange; }, [onCreatingChange]);
-  useEffect(() => {
-    if (!creatingSession) return;
-    onCreatingChangeRef.current?.(true);
-    return () => onCreatingChangeRef.current?.(false);
-  }, [creatingSession]);
 
   // Register the abort handler for the global Esc shortcut. The cleanup
   // matters: unmounting mid-run must not leave the module-global handler
