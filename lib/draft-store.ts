@@ -76,6 +76,11 @@ function isDraftUpload(value: unknown): value is ChatDraftUpload {
 
 const drafts: Map<string, ChatDraft> = (globalThis.__tauChatDrafts ??= readStoredDrafts());
 
+/** A host-keyed build (reverted) stored session drafts as `<host>/<id>`: nothing reads them, so they go. */
+function hostKeyed(key: string): boolean {
+  return /^[^:]+\//.test(key);
+}
+
 function readStoredDrafts(): Map<string, ChatDraft> {
   const stored = new Map<string, ChatDraft>();
   try {
@@ -83,8 +88,7 @@ function readStoredDrafts(): Map<string, ChatDraft> {
     const storageKeys = Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i));
     for (const storageKey of storageKeys) {
       if (!storageKey?.startsWith(STORAGE_PREFIX)) continue;
-      // A host-keyed build (reverted) stored session drafts as `<host>/<id>`: nothing reads them, so they go.
-      if (stored.size >= MAX_DRAFTS || /^[^:]+\//.test(storageKey.slice(STORAGE_PREFIX.length))) {
+      if (stored.size >= MAX_DRAFTS || hostKeyed(storageKey.slice(STORAGE_PREFIX.length))) {
         sessionStorage.removeItem(storageKey);
         sessionStorage.removeItem(PROMPT_STORAGE_PREFIX + storageKey.slice(STORAGE_PREFIX.length));
         continue;
@@ -108,7 +112,7 @@ function readStoredDrafts(): Map<string, ChatDraft> {
         uploads = null;
       }
       const draft = stored.get(key) ?? (stored.size < MAX_DRAFTS ? { value: "", images: [], files: [] } : null);
-      if (!draft || !Array.isArray(uploads) || !uploads.every(isDraftUpload) || uploads.length === 0) {
+      if (!draft || hostKeyed(key) || !Array.isArray(uploads) || !uploads.every(isDraftUpload) || uploads.length === 0) {
         sessionStorage.removeItem(storageKey);
         continue;
       }
