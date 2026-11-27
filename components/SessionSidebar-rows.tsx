@@ -11,7 +11,6 @@ import { transcriptToMarkdown } from "@/lib/transcript";
 import { toast } from "./ui/toast";
 import { SessionSearchMatches, type SearchMatchTarget } from "./SessionSearchMatches";
 import { hasDraft, subscribeDrafts } from "@/lib/draft-store";
-import { LOCAL_HOST_ID } from "@/lib/project-ordering";
 import {
   MAX_PROJECT_SESSIONS,
   formatRelativeTime,
@@ -742,7 +741,8 @@ const SessionItem = memo(function SessionItem({
         : isUnread ? t("sessionSidebar.statusDone")
           : t("sessionSidebar.statusReady");
   const statusId = useId();
-  const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, relativeTime].filter(Boolean).join(" · ");
+  const alsoOn = session.alsoOnHosts?.length ? t("sessionSidebar.statusAlsoOn", { hosts: session.alsoOnHosts.join(", ") }) : null;
+  const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, alsoOn, relativeTime].filter(Boolean).join(" · ");
   const rowBackground = isSelected
     ? "color-mix(in srgb, var(--bg-selected) 70%, transparent)"
     : hovered ? "var(--bg-hover)" : "transparent";
@@ -778,7 +778,7 @@ const SessionItem = memo(function SessionItem({
  const handleArchive = useCallback(async () => {
  setDeleting(true);
  try {
- const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/archive?hostId=${encodeURIComponent(session.hostId ?? LOCAL_HOST_ID)}`, { method: "POST" });
+ const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/archive`, { method: "POST" });
  if (!response.ok) throw new Error("Session archive failed");
  onDeleted?.(session.id);
  } catch {
@@ -794,7 +794,7 @@ const SessionItem = memo(function SessionItem({
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}?hostId=${encodeURIComponent(session.hostId ?? LOCAL_HOST_ID)}`, { method: "DELETE" });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
       if (!response.ok) throw new Error("Session deletion failed");
       onDeleted?.(session.id);
     } catch {

@@ -68,6 +68,23 @@ test("failed workspace rename is reported without an unhandled rejection; failed
   }
 });
 
+test("a session whose id another host also lists says so in its status line", () => {
+  const noop = () => {};
+  const session = { id: "s1", path: "", cwd: "/srv/app", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1, firstMessage: "hello", alsoOnHosts: ["Build box"] };
+  try {
+    render(React.createElement(ProjectRow, {
+      project: { path: "/srv/app" }, isActive: false, isExpanded: true, activity: undefined, tree: [{ session, children: [] }], hiddenCount: 0,
+      selectedSessionId: null, runningSessionIds: new Set(), awaitingInputIds: new Set(), unreadSessionIds: new Set(), exitedSessions: new Map(), relativeTimeNow: 0,
+      onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
+      onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
+      removeBusy: false, onSelectSession: noop,
+    }));
+    assert.ok(document.body.textContent.includes(translate("sessionSidebar.statusAlsoOn", { hosts: "Build box" })));
+  } finally {
+    cleanup();
+  }
+});
+
 test("a pinned project row names its node; other rows carry no node label", () => {
   const noop = () => {};
   const row = (extra) => React.createElement(ProjectRow, {

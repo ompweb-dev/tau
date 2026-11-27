@@ -1227,6 +1227,7 @@
   "sessionSidebar.statusStopped": "已停止",
   "sessionSidebar.statusDone": "已完成",
   "sessionSidebar.statusDraft": "草稿",
+  "sessionSidebar.statusAlsoOn": "{hosts} 上也有同一会话",
   "sessionSidebar.selectProjectFirst": "请先选择一个项目",
   "sessionSidebar.switchWorktree": "切换工作树",
   "sessionSidebar.launchConfigDirectory": "目录",

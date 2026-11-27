@@ -141,13 +141,13 @@ app/api/
   sessions/search/route.ts             GET ?q= NDJSON { scores } batches (titles + per-host transcripts)
   sessions/import/route.ts             POST import a session .jsonl
   sessions/archive/route.ts            GET archives of every host | POST restore (see "Session archive and restore")
-  sessions/[id]/route.ts               GET/PATCH/DELETE a session (GET and DELETE take ?hostId=: only that host's session, for an id copied across hosts); GET ?meta=1 answers the navigation shape (tree + leaf, no transcript), ?includeState=alive the split liveness shape (`running` = a turn in flight, `alive` = the child exists)
+  sessions/[id]/route.ts               GET/PATCH/DELETE a session; GET ?meta=1 answers the navigation shape (tree + leaf, no transcript), ?includeState=alive the split liveness shape (`running` = a turn in flight, `alive` = the child exists)
   sessions/[id]/state/route.ts         GET live state; always carries `outbox`, `outboxSettledIds`, `outboxScope`
   sessions/[id]/context/route.ts       GET ?leafId= context of one leaf (read-only branch view); strong ETag, 304 on a matching If-None-Match
   sessions/[id]/entries/[entryId]/thinking/route.ts  GET one deferred thinking block
   sessions/[id]/matches/route.ts       GET ?q=&limit= best search hits in the active conversation
   sessions/[id]/export/route.ts        GET exported HTML (`tau-session-<id>.html`; a remote session's always as an attachment)
-  sessions/[id]/archive/route.ts       POST stop the live child, then archive on the session's host (?hostId= names it)
+  sessions/[id]/archive/route.ts       POST stop the live child, then archive on the session's host
   sessions/[id]/auto-name/route.ts     POST stored title, else one derived from the first user message (`generated` always false)
   sessions/[id]/subagents/route.ts, subagents/[subagentId]/route.ts   subagent roster history and transcripts
   agent/new/route.ts                   POST start a session (host, pool or cluster target)

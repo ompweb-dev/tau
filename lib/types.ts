@@ -421,6 +421,9 @@ export interface SessionInfo {
   /** Host the session's file lives on ("local" for this machine). Set by the
    *  all-hosts session list; a host's own list leaves it out. */
   hostId?: string;
+  /** Other hosts whose lists hold the same session id (a session file copied between machines), by label.
+   *  The sidebar shows this copy and warns; tau does not keep the copies apart. */
+  alsoOnHosts?: string[];
   /** Registered logical identity; physical owner/cwd/projectRoot remain unchanged. */
   poolId?: string;
   projectId?: string;

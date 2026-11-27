@@ -1249,6 +1249,7 @@
   "sessionSidebar.statusStopped": "Stopped",
   "sessionSidebar.statusDone": "Done",
   "sessionSidebar.statusDraft": "Draft",
+  "sessionSidebar.statusAlsoOn": "Also on {hosts}",
   "sessionSidebar.selectProjectFirst": "Select a project first",
   "sessionSidebar.switchWorktree": "Switch worktree",
   "sessionSidebar.launchConfigDirectory": "Directory",
