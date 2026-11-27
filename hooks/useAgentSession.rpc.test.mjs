@@ -202,9 +202,11 @@ const world = {
 
 async function fetchStub(url, init = {}) {
   const method = (init.method ?? "GET").toUpperCase();
-  const u = String(url);
+  const raw = String(url);
+  // Session reads name this machine (`hostId=local`) unless they say otherwise; matched without it.
+  const u = raw.replace(/([?&])hostId=local(&|$)/, (_, lead, tail) => tail ? lead : "").replace(/\?$/, "");
   const body = typeof init.body === "string" ? safeParse(init.body) : null;
-  world.calls.push({ method, url: u, body });
+  world.calls.push({ method, url: u, raw, body });
 
   for (let i = 0; i < world.holds.length; i++) {
     if (world.holds[i].match(method, u, body)) {
