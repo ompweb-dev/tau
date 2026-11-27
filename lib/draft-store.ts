@@ -238,7 +238,8 @@ export function holdDraftOwner(owner: string, key: string): () => void {
   };
 }
 
-const SENT_KEY_MARK = "#sent:";
+// NUL: no workspace path, host id or session id holds one, so no other key can look like a chat's own.
+const SENT_KEY_MARK = "\u0000sent:";
 
 /** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. */
 function sentDraftBase(key: string): string {
@@ -249,11 +250,8 @@ export function sentDraftKey(base: string, chat: string): string {
   return `${base}${SENT_KEY_MARK}${chat}`;
 }
 
-// The exact shape at the end of the key (a chat id is base36): `#` is legal in a workspace path.
-const SENT_KEY_RE = /#sent:[0-9a-z]{12,}$/;
-
 export function isSentDraftKey(key: string): boolean {
-  return SENT_KEY_RE.test(key);
+  return key.includes(SENT_KEY_MARK);
 }
 
 /** A `sentDraftKey`'s draft goes back to its workspace's (its chat is gone, or the page was reloaded): recovered into
@@ -268,7 +266,10 @@ export function foldSentDraft(key: string): void {
  *  sent moves to a key of its own, and another chat may have its old one. */
 export function recoverDraft(key: string, recovery: DraftRecovery, owner?: string): void {
   if (!recovery.text && !recovery.images?.length && !recovery.files?.length && !recovery.uploads?.length) return;
-  key = (owner && liveOwners.get(owner)) || key;
+  // The chat's draft now: its own key or its session's (same workspace, same host), never another workspace's, which
+  // may be on another host than the recovered uploads.
+  const shown = owner ? liveOwners.get(owner) : undefined;
+  if (shown && (!shown.startsWith("new:") || (isSentDraftKey(shown) && sentDraftBase(shown) === key))) key = shown;
   // A chat's own key that no composer shows any more (its chat went away): its workspace's draft takes it.
   if (isSentDraftKey(key) && ![...liveOwners.values()].includes(key)) key = sentDraftBase(key);
   if (key) {
