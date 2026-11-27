@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from "fs";
+import { createHash } from "crypto";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "fs";
 import { realpath } from "fs/promises";
 import { homedir } from "os";
 import path from "path";
@@ -95,28 +96,24 @@ const PI_SECRET_FILES = ["auth.json", "mcp-auth.json", "oauth.json", "models.jso
 /** tau's key files, checked by identity too: a hard link of one outside `tau/` is still that secret. */
 const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "host-control.json",
   ...["notifications.db", "outbox.db"].flatMap((db) => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`])];
-/** Subtrees of `<agent dir>/tau/` holding copies of pi configuration (cluster config objects and backups). */
-const TAU_CONFIG_COPY_DIRS = ["cluster-config", "own-config"];
+/** pi configuration files a cluster member mirrors that hold credentials (`MIRRORED` in hosts/cluster-config.ts). */
+const MIRRORED_SECRET_FILES = ["models.json", "mcp.json"];
 
-/** Every regular file under `<agent dir>/tau/`'s config-copy trees, symlinks not followed, for identity checks. */
-export function tauConfigCopyFiles(agentDir: string, onUnavailable?: () => void): string[] {
-  const files: string[] = [];
-  const walk = (dir: string) => {
-    let entries: Buffer[];
-    try { entries = readdirSync(dir, { encoding: "buffer" }); }
-    catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); return; }
-    for (const entry of entries) {
-      // tau writes only UTF-8 names here; another one cannot be named back to stat it.
-      if (!isUtf8(entry)) { onUnavailable?.(); continue; }
-      const file = path.join(dir, entry.toString("utf8"));
-      try {
-        const info = lstatSync(file);
-        if (info.isDirectory()) walk(file);
-        else if (info.isFile()) files.push(file);
-      } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+/**
+ * tau's copies of credential files, checked by identity: the member's own ones in `own-config/` (and its agent
+ * environment), the staged and replaced ones, and the downloaded objects of the live ones, named by their sha256.
+ * ponytail: an object of a version downloaded but not yet applied is not matched; the manifest would name it.
+ */
+export function tauCredentialCopies(agentDir: string, onUnavailable?: () => void): string[] {
+  const tau = path.join(agentDir, "tau");
+  const files = [path.join(tau, "own-config", "agent-env.json")];
+  for (const name of MIRRORED_SECRET_FILES) {
+    for (const dir of [path.join(tau, "own-config"), ...["stage", "trash"].map((d) => path.join(tau, "cluster-config", d))]) {
+      files.push(path.join(dir, "agent", name));
     }
-  };
-  for (const name of TAU_CONFIG_COPY_DIRS) walk(path.join(agentDir, "tau", name));
+    try { files.push(path.join(tau, "cluster-config", "objects", createHash("sha256").update(readFileSync(path.join(agentDir, name))).digest("hex"))); }
+    catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+  }
   return files;
 }
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
@@ -159,8 +156,8 @@ export function isPiSecretFile(filePath: string): boolean {
       if (!isMissingPathError(error)) metadataUnavailable = true;
     }
     const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name)),
-      // A hard link of a config copy deeper in tau/ is that copy: walked only for a hard-linked request.
-      ...(identity ? tauConfigCopyFiles(dir, markUnavailable) : [])];
+      // Hashing the live files is left to a hard-linked request.
+      ...(identity ? tauCredentialCopies(dir, markUnavailable) : [])];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;
