@@ -6196,6 +6196,30 @@ test("text typed into a kept chat after it sent stays with it when another new c
   h.view.unmount();
 });
 
+test("text typed into a new chat while its session is created stays in that chat once the session takes over", async (t) => {
+  const h = await sentBesideFreshChat(t);
+  world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "typed while spawning" } }); await sleep(60); });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.ok(within(h.draftGroup).queryByRole("tab", { name: "hello there" }), "the session took the kept chat's tab");
+  assert.equal(h.composerIn(h.draftGroup).value, "typed while spawning", "its composer keeps the text");
+  assert.equal(h.composerIn(h.other).value, "", "the fresh new chat does not get it");
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "" } }); await sleep(30); });
+  h.view.unmount();
+});
+
+test("a failed kept chat replaced by another new chat leaves its text to the workspace's draft", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.composerIn(h.draftGroup).value, "hello there");
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") })); await sleep(150); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(150); });
+  const composers = [...h.view.container.querySelectorAll("textarea")].map((area) => area.value);
+  assert.ok(composers.some((value) => value === "hello there"), `the new chat shows it: ${JSON.stringify(composers)}`);
+  for (const area of h.view.container.querySelectorAll("textarea")) await act(async () => { fireEvent.change(area, { target: { value: "" } }); await sleep(20); });
+  h.view.unmount();
+});
+
 test("another new chat replaces an unsent kept one and opens fresh in the focused group", async (t) => {
   const h = await draftInItsOwnGroup(t);
   await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });

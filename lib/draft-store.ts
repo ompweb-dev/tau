@@ -54,7 +54,6 @@ declare global {
   var __tauChatDrafts: Map<string, ChatDraft> | undefined;
   var __tauChatDraftListeners: Set<() => void> | undefined;
   var __tauChatDraftOwners: Map<string, string> | undefined;
-  var __tauChatDraftTransientKeys: Set<string> | undefined;
   var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
   var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
   var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
@@ -238,13 +237,23 @@ export function holdDraftOwner(owner: string, key: string): () => void {
   };
 }
 
-/** Keys of drafts that live only as long as this page (`transientDraftKey`). */
-const transientKeys = (globalThis.__tauChatDraftTransientKeys ??= new Set<string>());
+const SENT_KEY_MARK = "#sent:";
 
-/** `key`, as a draft key of this page only: kept out of sessionStorage, since nothing reopens it after a reload. */
-export function transientDraftKey(key: string): string {
-  transientKeys.add(key);
-  return key;
+/** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. */
+export function sentDraftKey(base: string, chat: string): string {
+  return `${base}${SENT_KEY_MARK}${chat}`;
+}
+
+export function isSentDraftKey(key: string): boolean {
+  return key.includes(SENT_KEY_MARK);
+}
+
+/** A `sentDraftKey`'s draft goes back to its workspace's (its chat is gone, or the page was reloaded): recovered into
+ *  it as into any composer, so a new chat showing it gets the text too. */
+export function foldSentDraft(key: string): void {
+  const draft = getDraft(key);
+  clearDraft(key);
+  if (draft) recoverDraft(key.slice(0, key.lastIndexOf(SENT_KEY_MARK)), { text: draft.value, images: draft.images.length ? draft.images : undefined, files: draft.files.length ? draft.files : undefined, uploads: draft.uploads, ...(draft.promptOnly ? { promptOnly: true } : {}) });
 }
 
 /** Recovers into `key`'s draft or, when `owner`'s composer is mounted, into the draft it shows now: a new chat that
@@ -292,7 +301,7 @@ export function setDraft(key: string, draft: ChatDraft): void {
     markSubmissionsEdited(key);
   }
   drafts.set(key, next);
-  if (!transientKeys.has(key)) try {
+  try {
     // Persist only text: attachment payloads can exhaust the tab's storage quota.
     // Mark prompt provenance before publishing its text; never restore that text as a shell command after reload.
     if (next.promptOnly) sessionStorage.setItem(PROMPT_STORAGE_PREFIX + key, "1");
@@ -321,3 +330,6 @@ export function clearDraft(key: string): void {
     for (const listener of listeners) listener();
   }
 }
+
+// A reload reopens no chat's own key: their drafts are their workspaces' again.
+for (const key of [...drafts.keys()]) if (isSentDraftKey(key)) foldSentDraft(key);
