@@ -113,14 +113,14 @@ test("a session row is selected only for its own host's copy of the id, nested r
   });
   const current = (name) => screen.getByRole("button", { name }).getAttribute("aria-current");
   try {
-    const { rerender } = render(React.createElement(ProjectRow, props("local:s1")));
+    const { rerender } = render(React.createElement(ProjectRow, props("local/s1")));
     assert.equal(current("Copied"), null);
-    rerender(React.createElement(ProjectRow, props("h1:s1")));
+    rerender(React.createElement(ProjectRow, props("h1/s1")));
     assert.equal(current("Copied"), "true");
-    rerender(React.createElement(ProjectRow, props("h1:c1")));
+    rerender(React.createElement(ProjectRow, props("h1/c1")));
     assert.equal(current("Copied"), null);
     assert.equal(current("Child"), "true", "a nested row follows the selection");
-    rerender(React.createElement(ProjectRow, props("local:c1")));
+    rerender(React.createElement(ProjectRow, props("local/c1")));
     assert.equal(current("Child"), null, "not for another host's copy");
   } finally {
     cleanup();
@@ -194,7 +194,7 @@ test("running, needs-input, stopped and finished marks show only on the host cop
     running({ runningSessions: [] });
     await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusDone"))));
     assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));
-    assert.deepEqual(JSON.parse(localStorage.getItem("tau:unread-session-ids")), ["h1:s1"]);
+    assert.deepEqual(JSON.parse(localStorage.getItem("tau:unread-session-ids")), ["h1/s1"]);
     running({ runningSessions: [], exitedSessions: [{ id: "s1", cwd: "/srv/app", hostId: "h1", at: 1, code: 1, signal: null, detail: "" }] });
     await waitFor(() => assert.match(status("There"), new RegExp(translate("sessionSidebar.statusStopped"))));
     assert.match(status("Here"), new RegExp(translate("sessionSidebar.statusReady")));

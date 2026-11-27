@@ -1,7 +1,7 @@
-import { sessionRowKey } from "@/lib/project-ordering";
+import { sessionHostKey } from "@/lib/session-host-key";
 
 export interface RecentRunEntry {
-  /** `sessionRowKey(hostId, id)`: each host's copy of a session id has its own entry. */
+  /** `sessionHostKey(hostId, id)`: each host's copy of a session id has its own entry. */
   key: string;
   completedAt: number;
 }
@@ -54,7 +54,7 @@ export function seedRecentRuns(
     .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
     .slice(0, limit)
     .map((s) => ({
-      key: sessionRowKey(s.hostId, s.id),
+      key: sessionHostKey(s.hostId, s.id),
       completedAt: new Date(s.modified).getTime() || Date.now(),
     }));
 }

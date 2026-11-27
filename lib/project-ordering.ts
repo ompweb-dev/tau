@@ -1,3 +1,4 @@
+import { sessionHostKey } from "./session-host-key";
 import { comparableProjectPath } from "./comparable-path";
 import type { ManagedProject, SessionInfo } from "./types";
 import { workspaceKeyOf } from "./workspace-memory";
@@ -23,9 +24,6 @@ export function remoteHostId(hostId: string | null | undefined): string | undefi
   return hostId && hostId !== LOCAL_HOST_ID ? hostId : undefined;
 }
 
-/** A session's identity in browser state (rows, marks): one session id can exist on two hosts (a copied session). */
-export const sessionRowKey = (hostId: string | null | undefined, id: string) => `${hostId ?? LOCAL_HOST_ID}:${id}`;
-
 /** Local paths keep their legacy key; remote paths are host-prefixed.
  * Logical pool keys are already domain-separated and never acquire an owner prefix. */
 export function hostProjectKey(hostId: string | undefined, path: string): string {
@@ -37,13 +35,6 @@ export function hostProjectKey(hostId: string | undefined, path: string): string
  *  saved before hosts existed keep their key), `new:<hostId>:<cwd>` elsewhere. */
 export function newChatDraftKey(cwd: string, hostId: string | undefined): string {
   return `new:${hostProjectKey(hostId, cwd)}`;
-}
-
-/** Composer draft key of a session: its id on this machine (drafts kept from before hosts keep their key),
- *  `<hostId>:<id>` elsewhere, since the same id on two hosts is two sessions. */
-export function sessionDraftKey(id: string, hostId: string | null | undefined): string {
-  const remote = remoteHostId(hostId);
-  return remote ? `${remote}:${id}` : id;
 }
 
 /** `hostProjectKey` over the case-folded comparable path (how sessions find their project). */
@@ -156,7 +147,7 @@ export function nextPinOrder(projects: ManagedProject[]): number {
  *  look up with foldedHostProjectKey(project.hostId, project.path). */
 export function projectActivityCounts(
   sessions: SessionInfo[],
-  // Keyed by sessionRowKey, as the sidebar's marks.
+  // Keyed by sessionHostKey, as the sidebar's marks.
   runningIds: Iterable<string>,
   unreadIds: Iterable<string>,
   exitedIds: Iterable<string> = [],
@@ -170,7 +161,7 @@ export function projectActivityCounts(
     if (!key) continue;
     const folded = foldedHostProjectKey(session.hostId, session.projectKey ?? key);
     const current = result.get(folded) ?? { running: 0, unread: 0, exited: 0 };
-    const rowKey = sessionRowKey(session.hostId, session.id);
+    const rowKey = sessionHostKey(session.hostId, session.id);
     if (running.has(rowKey)) current.running += 1;
     if (unread.has(rowKey)) current.unread += 1;
     if (exited.has(rowKey)) current.exited += 1;

@@ -654,7 +654,7 @@ test("upload continuity: an uploaded file reaches held outbox intent after a rea
   resetWorld();
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "proof-upload-remount";
-  t.after(() => clearDraft(sid));
+  t.after(() => clearDraft(`local/${sid}`));
   primeSession(sid, [userMsg("u0", "before")]);
   world.outboxHold = true;
   world.holds.push(
@@ -673,8 +673,8 @@ test("upload continuity: an uploaded file reaches held outbox intent after a rea
   await act(async () => {
     chatInputRef.current.addFiles([new File([new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0])], "proof.zip", { type: "application/zip" })]);
   });
-  await until(() => getDraft(sid)?.uploads?.length === 1, "the completed file must reach the draft");
-  const id = getDraft(sid).uploads[0].id;
+  await until(() => getDraft(`local/${sid}`)?.uploads?.length === 1, "the completed file must reach the draft");
+  const id = getDraft(`local/${sid}`).uploads[0].id;
   await act(() => first.unmount());
   const second = await mount();
   assert.ok(second.getByText("proof.zip"), "the remounted real composer owns the completed attachment");
@@ -682,7 +682,7 @@ test("upload continuity: an uploaded file reaches held outbox intent after a rea
   await until(() => world.outbox.length === 1, "Send must commit the file-only message to the worker");
   assert.deepEqual(world.outbox[0].uploads, [id]);
   assert.deepEqual(world.outbox[0].uploadProofs, { [id]: "accepted-completion-proof" }, "the durable intent retains completion authority, not just the chip");
-  assert.equal(getDraft(sid), null, "the stored intent consumes the unchanged draft");
+  assert.equal(getDraft(`local/${sid}`), null, "the stored intent consumes the unchanged draft");
   await act(() => second.unmount());
   await mount();
   assert.deepEqual(world.outbox[0].uploadProofs, { [id]: "accepted-completion-proof" }, "a new hook lifetime cannot strip the held intent");
@@ -693,12 +693,12 @@ for (const [preference, mode] of [["steer", "steer"], ["followup", "followUp"]])
     resetWorld();
     const { setDraft, getDraft, clearDraft } = await import("@/lib/draft-store");
     const sid = `proof-queue-${mode}`;
-    t.after(() => clearDraft(sid));
+    t.after(() => clearDraft(`local/${sid}`));
     primeSession(sid, [userMsg("u0", "before")]);
     world.agents.set(sid, { running: true, state: { isStreaming: true, isPromptRunning: true } });
     world.outboxHold = true;
     localStorage.setItem("tau:submit-during-run", preference);
-    setDraft(sid, { value: "with my file", images: [], files: [], uploads: [{ id: "queue-upload", name: "queued.zip", size: 8, hostId: "local", proof: "queue-completion-proof" }] });
+    setDraft(`local/${sid}`, { value: "with my file", images: [], files: [], uploads: [{ id: "queue-upload", name: "queued.zip", size: 8, hostId: "local", proof: "queue-completion-proof" }] });
     const view = ownRoot(render(React.createElement(ChatWindow, { session: sessionInfo(sid), newSessionCwd: null }), { wrapper: TestRoot }));
     await settle();
     await act(async () => { lastEs()?.open(); });
@@ -707,7 +707,7 @@ for (const [preference, mode] of [["steer", "steer"], ["followup", "followUp"]])
     await until(() => world.outbox.length === 1, "queue submission must reach worker storage");
     assert.equal(world.outbox[0].mode, mode);
     assert.deepEqual(world.outbox[0].uploadProofs, { "queue-upload": "queue-completion-proof" });
-    assert.equal(getDraft(sid), null, "the real composer clears only after its intent is stored");
+    assert.equal(getDraft(`local/${sid}`), null, "the real composer clears only after its intent is stored");
   });
 }
 
@@ -715,10 +715,10 @@ test("a `!` message with an inline text attachment is held as a prompt, never ru
   resetWorld();
   const { setDraft, getDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "bang-text-attachment";
-  t.after(() => clearDraft(sid));
+  t.after(() => clearDraft(`local/${sid}`));
   primeSession(sid, [userMsg("u0", "before")]);
   world.outboxHold = true;
-  setDraft(sid, {
+  setDraft(`local/${sid}`, {
     value: "!touch /tmp/tau-never-run",
     images: [],
     files: [{ name: "notes.txt", mimeType: "text/plain", content: "rm -rf /", size: 8 }],
@@ -730,7 +730,7 @@ test("a `!` message with an inline text attachment is held as a prompt, never ru
   assert.equal(world.outbox[0].mode, "prompt");
   assert.equal(world.outbox[0].message, "!touch /tmp/tau-never-run\n\nAttached file: notes.txt\n```text\nrm -rf /\n```");
   assert.deepEqual(world.calls.filter((call) => call.body?.type === "bash"), [], "neither the typed text nor the attachment reaches the shell");
-  assert.equal(getDraft(sid), null, "the stored prompt consumes the unchanged draft");
+  assert.equal(getDraft(`local/${sid}`), null, "the stored prompt consumes the unchanged draft");
 });
 
 test("editing and resending a queued bang-prefixed prompt never runs its inline file text as shell", async (t) => {
@@ -738,7 +738,7 @@ test("editing and resending a queued bang-prefixed prompt never runs its inline 
   const { clearDraft } = await import("@/lib/draft-store");
   const sid = "queued-bang-prompt";
   const message = "!!explain this\n\nAttached file: notes.txt\n```text\necho attachment-content\n```";
-  t.after(() => clearDraft(sid));
+  t.after(() => clearDraft(`local/${sid}`));
   primeSession(sid, [userMsg("u0", "before")]);
   world.agents.set(sid, { running: true, state: { queuedMessages: { steering: [], followUp: [message] } } });
   world.outboxHold = true;
@@ -777,7 +777,7 @@ test("clearing the queue resolves to pi's withdrawn texts, writes no draft, and 
     await t.test(outcome.name, async () => {
       resetWorld();
       const sid = `clear-queue-${outcome.name}`;
-      clearDraft(sid);
+      clearDraft(`local/${sid}`);
       primeSession(sid, [userMsg("u0", "q")]);
       const { w, es } = await startRun(sid, "run");
       await act(() => es.emit({ type: "queue_update", steering: ["steer first"], followUp: ["target", "target"] }));
@@ -798,7 +798,7 @@ test("clearing the queue resolves to pi's withdrawn texts, writes no draft, and 
         release(outcome.response);
         assert.deepEqual(await first, outcome.result, "steering first, then follow-ups; non-empty strings only");
       });
-      assert.equal(getDraft(sid), null, "the composer, not the hook, owns recovery");
+      assert.equal(getDraft(`local/${sid}`), null, "the composer, not the hook, owns recovery");
       assert.deepEqual(w.latest.queuedMessages, { steering: ["steer first"], followUp: ["target", "target"] });
       assert.deepEqual(w.latest.notices.map((n) => n.type), outcome.notices);
     });
@@ -830,7 +830,7 @@ test("a queue clear failing after navigation does not notify the new session", a
 test("a queue clear pi answers after unmount still resolves to the withdrawn texts so Edit can recover them", async () => {
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   resetWorld();
-  clearDraft("clear-unmount");
+  clearDraft("local/clear-unmount");
   primeSession("clear-unmount", [userMsg("u0", "q")]);
   const { w, es } = await startRun("clear-unmount", "run");
   await act(() => es.emit({ type: "queue_update", steering: [], followUp: ["target"] }));
@@ -844,7 +844,7 @@ test("a queue clear pi answers after unmount still resolves to the withdrawn tex
   w.unmount();
   release({ value: { success: true, data: { steering: [], followUp: ["target"] } } });
   assert.deepEqual(await clearing, ["target"]);
-  assert.equal(getDraft("clear-unmount"), null, "the hook writes no draft");
+  assert.equal(getDraft("local/clear-unmount"), null, "the hook writes no draft");
 });
 
 // End to end through ChatWindow: the composer recovers a queue Edit into its
@@ -3400,8 +3400,8 @@ test("an edit-and-resend fork puts the branched prompt into the child's composer
       produce: async () => ({ value: { success: true, data: { newSessionId: child, text: "retry this" } } }),
     });
     await act(async () => { await w.latest.handleFork("u0", editPrompt); });
-    assert.equal(getDraft(child)?.value, editPrompt ? "retry this" : undefined);
-    clearDraft(child);
+    assert.equal(getDraft(`local/${child}`)?.value, editPrompt ? "retry this" : undefined);
+    clearDraft(`local/${child}`);
     w.unmount();
   }
 });
@@ -3667,11 +3667,11 @@ async function mountEditableSession(sid, options = {}) {
   let changeLeaf;
   const onBranchDataChange = (_tree, _leaf, handler) => { changeLeaf = handler; };
   function Chat() {
-    const [value, setValue] = React.useState(() => getDraft(sid)?.value ?? "");
+    const [value, setValue] = React.useState(() => getDraft(`local/${sid}`)?.value ?? "");
     React.useImperativeHandle(chatInputRef, () => ({
       insertIfEmpty(text) { setValue((current) => current.trim() ? current : text); },
     }), []);
-    React.useEffect(() => { setDraft(sid, { value, images: [], files: [] }); }, [value]);
+    React.useEffect(() => { setDraft(`local/${sid}`, { value, images: [], files: [] }); }, [value]);
     const hook = useAgentSession({ session, newSessionCwd: null, ...options, chatInputRef, onBranchDataChange });
     latest = hook;
     const historyBusy = hook.editingEntryId !== null || hook.forkingEntryId !== null;
@@ -3725,8 +3725,8 @@ test("same-ID Edit of a `!!` model prompt resends it as a held prompt, never a s
   resetWorld();
   const { clearDraft } = await import("@/lib/draft-store");
   const sid = "edit-bang-same";
-  clearDraft(sid);
-  t.after(() => clearDraft(sid));
+  clearDraft(`local/${sid}`);
+  t.after(() => clearDraft(`local/${sid}`));
   const native = primeEditableHistory(sid, bangHistory);
   world.outboxHold = true;
   const w = await mountEditChat(sid);
@@ -3744,8 +3744,8 @@ test("same-ID Edit leaves a typed `!!` draft alone and still runs it as a shell 
   resetWorld();
   const { setDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "edit-bang-same-typed";
-  setDraft(sid, { value: "!!typed shell", images: [], files: [] });
-  t.after(() => clearDraft(sid));
+  setDraft(`local/${sid}`, { value: "!!typed shell", images: [], files: [] });
+  t.after(() => clearDraft(`local/${sid}`));
   const native = primeEditableHistory(sid, bangHistory);
   world.outboxHold = true;
   const w = await mountEditChat(sid);
@@ -3764,10 +3764,10 @@ test("observed edit-time persistence errors preserve the real composer and compl
   resetWorld();
   const { getDraft, setDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "edit-native-disk-error";
-  t.after(() => clearDraft(sid));
+  t.after(() => clearDraft(`local/${sid}`));
   const draft = { value: "keep unsent text", images: [{ data: "AAAA", mimeType: "image/png" }],
     files: [{ name: "keep.txt", mimeType: "text/plain", content: "retained file", size: 13 }] };
-  setDraft(sid, draft);
+  setDraft(`local/${sid}`, draft);
   const native = primeEditableHistory(sid);
   native.editOutcome = "persistence-error";
   const original = structuredClone(world.sessions.get(sid));
@@ -3780,7 +3780,7 @@ test("observed edit-time persistence errors preserve the real composer and compl
   assert.equal(w.selectedId, sid);
   assert.equal(w.view.getByRole("textbox"), composer);
   assert.equal(composer.value, draft.value);
-  assert.deepEqual(getDraft(sid), draft);
+  assert.deepEqual(getDraft(`local/${sid}`), draft);
   assert.deepEqual(world.sessions.get(sid), original);
   assert.equal(w.editButton().disabled, false, "failure releases the mutation gate without discarding draft state");
 });
@@ -3789,8 +3789,8 @@ test("Edit rewinds and resends in the same persisted session while retaining the
   resetWorld();
   const { clearDraft } = await import("@/lib/draft-store");
   const sid = "edit-same-session";
-  clearDraft(sid);
-  t.after(() => clearDraft(sid));
+  clearDraft(`local/${sid}`);
+  t.after(() => clearDraft(`local/${sid}`));
   const native = primeEditableHistory(sid);
   const originalEntries = native.entries;
   const original = world.sessions.get(sid);
@@ -3876,8 +3876,8 @@ for (const order of ["HTTP first", "SSE first"]) {
     resetWorld();
     const { clearDraft } = await import("@/lib/draft-store");
     const sid = `edit-echo-branch-${order === "HTTP first" ? "http" : "sse"}`;
-    clearDraft(sid);
-    t.after(() => clearDraft(sid));
+    clearDraft(`local/${sid}`);
+    t.after(() => clearDraft(`local/${sid}`));
     const native = primeEditableHistory(sid);
     const original = structuredClone(world.sessions.get(sid));
     const { w, stream } = await mountObservedEditableSession(sid);
@@ -3941,8 +3941,8 @@ test("an HTTP-first Edit echo cannot reset the next replacement prompt", async (
     await t.test(phase, async (t) => {
       resetWorld();
       const sid = `edit-echo-send-${phase === "streaming" ? "live" : "pending"}`;
-      clearDraft(sid);
-      t.after(() => clearDraft(sid));
+      clearDraft(`local/${sid}`);
+      t.after(() => clearDraft(`local/${sid}`));
       const native = primeEditableHistory(sid);
       const original = structuredClone(world.sessions.get(sid));
       const { w, stream: observer } = await mountObservedEditableSession(sid);
@@ -4013,8 +4013,8 @@ test("history notifications received during an unsuccessful Edit remain effectiv
     await t.test(outcome, async (t) => {
       resetWorld();
       const sid = `edit-external-during-${outcome}`;
-      clearDraft(sid);
-      t.after(() => clearDraft(sid));
+      clearDraft(`local/${sid}`);
+      t.after(() => clearDraft(`local/${sid}`));
       const native = primeEditableHistory(sid);
       const original = structuredClone(world.sessions.get(sid));
       const { w, stream } = await mountObservedEditableSession(sid);
@@ -4082,8 +4082,8 @@ test("cancelled and failed Edits preserve history selection and draft, then rele
     await t.test(outcome, async (t) => {
       resetWorld();
       const sid = `edit-${outcome}`;
-      setDraft(sid, { value: "keep my draft", images: [], files: [] });
-      t.after(() => clearDraft(sid));
+      setDraft(`local/${sid}`, { value: "keep my draft", images: [], files: [] });
+      t.after(() => clearDraft(`local/${sid}`));
       const native = primeEditableHistory(sid);
       native.editOutcome = outcome;
       const original = structuredClone(world.sessions.get(sid));
@@ -4102,7 +4102,7 @@ test("cancelled and failed Edits preserve history selection and draft, then rele
       assert.deepEqual(world.sessions.get(sid), original);
       assert.equal(native.jsonl, persisted);
       assert.equal(w.view.getByRole("textbox").value, "keep my draft");
-      assert.equal(getDraft(sid)?.value, "keep my draft");
+      assert.equal(getDraft(`local/${sid}`)?.value, "keep my draft");
       assert.deepEqual(w.latest.notices.map((notice) => notice.type), outcome === "error" ? ["error"] : []);
 
       native.editOutcome = "success";
@@ -4111,7 +4111,7 @@ test("cancelled and failed Edits preserve history selection and draft, then rele
       assert.deepEqual(world.sessions.get(sid).entryIds, ["entry-u1", "entry-a1"]);
       assert.deepEqual(w.latest.entryIds, ["entry-u1", "entry-a1"]);
       assert.equal(w.view.getByRole("textbox").value, "keep my draft", "successful insertIfEmpty must not overwrite existing text");
-      assert.equal(getDraft(sid)?.value, "keep my draft");
+      assert.equal(getDraft(`local/${sid}`)?.value, "keep my draft");
       assert.deepEqual([...world.sessions.keys()], [sid]);
       assert.equal(world.calls.some((call) => call.body?.type === "fork" || call.url === "/api/agent/new"), false);
       assert.deepEqual(forked, []);
@@ -4125,8 +4125,8 @@ test("an Edit completed after unmount cannot fill the current composer or change
   const { clearDraft } = await import("@/lib/draft-store");
   const sid = "edit-abandoned";
   const currentSid = "edit-current-view";
-  for (const id of [sid, currentSid]) clearDraft(id);
-  t.after(() => { clearDraft(sid); clearDraft(currentSid); });
+  for (const id of [sid, currentSid]) clearDraft(`local/${id}`);
+  t.after(() => { clearDraft(`local/${sid}`); clearDraft(`local/${currentSid}`); });
   const native = primeEditableHistory(sid);
   const currentNative = primeEditableHistory(currentSid, [userMsg("current-user", "Current question"), assistantMsg("current-answer", "Current answer")]);
   const sharedComposerRef = React.createRef();
@@ -4919,7 +4919,7 @@ test("a vanished session's permanent outbox refusal remains a failed held bubble
 test("Stop takes queued input back in one step, including a steer the snapshot missed", async () => {
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   resetWorld();
-  clearDraft("abort-atomic");
+  clearDraft("local/abort-atomic");
   primeSession("abort-atomic", [userMsg("u0", "loaded question")]);
   const { w } = await startRun("abort-atomic", "hello agent");
   world.abortRestoreQueue = {
@@ -4933,16 +4933,16 @@ test("Stop takes queued input back in one step, including a steer the snapshot m
   assert.equal(commands.filter((type) => type === "abort_and_restore_queue").length, 1);
   assert.equal(commands.includes("abort"), false, "omp's own abort already stopped the run");
   assert.equal(commands.includes("clear_queue"), false, "the server withdraws as part of the Stop");
-  assert.equal(getDraft("abort-atomic")?.value, "steer the snapshot missed\n\nsecond steer\n\nlater follow-up", "steering first, then follow-ups");
-  assert.equal(getDraft("abort-atomic")?.promptOnly, true);
+  assert.equal(getDraft("local/abort-atomic")?.value, "steer the snapshot missed\n\nsecond steer\n\nlater follow-up", "steering first, then follow-ups");
+  assert.equal(getDraft("local/abort-atomic")?.promptOnly, true);
   assert.deepEqual(w.latest.notices, []);
-  clearDraft("abort-atomic");
+  clearDraft("local/abort-atomic");
 });
 
 test("a failed atomic Stop is retried once and restores what omp still held", async () => {
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   resetWorld();
-  clearDraft("abort-atomic-retry");
+  clearDraft("local/abort-atomic-retry");
   primeSession("abort-atomic-retry", [userMsg("u0", "loaded question")]);
   const { w } = await startRun("abort-atomic-retry", "hello agent");
   world.holds.push({ match: isAtomicStop, produce: async () => ({ status: 502, value: { error: "Bad Gateway" } }) });
@@ -4953,9 +4953,9 @@ test("a failed atomic Stop is retried once and restores what omp still held", as
   const commands = world.calls.map((c) => c.body?.type).filter(Boolean);
   assert.equal(commands.filter((type) => type === "abort_and_restore_queue").length, 2);
   assert.equal(commands.includes("abort"), false, "a failure is retried, never replaced by a plain abort");
-  assert.equal(getDraft("abort-atomic-retry")?.value, "retry me");
+  assert.equal(getDraft("local/abort-atomic-retry")?.value, "retry me");
   assert.deepEqual(w.latest.notices, []);
-  clearDraft("abort-atomic-retry");
+  clearDraft("local/abort-atomic-retry");
 });
 
 test("an atomic Stop whose texts were lost with a failed response warns", async () => {
@@ -5002,7 +5002,7 @@ test("a failed atomic Stop never retries into a run started after the click", as
 test("overlapping Stops share one atomic withdrawal and restore its texts once", async () => {
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   resetWorld();
-  clearDraft("abort-atomic-twice");
+  clearDraft("local/abort-atomic-twice");
   primeSession("abort-atomic-twice", [userMsg("u0", "loaded question")]);
   const { w } = await startRun("abort-atomic-twice", "hello agent");
   world.abortRestoreQueue = { steering: [{ text: "A" }], followUp: [{ text: "words" }] };
@@ -5011,8 +5011,8 @@ test("overlapping Stops share one atomic withdrawal and restore its texts once",
 
   assert.equal(world.calls.filter((c) => c.body?.type === "abort_and_restore_queue").length, 1);
   assert.equal(world.calls.some((c) => c.body?.type === "abort"), false);
-  assert.equal(getDraft("abort-atomic-twice")?.value, "A\n\nwords");
-  clearDraft("abort-atomic-twice");
+  assert.equal(getDraft("local/abort-atomic-twice")?.value, "A\n\nwords");
+  clearDraft("local/abort-atomic-twice");
 });
 
 test("a fresh chat's first prompt attaches one event stream instead of an observer plus its own", async () => {
@@ -5106,8 +5106,28 @@ test("a first prompt rejected after promotion identifies the real-session recove
   let receipt;
   await act(async () => { lastEs().open(); receipt = await sending; });
   assert.deepEqual(promoted, [sid]);
-  assert.deepEqual(receipt, { status: "rejected", recoveryKey: sid });
+  assert.deepEqual(receipt, { status: "rejected", recoveryKey: `local/${sid}` });
   assert.equal(w.latest.agentRunning, false);
+});
+
+test("a first prompt rejected after promotion on another host names that host's composer draft", async () => {
+  resetWorld();
+  const sid = "promoted-rejected-remote";
+  world.holds.push({
+    match: (method, url) => method === "POST" && url === "/api/agent/new",
+    produce: async () => ({ value: { sessionId: sid, hostId: "h1", cwd: "/remote/work" } }),
+  });
+  world.holds.push({
+    match: (method, url, body) => method === "POST" && url.includes(`/api/agent/${sid}`) && body?.type === "prompt",
+    produce: async () => ({ status: 400, value: { error: "Wait for the history edit to finish", code: "session_busy" } }),
+  });
+  const w = await mountSession(null, undefined, { newSessionCwd: "/remote/work", newSessionHostId: "h1", onSessionCreated: () => {} });
+  let sending;
+  await act(async () => { sending = w.latest.handleSend("first question"); await sleep(30); });
+  let receipt;
+  await act(async () => { lastEs().open(); receipt = await sending; });
+  // ChatWindow keys this session's composer by its host copy.
+  assert.deepEqual(receipt, { status: "rejected", recoveryKey: `h1/${sid}` });
 });
 
 test("a late dispatcher failure cannot reject a stored send or reset a newer frame-owned run", async (t) => {
@@ -5771,7 +5791,7 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   assert.ok(pillOn(two), "the chat controls follow the selected chat");
   const lastPresence = () => callsTo("POST", "/api/notifications/presence").at(-1)?.body;
   await until(() => lastPresence()?.sessionIds?.length === 2, "presence names every chat on screen");
-  assert.deepEqual([...lastPresence().sessionIds].sort(), ["h1:worker-one", "h2:worker-two"], "presence names each chat's host copy");
+  assert.deepEqual([...lastPresence().sessionIds].sort(), ["h1/worker-one", "h2/worker-two"], "presence names each chat's host copy");
 
   // A file shown over a group's chat keeps that chat mounted when another group takes focus.
   await act(async () => { fireEvent.pointerDown(composerOne); await sleep(60); });
@@ -5786,7 +5806,7 @@ test("a split shows two chats side by side; focusing either remounts neither, an
   assert.equal(shownSession(), "worker-two");
   assert.equal(composerIn(one), composerOne, "the chat under the file stays mounted");
   assert.equal(composerOne.closest('[id^="workspace-chat-"]').hasAttribute("inert"), true, "and inert while covered");
-  await until(() => lastPresence()?.sessionIds?.join() === "h2:worker-two", "a covered chat is not on screen");
+  await until(() => lastPresence()?.sessionIds?.join() === "h2/worker-two", "a covered chat is not on screen");
 
   // Moving a tab to another group moves its view there without remounting it.
   const report = view.getByText("FIRST OWNER CONTENT");
@@ -6476,8 +6496,8 @@ test("an unknown delivery outcome stays in the server outbox as failed and never
   resetWorld();
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "remote-maybe";
-  clearDraft(sid);
-  t.after(() => clearDraft(sid));
+  clearDraft(`local/${sid}`);
+  t.after(() => clearDraft(`local/${sid}`));
   toastCalls.length = 0;
   world.outboxHold = true;
   const w = await mountSession(sid);
@@ -6487,7 +6507,7 @@ test("an unknown delivery outcome stays in the server outbox as failed and never
   assert.equal(w.latest.heldMessages[0].state, "failed");
   assert.equal(w.latest.heldMessages[0].mayHaveBeenSent, true);
   assert.equal(w.latest.agentRunning, false);
-  assert.equal(getDraft(sid), null);
+  assert.equal(getDraft(`local/${sid}`), null);
   assert.deepEqual(toastCalls, []);
   assert.deepEqual(w.latest.notices, []);
 });
@@ -7252,8 +7272,8 @@ test("a 409 deleting a dispatched outbox message shows a notice and keeps the bu
   resetWorld();
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "outbox-remove-race";
-  clearDraft(sid);
-  t.after(() => clearDraft(sid));
+  clearDraft(`local/${sid}`);
+  t.after(() => clearDraft(`local/${sid}`));
   primeSession(sid, [userMsg("u0", "before")]);
   const w = await mountSession(sid);
   await act(async () => { await w.latest.handleSend("open channel"); });
@@ -7264,7 +7284,7 @@ test("a 409 deleting a dispatched outbox message shows a notice and keeps the bu
     produce: async () => ({ status: 409, value: { error: "outbox_dispatched" } }),
   });
   await act(async () => { await w.latest.deleteHeldMessage(entry.id); });
-  assert.equal(getDraft(sid), null);
+  assert.equal(getDraft(`local/${sid}`), null);
   assert.equal(w.latest.notices.length, 1);
   assert.equal(w.latest.notices[0].type, "error");
   assert.match(w.latest.notices[0].message, /outbox_dispatched/);
@@ -7674,8 +7694,8 @@ for (const changed of [false, true]) {
     resetWorld();
     const { getDraft, clearDraft } = await import("@/lib/draft-store");
     const sid = `outbox-pending-remount-${changed ? "changed" : "unchanged"}`;
-    clearDraft(sid);
-    t.after(() => clearDraft(sid));
+    clearDraft(`local/${sid}`);
+    t.after(() => clearDraft(`local/${sid}`));
     primeSession(sid, [userMsg("u0", "before")]);
     world.outboxHold = true;
     let commit;
@@ -7701,18 +7721,18 @@ for (const changed of [false, true]) {
         fireEvent.change(second.getByRole("textbox"), { target: { value: "newer unsent draft" } });
         chatInputRef.current.addFiles([new File(["new context"], "new-context.txt", { type: "text/plain" })]);
       });
-      await until(() => getDraft(sid)?.files.length === 1, "the remounted composer's new attachment must finish reading");
+      await until(() => getDraft(`local/${sid}`)?.files.length === 1, "the remounted composer's new attachment must finish reading");
     }
     await act(async () => { const complete = commit; commit = null; complete(); await sleep(20); });
     assert.equal(within(second.getByRole("log")).getAllByText("submitted before unmount").length, 1, "the stored message is represented once by its held bubble");
     assert.equal(second.container.querySelectorAll('[data-held-message="sending"]').length, 1);
     assert.equal(second.getByRole("textbox").value, changed ? "newer unsent draft" : "", "a committed submission must not look unsent or erase a newer draft");
     if (changed) {
-      assert.equal(getDraft(sid)?.value, "newer unsent draft");
-      assert.equal(getDraft(sid)?.files[0]?.name, "new-context.txt");
+      assert.equal(getDraft(`local/${sid}`)?.value, "newer unsent draft");
+      assert.equal(getDraft(`local/${sid}`)?.files[0]?.name, "new-context.txt");
       assert.ok(second.getByText("new-context.txt"));
     } else {
-      assert.equal(getDraft(sid), null);
+      assert.equal(getDraft(`local/${sid}`), null);
     }
   });
 }
@@ -7721,8 +7741,8 @@ test("deleting a server-held message sends one plain outbox_remove per click bur
   resetWorld();
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "outbox-delete-upload";
-  clearDraft(sid);
-  t.after(() => clearDraft(sid));
+  clearDraft(`local/${sid}`);
+  t.after(() => clearDraft(`local/${sid}`));
   primeSession(sid, [userMsg("u0", "before")]);
   const entry = { id: "delete-with-upload", sessionId: sid, mode: "prompt", message: "delete me", uploads: ["staged-upload"], state: "held", createdAt: 1 };
   world.holds.push({
@@ -7736,7 +7756,7 @@ test("deleting a server-held message sends one plain outbox_remove per click bur
   });
   await act(async () => { await Promise.all([w.latest.deleteHeldMessage(entry.id), w.latest.deleteHeldMessage(entry.id)]); });
   assert.deepEqual(callsTo("POST", `/api/agent/${sid}`).filter((call) => call.body?.type === "outbox_remove").map((call) => call.body), [{ type: "outbox_remove", id: entry.id }]);
-  assert.equal(getDraft(sid), null);
+  assert.equal(getDraft(`local/${sid}`), null);
   assert.deepEqual(w.latest.notices, []);
 });
 
@@ -7885,8 +7905,8 @@ test("a failed durable browser deletion keeps the held message and shows a notic
   resetWorld();
   const { getDraft, clearDraft } = await import("@/lib/draft-store");
   const sid = "outbox-local-delete-fails";
-  clearDraft(sid);
-  t.after(() => clearDraft(sid));
+  clearDraft(`local/${sid}`);
+  t.after(() => clearDraft(`local/${sid}`));
   primeSession(sid, [userMsg("u0", "before")]);
   const w = await mountSession(sid);
   const entry = { id: "local-delete-fails", sessionId: sid, scope: "test-scope", mode: "prompt", message: "still held", state: "failed", createdAt: 1 };
@@ -7894,7 +7914,7 @@ test("a failed durable browser deletion keeps the held message and shows a notic
   await act(() => workerPort.onmessage({ data: { outbox: [entry] } }));
   world.outboxDrop = (complete) => complete("IndexedDB deletion failed");
   await act(async () => { await w.latest.deleteHeldMessage(entry.id); });
-  assert.equal(getDraft(sid), null);
+  assert.equal(getDraft(`local/${sid}`), null);
   assert.equal(w.latest.heldMessages[0].id, entry.id);
   assert.equal(w.latest.notices[0].type, "error");
   assert.match(w.latest.notices[0].message, /IndexedDB deletion failed/);

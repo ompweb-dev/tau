@@ -39,7 +39,8 @@ import {
 } from "@/lib/chat-lazy-load";
 import { foldSentDraft, getDraftSummary, isSentDraftKey, sentDraftKey } from "@/lib/draft-store";
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
-import { newChatDraftKey, sessionDraftKey } from "@/lib/project-ordering";
+import { newChatDraftKey } from "@/lib/project-ordering";
+import { sessionHostKey } from "@/lib/session-host-key";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { getFileName } from "@/lib/file-paths";
@@ -441,7 +442,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   const freshDraftKey = newSessionPoolId && newSessionProjectId ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined;
   const [sentOn, setSentOn] = useState<string | undefined>(undefined);
   const ownDraft = !session && freshDraftKey !== undefined && sentOn === freshDraftKey;
-  const draftKey = session ? sessionDraftKey(session.id, session.hostId) : (ownDraft ? sentDraftKey(freshDraftKey, draftOwner) : freshDraftKey);
+  const draftKey = session ? sessionHostKey(session.hostId, session.id) : (ownDraft ? sentDraftKey(freshDraftKey, draftOwner) : freshDraftKey);
   const freshDraftKeyRef = useRef(freshDraftKey);
   freshDraftKeyRef.current = freshDraftKey;
   const draftKeyRef = useRef(draftKey);

@@ -1,3 +1,4 @@
+import { sessionHostKey } from "./session-host-key";
 import { isRecord } from "./type-guards";
 
 /**
@@ -51,15 +52,7 @@ export interface NotificationEvent {
   dialog?: NotificationDialog;
 }
 
-/**
- * A session in notification tags, history ids, retractions and presence: the bare id on this machine,
- * `<hostId>:<id>` on another host, since the same id on two hosts is two sessions. Host ids never contain ":".
- */
-export function notificationSessionKey(sessionId: string, hostId?: string | null): string {
-  return hostId && hostId !== "local" ? `${hostId}:${sessionId}` : sessionId;
-}
-
-/** One entry of the persisted notification history; `id` is the replace-tag `<sessionKey>:<type>` (`notificationSessionKey`). */
+/** One entry of the persisted notification history; `id` is the replace-tag `<sessionHostKey>:<type>`. */
 export interface NotificationHistoryEntry {
   id: string;
   event: NotificationEvent;
@@ -162,7 +155,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
     title: (event.sessionName && clip(event.sessionName, MAX_TITLE)) || t("notifications.untitledSession"),
     body,
     url: event.sessionId ? `/?session=${encodeURIComponent(event.sessionId)}${event.hostId ? `&host=${encodeURIComponent(event.hostId)}` : ""}` : "/",
-    tag: `${notificationSessionKey(event.sessionId, event.hostId)}:${event.type}`,
+    tag: `${sessionHostKey(event.hostId, event.sessionId)}:${event.type}`,
     sessionId: event.sessionId,
     ...(event.hostId ? { hostId: event.hostId } : {}),
   };

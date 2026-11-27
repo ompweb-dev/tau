@@ -17,18 +17,18 @@ const mark = () => ([...document.querySelectorAll(".session-item-status")].find(
 test("a session row marks unsent composer content and drops the mark once it is gone", () => {
   try {
     // A draft that exists before the row mounts (restored after a reload, a re-expanded project).
-    setDraft("draft-a", { value: "half-written", images: [], files: [] });
+    setDraft("local/draft-a", { value: "half-written", images: [], files: [] });
     const { rerender } = render(row("draft-a"));
     assert.ok(mark()?.textContent.startsWith("Ready · Draft"), "an idle session with a draft reads Ready · Draft on first paint");
     rerender(row("draft-b"));
     assert.equal(mark(), null, "a row follows its own session's draft only");
-    act(() => setDraft("draft-b", { value: "", images: [], files: [], uploads: [{ id: "u", name: "a.bin", size: 1, hostId: "local" }] }));
+    act(() => setDraft("local/draft-b", { value: "", images: [], files: [], uploads: [{ id: "u", name: "a.bin", size: 1, hostId: "local" }] }));
     assert.ok(mark(), "an attachment-only draft counts");
-    act(() => setDraft("draft-b", { value: "", images: [], files: [] }));
+    act(() => setDraft("local/draft-b", { value: "", images: [], files: [] }));
     assert.equal(mark(), null, "an emptied draft clears the mark, whatever other sessions hold");
   } finally {
-    clearDraft("draft-a");
-    clearDraft("draft-b");
+    clearDraft("local/draft-a");
+    clearDraft("local/draft-b");
     cleanup();
   }
 });
@@ -43,7 +43,7 @@ test("a mounted session row follows composer typing, attachment-only drafts and 
     render(React.createElement(React.Fragment, null,
       row("composer-draft"),
       React.createElement(ChatInput, {
-        ref: composer, draftKey: "composer-draft", isStreaming: false,
+        ref: composer, draftKey: "local/composer-draft", isStreaming: false,
         onAbort() {},
         async onSend(text) { sent.push(text); return { status: "accepted" }; },
       }),
@@ -65,7 +65,7 @@ test("a mounted session row follows composer typing, attachment-only drafts and 
     assert.match(sent[0], /attachment content/);
   } finally {
     cleanup();
-    clearDraft("composer-draft");
+    clearDraft("local/composer-draft");
     window.matchMedia = previousMatchMedia;
   }
 });

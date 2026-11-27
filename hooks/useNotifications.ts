@@ -38,7 +38,7 @@ export function useNotificationPrefs() {
  * - keeps the server's copy of this device's prefs and push subscription current.
  *
  * `sessionIds` are the sessions whose chats are on screen, one per tab group
- * showing a chat (none while Settings covers them all), as `notificationSessionKey`s.
+ * showing a chat (none while Settings covers them all), as `sessionHostKey`s.
  */
 export function useNotifications({ sessionIds, locale, onOpenSession }: { sessionIds: readonly string[]; locale: string; onOpenSession: (sessionId: string, hostId?: string) => void }) {
   const openRef = useRef(onOpenSession);
@@ -171,8 +171,7 @@ export function useNotifications({ sessionIds, locale, onOpenSession }: { sessio
     };
     const onOpen = (raw: Event) => {
       if (!(raw instanceof CustomEvent)) return;
-      if (typeof raw.detail === "string" && raw.detail) openRef.current(raw.detail);
-      else if (isRecord(raw.detail) && typeof raw.detail.sessionId === "string") {
+      if (isRecord(raw.detail) && typeof raw.detail.sessionId === "string") {
         openRef.current(raw.detail.sessionId, typeof raw.detail.hostId === "string" ? raw.detail.hostId : undefined);
       }
     };

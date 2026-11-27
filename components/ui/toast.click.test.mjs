@@ -123,7 +123,7 @@ test("a session notification toast opens its session from a card click; one with
   act(() => withSession.querySelector(".display-serif").click());
   assert.deepEqual(sessions, ["s1"]);
   // Session notifications are listed; opening one from its toast reads it.
-  assert.deepEqual(notificationHistory.get().filter((e) => e.id === "s1:completed").map((e) => e.read), [true]);
+  assert.deepEqual(notificationHistory.get().filter((e) => e.id === "local/s1:completed").map((e) => e.read), [true]);
   const withoutSession = deliver("", "No session");
   assert.equal(withoutSession.style.cursor, "");
   act(() => withoutSession.querySelector(".display-serif").click());
@@ -142,7 +142,7 @@ test("a retraction frame closes the toast of its own request and leaves a newer 
   });
   assert.deepEqual(titles(), ["Deploy"]);
   act(() => {
-    deliverFrame({ type: "notification-dismiss", tag: "s1:input", sessionId: "s1", requestId: "req-1" });
+    deliverFrame({ type: "notification-dismiss", tag: "local/s1:input", sessionId: "s1", requestId: "req-1" });
   });
   assert.deepEqual(titles(), [], "the settled question's card is gone");
 
@@ -152,11 +152,11 @@ test("a retraction frame closes the toast of its own request and leaves a newer 
     deliverNotification({ kind: "toast", event: { type: "input", sessionId: "s1", sessionName: "Deploy", detail: "Or now?", requestId: "req-2" } });
   });
   act(() => {
-    deliverFrame({ type: "notification-dismiss", tag: "s1:input", sessionId: "s1", requestId: "req-1" });
+    deliverFrame({ type: "notification-dismiss", tag: "local/s1:input", sessionId: "s1", requestId: "req-1" });
   });
   assert.deepEqual(titles(), ["Deploy"], "a stale retraction leaves the next dialog alone");
   act(() => {
-    deliverFrame({ type: "notification-dismiss", tag: "s1:input", sessionId: "s1", requestId: "req-2" });
+    deliverFrame({ type: "notification-dismiss", tag: "local/s1:input", sessionId: "s1", requestId: "req-2" });
   });
   assert.deepEqual(titles(), []);
 });
@@ -173,7 +173,7 @@ test("a retraction refreshes the history mirror, so a settled entry stops showin
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     requests.length = 0;
     await act(async () => {
-      deliverFrame({ type: "notification-dismiss", tag: "s1:input", sessionId: "s1", requestId: "req-1" });
+      deliverFrame({ type: "notification-dismiss", tag: "local/s1:input", sessionId: "s1", requestId: "req-1" });
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     assert.deepEqual(requests, [["GET", "/api/notifications/history"]], "the tab re-reads what the server marked read");
@@ -194,7 +194,7 @@ test("a notification the OS showed is listed in history", async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     assert.deepEqual(created, ["Shown by OS"]);
-    assert.deepEqual(notificationHistory.get().filter((e) => e.id === "s9:error").map((e) => [e.event.sessionName, e.read]), [["Shown by OS", false]]);
+    assert.deepEqual(notificationHistory.get().filter((e) => e.id === "local/s9:error").map((e) => [e.event.sessionName, e.read]), [["Shown by OS", false]]);
   } finally {
     delete window.Notification;
     delete globalThis.Notification;
@@ -209,7 +209,7 @@ test("a push the service worker showed reloads the list from the server; other m
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
     requests.push([init.method ?? "GET", String(url)]);
-    const entries = [{ id: "s7:error", event: { type: "error", sessionId: "s7", sessionName: "Pushed" }, at: 1, read: false }];
+    const entries = [{ id: "local/s7:error", event: { type: "error", sessionId: "s7", sessionName: "Pushed" }, at: 1, read: false }];
     return { ok: true, json: async () => ({ entries }) };
   };
   try {
@@ -223,9 +223,9 @@ test("a push the service worker showed reloads the list from the server; other m
     await post("junk");
     await post({ type: "something-else" });
     assert.deepEqual(requests, []);
-    await post({ type: "tau-notification-shown", notification: { type: "error", title: "Pushed", body: "Run failed", tag: "s7:error", sessionId: "s7" } });
+    await post({ type: "tau-notification-shown", notification: { type: "error", title: "Pushed", body: "Run failed", tag: "local/s7:error", sessionId: "s7" } });
     assert.deepEqual(requests, [["GET", "/api/notifications/history"]]);
-    assert.deepEqual(notificationHistory.get().map((e) => e.id), ["s7:error"]);
+    assert.deepEqual(notificationHistory.get().map((e) => e.id), ["local/s7:error"]);
   } finally {
     globalThis.fetch = previousFetch;
     delete window.navigator.serviceWorker;

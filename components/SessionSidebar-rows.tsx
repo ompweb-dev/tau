@@ -11,7 +11,8 @@ import { transcriptToMarkdown } from "@/lib/transcript";
 import { toast } from "./ui/toast";
 import { SessionSearchMatches, type SearchMatchTarget } from "./SessionSearchMatches";
 import { hasDraft, subscribeDrafts } from "@/lib/draft-store";
-import { LOCAL_HOST_ID, sessionDraftKey, sessionRowKey } from "@/lib/project-ordering";
+import { LOCAL_HOST_ID } from "@/lib/project-ordering";
+import { sessionHostKey } from "@/lib/session-host-key";
 import {
   MAX_PROJECT_SESSIONS,
   formatRelativeTime,
@@ -100,7 +101,7 @@ interface ProjectRowProps {
   /** Sessions beyond the cap (0 when a filter is active — show all matches). */
   hiddenCount: number;
   selectedSessionKey: string | null;
-  /** The marks below are keyed by `sessionRowKey`: only the host copy that has them shows them. */
+  /** The marks below are keyed by `sessionHostKey`: only the host copy that has them shows them. */
   runningSessionIds: Set<string>;
   awaitingInputIds: Set<string>;
   unreadSessionIds: Set<string>;
@@ -477,7 +478,7 @@ function ProjectRow({
             <>
               {visibleRoots.map((node) => (
                 <SessionTreeItem
-                  key={sessionRowKey(node.session.hostId, node.session.id)}
+                  key={sessionHostKey(node.session.hostId, node.session.id)}
                   node={node}
                   selectedSessionKey={selectedSessionKey}
                   runningSessionIds={runningSessionIds}
@@ -567,7 +568,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
 
   // Pre-compute the booleans so SessionItem only sees primitives — its memo
   // check then never re-renders unless this row's flags actually changed.
-  const rowKey = sessionRowKey(node.session.hostId, sessionId);
+  const rowKey = sessionHostKey(node.session.hostId, sessionId);
   const isSelected = rowKey === selectedSessionKey;
   const isRunning = runningSessionIds.has(rowKey);
   const isAwaitingInput = awaitingInputIds.has(rowKey);
@@ -632,7 +633,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
         <div>
           {node.children.map((child) => (
             <SessionTreeItem
-              key={sessionRowKey(child.session.hostId, child.session.id)}
+              key={sessionHostKey(child.session.hostId, child.session.id)}
               node={child}
               selectedSessionKey={selectedSessionKey}
               runningSessionIds={runningSessionIds}
@@ -657,13 +658,13 @@ const SessionTreeItem = memo(function SessionTreeItem({
   if (prev.node !== next.node) return false;
   if (prev.selectedSessionKey !== next.selectedSessionKey) {
     // Only re-render if THIS node's selection state flipped.
-    const key = sessionRowKey(prev.node.session.hostId, prev.node.session.id);
+    const key = sessionHostKey(prev.node.session.hostId, prev.node.session.id);
     if ((key === prev.selectedSessionKey) !== (key === next.selectedSessionKey)) return false;
     // Nested rows render inside this memo boundary: a descendant's selection may have flipped. Every parent row
     // re-renders on a selection change, as for unread; a subtree key set would avoid that if trees grow large.
     if (prev.node.children.length > 0) return false;
   }
-  const rowKey = sessionRowKey(prev.node.session.hostId, prev.node.session.id);
+  const rowKey = sessionHostKey(prev.node.session.hostId, prev.node.session.id);
   if (prev.runningSessionIds !== next.runningSessionIds) {
     if (prev.runningSessionIds.has(rowKey) !== next.runningSessionIds.has(rowKey)) return false;
   }
@@ -736,7 +737,7 @@ const SessionItem = memo(function SessionItem({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
   // A session's composer draft is keyed by its id (ChatWindow's `draftKey`).
-  const hasUnsentDraft = useSyncExternalStore(subscribeDrafts, () => hasDraft(sessionDraftKey(session.id, session.hostId)), () => false);
+  const hasUnsentDraft = useSyncExternalStore(subscribeDrafts, () => hasDraft(sessionHostKey(session.hostId, session.id)), () => false);
   const relativeTime = formatRelativeTime(session.modified, locale, relativeTimeNow);
   // The row's second line: what the session is doing, a draft if one waits, and its age ("Ready · 2h").
   const status = isAwaitingInput ? t("sessionSidebar.statusNeedsInput")

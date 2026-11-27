@@ -9,7 +9,8 @@ import { ProjectLaunchConfigDialog } from "./ProjectLaunchConfigDialog";
 import { Tooltip } from "./ui/primitives";
 import { toast } from "./ui/toast";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
-import { LOCAL_HOST_ID, foldedHostProjectKey, groupProjectsByHost, groupSessionsByProject, hostProjectKey, projectIdentity, projectTargetId, nextPinOrder, orderProjects, projectActivityCounts, remoteHostId, sessionRowKey, type ProjectSortMode } from "@/lib/project-ordering";
+import { LOCAL_HOST_ID, foldedHostProjectKey, groupProjectsByHost, groupSessionsByProject, hostProjectKey, projectIdentity, projectTargetId, nextPinOrder, orderProjects, projectActivityCounts, remoteHostId, type ProjectSortMode } from "@/lib/project-ordering";
+import { sessionHostKey, splitSessionHostKey } from "@/lib/session-host-key";
 import { useHostRows } from "@/hooks/useHostRows";
 import { HOST_STATUS_COLOR, hostName, hostStatusText, hostUnavailableReason as unavailableReasonOf } from "./host-status";
 import { comparableProjectPath } from "@/lib/comparable-path";
@@ -152,7 +153,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   // Host of selectedCwd: the same path can be a workspace on several hosts.
   const [selectedHostId, setSelectedHostId] = useState<string>(LOCAL_HOST_ID);
-  const selectedSessionKey = selectedSessionId ? sessionRowKey(selectedHostIdProp, selectedSessionId) : null;
+  const selectedSessionKey = selectedSessionId ? sessionHostKey(selectedHostIdProp, selectedSessionId) : null;
   const [selectedPoolKey, setSelectedPoolKey] = useState<string | null>(null);
   const { hosts, pools, poolsLoaded, poolsFailed } = useHostRows();
   const hostList = useMemo(() => {
@@ -200,7 +201,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   // only updates that repo's entry, never the active one).
   const [worktreeStateByProject, setWorktreeStateByProject] = useState<Record<string, WorktreeState>>({});
   const [sessionRefreshDone, setSessionRefreshDone] = useState(false);
-  // Every mark below is keyed by sessionRowKey(hostId, id): the same id on two hosts is two sessions.
+  // Every mark below is keyed by sessionHostKey(hostId, id): the same id on two hosts is two sessions.
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [runningSessionPlaces, setRunningSessionPlaces] = useState<Record<string, LivePlace>>({});
   const [exitedSessions, setExitedSessions] = useState<Map<string, ExitedRpcSession>>(() => new Map());
@@ -221,7 +222,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
 
     // 2. On-disk active sessions (fallback & recency backfill)
     for (const s of allSessions) {
-      const key = sessionRowKey(s.hostId, s.id);
+      const key = sessionHostKey(s.hostId, s.id);
       if (runningSessionIds.has(key)) continue;
       const isValid = (s.firstMessage && s.firstMessage !== "(no messages)") || s.messageCount > 0 || Boolean(s.name);
       if (!isValid) continue;
@@ -294,23 +295,23 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       onSessionsLoadedRef.current?.(data.sessions, data.unavailableHosts ?? null);
       if (data.runningSessions) {
         for (const rs of data.runningSessions) {
-          if (rs.id && rs.cwd) knownRunningPlacesRef.current.set(sessionRowKey(rs.hostId, rs.id), rs);
+          if (rs.id && rs.cwd) knownRunningPlacesRef.current.set(sessionHostKey(rs.hostId, rs.id), rs);
         }
       }
       // Treat the fetched running set as an initial fallback only. Once SSE is
       // live it owns this state, so a slow fetch can't revive a stale snapshot.
       if (!sseAuthoritativeRef.current) {
-        setRunningSessionIds(new Set((data.runningSessions ?? []).map((rs) => sessionRowKey(rs.hostId, rs.id))));
+        setRunningSessionIds(new Set((data.runningSessions ?? []).map((rs) => sessionHostKey(rs.hostId, rs.id))));
         if (data.runningSessions) {
           const nextPlaces: Record<string, LivePlace> = {};
           for (const rs of data.runningSessions) {
-            if (rs.id && rs.cwd) nextPlaces[sessionRowKey(rs.hostId, rs.id)] = rs;
+            if (rs.id && rs.cwd) nextPlaces[sessionHostKey(rs.hostId, rs.id)] = rs;
           }
           setRunningSessionPlaces(nextPlaces);
         }
       }
       // Drop unread markers for sessions that no longer exist (e.g. deleted).
-      const existingIds = new Set(data.sessions.map((s) => sessionRowKey(s.hostId, s.id)));
+      const existingIds = new Set(data.sessions.map((s) => sessionHostKey(s.hostId, s.id)));
       setUnreadSessionIds((prev) => {
         if (prev.size === 0) return prev;
         const next = new Set([...prev].filter((id) => existingIds.has(id)));
@@ -453,13 +454,13 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
         };
         if (data.type === "running") {
           sseAuthoritativeRef.current = true;
-          setRunningSessionIds(new Set((data.runningSessions ?? []).map((rs) => sessionRowKey(rs.hostId, rs.id))));
-          setExitedSessions(new Map((data.exitedSessions ?? []).map((session) => [sessionRowKey(session.hostId, session.id), session])));
+          setRunningSessionIds(new Set((data.runningSessions ?? []).map((rs) => sessionHostKey(rs.hostId, rs.id))));
+          setExitedSessions(new Map((data.exitedSessions ?? []).map((session) => [sessionHostKey(session.hostId, session.id), session])));
           if (data.runningSessions) {
             const nextPlaces: Record<string, LivePlace> = {};
             for (const rs of data.runningSessions) {
               if (rs.id && rs.cwd) {
-                const key = sessionRowKey(rs.hostId, rs.id);
+                const key = sessionHostKey(rs.hostId, rs.id);
                 knownRunningPlacesRef.current.set(key, rs);
                 nextPlaces[key] = rs;
               }
@@ -752,7 +753,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     if (optimisticSession?.id && optimisticSession.cwd) {
       const { id, cwd, hostId, poolId, projectId, projectKey } = optimisticSession;
       const place = { cwd, hostId, poolId, projectId, projectKey };
-      const key = sessionRowKey(hostId, id);
+      const key = sessionHostKey(hostId, id);
       knownRunningPlacesRef.current.set(key, place);
       setRunningSessionPlaces((prev) => ({ ...prev, [key]: place }));
     }
@@ -767,20 +768,20 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     // A running session's JSONL may not exist yet (first turn still
     // streaming). Keep it in the list so navigating away never hides it
     // until the file lands and the next refresh replaces the placeholder.
-    const known = new Set(base.map((s) => sessionRowKey(s.hostId, s.id)));
+    const known = new Set(base.map((s) => sessionHostKey(s.hostId, s.id)));
     const placeholders: SessionInfo[] = [];
+    const optimisticKey = optimisticSession ? sessionHostKey(optimisticSession.hostId, optimisticSession.id) : null;
     const visibleLiveIds = new Set(runningSessionIds);
     for (const key of exitedSessions.keys()) visibleLiveIds.add(key);
     for (const key of visibleLiveIds) {
       if (known.has(key)) continue;
-      // Host ids never contain ":" (sessionRowKey).
-      const id = key.slice(key.indexOf(":") + 1);
+      const { id } = splitSessionHostKey(key);
       let ts = placeholderTsRef.current.get(key);
       if (!ts) {
         ts = new Date().toISOString();
         placeholderTsRef.current.set(key, ts);
       }
-      const isOptimistic = optimisticSession ? sessionRowKey(optimisticSession.hostId, optimisticSession.id) === key : false;
+      const isOptimistic = optimisticKey === key;
       const place = livePlace(key, optimisticSession, runningSessionPlaces, exitedSessions, knownRunningPlacesRef.current, { cwd: selectedCwd ?? "", hostId: selectedHostId });
       const hostId = remoteHostId(place.hostId);
       const resolvedRoot = isOptimistic && optimisticSession
@@ -809,7 +810,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
       }
     }
     if (knownRunningPlacesRef.current.size > visibleLiveIds.size + (optimisticSession ? 1 : 0)) {
-      if (optimisticSession) visibleLiveIds.add(sessionRowKey(optimisticSession.hostId, optimisticSession.id));
+      if (optimisticKey) visibleLiveIds.add(optimisticKey);
       for (const key of [...knownRunningPlacesRef.current.keys()]) {
         if (!visibleLiveIds.has(key) && known.has(key)) knownRunningPlacesRef.current.delete(key);
       }
@@ -826,11 +827,12 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     // (new session's cwd wasn't registered as a project). Keep that workspace
     // visible so the placeholder row has a bucket to render in.
     const knownFolded = new Set(base.map((p) => foldedHostProjectKey(p.hostId, workspaceKeyOf(p))));
+    const optimisticKey = optimisticSession ? sessionHostKey(optimisticSession.hostId, optimisticSession.id) : null;
     const visibleLiveIds = new Set(runningSessionIds);
     for (const key of exitedSessions.keys()) visibleLiveIds.add(key);
     for (const key of visibleLiveIds) {
-      if (allSessions.some((s) => sessionRowKey(s.hostId, s.id) === key)) continue;
-      const isOptimistic = optimisticSession ? sessionRowKey(optimisticSession.hostId, optimisticSession.id) === key : false;
+      if (allSessions.some((s) => sessionHostKey(s.hostId, s.id) === key)) continue;
+      const isOptimistic = optimisticKey === key;
       const place = livePlace(key, optimisticSession, runningSessionPlaces, exitedSessions, knownRunningPlacesRef.current, { cwd: selectedCwd ?? "", hostId: selectedHostId });
       if (place.poolId) continue;
       const hostId = remoteHostId(place.hostId);
@@ -856,7 +858,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
   // frozen rows still show the fresh project data.
   const hasPendingNewSession = Boolean(
     optimisticSession
-    || [...runningSessionIds, ...exitedSessions.keys()].some((key) => !allSessions.some((session) => sessionRowKey(session.hostId, session.id) === key)),
+    || [...runningSessionIds, ...exitedSessions.keys()].some((key) => !allSessions.some((session) => sessionHostKey(session.hostId, session.id) === key)),
   );
   // Only "Last updated" reads sessions; other modes must not re-sort on every session refresh.
   const orderingSessions = projectSortMode === "updated" ? visibleSessions : NO_SESSIONS;
@@ -976,7 +978,10 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
     const entries: { project: ManagedProject; hostId?: string; sessions: SessionInfo[]; scores?: Map<string, number>; rank: number }[] = [];
     for (const project of sortedProjects) {
       let list = sessionsByProject.get(projectIdentity(project)) ?? [];
-      if (runningOnly) list = list.filter((s) => runningSessionIds.has(sessionRowKey(s.hostId, s.id)) || effectiveRecentCompletedSet.has(sessionRowKey(s.hostId, s.id)));
+      if (runningOnly) list = list.filter((s) => {
+        const key = sessionHostKey(s.hostId, s.id);
+        return runningSessionIds.has(key) || effectiveRecentCompletedSet.has(key);
+      });
       if (!query) {
         if (list.length === 0 && runningOnly) continue;
         entries.push({ project, hostId: projectTargetId(project), sessions: list, rank: 0 });

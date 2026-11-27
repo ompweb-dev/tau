@@ -101,6 +101,7 @@ function markOutboxFailed(db, id, error) {
 
 /** Remove the accepted local add and its same-session, exact-intent retry lineage atomically. */
 // One host's copy of a session: the same id on another host is another session (a row from before hosts is this machine's).
+// Copies of lib/session-host-key.ts `sessionHostKey` and `agentUrl`: a service worker cannot import.
 const outboxSession = (entry) => `${entry.hostId ?? "local"}/${entry.sessionId}`;
 
 function deleteOutboxEntry(db, id, replaces, session, intent) {

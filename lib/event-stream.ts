@@ -1,6 +1,7 @@
 "use client";
 
 import { randomUUID } from "./random-uuid";
+import { agentUrl, sessionHostKey } from "./session-host-key";
 import type { ConnectionDiagnostics, EventStreamChannel } from "./event-stream-protocol";
 import { registerNotificationWorker } from "./notification-client";
 import type { OutboxEntry, OutboxMode } from "./types";
@@ -44,7 +45,7 @@ export interface LocalOutboxEntry {
   id: string;
   sessionId: string;
   /** The session's host: posted as `?hostId=`, and lineage never crosses hosts. Absent only on preexisting rows. */
-  hostId: string;
+  hostId?: string;
   /** Captured at submission: never rebound to a later installation or sign-in. */
   scope: string;
   mode: OutboxMode;
@@ -298,7 +299,7 @@ function postOutboxOnExit(): void {
   let left = KEEPALIVE_BYTES;
   const sessions = new Set<string>();
   for (const { id, sessionId, hostId, scope, mode, message, images, uploads, uploadProofs, replaces, state, createdAt } of outboxEntries ?? []) {
-    const session = `${hostId ?? "local"}/${sessionId}`;
+    const session = sessionHostKey(hostId, sessionId);
     if (state !== "sending" || typeof scope !== "string" || !scope || Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000 || sessions.has(session)) continue;
     sessions.add(session);
     if (!addedHere.has(id)) continue;
@@ -306,7 +307,7 @@ function postOutboxOnExit(): void {
     const bytes = new Blob([body]).size;
     if (bytes > left) continue;
     left -= bytes;
-    fetch(outboxUrl(sessionId, hostId), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
+    fetch(agentUrl(sessionId, hostId), { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body }).catch(() => {});
   }
 }
 
@@ -359,11 +360,6 @@ export async function addToOutbox(entry: Omit<LocalOutboxEntry, "state" | "error
 export async function reconcileOutbox(sessionId: string, hostId: string, confirmedIds: string[]): Promise<void> {
   transport ??= connectTransport();
   await transport.reconcileOutbox(sessionId, hostId, confirmedIds);
-}
-
-/** Where an entry's `outbox_add` goes; a row without a host (from before hosts) keeps the server's host-less resolution. */
-export function outboxUrl(sessionId: string, hostId: string | undefined): string {
-  return `/api/agent/${encodeURIComponent(sessionId)}${hostId ? `?hostId=${encodeURIComponent(hostId)}` : ""}`;
 }
 
 function supportsOutboxSync(worker: ServiceWorker | null): Promise<boolean> {

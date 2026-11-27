@@ -22,10 +22,11 @@ import type {
 import { normalizeToolCalls } from "@/lib/normalize";
 import { hasVisibleAssistantContent } from "@/lib/assistant-response";
 import type { ThinkingModelMeta } from "@/lib/thinking-levels";
-import { HostOfflineError, agentUrl, getOutboxScope, rememberOutboxScope, sendAgentCommand } from "@/lib/agent-client";
+import { HostOfflineError, getOutboxScope, rememberOutboxScope, sendAgentCommand } from "@/lib/agent-client";
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
-import { newChatDraftKey, remoteHostId, sessionDraftKey } from "@/lib/project-ordering";
+import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
+import { agentUrl, sessionHostKey } from "@/lib/session-host-key";
 import { recoverDraft, setDraft } from "@/lib/draft-store";
 import { formatExitedSessionNotice, translate } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -65,7 +66,7 @@ import {
 export type { SubagentInfo } from "@/lib/subagent-types";
 
 // Pure helpers extracted to sibling modules (extraction only — no logic changes).
-import { EMPTY_QUEUE, EMPTY_SERVER_OUTBOX, applyOutboxSnapshot, markOutboxUncertain, mergeHeldMessages, rememberLocalOutbox, rememberOutboxEntries, representOutboxIds } from "./useAgentSession-queue";
+import { EMPTY_QUEUE, EMPTY_SERVER_OUTBOX, applyOutboxSnapshot, markOutboxUncertain, mergeHeldMessages, rememberLocalOutbox, rememberOutboxEntries, representOutboxIds, sameCopy } from "./useAgentSession-queue";
 import { readQueueSnapshot } from "@/lib/client-message-ids";
 import type { QueuedMessages, ServerOutbox } from "./useAgentSession-queue";
 import {
@@ -307,7 +308,7 @@ function unrecordedHeldBash<T extends { command: string; after: number }>(messag
   });
 }
 function reconcileConfirmedLocalOutbox(sessionId: string, hostId: string, localEntries: LocalOutboxEntry[], confirmedIds: ReadonlySet<string>): Promise<void> {
-  const ids = localEntries.filter((entry) => entry.sessionId === sessionId && (entry.hostId ?? "local") === hostId && entry.replaces !== undefined && confirmedIds.has(entry.id)).map((entry) => entry.id);
+  const ids = localEntries.filter((entry) => sameCopy(entry, sessionId, hostId) && entry.replaces !== undefined && confirmedIds.has(entry.id)).map((entry) => entry.id);
   return ids.length ? reconcileOutbox(sessionId, hostId, ids) : Promise.resolve();
 }
 
@@ -876,7 +877,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setActiveGoal(null);
       return;
     }
-    setActiveGoal(parseActiveGoal(sessionStorage.getItem(`tau:goal:${sessionDraftKey(sid, session?.hostId)}`)));
+    setActiveGoal(parseActiveGoal(sessionStorage.getItem(`tau:goal:${sessionHostKey(session?.hostId, sid)}`)));
   }, [session?.id, session?.hostId]);
 
   // A plan request is in progress only for its current agent turn.
@@ -1402,6 +1403,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const reconcileHandoff = useCallback(async () => {
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     if (!sid || !hookAliveRef.current || catchUp.view().leafId) return;
     const current = serverOutboxRef.current;
     const ids = [...current.nativeSettled].filter((id) =>
@@ -1431,7 +1433,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const queueRevision = ++queueSeqRef.current;
         let status: ClientMessageStatus | null;
         try {
-          status = await sendAgentCommand<ClientMessageStatus>(sid, currentSessionHost(), { type: "get_client_message_status", clientMessageIds });
+          status = await sendAgentCommand<ClientMessageStatus>(sid, host, { type: "get_client_message_status", clientMessageIds });
         } catch (error) {
           if ((error as { code?: unknown })?.code !== "handoff_child_unavailable" || !owned()) throw error;
           // The child ended: only its saved history can still show these messages.
@@ -1657,7 +1659,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Server confirmation or a locally proven browser-only root retires the original before outbox_update arrives.
     if (stored.replaces) markOutboxRepresented([stored.replaces]);
     const sid = sessionIdRef.current;
-    if (stored.sessionId !== sid || (stored.hostId ?? "local") !== currentSessionHost()) return;
+    if (!sid || !sameCopy(stored, sid, currentSessionHost())) return;
     serverOutboxRef.current = rememberOutboxEntries(serverOutboxRef.current, [stored]);
     setServerOutbox(serverOutboxRef.current);
     // An add reply may arrive after the frame that removed its already-delivered entry: never resurrect it.
@@ -2942,12 +2944,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   /** Holds a message in the outbox (docs/specs/2026-11-04-message-outbox-design.md): true once this browser has
    * stored it, after which tau delivers it whatever this tab does next. It shows as a held bubble until pi has it. */
   const holdMessage = useCallback(async (sid: string, mode: OutboxMode, message: string, images?: Pick<AttachedImage, "data" | "mimeType">[], uploads?: string[], uploadProofs?: Record<string, string>, replaces?: string) => {
+    const host = currentSessionHost();
     try {
       await addToOutbox({
         id: newOutboxId(),
         sessionId: sid,
-        hostId: currentSessionHost(),
-        scope: await getOutboxScope(sid, currentSessionHost()),
+        hostId: host,
+        scope: await getOutboxScope(sid, host),
         mode,
         message,
         ...(images?.length ? { images: images.map(({ data, mimeType }) => ({ type: "image" as const, data, mimeType })) } : {}),
@@ -3074,7 +3077,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // not a request to stop following the response that this prompt starts.
     userScrollIntentUntilRef.current = 0;
 
-    let recoveryKey = (sessionIdRef.current ? sessionDraftKey(sessionIdRef.current, currentSessionHost()) : undefined) ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
+    let recoveryKey = (sessionIdRef.current ? sessionHostKey(currentSessionHost(), sessionIdRef.current) : undefined) ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
     // Set just before the prompt goes out: a lost reply from any earlier command (get_state, set_model) ran no prompt.
     let promptIssued = false;
     try {
@@ -3083,6 +3086,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         const sid = existingSid ?? await ensureNewSession();
+        const host = currentSessionHost();
         // Spawning takes seconds: the user may have opened another chat while
         // it was in flight (this instance is unmounted). Deliver their prompt
         // in the background, but never promote — switching the fresh chat
@@ -3094,12 +3098,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // Promote now so the sidebar can show this active session during streaming.
           if (!ownerGone) {
             promoteNewSession(1, message);
-            if (onSessionCreated) recoveryKey = sessionDraftKey(sid, currentSessionHost());
+            if (onSessionCreated) recoveryKey = sessionHostKey(host, sid);
           }
           if (selectedModel) {
             setPendingModel(selectedModel);
             if (existingSid) {
-              await sendAgentCommand(sid, currentSessionHost(), { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
+              await sendAgentCommand(sid, host, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
             }
           }
           // No UI left to update on a dead instance — and attaching an
@@ -3114,7 +3118,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             if (promptRunIdRef.current === promptRunId) runPreviousEntryIdsRef.current = previousEntryIds;
           }
           promptIssued = true;
-          await sendAgentCommand(sid, currentSessionHost(), {
+          await sendAgentCommand(sid, host, {
             type: "prompt",
             message,
             ...(piImages?.length ? { images: piImages } : {}),
@@ -3159,7 +3163,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       independentRunErrorRef.current = null;
       slashCommandRunRef.current = false;
       dispatch({ type: "end" });
-      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ?? recoveryKey };
+      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ? sessionHostKey(currentSessionHost(), sessionIdRef.current) : recoveryKey };
     }
   }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage, currentSessionHost]);
 
@@ -3217,6 +3221,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   executeBashRef.current = executeBash;
 
   const withdrawAndAbort = useCallback(async (sid: string) => {
+    const host = currentSessionHost();
     // Captured at the click: a retry must not reach a run that started
     // since (this client's next prompt or another device's).
     const runId = promptRunIdRef.current;
@@ -3234,7 +3239,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Retrying the same command is safe: it returns whatever is still queued.
     for (let attempt = 0; attempt < 2 && restoredQueue === undefined && (attempt === 0 || sameRun()); attempt++) {
       try {
-        restoredQueue = (await sendAgentCommand<RestoredQueue>(sid, currentSessionHost(), { type: "abort_and_restore_queue" })) ?? null;
+        restoredQueue = (await sendAgentCommand<RestoredQueue>(sid, host, { type: "abort_and_restore_queue" })) ?? null;
       } catch {
         failures += 1;
       }
@@ -3244,7 +3249,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const texts = [...steering, ...followUp]
       .map((entry) => entry.text)
       .filter((text): text is string => typeof text === "string" && text.length > 0);
-    if (texts.length > 0) recoverDraft(sessionDraftKey(sid, currentSessionHost()), { text: texts.join("\n\n"), promptOnly: true });
+    if (texts.length > 0) recoverDraft(sessionHostKey(host, sid), { text: texts.join("\n\n"), promptOnly: true });
     // A failed attempt may have withdrawn messages whose texts were in the
     // lost response; say so unless the retry brought texts back.
     if (failures > 0 && texts.length === 0 && hookAliveRef.current && sessionIdRef.current === sid) {
@@ -3346,18 +3351,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleFork = useCallback(async (entryId: string, editPrompt: boolean) => {
     if (bashRunningRef.current || agentRunningRef.current || forkInFlightRef.current || editInFlightRef.current) return;
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     if (!sid) return;
     forkInFlightRef.current = true;
     setForkingEntryId(entryId);
     try {
-      const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string; text?: string }>(sid, currentSessionHost(), {
+      const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string; text?: string }>(sid, host, {
         type: "fork",
         entryId,
       });
       const { cancelled, newSessionId, text } = result ?? {};
       if (!cancelled && newSessionId) {
         // The fork is a session of the same host.
-        if (editPrompt && text) setDraft(sessionDraftKey(newSessionId, currentSessionHost()), { value: text, images: [], files: [], promptOnly: true });
+        if (editPrompt && text) setDraft(sessionHostKey(host, newSessionId), { value: text, images: [], files: [], promptOnly: true });
         onSessionForked?.(newSessionId);
       }
     } catch (e) {
@@ -3576,6 +3582,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     onSentRef.current?.();
     try {
       const sid = sessionIdRef.current ?? await ensureNewSession();
+      const host = currentSessionHost();
       if (!sid) {
         toast.error(translate("agentSession.noActiveSession"));
         return false;
@@ -3588,10 +3595,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // The session channel is observer-only: start the wrapper and attach
       // before asking, so the first deltas are not missed.
       if (!ownerGone && eventSourceRef.current?.readyState !== EVENT_STREAM_OPEN) {
-        await sendAgentCommand(sid, currentSessionHost(), { type: "get_state" });
+        await sendAgentCommand(sid, host, { type: "get_state" });
         await ensureEventsConnected(sid);
       }
-      await sendBtw(sid, question, recordId);
+      await sendBtw(sid, question, recordId, host);
       const ownerCurrent = hookAliveRef.current && sessionIdRef.current === sid;
       // pi wrote the session to disk to ask: leave the unsaved new-chat view
       // (URL, sidebar) like a first prompt does. No-op for existing sessions.
@@ -3733,7 +3740,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             const goal = createActiveGoal(args);
             setActiveGoal(goal);
             const activeSessionId = sessionIdRef.current;
-            if (activeSessionId) sessionStorage.setItem(`tau:goal:${sessionDraftKey(activeSessionId, currentSessionHost())}`, JSON.stringify(goal));
+            if (activeSessionId) sessionStorage.setItem(`tau:goal:${sessionHostKey(currentSessionHost(), activeSessionId)}`, JSON.stringify(goal));
           }
           return { handled: true };
         }
@@ -3769,6 +3776,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
    * worker saw its add receipt) leaves IndexedDB, and the row hides once that commits: a reload cannot bring it back. */
   const deleteHeldMessage = useCallback(async (id: string) => {
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     const held = heldMessagesRef.current.find((entry) => entry.id === id);
     if (!sid || !held || held.state === "sending" || held.state === "delivering" || heldDeletionsRef.current.has(id)) return;
     heldDeletionsRef.current.add(id);
@@ -3779,7 +3787,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setStoredOutbox((entries) => entries.filter((entry) => entry.id !== id));
         setLocalOutbox((entries) => entries.filter((entry) => entry.id !== id));
       } else if (held.local) await dropFromOutbox(id);
-      else await sendAgentCommand(sid, currentSessionHost(), { type: "outbox_remove", id });
+      else await sendAgentCommand(sid, host, { type: "outbox_remove", id });
     } catch (e) {
       if (hookAliveRef.current && sessionIdRef.current === sid) addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -3793,6 +3801,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
    * local lineage. A refused copy leaves the root intact, and the IDB transaction makes concurrent retries reuse one copy. */
   const retryHeldMessage = useCallback(async (id: string) => {
     const sid = sessionIdRef.current;
+    const host = currentSessionHost();
     const held = heldMessagesRef.current.find((entry) => entry.id === id);
     if (!sid || !held || held.state !== "failed" || editInFlightRef.current || heldRetriesRef.current.has(id) || heldDeletionsRef.current.has(id)) return;
     if (serverOutboxRef.current.represented.has(id)) return;
@@ -3801,10 +3810,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const serverIds = serverOutboxRef.current.seen;
       const confirmedIds = new Set(localOutboxRef.current
-        .filter((entry) => entry.sessionId === sid && (entry.hostId ?? "local") === currentSessionHost() && entry.replaces !== undefined && serverIds.has(entry.id))
+        .filter((entry) => sameCopy(entry, sid, host) && entry.replaces !== undefined && serverIds.has(entry.id))
         .map((entry) => entry.id));
       if (serverIds.has(id)) confirmedIds.add(id);
-      if (confirmedIds.size > 0) await reconcileOutbox(sid, currentSessionHost(), [...confirmedIds]);
+      if (confirmedIds.size > 0) await reconcileOutbox(sid, host, [...confirmedIds]);
 
       if (!hookAliveRef.current || sessionIdRef.current !== sid || editInFlightRef.current || serverOutboxRef.current.represented.has(id)) return;
       const current = heldMessagesRef.current.find((entry) => entry.id === id);
@@ -4034,7 +4043,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (frame.type !== "running" || !Array.isArray(frame.runningSessions)) return;
         // Only this host's copy of the id: another host's run of it is another session (absent hostId = this machine).
         const host = currentSessionHost();
-        wanted = frame.runningSessions.some((running: { id?: unknown; hostId?: unknown }) => running?.id === sid && (running.hostId ?? "local") === host);
+        wanted = frame.runningSessions.some((running: { id?: unknown; hostId?: unknown }) => Boolean(running) && sameCopy({ sessionId: running.id, hostId: running.hostId }, sid, host));
         frames += 1;
         failures = 0;
         checkRunning();

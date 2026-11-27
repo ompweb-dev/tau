@@ -15,7 +15,6 @@ import type { WorktreeContext } from "./SessionSidebar-helpers";
 import { ToastProvider } from "./ui/toast";
 import { toast } from "./ui/toast";
 import { notificationHistory, useUnreadNotificationCount } from "@/lib/notification-history";
-import { notificationSessionKey } from "@/lib/notification-events";
 import { ConfirmDialog } from "./ui/field";
 import { ThemedSelect } from "./ui/primitives";
 import { ChatWindow } from "./ChatWindow";
@@ -46,7 +45,8 @@ import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { findSessionTarget, getInitialNavigation, sameSessionTarget, sessionNavigationUrl } from "@/lib/initial-navigation";
 import { comparableProjectPath } from "@/lib/comparable-path";
-import { foldedHostProjectKey, hostProjectKey, LOCAL_HOST_ID, remoteHostId, projectIdentity, projectTargetId, sessionDraftKey, sessionRowKey } from "@/lib/project-ordering";
+import { foldedHostProjectKey, hostProjectKey, LOCAL_HOST_ID, remoteHostId, projectIdentity, projectTargetId } from "@/lib/project-ordering";
+import { sessionHostKey } from "@/lib/session-host-key";
 import { isClusterTarget } from "@/lib/hosts/cluster";
 import { useHostRows } from "@/hooks/useHostRows";
 import { isRecord } from "@/lib/type-guards";
@@ -1725,7 +1725,7 @@ export function AppShell({ appName }: { appName: string }) {
   const handleSessionDeleted = useCallback((sessionId: string, hostId?: string) => {
     // The composer for this session can never be reopened, so its draft would
     // otherwise keep the exit guard armed for unreachable content.
-    clearDraft(sessionDraftKey(sessionId, hostId));
+    clearDraft(sessionHostKey(hostId, sessionId));
     setChatTabs((tabs) => tabs.filter((tab) => !sameSessionTarget(tab, { id: sessionId, hostId })));
     setRefreshKey((k) => k + 1);
     if (selectedSession && sameSessionTarget(selectedSession, { id: sessionId, hostId })) {
@@ -1760,7 +1760,7 @@ export function AppShell({ appName }: { appName: string }) {
     // keep retrying after unmount — so freeze the selection at start, bail out
     // of every attempt + the fallback when it changed, and track the timer.
     // Host and id: picking the other host's copy of the id is picking another session.
-    const shown = () => activeSessionTargetRef.current && sessionRowKey(activeSessionTargetRef.current.hostId, activeSessionTargetRef.current.id);
+    const shown = () => activeSessionTargetRef.current && sessionHostKey(activeSessionTargetRef.current.hostId, activeSessionTargetRef.current.id);
     const sessionAtRestoreStart = shown();
     const selectRestoredSession = async (attemptsLeft = 5): Promise<void> => {
       if (shown() !== sessionAtRestoreStart) return;
@@ -1864,8 +1864,8 @@ export function AppShell({ appName }: { appName: string }) {
     pendingCrossHostToolsRef.current.set(key, controller);
     // Full-page Settings hides the chat, so its session counts as not viewed.
     // Another host's copy of the id is another session.
-    const viewing = () => call.sessionId === activeSessionTargetRef.current?.id
-      && (activeSessionTargetRef.current.hostId ?? LOCAL_HOST_ID) === call.hostId && !activeSettingsTabRef.current;
+    const viewing = () => Boolean(activeSessionTargetRef.current && sameSessionTarget(activeSessionTargetRef.current, { id: call.sessionId, hostId: call.hostId }))
+      && !activeSettingsTabRef.current;
 
     try {
       const { text, isError } = await runHostTool(call.toolName, call.arguments, {
@@ -2262,7 +2262,7 @@ export function AppShell({ appName }: { appName: string }) {
   // hides them all.
   const viewedSessionIds = settingsTab ? [] : (isMobile ? [focusedGroup] : tabGroups).flatMap((group) => {
     const session = group.active ? chatTabById(group.active) : undefined;
-    return session ? [notificationSessionKey(session.id, session.hostId)] : [];
+    return session ? [sessionHostKey(session.hostId, session.id)] : [];
   });
   useNotifications({ sessionIds: viewedSessionIds, locale, onOpenSession: openSessionById });
 

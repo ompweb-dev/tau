@@ -192,7 +192,7 @@ async function subscribeForPush(): Promise<boolean> {
   return syncNotificationDevice(subscription.toJSON());
 }
 
-/** Window event (detail: session id, or `{ sessionId, hostId }` for another host's session) asking the app to open a session. */
+/** Window event (detail: `{ sessionId, hostId }`) asking the app to open a session. */
 export const OPEN_SESSION_EVENT = "tau-open-session";
 
 /**

@@ -1,3 +1,4 @@
+import { sessionHostKey } from "./session-host-key";
 import webpush from "web-push";
 import { releaseRepo } from "./release-repo";
 import en from "./i18n/locales/en.json";
@@ -5,7 +6,6 @@ import ja from "./i18n/locales/ja.json";
 import zhCN from "./i18n/locales/zh-CN.json";
 import zhTW from "./i18n/locales/zh-TW.json";
 import {
-  notificationSessionKey,
   renderNotification,
   type NotificationEvent,
   type RenderedNotification,
@@ -40,7 +40,7 @@ export interface NotificationPresence {
   clientId: string;
   deviceId: string;
   visible: boolean;
-  /** The sessions whose chats are on screen in this tab (one per tab group showing a chat), as `notificationSessionKey`s. */
+  /** The sessions whose chats are on screen in this tab (one per tab group showing a chat), as `sessionHostKey`s. */
   sessionIds: string[];
   /** Per-tab report counter: requests can arrive out of order, and only the newest counts. */
   seq: number;
@@ -68,7 +68,7 @@ interface HubState {
   presence: Map<string, NotificationPresence>;
   /** Open SSE streams per tab. Independent of presence: streams reconnect, overlap, and close while the tab stays put. */
   streams: Map<string, Set<Send>>;
-  /** `<sessionKey>:<requestId>` (`notificationSessionKey`) → when it was retracted. A push retry of a settled dialog must deliver nothing (see `publishNotificationDismiss`). */
+  /** `<sessionHostKey>:<requestId>` → when it was retracted. A push retry of a settled dialog must deliver nothing (see `publishNotificationDismiss`). */
   retractions: Map<string, number>;
   /**
    * The same, for a settlement a replay may undo: a resync forgets a dialog
@@ -129,7 +129,7 @@ export function attachNotificationClient(clientId: string, send: Send): () => vo
 
 /** A visible tab is showing the event's conversation. */
 function isOnScreen(event: NotificationEvent, presence: NotificationPresence[]): boolean {
-  const key = notificationSessionKey(event.sessionId, event.hostId);
+  const key = sessionHostKey(event.hostId, event.sessionId);
   return presence.some((tab) => tab.visible && tab.sessionIds.includes(key));
 }
 
@@ -222,7 +222,7 @@ async function sendPush(device: NotificationDevice, event: NotificationEvent, re
   for (let attempt = 0; ; attempt++) {
     // A retry can wake long after the dialog was answered, cancelled, expired
     // or its pi child died: delivering now would show a dead question.
-    if (event.type === "input" && event.requestId && isRetracted(notificationSessionKey(event.sessionId, event.hostId), event.requestId, Date.now())) {
+    if (event.type === "input" && event.requestId && isRetracted(sessionHostKey(event.hostId, event.sessionId), event.requestId, Date.now())) {
       return { ok: false, error: "dialog settled" };
     }
     try {
@@ -265,7 +265,7 @@ export function publishNotification(event: NotificationEvent): void {
   // had temporarily retracted: it is pending again, so its notification and
   // its pushes must go out as for any other question.
   if (event.type === "input" && event.requestId) {
-    const key = `${notificationSessionKey(event.sessionId, event.hostId)}:${event.requestId}`;
+    const key = `${sessionHostKey(event.hostId, event.sessionId)}:${event.requestId}`;
     // A request settled for good is never announced again within the retraction window.
     const settledAt = state.retractions.get(key);
     if (settledAt !== undefined && Date.now() - settledAt <= PUSH_RETRACTION_TTL_MS) return;
@@ -338,7 +338,7 @@ export function publishNotificationForgotten(sessionId: string, requestId: strin
 
 /** `hostId`: the session's host when it is not this machine, as on `NotificationEvent`. */
 function retract(sessionId: string, requestId: string, kind: "permanent" | "temporary", hostId: string): void {
-  const sessionKey = notificationSessionKey(sessionId, hostId);
+  const sessionKey = sessionHostKey(hostId, sessionId);
   const tag = `${sessionKey}:input`;
   const state = hub();
   const now = Date.now();

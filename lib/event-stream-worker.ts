@@ -41,6 +41,7 @@ import {
 import type { LocalOutboxEntry } from "./event-stream";
 import { diagnosticStats } from "./transport-stats";
 import { isRecord } from "./type-guards";
+import { agentUrl, sessionHostKey } from "./session-host-key";
 
 const CONNECTING = 0;
 const OPEN = 1;
@@ -767,7 +768,7 @@ function sameOutboxIntent(a: LocalOutboxEntry, b: LocalOutboxEntry): boolean {
 }
 
 /** One host's copy of a session: the same id on another host is another session (a row from before hosts is this machine's). */
-const outboxSession = (entry: Pick<LocalOutboxEntry, "sessionId" | "hostId">): string => `${entry.hostId ?? "local"}/${entry.sessionId}`;
+const outboxSession = (entry: Pick<LocalOutboxEntry, "sessionId" | "hostId">): string => sessionHostKey(entry.hostId, entry.sessionId);
 
 // A local failed ancestor proves lineage only in the same session (host copy) with the exact original intent.
 function replacementRoot(entry: LocalOutboxEntry, entries: ReadonlyMap<string, LocalOutboxEntry>): string | null {
@@ -1141,8 +1142,7 @@ async function sendOutbox(session: string): Promise<void> {
   const body = JSON.stringify({ type: "outbox_add", id, scope, mode, message, images, uploads, uploadProofs, replaces });
   // A half-open POST must not block this session forever; include the body read and allow 2 KB/s for its uplink.
   withDeadline(40_000 + Math.ceil(body.length / 2), async (signal) => {
-    const url = `/api/agent/${encodeURIComponent(sessionId)}${hostId ? `?hostId=${encodeURIComponent(hostId)}` : ""}`;
-    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
+    const response = await fetch(agentUrl(sessionId, hostId), { method: "POST", headers: { "Content-Type": "application/json" }, body, signal });
     const reply = await response.json().catch((error) => {
       if (signal.aborted) throw error;
       return null;

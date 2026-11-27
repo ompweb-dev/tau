@@ -123,3 +123,17 @@ test("asking opens the panel and a follow-up answers in its own turn", async () 
   assert.equal(latest.answer, "6", "a follow-up answers in its own turn");
   assert.equal(view.current.records[0].answer, "4", "the first answer stays intact");
 });
+
+test("a cancel that finds nothing running re-reads the history of the same host copy it cancelled on", async () => {
+  const urls = [];
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(init.body);
+    urls.push([body.type, url]);
+    return { ok: true, json: async () => ({ success: true, data: body.type === "btw_cancel" ? { cancelled: false } : { records: [] } }) };
+  };
+  // The host read changes while the cancel is in flight: the follow-up read must not pair s1 with it.
+  const hosts = ["h1", "h2"];
+  const view = renderHook(() => useBtw({ current: "s1" }, () => hosts.shift() ?? "h2")).result;
+  await act(async () => { await view.current.cancel("r1"); });
+  assert.deepEqual(urls, [["btw_cancel", "/api/agent/s1?hostId=h1"], ["get_btw_history", "/api/agent/s1?hostId=h1"]]);
+});

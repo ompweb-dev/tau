@@ -9,6 +9,7 @@
 
 import { recordTransportSample } from "@/lib/event-stream";
 import { formatApiError } from "@/lib/i18n/api-error";
+import { agentUrl } from "@/lib/session-host-key";
 
 const OUTBOX_SCOPE_KEY = "tau:outbox-scope";
 let outboxScope: string | null = null;
@@ -53,11 +54,6 @@ export class HostOfflineError extends Error {
     super(message);
     this.mayHaveRun = mayHaveRun;
   }
-}
-
-/** /api/agent/[id] for one host's copy of the session ("local" = this machine): the same id on two hosts is two sessions. */
-export function agentUrl(sessionId: string, hostId: string): string {
-  return `/api/agent/${encodeURIComponent(sessionId)}?hostId=${encodeURIComponent(hostId)}`;
 }
 
 export async function sendAgentCommand<T = unknown>(

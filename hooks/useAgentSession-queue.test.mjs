@@ -101,3 +101,10 @@ test("a chat shows and remembers only its own host's copy of a session id", () =
   assert.deepEqual(order(mergeHeldMessages("s", "box", [remote, here], [remoteStored], EMPTY_SERVER_OUTBOX)), ["remote-server:server", "remote-browser:browser"]);
   assert.deepEqual([...rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [remote, here], "s", "box").known.keys()], ["remote-browser"]);
 });
+
+test("a stored ACK of an unbound server row (hostId '') shows on whichever host copy's chat sent it", () => {
+  const unbound = { ...stored("unbound", 10), hostId: "" };
+  assert.deepEqual(order(mergeHeldMessages("s", "box", [], [unbound], EMPTY_SERVER_OUTBOX)), ["unbound:server"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "local", [], [unbound], EMPTY_SERVER_OUTBOX)), ["unbound:server"]);
+  assert.deepEqual(order(mergeHeldMessages("other", "box", [], [unbound], EMPTY_SERVER_OUTBOX)), [], "never another session id's");
+});
