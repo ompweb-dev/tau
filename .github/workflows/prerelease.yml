@@ -56,6 +56,12 @@ jobs:
         env:
           TAU_RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: sh scripts/build-release-binaries.sh
+      # Hosted Linux runs in a service cgroup: the server starts the local host in its own systemd scope.
+      - name: Allow isolated native fixture scopes
+        run: |
+          rule="polkit.addRule(function(action, subject) { if (action.id === 'org.freedesktop.systemd1.manage-units' && subject.user === '$(id -un)' && /\\.scope$/.test(action.lookup('unit') || '')) { return polkit.Result.YES; } });"
+          printf '%s\n' "$rule" | sudo tee /etc/polkit-1/rules.d/49-tau-fixture-scopes.rules >/dev/null
+          systemd-run --scope --quiet --collect --no-ask-password true
       - run: npm run smoke -- --binary release/tau-linux-x64/tau
 
       - name: Publish the prerelease
