@@ -131,6 +131,7 @@ test("loads a live subagent transcript from disk without waiting for its agent c
   const view = render(React.createElement(SubagentTranscriptDialog, {
     subagent: { id: "StrictRunnerD2Luna", source: "live" },
     sessionId: "session-1",
+    hostId: "local",
     transcriptVersion: 0,
     onClose() {},
   }));
@@ -159,6 +160,7 @@ test("shows an artifact reader error instead of an empty transcript", async () =
   const view = render(React.createElement(SubagentTranscriptDialog, {
     subagent: { id: "StrictRunnerD2Luna", source: "live" },
     sessionId: "session-1",
+    hostId: "local",
     transcriptVersion: 0,
     onClose() {},
   }));
@@ -179,6 +181,7 @@ test("shows the error body from an unsuccessful transcript response", async () =
   const view = render(React.createElement(SubagentTranscriptDialog, {
     subagent: { id: "StrictRunnerD2Luna", source: "live" },
     sessionId: "session-1",
+    hostId: "local",
     transcriptVersion: 0,
     onClose() {},
   }));
@@ -204,6 +207,7 @@ test("refreshes an open transcript while completion metadata is stalled", async 
   const props = (transcriptVersion) => ({
     subagent: { id: "StrictRunnerD2Luna", source: "live" },
     sessionId: "session-1",
+    hostId: "local",
     transcriptVersion,
     onClose() {},
   });

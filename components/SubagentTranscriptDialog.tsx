@@ -200,11 +200,11 @@ export function CompletionBlock({ completion, truncated, sourceSessionId }: { co
   );
 }
 
-export function SubagentTranscriptDialog({ subagent, sessionId, hostId = "local", transcriptVersion, events, onClose }: {
+export function SubagentTranscriptDialog({ subagent, sessionId, hostId, transcriptVersion, events, onClose }: {
   subagent: SubagentInfo | null;
   sessionId: string | null;
   /** The session's host: an id copied across hosts is another session there. */
-  hostId?: string;
+  hostId: string;
   transcriptVersion: number;
   events?: SubagentActivityEvent[];
   onClose: () => void;
