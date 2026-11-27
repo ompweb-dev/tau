@@ -250,6 +250,7 @@
   "appShell.loading": "Loading…",
   "appShell.models": "Models",
   "appShell.newSession": "New session",
+  "appShell.creatingSession": "Creating session…",
   "appShell.newSessionTitle": "What should we work on?",
   "appShell.newSessionDescription": "Choose a workspace, then describe the change you want to make.",
   "appShell.mentionFileInChat": "Mention file in chat (@)",

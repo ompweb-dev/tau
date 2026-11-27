@@ -1585,13 +1585,19 @@ export function AppShell({ appName }: { appName: string }) {
     if (!placed) setChatMounts((mounts) => ({ ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[tabId] ?? tabId } }));
     setRefreshKey((k) => k + 1);
   }, []);
-  const handleCreatingChatCreated = useCallback((tabId: string, session: SessionInfo) => {
+  // Its tab closes with it. A creation that ends without a session closes it too (the composer keeps the draft).
+  const dropCreatingChat = useCallback((tabId: string) => {
     setCreatingChats((chats) => chats.filter((chat) => chat.id !== tabId));
+  }, []);
+  const handleCreatingChatCreated = useCallback((tabId: string, session: SessionInfo) => {
+    dropCreatingChat(tabId);
     promoteUnselectedChat(tabId, session);
-  }, [promoteUnselectedChat]);
+  }, [dropCreatingChat, promoteUnselectedChat]);
 
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
+    // Created: a fresh new chat started before this commits must not take it for one still being created.
+    draftCreatingRef.current = false;
     setDraftChat(null);
     if (!draftShownRef.current && draftChatRef.current) {
       setNewSessionCwd(null);
@@ -2293,7 +2299,7 @@ export function AppShell({ appName }: { appName: string }) {
     }),
     // Closable only while another chat is selected: the selected new chat has nothing to give way to.
     ...(draftTabOpen ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: !draftTabShown, file: false }] as const] : []),
-    ...creatingChats.map((chat) => [chat.id, { id: chat.id, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, file: false }] as const),
+    ...creatingChats.map((chat) => [chat.id, { id: chat.id, label: t("appShell.creatingSession"), title: t("appShell.creatingSession"), icon: chatIcon, file: false }] as const),
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
@@ -2338,7 +2344,7 @@ export function AppShell({ appName }: { appName: string }) {
       setDraftChat(null);
     } else if (creatingChats.some((chat) => chat.id === id)) {
       // Its session is still created and listed, as for any chat left while sending.
-      setCreatingChats((chats) => chats.filter((chat) => chat.id !== id));
+      dropCreatingChat(id);
     } else if (!session) {
       handleCloseFileTab(id);
     } else {
@@ -3050,6 +3056,31 @@ export function AppShell({ appName }: { appName: string }) {
 
         {/* The tab groups: open conversations and files */}
         {(() => {
+          // A new chat another group shows behind its selection, or one being created (creatingId).
+          const draftChatWindow = (draft: DraftChat, key: string | null, creatingId?: string) => (
+            <ChatWindow
+              key={key ?? undefined}
+              session={null}
+              newSessionCwd={draft.cwd}
+              newSessionHostId={draft.hostId}
+              newSessionCreationId={draft.project?.poolId ? draft.creationId : undefined}
+              newSessionPoolId={draft.project?.poolId}
+              newSessionProjectId={draft.project?.projectId}
+              newSessionInitialization={draft.project?.poolId ? draft.initialization : undefined}
+              onSessionCreated={creatingId ? (session) => handleCreatingChatCreated(creatingId, session) : handleSessionCreated}
+              onCreatingChange={creatingId ? (creating) => { if (!creating) dropCreatingChat(creatingId); } : handleDraftCreating}
+              onAgentEnd={handleAgentEnd}
+              modelsRefreshKey={modelsRefreshKey}
+              onOpenProviders={() => setSettingsTab("providers")}
+              toolCallsDefaultCollapsed={toolCallsDefaultCollapsed}
+              hideToolActivity={hideToolActivity}
+              neverFoldActivity={neverFoldActivity}
+              showToolCallsUnfolded={showToolCallsUnfolded}
+              expandThinkingByDefault={expandThinkingByDefault}
+              hideThinkingBlock={hideThinkingBlock}
+              covered
+            />
+          );
           const groupViews = new Map(tabGroups.map((group) => {
             const focused = group.id === focusedGroup.id;
             const chatPanelId = `workspace-chat-${group.id}`;
@@ -3068,7 +3099,7 @@ export function AppShell({ appName }: { appName: string }) {
             const backgroundDraft = creatingChat?.draft ?? (!primary && chatId === NEW_CHAT_TAB_ID && draftTabOpen ? draftChat : null);
             const chatPanelLabel = primary
               ? (selectedChatId ? stripTabInfo.get(selectedChatId)?.title : undefined) ?? (selectedSession ? chatTabLabel(selectedSession) : t("appShell.newSession"))
-              : backgroundChat ? chatTabLabel(backgroundChat) : backgroundDraft ? t("appShell.newSession") : undefined;
+              : backgroundChat ? chatTabLabel(backgroundChat) : creatingChat ? t("appShell.creatingSession") : backgroundDraft ? t("appShell.newSession") : undefined;
             const groupIndex = tabGroups.indexOf(group);
             // Pointing at another group, or typing in it, shows its tab (not a
             // chat's own programmatic focus, nor a tab's close button; Esc
@@ -3204,30 +3235,7 @@ export function AppShell({ appName }: { appName: string }) {
               // No searchQuery: the search highlights are page-wide, so only the selected chat paints them.
               covered
             />
-          ) : backgroundDraft ? (
-            <ChatWindow
-              key={chatKey ?? undefined}
-              session={null}
-              newSessionCwd={backgroundDraft.cwd}
-              newSessionHostId={backgroundDraft.hostId}
-              newSessionCreationId={backgroundDraft.project?.poolId ? backgroundDraft.creationId : undefined}
-              newSessionPoolId={backgroundDraft.project?.poolId}
-              newSessionProjectId={backgroundDraft.project?.projectId}
-              newSessionInitialization={backgroundDraft.project?.poolId ? backgroundDraft.initialization : undefined}
-              onSessionCreated={creatingChat ? (session) => handleCreatingChatCreated(creatingChat.id, session) : handleSessionCreated}
-              onCreatingChange={creatingChat ? undefined : handleDraftCreating}
-              onAgentEnd={handleAgentEnd}
-              modelsRefreshKey={modelsRefreshKey}
-              onOpenProviders={() => setSettingsTab("providers")}
-              toolCallsDefaultCollapsed={toolCallsDefaultCollapsed}
-              hideToolActivity={hideToolActivity}
-              neverFoldActivity={neverFoldActivity}
-              showToolCallsUnfolded={showToolCallsUnfolded}
-              expandThinkingByDefault={expandThinkingByDefault}
-              hideThinkingBlock={hideThinkingBlock}
-              covered
-            />
-          ) : null) : showChat ? (
+          ) : backgroundDraft ? draftChatWindow(backgroundDraft, chatKey, creatingChat?.id) : null) : showChat ? (
             <ChatWindow
               key={chatKey ?? undefined}
               session={selectedSession}
@@ -3429,6 +3437,16 @@ export function AppShell({ appName }: { appName: string }) {
             ) });
             return [group.id, { chrome, layers }] as const;
           }));
+          const layers = [...groupViews.values()].flatMap((view) => view.layers);
+          // A chat being created stays mounted, hidden, while no group shows it, so its session still gets its tab.
+          // Same layer key and element shape as a group's chat layer: moving between the two keeps the mount.
+          for (const chat of creatingChats) {
+            const key = chatMountKey(chat.id);
+            if (layers.some((layer) => layer.key === `chat:${key}`)) continue;
+            layers.push({ key: `chat:${key}`, groupId: groupOfTab(tabLayout, chat.id)?.id ?? focusedGroup.id, hidden: true, node: (
+              <div style={{ position: "absolute", inset: 0 }}><div inert style={{ position: "absolute", inset: 0 }}>{draftChatWindow(chat.draft, key, chat.id)}</div></div>
+            ) });
+          }
           return (
             <TabLayoutView
               layout={tabLayout}
@@ -3437,7 +3455,7 @@ export function AppShell({ appName }: { appName: string }) {
               onResize={resizeTabGroups}
               resizeLabel={t("appShell.resizeTabGroups")}
               renderGroup={(group) => groupViews.get(group.id)?.chrome}
-              layers={[...groupViews.values()].flatMap((view) => view.layers)}
+              layers={layers}
             />
           );
         })()}

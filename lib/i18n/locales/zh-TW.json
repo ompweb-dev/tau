@@ -250,6 +250,7 @@
   "appShell.loading": "正在載入…",
   "appShell.models": "模型",
   "appShell.newSession": "新對話",
+  "appShell.creatingSession": "正在建立對話…",
   "appShell.newSessionTitle": "今天想進行什麼工作？",
   "appShell.newSessionDescription": "選取工作區，然後描述您想要進行的變更。",
   "appShell.mentionFileInChat": "在聊天中提及檔案 (@)",

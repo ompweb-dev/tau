@@ -6052,10 +6052,12 @@ test("another new chat while a kept one is being created keeps the kept chat's t
   await until(() => release, "the new chat is being created");
   const viewIn = (group) => h.view.container.querySelector(`[data-layer-group="${group.dataset.groupId}"] [id^="workspace-chat-"]`);
   const newChatTabs = () => h.view.queryAllByRole("tab", { name: translate("appShell.newSession") });
+  const creatingTabs = () => h.view.queryAllByRole("tab", { name: translate("appShell.creatingSession") });
   const sending = viewIn(h.draftGroup);
   await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
   await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
-  assert.equal(newChatTabs().length, 2, "the kept chat keeps its tab beside the fresh one");
+  assert.equal(newChatTabs().length, 1, "the fresh new chat has its tab");
+  assert.ok(h.draftGroup.contains(creatingTabs()[0]), "and the kept chat keeps its own, named for what it does");
   assert.ok(newChatTabs().some((tab) => h.other.contains(tab) && tab.getAttribute("aria-selected") === "true"), "the fresh one opens selected in the focused group");
   assert.equal(h.separators(), 1, "the kept chat keeps its group");
   assert.equal(viewIn(h.draftGroup), sending, "and its mount");
@@ -6067,6 +6069,58 @@ test("another new chat while a kept one is being created keeps the kept chat's t
   assert.equal(viewIn(h.draftGroup), sending, "on the same mount");
   assert.equal(h.composerIn(h.other), freshComposer, "the fresh new chat keeps its own");
   assert.equal(h.shownSession(), null, "and stays selected");
+  h.view.unmount();
+});
+
+// The issue's scenario: a new chat sent in a group of its own, left for the other group's chat, then another
+// new chat started there while the first is still being created.
+async function creatingBesideFreshChat(t, answer = { value: { sessionId: "created", hostId: "h1", cwd: "/shared" } }) {
+  const h = await draftInItsOwnGroup(t);
+  world.holds.push({
+    match: (method, url) => method === "POST" && url === "/api/agent/new",
+    produce: () => new Promise((resolve) => { h.release = () => resolve(answer); }),
+  });
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "hello there" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.draftComposer, { key: "Enter" }); await sleep(60); });
+  await until(() => h.release, "the new chat is being created");
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  h.creatingTabs = () => h.view.queryAllByRole("tab", { name: translate("appShell.creatingSession") });
+  return h;
+}
+
+test("a chat being created that no group shows any more still gets its session's tab", async (t) => {
+  const h = await creatingBesideFreshChat(t);
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(h.creatingTabs().length, 1);
+  // The new chat moves into the creating chat's group, in front of it.
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("button", { name: translate("appShell.newSessionInGroup") })); await sleep(120); });
+  assert.ok(h.draftGroup.contains(h.newChatTab()), "the fresh new chat is in the creating chat's group");
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.creatingTabs().length, 0, "the creating tab is gone");
+  assert.ok(h.view.queryByRole("tab", { name: "hello there" }), "for its session's");
+  assert.ok(h.newChatTab(), "and the fresh new chat stays");
+  h.view.unmount();
+});
+
+test("a chat whose creation fails closes its creating tab", async (t) => {
+  const h = await creatingBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(h.creatingTabs().length, 1);
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.creatingTabs().length, 0, "no tab left that cannot be selected");
+  assert.equal(h.separators(), 0, "nor its group");
+  assert.ok(h.other.contains(h.newChatTab()), "the fresh new chat stays");
+  h.view.unmount();
+});
+
+test("another new chat started before a created chat's promotion commits does not take it for one being created", async (t) => {
+  const h = await creatingBesideFreshChat(t);
+  // One act: the promotion's updates are not committed when the new chat starts.
+  await act(async () => { h.release(); await sleep(100); fireEvent.click(h.newSessionButton()); await sleep(200); });
+  await settle();
+  assert.equal(h.creatingTabs().length, 0, "no creating tab for a chat already promoted");
+  assert.ok(h.view.queryByRole("tab", { name: "hello there" }), "the session has its tab");
+  assert.ok(h.newChatTab(), "beside the fresh new chat");
   h.view.unmount();
 });
 

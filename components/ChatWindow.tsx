@@ -521,11 +521,14 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   }, [messages, sessionBusy, session?.id, newSessionCwd]);
 
 
+  // The latest handler reports the end: the chat's tab (and so its handler) may change while its session is created.
+  const onCreatingChangeRef = useRef(onCreatingChange);
+  onCreatingChangeRef.current = onCreatingChange;
   useEffect(() => {
-    if (!creatingSession || !onCreatingChange) return;
-    onCreatingChange(true);
-    return () => onCreatingChange(false);
-  }, [creatingSession, onCreatingChange]);
+    if (!creatingSession) return;
+    onCreatingChangeRef.current?.(true);
+    return () => onCreatingChangeRef.current?.(false);
+  }, [creatingSession]);
 
   // Register the abort handler for the global Esc shortcut. The cleanup
   // matters: unmounting mid-run must not leave the module-global handler
