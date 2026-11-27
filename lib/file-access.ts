@@ -99,11 +99,10 @@ const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "ho
 const MIRRORED_SECRET_FILES = ["models.json", "mcp.json"];
 
 /**
- * tau's copies of credential files: the member's own ones in `own-config/` (and its agent environment), the staged
- * and replaced ones, and, for a hard-linked request (`objects`), every downloaded object (tau-written, flat, bounded
- * by the manifest). A relative symlink moved into `own-config/` also names what it resolved to in the agent dir.
+ * tau's copies of credential files: the member's own ones in `own-config/` (and its agent environment) and the staged
+ * and replaced ones. A relative symlink moved into `own-config/` also names what it resolved to in the agent dir.
  */
-export function tauCredentialCopies(agentDir: string, objects: boolean, onUnavailable?: () => void): string[] {
+export function tauCredentialCopies(agentDir: string, onUnavailable?: () => void): string[] {
   const tau = path.join(agentDir, "tau");
   const files = [path.join(tau, "own-config", "agent-env.json")];
   for (const name of MIRRORED_SECRET_FILES) {
@@ -112,18 +111,30 @@ export function tauCredentialCopies(agentDir: string, objects: boolean, onUnavai
     }
     const own = path.join(tau, "own-config", "agent", name);
     try {
-      if (lstatSync(own).isSymbolicLink()) {
-        const link = readlinkSync(own);
-        if (!path.isAbsolute(link)) files.push(path.join(agentDir, link));
-      }
+      if (!lstatSync(own).isSymbolicLink()) continue;
+      const bytes = readlinkSync(own, { encoding: "buffer" });
+      if (!isUtf8(bytes)) { onUnavailable?.(); continue; }
+      const link = bytes.toString("utf8");
+      if (!path.isAbsolute(link)) files.push(joinWithoutNormalizing(resolvedOrSelf(agentDir, onUnavailable), link));
     } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
   }
-  if (objects) {
-    const dir = path.join(tau, "cluster-config", "objects");
-    try { for (const name of readdirSync(dir)) files.push(path.join(dir, name)); }
+  return files;
+}
+
+/**
+ * `dev:ino` of every downloaded cluster config object: tau-written, flat and bounded by the manifest. All of them,
+ * not only the credential ones (the manifest would tell), so a hard link of a mirrored skill is denied too.
+ */
+export function clusterObjectIdentities(agentDir: string, onUnavailable?: () => void): Set<string> {
+  const dir = path.join(agentDir, "tau", "cluster-config", "objects");
+  const identities = new Set<string>();
+  let names: string[] = [];
+  try { names = readdirSync(dir); } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+  for (const name of names) {
+    try { const info = lstatSync(path.join(dir, name), { bigint: true }); identities.add(`${info.dev}:${info.ino}`); }
     catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
   }
-  return files;
+  return identities;
 }
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
 
@@ -166,7 +177,7 @@ export function isPiSecretFile(filePath: string): boolean {
     }
     const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name)),
       // A member's own credential symlink moved into own-config/ still protects its target.
-      ...tauCredentialCopies(dir, Boolean(identity), markUnavailable)];
+      ...tauCredentialCopies(dir, markUnavailable)];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;
@@ -178,6 +189,7 @@ export function isPiSecretFile(filePath: string): boolean {
         if (other && identity.dev === other.dev && identity.ino === other.ino) return true;
       }
     }
+    if (identity && clusterObjectIdentities(dir, markUnavailable).has(`${identity.dev}:${identity.ino}`)) return true;
   }
   // Unknown off-tree aliases cannot be declared safe without complete ownership metadata.
   if (requestUnavailable) throw new HostOpError(404, "file_not_found", "Not found");

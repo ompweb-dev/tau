@@ -8,7 +8,7 @@ import { isUtf8 } from "node:buffer";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "./file-fuzzy";
 import { createGitEnvironment } from "./project-command-env";
 import type { WorkspaceIndex, WorkspaceTextMatch, WorkspaceTextSearch } from "./workspace-types";
-import { existingPathWithinRootsCheckerAsync, isPiSecretFile, PI_SECRET_NAME, tauCredentialCopies } from "./file-access";
+import { existingPathWithinRootsCheckerAsync, isPiSecretFile, PI_SECRET_NAME, clusterObjectIdentities, tauCredentialCopies } from "./file-access";
 import { TEXT_PREVIEW_MAX_BYTES } from "./file-types";
 import { HostOpError } from "./hosts/link-protocol";
 import { getAgentDir, getConfigRoot } from "./pi/paths";
@@ -236,10 +236,11 @@ async function credentialCandidates(): Promise<(filePath: string, info: BigIntSt
       catch (error) { if (!missing(error)) unknown = true; }
     }
   }
-  for (const file of agentDirs.flatMap((dir) => tauCredentialCopies(dir, true, () => { unknown = true; }))) {
+  for (const file of agentDirs.flatMap((dir) => tauCredentialCopies(dir, () => { unknown = true; }))) {
     try { const target = statSync(file, { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
     catch (error) { if (!missing(error)) unknown = true; }
   }
+  for (const dir of agentDirs) for (const id of clusterObjectIdentities(dir, () => { unknown = true; })) targets.add(id);
   return async (filePath, info) => unknown || targets.has(`${info.dev}:${info.ino}`) || await inDirs(filePath);
 }
 
