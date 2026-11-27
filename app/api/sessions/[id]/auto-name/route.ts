@@ -12,13 +12,14 @@ import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/li
  * there is one, else as a session_info entry in the file). `generated` is always false.
  */
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
   try {
-    const resolved = await resolveSessionHostOr404(id);
+    const hostId = new URL(req.url).searchParams.get("hostId");
+    const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) return resolved.response;
     const { sessionOps } = resolved.host;
 
@@ -37,12 +38,12 @@ export async function POST(
     }
 
     // The session list read yielded; Edit may now own this session.
-    if (getRpcSession(id)?.isEditingHistory()) {
+    if (getRpcSession(id, hostId)?.isEditingHistory()) {
       return Response.json({ error: "Wait for the history edit to finish", code: "session_busy" }, { status: 409 });
     }
 
     // A live pi holds the session: name it there. Otherwise append to the file.
-    const rpc = getRpcSession(id);
+    const rpc = getRpcSession(id, hostId);
     let named = false;
     if (rpc?.isAlive?.()) {
       try {

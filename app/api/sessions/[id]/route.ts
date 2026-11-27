@@ -154,6 +154,7 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
+    const hostId = new URL(req.url).searchParams.get("hostId");
     const { name } = await parseJsonWithinLimit<{ name?: string }>(req, 64 * 1024);
     if (typeof name !== "string" || !name.trim()) {
       return Response.json({ error: "name is required", code: "session_name_required" }, { status: 400 });
@@ -163,7 +164,7 @@ export async function PATCH(
     // the path check because pi does not create the session file until the
     // history holds an assistant message.
     let renamed = false;
-    const rpc = getRpcSession(id);
+    const rpc = getRpcSession(id, hostId);
     if (rpc?.isAlive?.() && typeof rpc.send === "function") {
       try {
         await rpc.send({ type: "set_session_name", name: name.trim() });
@@ -186,11 +187,11 @@ export async function PATCH(
       }
     }
     if (!renamed) {
-      const resolved = await resolveSessionHostOr404(id);
+      const resolved = await resolveSessionHostOr404(id, hostId);
       if ("response" in resolved) return resolved.response;
       // Resolution awaited: an Edit may have started on the current wrapper
       // since the failed native rename. Never bypass its fence with a file write.
-      if (getRpcSession(id)?.isEditingHistory()) {
+      if (getRpcSession(id, hostId)?.isEditingHistory()) {
         throw new WebRpcError("Wait for the history edit to finish", "session_busy");
       }
       const result = await resolved.host.sessionOps.renameSessionFile(id, name.trim());

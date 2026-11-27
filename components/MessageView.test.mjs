@@ -836,7 +836,7 @@ test("a deferred thinking block rendered from a block subset loads its source bl
   }));
   await act(async () => { fireEvent.click(view.container.querySelector(".activity-row-trigger")); });
   assert.equal(requested.length, 1);
-  assert.match(requested[0], /\/entries\/e1\/thinking\?blockIndex=2$/);
+  assert.match(requested[0], /\/entries\/e1\/thinking\?blockIndex=2&hostId=local$/);
 });
 
 test("thinking blocks stay collapsed by default and open with the expand preference", async () => {
@@ -905,7 +905,7 @@ test("a deferred thinking block auto-expanded by the preference loads its source
   }));
   await waitFor(() => assert.equal(view.container.querySelector(".thinking-output")?.textContent, "loaded"));
   assert.equal(requested.length, 1);
-  assert.match(requested[0], /\/entries\/e2\/thinking\?blockIndex=3$/);
+  assert.match(requested[0], /\/entries\/e2\/thinking\?blockIndex=3&hostId=local$/);
 });
 
 test("a running tool call shows a spinner instead of the no-result marker", () => {

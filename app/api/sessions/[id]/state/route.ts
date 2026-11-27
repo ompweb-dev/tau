@@ -5,11 +5,11 @@ import { outboxScope, outboxSnapshot } from "@/lib/message-outbox";
 /** Every answer, an offline host's 503 included, carries the session's held messages (`outbox`): a tab opening a
  * session with no pi running learns from it that there is an outbox to subscribe to. */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const response = await sessionState(id);
+  const response = await sessionState(id, new URL(req.url).searchParams.get("hostId"));
   const { entries, settledIds, ...settlements } = outboxSnapshot(id);
   return Response.json({
     ...(await response.json() as object),
@@ -20,12 +20,12 @@ export async function GET(
   }, { status: response.status });
 }
 
-async function sessionState(id: string): Promise<Response> {
+async function sessionState(id: string, hostId: string | null): Promise<Response> {
   try {
     // A live process proves the session exists: pi does not create the session
     // file until the history holds a user or assistant message, so the path check
     // below would 404 a brand-new running session.
-    const rpc = getRpcSession(id);
+    const rpc = getRpcSession(id, hostId);
     if (rpc?.isAlive()) {
       try {
         const state = await rpc.send({ type: "get_state" });
@@ -39,9 +39,10 @@ async function sessionState(id: string): Promise<Response> {
     }
 
     const exited = getExitedRpcSession(id);
-    if (exited) return Response.json({ running: false, exited });
+    // An exit mark is its host's: the same id on another host is another session.
+    if (exited && (!hostId || (exited.hostId ?? "local") === hostId)) return Response.json({ running: false, exited });
 
-    const resolved = await resolveSessionHostOr404(id);
+    const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.sessionOps.readSessionState(id);
     return result.ok ? Response.json(result.value) : opErrorResponse(result);

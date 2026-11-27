@@ -90,11 +90,55 @@ export function getConfigAgentRoots(): string[] {
  * the owned directories and their protected files: either can be symlinked.
  * Hard links retain distinct paths, so compare their device/inode identity too.
  */
-export const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~].*|-(?:backup|bak|old)(?:[.~-].*)?)?$/i;
+export const PI_SECRET_NAME = /^\.?(?:(?:mcp-)?auth|oauth|models|mcp|tau-settings)\.json(?:[.~][\s\S]*|-(?:backup|bak|old)(?:[.~-][\s\S]*)?)?$/i;
 const PI_SECRET_FILES = ["auth.json", "mcp-auth.json", "oauth.json", "models.json", "mcp.json", "tau-settings.json"];
 /** tau's key files, checked by identity too: a hard link of one outside `tau/` is still that secret. */
 const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "host-control.json",
   ...["notifications.db", "outbox.db"].flatMap((db) => [db, `${db}-wal`, `${db}-shm`, `${db}-journal`])];
+/** pi configuration files a cluster member mirrors that hold credentials (`MIRRORED` in hosts/cluster-config.ts). */
+const MIRRORED_SECRET_FILES = ["models.json", "mcp.json"];
+
+/**
+ * tau's copies of credential files: the member's own ones in `own-config/` (and its agent environment) and the staged
+ * and replaced ones. A relative symlink moved into `own-config/` or `trash/` also names what it resolved to in the agent dir.
+ */
+export function tauCredentialCopies(agentDir: string, onUnavailable?: () => void): string[] {
+  const tau = path.join(agentDir, "tau");
+  const files = [path.join(tau, "own-config", "agent-env.json")];
+  for (const name of MIRRORED_SECRET_FILES) {
+    for (const dir of [path.join(tau, "own-config"), ...["stage", "trash"].map((d) => path.join(tau, "cluster-config", d))]) {
+      files.push(path.join(dir, "agent", name));
+    }
+    // A relative link keeps its text when moved out of the agent dir (a member's own one, or one put live and then
+    // replaced): resolve it against the agent dir.
+    for (const moved of [path.join(tau, "own-config", "agent", name), path.join(tau, "cluster-config", "trash", "agent", name)]) {
+      try {
+        if (!lstatSync(moved).isSymbolicLink()) continue;
+        const bytes = readlinkSync(moved, { encoding: "buffer" });
+        if (!isUtf8(bytes)) { onUnavailable?.(); continue; }
+        const link = bytes.toString("utf8");
+        if (!path.isAbsolute(link)) files.push(joinWithoutNormalizing(resolvedOrSelf(agentDir, onUnavailable), link));
+      } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+    }
+  }
+  return files;
+}
+
+/**
+ * `dev:ino` of every downloaded cluster config object: tau-written, flat and bounded by the manifest. All of them,
+ * not only the credential ones (the manifest would tell), so a hard link of a mirrored skill is denied too.
+ */
+export function clusterObjectIdentities(agentDir: string, onUnavailable?: () => void): Set<string> {
+  const dir = path.join(agentDir, "tau", "cluster-config", "objects");
+  const identities = new Set<string>();
+  let names: string[] = [];
+  try { names = readdirSync(dir); } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+  for (const name of names) {
+    try { const info = lstatSync(path.join(dir, name), { bigint: true }); identities.add(`${info.dev}:${info.ino}`); }
+    catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+  }
+  return identities;
+}
 const credentialPolicyUnavailable = () => new HostOpError(503, "credential_policy_unavailable", "Credential exclusions cannot be verified while their filesystem metadata is unreadable");
 
 /** Request metadata failures retain a 404; incomplete credential ownership metadata throws a 503. */
@@ -134,7 +178,9 @@ export function isPiSecretFile(filePath: string): boolean {
     } catch (error) {
       if (!isMissingPathError(error)) metadataUnavailable = true;
     }
-    const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name))];
+    const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name)),
+      // A member's own credential symlink moved into own-config/ still protects its target.
+      ...tauCredentialCopies(dir, markUnavailable)];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;
@@ -146,6 +192,7 @@ export function isPiSecretFile(filePath: string): boolean {
         if (other && identity.dev === other.dev && identity.ino === other.ino) return true;
       }
     }
+    if (identity && clusterObjectIdentities(dir, markUnavailable).has(`${identity.dev}:${identity.ino}`)) return true;
   }
   // Unknown off-tree aliases cannot be declared safe without complete ownership metadata.
   if (requestUnavailable) throw new HostOpError(404, "file_not_found", "Not found");

@@ -1644,7 +1644,7 @@ export function AppShell({ appName }: { appName: string }) {
     setAutoNameStatus({ kind: "naming" });
 
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name?hostId=${encodeURIComponent(activeSelectedSessionHostId || LOCAL_HOST_ID)}`, {
         method: "POST",
       });
       const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string; code?: string };
@@ -2056,7 +2056,7 @@ export function AppShell({ appName }: { appName: string }) {
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
     window.open(
-      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1`,
+      `/api/sessions/${encodeURIComponent(selectedSession.id)}/export?inline=1&hostId=${encodeURIComponent(selectedSession.hostId || LOCAL_HOST_ID)}`,
       "_blank",
       "noopener,noreferrer",
     );

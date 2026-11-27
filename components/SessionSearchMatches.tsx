@@ -28,8 +28,10 @@ const rowStyle = (depth: number): React.CSSProperties => ({
  * One session's hits for the sidebar search, a page at a time. Mounted per
  * (session, query): a new query remounts it with an empty list.
  */
-export function SessionSearchMatches({ sessionId, query, depth, onOpen }: {
+export function SessionSearchMatches({ sessionId, hostId, query, depth, onOpen }: {
   sessionId: string;
+  /** The row's host: an id copied across hosts is another session there. */
+  hostId: string;
   query: string;
   depth: number;
   onOpen: (target: SearchMatchTarget) => void;
@@ -48,7 +50,7 @@ export function SessionSearchMatches({ sessionId, query, depth, onOpen }: {
     setLoading(true);
     setFailed(false);
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/matches?q=${encodeURIComponent(query)}&limit=${limit}`, { signal: controller.signal });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/matches?q=${encodeURIComponent(query)}&limit=${limit}&hostId=${encodeURIComponent(hostId)}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const page = await res.json() as { matches: SessionSearchMatch[]; total: number };
       setMatches(page.matches);
@@ -58,7 +60,7 @@ export function SessionSearchMatches({ sessionId, query, depth, onOpen }: {
       setFailed(true);
     }
     setLoading(false);
-  }, [sessionId, query]);
+  }, [sessionId, hostId, query]);
 
   useEffect(() => {
     // Same settle time as the sidebar's transcript search: typing must not read the session per keystroke.
