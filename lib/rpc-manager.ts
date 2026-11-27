@@ -2850,8 +2850,10 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
   return globalThis.__tauStartLocks;
 }
 
-export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
-  return getRegistry().get(sessionId);
+/** `hostId`: only that host's wrapper; the same id live on another host is another session. */
+export function getRpcSession(sessionId: string, hostId?: string | null): AgentSessionWrapper | undefined {
+  const wrapper = getRegistry().get(sessionId);
+  return !hostId || wrapper?.host.id === hostId ? wrapper : undefined;
 }
 
 /** Every registry key of the wrapper under `sessionId` (its id and any requested alias), else `[sessionId]`. */

@@ -8,10 +8,11 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const inline = new URL(req.url).searchParams.get("inline") === "1";
+  const query = new URL(req.url).searchParams;
+  const inline = query.get("inline") === "1";
 
   try {
-    const resolved = await resolveSessionHostOr404(id);
+    const resolved = await resolveSessionHostOr404(id, query.get("hostId"));
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.sessionOps.exportSession(id);
     if (!result.ok) return opErrorResponse(result);

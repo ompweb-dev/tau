@@ -202,9 +202,11 @@ const world = {
 
 async function fetchStub(url, init = {}) {
   const method = (init.method ?? "GET").toUpperCase();
-  const u = String(url);
+  const raw = String(url);
+  // Session reads name this machine (`hostId=local`) unless they say otherwise; matched without it.
+  const u = raw.replace(/([?&])hostId=local(&|$)/, (_, lead, tail) => tail ? lead : "").replace(/\?$/, "");
   const body = typeof init.body === "string" ? safeParse(init.body) : null;
-  world.calls.push({ method, url: u, body });
+  world.calls.push({ method, url: u, raw, body });
 
   for (let i = 0; i < world.holds.length; i++) {
     if (world.holds[i].match(method, u, body)) {
@@ -2237,6 +2239,9 @@ test("a delayed running lookup cannot replace a side question's readiness wait",
   resetWorld();
   primeSession("late-btw", [userMsg("u0", "q")]);
   const w = await mountSession("late-btw");
+  // A local session's reads name this machine: without it the server falls back to host-blind resolution.
+  const reads = world.calls.filter((call) => call.method === "GET" && call.url.startsWith("/api/sessions/late-btw"));
+  assert.ok(reads.length > 0 && reads.every((call) => /[?&]hostId=local(&|$)/.test(call.raw)), JSON.stringify(reads.map((call) => call.raw)));
   let release;
   world.holds.push({
     match: (method, url) => method === "GET" && url === "/api/agent/late-btw",
@@ -7300,7 +7305,7 @@ test("offline history and state 503s still hydrate held messages and scope while
   world.outboxHold = true;
   const entry = { id: "offline-server-held", sessionId: sid, mode: "followUp", message: "waiting on the offline host", state: "waiting_host", createdAt: 1 };
   world.holds.push({
-    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state`,
+    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state?hostId=h1`,
     produce: async () => ({ status: 503, value: { running: false, hostOffline: true, error: "Build box is offline", outbox: [entry], outboxScope: "offline-scope" } }),
   });
   const view = ownRoot(render(React.createElement(ChatWindow, {
@@ -7320,7 +7325,7 @@ test("offline history and state 503s still hydrate held messages and scope while
   assert.equal(callsTo("POST", `/api/agent/${sid}`).some((call) => call.body?.type === "prompt"), false);
   world.contextUnavailable = false;
   world.holds.push({
-    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state`,
+    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state?hostId=h1`,
     produce: async () => ({ value: { running: false, outbox: [entry], outboxScope: "offline-scope" } }),
   });
   await act(() => fireEvent.click(view.getByRole("button", { name: translate("chatWindow.retry") })));
