@@ -51,7 +51,7 @@ import {
   hostsCameOnline,
 } from "./SessionSidebar-helpers";
 import { TauTitle, SIDEBAR_BUTTON_TRANSITION, SidebarIconButton, SidebarPortalMenu } from "./SessionSidebar-chrome";
-import { HostGroup, ProjectRow, sessionRowKey } from "./SessionSidebar-rows";
+import { HostGroup, ProjectRow } from "./SessionSidebar-rows";
 
 /** Deadline for one /api/sessions fetch. A wedged-but-listening server never
  * answers; without this the initial spinner would pend forever. */
@@ -1840,7 +1840,7 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
                   tree={tree}
                   isExpanded={expandedProjectKeys.has(foldedHostProjectKey(project.hostId, workspaceKeyOf(project)))}
                   hiddenCount={filtersActive ? 0 : Math.max(0, tree.length - MAX_PROJECT_SESSIONS)}
-                  selectedSessionKey={selectedSessionId ? sessionRowKey(selectedHostIdProp, selectedSessionId) : null}
+                  selectedSessionId={selectedSessionId}
                   runningSessionIds={runningSessionIds}
                   awaitingInputIds={awaitingInputIds}
                   unreadSessionIds={unreadSessionIds}
