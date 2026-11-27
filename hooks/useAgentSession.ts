@@ -25,7 +25,7 @@ import type { ThinkingModelMeta } from "@/lib/thinking-levels";
 import { HostOfflineError, getOutboxScope, rememberOutboxScope, sendAgentCommand } from "@/lib/agent-client";
 import type { HostStatus } from "@/lib/hosts/host";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
-import { remoteHostId } from "@/lib/project-ordering";
+import { newChatDraftKey, remoteHostId } from "@/lib/project-ordering";
 import { recoverDraft, setDraft } from "@/lib/draft-store";
 import { formatExitedSessionNotice, translate } from "@/lib/i18n";
 import { formatApiError } from "@/lib/i18n/api-error";
@@ -3073,8 +3073,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // not a request to stop following the response that this prompt starts.
     userScrollIntentUntilRef.current = 0;
 
-    // Unset until a session exists: a failed first send goes back to the composer's own draft key.
-    let recoveryKey: string | undefined = sessionIdRef.current ?? undefined;
+    let recoveryKey = sessionIdRef.current ?? (pooled ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
     // Set just before the prompt goes out: a lost reply from any earlier command (get_state, set_model) ran no prompt.
     let promptIssued = false;
     try {
@@ -3161,7 +3160,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       dispatch({ type: "end" });
       return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ?? recoveryKey };
     }
-  }, [catchUp, eventCoalescer, isNew, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
+  }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (bashRunningRef.current || editInFlightRef.current) return;

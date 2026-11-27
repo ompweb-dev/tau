@@ -53,9 +53,9 @@ export function mergeRecoveredText(current: string, { text, replace }: DraftReco
 declare global {
   var __tauChatDrafts: Map<string, ChatDraft> | undefined;
   var __tauChatDraftListeners: Set<() => void> | undefined;
+  var __tauChatDraftOwners: Map<string, string> | undefined;
+  var __tauChatDraftTransientKeys: Set<string> | undefined;
   var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
-  var __tauChatDraftTransientKeys: Map<string, string> | undefined;
-  var __tauChatDraftPagehide: boolean | undefined;
   var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
   var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
   var __tauChatDraftSubmissions: Set<DraftSubmission> | undefined;
@@ -153,12 +153,12 @@ export function markDraftEdited(key: string): void {
 
 /** A submission waiting for its durable commit, owned by this store (not by the composer mount that sent it, which may
  *  be gone by the time the commit lands). `edited` records any edit since it was sent. */
-export interface DraftSubmission { key: string | undefined; snapshot: ChatDraft | null; revision: number; edited: boolean; owner?: string }
+export interface DraftSubmission { key: string | undefined; snapshot: ChatDraft | null; revision: number; edited: boolean }
 
 /** Starts tracking the draft at `key`. Every submission MUST be ended (`endDraftSubmission`) once its commit settles,
  *  whether it was stored, refused or failed. */
-export function beginDraftSubmission(key: string | undefined, owner?: string): DraftSubmission {
-  const submission: DraftSubmission = { key, snapshot: key ? getDraft(key) : null, revision: key ? getDraftRevision(key) : -1, edited: false, owner };
+export function beginDraftSubmission(key: string | undefined): DraftSubmission {
+  const submission: DraftSubmission = { key, snapshot: key ? getDraft(key) : null, revision: key ? getDraftRevision(key) : -1, edited: false };
   submissions.add(submission);
   return submission;
 }
@@ -227,8 +227,31 @@ export function getDraft(key: string): ChatDraft | null {
   return draft ? cloneDraft(draft) : null;
 }
 
-export function recoverDraft(key: string, recovery: DraftRecovery): void {
+/** The draft key each chat's mounted composer shows (`holdDraftOwner`), by chat. */
+const liveOwners = (globalThis.__tauChatDraftOwners ??= new Map<string, string>());
+
+/** Records that `owner`'s composer shows `key` until the returned release runs. */
+export function holdDraftOwner(owner: string, key: string): () => void {
+  liveOwners.set(owner, key);
+  return () => {
+    if (liveOwners.get(owner) === key) liveOwners.delete(owner);
+  };
+}
+
+/** Keys of drafts that live only as long as this page (`transientDraftKey`). */
+const transientKeys = (globalThis.__tauChatDraftTransientKeys ??= new Set<string>());
+
+/** `key`, as a draft key of this page only: kept out of sessionStorage, since nothing reopens it after a reload. */
+export function transientDraftKey(key: string): string {
+  transientKeys.add(key);
+  return key;
+}
+
+/** Recovers into `key`'s draft or, when `owner`'s composer is mounted, into the draft it shows now: a new chat that
+ *  sent moves to a key of its own, and another chat may have its old one. */
+export function recoverDraft(key: string, recovery: DraftRecovery, owner?: string): void {
   if (!recovery.text && !recovery.images?.length && !recovery.files?.length && !recovery.uploads?.length) return;
+  key = (owner && liveOwners.get(owner)) || key;
   if (key) {
     const draft = getDraft(key) ?? { value: "", images: [], files: [] };
     setDraft(key, {
@@ -297,50 +320,4 @@ export function clearDraft(key: string): void {
   if (deleted) {
     for (const listener of listeners) listener();
   }
-}
-
-/** Keys of drafts that live only as long as this page (`continueDraft`), with the key each continues: kept out of
- *  sessionStorage, where their text is added to that key's as the page is hidden (a reload reopens no such key). */
-const transientKeys = (globalThis.__tauChatDraftTransientKeys ??= new Map<string, string>());
-if (typeof window !== "undefined" && !globalThis.__tauChatDraftPagehide) {
-  globalThis.__tauChatDraftPagehide = true;
-  window.addEventListener("pagehide", () => {
-    const texts = new Map<string, string>();
-    for (const [key, base] of transientKeys) {
-      const text = drafts.get(key)?.value;
-      if (text) texts.set(base, mergeRecoveredText(texts.get(base) ?? drafts.get(base)?.value ?? "", { text }));
-    }
-    try {
-      for (const [base, text] of texts) sessionStorage.setItem(STORAGE_PREFIX + base, text);
-    } catch {
-      // Storage may be unavailable.
-    }
-  });
-}
-
-/** Submissions in flight from `from` (only `owner`'s, when given) recover to `to` from now on. */
-function moveDraftSubmissions(from: string, to: string, owner?: string): void {
-  for (const submission of submissions) if (submission.key === from && (owner === undefined || submission.owner === owner)) submission.key = to;
-}
-
-/** The same chat continues under `to`, a key of its own for this page only (a new chat that sent and moved to a tab of
- *  its own): `from`'s draft moves there, and so do the sends in flight that `owner`'s composer began. Call it before
- *  the chat that takes `from` over renders. */
-export function continueDraft(from: string, to: string, owner: string | undefined): void {
-  transientKeys.set(to, from);
-  const draft = getDraft(from);
-  clearDraft(from);
-  if (draft) setDraft(to, draft);
-  else clearDraft(to);
-  if (owner !== undefined) moveDraftSubmissions(from, to, owner);
-}
-
-/** `continueDraft` undone once that key ends (its tab closed, its chat left it): what it holds is recovered into
- *  `to`, as into any composer, and its submissions in flight recover there too. */
-export function foldDraft(from: string, to: string): void {
-  const draft = getDraft(from);
-  clearDraft(from);
-  transientKeys.delete(from);
-  moveDraftSubmissions(from, to);
-  if (draft) recoverDraft(to, { text: draft.value, images: draft.images.length ? draft.images : undefined, files: draft.files.length ? draft.files : undefined, uploads: draft.uploads, ...(draft.promptOnly ? { promptOnly: true } : {}) });
 }

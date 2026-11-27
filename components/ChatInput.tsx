@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, foldDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, holdDraftOwner, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -181,10 +181,8 @@ interface Props {
   onBuiltinCommand?: (message: string) => Promise<BuiltinSlashCommandResult>;
   onAudioUnlock?: () => void;
   draftKey?: string;
-  /** The key `draftKey` replaces for the same chat (a new chat given a draft of its own): a change from it keeps the
-   *  composer's content and moves its pending recoveries along, instead of loading another draft. */
-  draftKeyContinues?: string;
-  /** Identifies the chat across remounts of this composer (AppShell's mount key): its sends move with its draft. */
+  /** Identifies the chat across remounts of this composer (ChatWindow's): a failed send's text comes back to the draft
+   *  this chat shows while it is mounted, whatever key it has moved to meanwhile. */
   draftOwner?: string;
   /** Owning host for file uploads and the @ file index (this machine when absent). */
   uploadHostId?: string;
@@ -307,7 +305,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   generationSpeed,
   onClearQueuedMessages,
   draftKey = "new:unassigned",
-  draftKeyContinues,
   draftOwner,
   uploadHostId = LOCAL_HOST_ID,
   resolveUploadHost,
@@ -462,8 +459,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   }, [markInputEdited]);
   // Navigation starts a new identity, even when a draft key is later reused.
   const draftRecoveryIdentityRef = useRef({ key: draftKey });
-  // The workspace key this composer's own key (`draftKey`) continues, while it has one.
-  const scopeBaseRef = useRef(draftKeyContinues);
   // Async dictation and slash-command completions must see the latest edit gate.
   const submissionBlockedRef = useRef(submissionBlocked);
   const valueRef = useRef(value);
@@ -965,16 +960,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   useLayoutEffect(() => {
     const previousDraftKey = draftKeyRef.current;
     if (previousDraftKey === draftKey) return;
-    const leftBase = scopeBaseRef.current;
-    scopeBaseRef.current = draftKeyContinues;
-    if (previousDraftKey && draftKey && previousDraftKey === draftKeyContinues) {
-      // The same chat under a key of its own: AppShell moved its draft and sends there (continueDraft); keep the
-      // composer as is, with any edit of this commit.
-      draftKeyRef.current = draftKey;
-      setDraft(draftKey, captureDraft());
-      draftRecoveryIdentityRef.current = { key: draftKey };
-      return;
-    }
 
     // Invalidate any attachment reads still in flight for the old session so
     // they cannot append onto the new session's composer, and drop any stale
@@ -987,8 +972,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
 
     if (previousDraftKey) {
       setDraft(previousDraftKey, captureDraft());
-      // A key of its own ends with the chat leaving it (its session, another workspace): its draft goes back.
-      if (leftBase) foldDraft(previousDraftKey, leftBase);
     }
 
     const draft = draftKey ? getDraft(draftKey) : null;
@@ -1011,7 +994,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       for (const upload of prev) if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
       return draftUploadsToAttachedUploads(draft?.uploads);
     });
-  }, [draftKey, draftKeyContinues, setPromptOnly, captureDraft]);
+  }, [draftKey, setPromptOnly, captureDraft]);
+
+  useLayoutEffect(() => (draftOwner && draftKey ? holdDraftOwner(draftOwner, draftKey) : undefined), [draftOwner, draftKey]);
 
   useLayoutEffect(() => subscribeDraftRecovery((key, recovery) => {
     if (draftKeyRef.current !== key) return;
@@ -1142,6 +1127,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     }
     if (submissionBlockedRef.current) return;
     if (rejectsOversizedPrompt(composedMessage, attachedImagesRef.current)) return;
+    const key = draftKeyRef.current;
     const images = attachedImagesRef.current.length ? attachedImagesRef.current : undefined;
     const recovery = { text: msg, images: images?.map(imageToDraftImage), files: files.length ? files.map(textFileToDraftFile) : undefined, ...(promptOnlyRef.current ? { promptOnly: true } : {}), ...uploadRecovery(attachedUploadsRef.current) };
     const stored = outbox && !shellCommand ? clearOnceStored(raw) : undefined;
@@ -1167,22 +1153,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       }
       return;
     }
-    // Owned by the store, not this mount: the chat's composer may remount, or move to a key of its own, meanwhile.
-    const submission = beginDraftSubmission(draftKeyRef.current, draftOwner);
     clearInput();
     try {
       const result = await pending;
       if (result.status === "rejected") {
-        const destination = result.recoveryKey ?? submission.key;
-        if (destination) recoverDraft(destination, recovery);
+        const destination = result.recoveryKey ?? key;
+        if (destination) recoverDraft(destination, recovery, draftOwner);
       }
     } catch (error) {
-      if (submission.key) recoverDraft(submission.key, recovery);
+      if (key) recoverDraft(key, recovery, draftOwner);
       throw error;
-    } finally {
-      endDraftSubmission(submission);
     }
-  }, [value, isStreaming, onBuiltinCommand, onSend, outbox, clearInput, clearOnceStored, onAudioUnlock, rejectsOversizedPrompt, rejectsPendingUploads, runBuiltinCommand, sendSideQuestion]);
+  }, [value, isStreaming, draftOwner, onBuiltinCommand, onSend, outbox, clearInput, clearOnceStored, onAudioUnlock, rejectsOversizedPrompt, rejectsPendingUploads, runBuiltinCommand, sendSideQuestion]);
   const {
     isRecording,
     isPaused,
