@@ -68,6 +68,32 @@ test("failed workspace rename is reported without an unhandled rejection; failed
   }
 });
 
+test("a nested row follows the selection when it moves between children of one parent", () => {
+  const noop = () => {};
+  const none = new Set();
+  const session = (id, name) => ({ id, path: `/x/${id}.jsonl`, cwd: "/srv/app", name, firstMessage: "", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1 });
+  // One tree for every render: only the selection changes, so the rows' memo comparators decide.
+  const exited = new Map();
+  const tree = [{ session: session("p1", "Parent"), children: [{ session: session("a1", "Child A"), children: [] }, { session: session("b1", "Child B"), children: [] }] }];
+  const props = (selectedSessionId) => ({
+    project: { path: "/srv/app" }, isActive: true, isExpanded: true, activity: undefined, tree, hiddenCount: 0,
+    selectedSessionId, runningSessionIds: none, awaitingInputIds: none, unreadSessionIds: none, exitedSessions: exited, relativeTimeNow: 0,
+    onActivate: noop, onToggleExpand: noop, onRemoveProject: noop, onEditLaunchConfig: noop, onUpdatePresentation: noop,
+    onDragProjectChange: noop, onDropProject: noop, onMoveProject: noop, pinnable: false, onTogglePin: noop, isDragTarget: false,
+    removeBusy: false, onSelectSession: noop,
+  });
+  const current = (name) => screen.getByRole("button", { name }).getAttribute("aria-current");
+  try {
+    const { rerender } = render(React.createElement(ProjectRow, props("a1")));
+    assert.equal(current("Child A"), "true");
+    rerender(React.createElement(ProjectRow, props("b1")));
+    assert.equal(current("Child A"), null);
+    assert.equal(current("Child B"), "true");
+  } finally {
+    cleanup();
+  }
+});
+
 test("a session whose id another host also lists says so in its status line", () => {
   const noop = () => {};
   const session = { id: "s1", path: "", cwd: "/srv/app", created: "2026-01-01T00:00:00Z", modified: "2026-01-01T00:00:00Z", messageCount: 1, firstMessage: "hello", alsoOnHosts: ["Build box"] };

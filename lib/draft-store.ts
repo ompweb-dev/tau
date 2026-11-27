@@ -83,7 +83,8 @@ function readStoredDrafts(): Map<string, ChatDraft> {
     const storageKeys = Array.from({ length: sessionStorage.length }, (_, i) => sessionStorage.key(i));
     for (const storageKey of storageKeys) {
       if (!storageKey?.startsWith(STORAGE_PREFIX)) continue;
-      if (stored.size >= MAX_DRAFTS) {
+      // A host-keyed build (reverted) stored session drafts as `<host>/<id>`: nothing reads them, so they go.
+      if (stored.size >= MAX_DRAFTS || /^[^:]+\//.test(storageKey.slice(STORAGE_PREFIX.length))) {
         sessionStorage.removeItem(storageKey);
         sessionStorage.removeItem(PROMPT_STORAGE_PREFIX + storageKey.slice(STORAGE_PREFIX.length));
         continue;

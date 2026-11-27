@@ -3152,7 +3152,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       independentRunErrorRef.current = null;
       slashCommandRunRef.current = false;
       dispatch({ type: "end" });
-      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey: sessionIdRef.current ?? recoveryKey };
+      // The composer's draft key: the new chat's until promotion, which ensureNewSession can also do before it throws.
+      if (isNew && onSessionCreated && newSessionPromotedRef.current && sessionIdRef.current) recoveryKey = sessionIdRef.current;
+      return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey };
     }
   }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage]);
 

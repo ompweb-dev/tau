@@ -5165,6 +5165,7 @@ test("a fresh chat whose host drops after the spawn adopts the kept session, so 
   let first;
   await act(async () => { first = await w.latest.handleSend("first"); await sleep(30); });
   assert.equal(first.status, "rejected");
+  assert.equal(first.recoveryKey, "kept-remote", "promoted before the refusal: the text goes to the session's composer");
   assert.equal(toastCalls[0]?.[0], "error");
   let retry;
   await act(async () => { retry = w.latest.handleSend("first"); await sleep(30); });
@@ -5251,6 +5252,7 @@ test("pooled creation uncertainty with a known id adopts the owner without resen
   let first;
   await act(async () => { first = await w.latest.handleSend("do not resend automatically"); await sleep(30); });
   assert.equal(first.status, "rejected");
+  assert.equal(first.recoveryKey, "new:pool:workers:app", "not promoted yet: the text goes back to the new chat's composer");
   assert.equal(w.latest.sessionIdRef.current, owner.sessionId);
   assert.equal(callsTo("POST", `/api/agent/${owner.sessionId}`).filter((call) => call.body?.type === "prompt").length, 0);
   let retry;

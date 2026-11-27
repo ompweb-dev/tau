@@ -155,6 +155,8 @@ function open(dir: string, path: string): Database {
     const legacy = join(dir, "notifications.json");
     const imported = transaction(database, () => {
       database.exec(SCHEMA);
+      // A host-keyed build (reverted) wrote `<host>/<id>:<type>` ids, which nothing replaces or retracts.
+      database.exec("DELETE FROM history WHERE id GLOB '*/*'");
       return importLegacy(database, legacy);
     });
     if (imported) {

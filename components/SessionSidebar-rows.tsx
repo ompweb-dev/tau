@@ -654,6 +654,8 @@ const SessionTreeItem = memo(function SessionTreeItem({
   if (prev.node !== next.node) return false;
   if (prev.selectedSessionId !== next.selectedSessionId) {
     // Only re-render if THIS node's selection state flipped.
+    // A parent's subtree holds the rows whose selection changed: it must re-render too.
+    if (prev.node.children.length > 0) return false;
     const id = prev.node.session.id;
     if ((id === prev.selectedSessionId) !== (id === next.selectedSessionId)) return false;
   }
