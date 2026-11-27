@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, isSameDraft, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, moveDraftSubmission, getDraft, type DraftSubmission, getDraftRevision, foldSentDraft, holdDraftOwner, isSameDraft, isSentDraftKey, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -181,6 +181,12 @@ interface Props {
   onBuiltinCommand?: (message: string) => Promise<BuiltinSlashCommandResult>;
   onAudioUnlock?: () => void;
   draftKey?: string;
+  /** Identifies the chat across remounts of this composer (ChatWindow's): a failed send's text comes back to the draft
+   *  this chat shows while it is mounted, whatever key it has moved to meanwhile. */
+  draftOwner?: string;
+  /** The workspace key `draftKey` continues when it is the chat's own (a new chat that sent): moving to it keeps the
+   *  composer and what it holds. */
+  draftKeyContinues?: string;
   /** Owning host for file uploads and the @ file index (this machine when absent). */
   uploadHostId?: string;
   /** Lazily bind a pool's real owner before staging any file bytes. Failure never falls back locally. */
@@ -302,6 +308,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   generationSpeed,
   onClearQueuedMessages,
   draftKey = "new:unassigned",
+  draftOwner,
+  draftKeyContinues,
   uploadHostId = LOCAL_HOST_ID,
   resolveUploadHost,
   cwd,
@@ -455,6 +463,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   }, [markInputEdited]);
   // Navigation starts a new identity, even when a draft key is later reused.
   const draftRecoveryIdentityRef = useRef({ key: draftKey });
+  // This composer's submissions in flight (clearOnceStored), which move with its draft.
+  const ownSubmissionsRef = useRef(new Set<DraftSubmission>());
   // Async dictation and slash-command completions must see the latest edit gate.
   const submissionBlockedRef = useRef(submissionBlocked);
   const valueRef = useRef(value);
@@ -903,7 +913,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     setAtQuery(null);
     setSlashMatch(null);
     setHistoryMenuOpen(false);
-    if (draftKey) clearDraft(draftKey);
+    // A composer that moved to its own sent key since (a command clearing once stored) left the workspace's key to the
+    // next new chat: it never clears that one.
+    const movedToOwn = draftKeyRef.current !== draftKey && draftKeyRef.current !== undefined && isSentDraftKey(draftKeyRef.current);
+    if (draftKey && !movedToOwn) clearDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     clearImages();
     clearTextFiles();
@@ -927,8 +940,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     // Dictation can submit before the layout persistence effect sees its inserted text.
     if (key) setDraft(key, captureDraft());
     const pending = beginDraftSubmission(draftKeyRef.current);
+    ownSubmissionsRef.current.add(pending);
     const commit = () => {
       endDraftSubmission(pending);
+      ownSubmissionsRef.current.delete(pending);
       // Only the sent draft itself is ever consumed: an edit since it was sent keeps it.
       if (pending.edited) return;
       if (composerAliveRef.current && draftKeyRef.current === pending.key
@@ -938,7 +953,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       else if (pending.key && pending.snapshot) consumeDraft(pending.key, pending.snapshot, pending.revision);
     };
     /** The submission settled without a commit (refused or failed): stop tracking it. */
-    commit.release = () => endDraftSubmission(pending);
+    commit.release = () => {
+      endDraftSubmission(pending);
+      ownSubmissionsRef.current.delete(pending);
+    };
     return commit;
   }, [clearInput, captureDraft]);
 
@@ -956,6 +974,21 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   useLayoutEffect(() => {
     const previousDraftKey = draftKeyRef.current;
     if (previousDraftKey === draftKey) return;
+    if (previousDraftKey && draftKey && previousDraftKey === draftKeyContinues) {
+      // A new chat moving to its own key as it sends: the composer, and what it still holds (a command kept after a
+      // failure), go along; the workspace's key is left for the next new chat.
+      draftKeyRef.current = draftKey;
+      draftRecoveryIdentityRef.current = { key: draftKey };
+      setDraft(draftKey, captureDraft());
+      clearDraft(previousDraftKey);
+      // This composer's command in flight (`/name` sends before it clears) clears the moved draft once it is stored.
+      for (const submission of ownSubmissionsRef.current) if (submission.key === previousDraftKey) moveDraftSubmission(submission, draftKey);
+      return;
+    }
+    // Leaving the chat's own key: what it holds goes to its session's draft when the session takes over, else back to
+    // its workspace's (another workspace may be on another host, where its uploads are not).
+    const leavingOwn = previousDraftKey !== undefined && isSentDraftKey(previousDraftKey);
+    const carried = leavingOwn && draftKey && !draftKey.startsWith("new:") && !isSentDraftKey(draftKey) ? captureDraft() : null;
 
     // Invalidate any attachment reads still in flight for the old session so
     // they cannot append onto the new session's composer, and drop any stale
@@ -966,9 +999,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     setAttachNotice(null);
     setQueuedDeleteTarget(null);
 
-    if (previousDraftKey) {
-      setDraft(previousDraftKey, captureDraft());
-    }
+    if (previousDraftKey) setDraft(previousDraftKey, captureDraft());
+    if (carried) clearDraft(previousDraftKey!);
+    else if (leavingOwn) foldSentDraft(previousDraftKey!);
 
     const draft = draftKey ? getDraft(draftKey) : null;
     draftKeyRef.current = draftKey;
@@ -990,7 +1023,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       for (const upload of prev) if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl);
       return draftUploadsToAttachedUploads(draft?.uploads);
     });
-  }, [draftKey, setPromptOnly, captureDraft]);
+    if (carried && draftKey) recoverDraft(draftKey, { text: carried.value, images: carried.images.length ? carried.images : undefined, files: carried.files.length ? carried.files : undefined, uploads: carried.uploads, ...(carried.promptOnly ? { promptOnly: true } : {}) });
+  }, [draftKey, draftKeyContinues, setPromptOnly, captureDraft]);
+
+  useLayoutEffect(() => (draftOwner && draftKey ? holdDraftOwner(draftOwner, draftKey) : undefined), [draftOwner, draftKey]);
 
   useLayoutEffect(() => subscribeDraftRecovery((key, recovery) => {
     if (draftKeyRef.current !== key) return;
@@ -1152,13 +1188,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       const result = await pending;
       if (result.status === "rejected") {
         const destination = result.recoveryKey ?? key;
-        if (destination) recoverDraft(destination, recovery);
+        // Into the chat's own draft when it shows one over the destination workspace; a session id stays as named.
+        if (destination) recoverDraft(destination, recovery, draftOwner);
       }
     } catch (error) {
-      if (key) recoverDraft(key, recovery);
+      if (key) recoverDraft(key, recovery, draftOwner);
       throw error;
     }
-  }, [value, isStreaming, onBuiltinCommand, onSend, outbox, clearInput, clearOnceStored, onAudioUnlock, rejectsOversizedPrompt, rejectsPendingUploads, runBuiltinCommand, sendSideQuestion]);
+  }, [value, isStreaming, draftOwner, onBuiltinCommand, onSend, outbox, clearInput, clearOnceStored, onAudioUnlock, rejectsOversizedPrompt, rejectsPendingUploads, runBuiltinCommand, sendSideQuestion]);
   const {
     isRecording,
     isPaused,
@@ -1179,7 +1216,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     seekPreview: seekPreviewDictation,
     confirmTranscribe: confirmTranscribeDictation,
   } = useDictation({
-    scope: draftKey,
+    // A new chat's own key is its workspace's for dictation: a reload or another tab adopts its jobs from there.
+    scope: draftKeyContinues ?? draftKey,
     // `after` comes back with the transcript from the server job, so a send or
     // queue chosen before a session switch (which remounts this composer) holds.
     // The run may have started or ended since: queue while the agent runs

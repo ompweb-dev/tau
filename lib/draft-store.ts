@@ -53,6 +53,8 @@ export function mergeRecoveredText(current: string, { text, replace }: DraftReco
 declare global {
   var __tauChatDrafts: Map<string, ChatDraft> | undefined;
   var __tauChatDraftListeners: Set<() => void> | undefined;
+  var __tauChatDraftOwners: Map<string, string> | undefined;
+  var __tauChatDraftsFolded: boolean | undefined;
   var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
   var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
   var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
@@ -165,6 +167,13 @@ export function endDraftSubmission(submission: DraftSubmission): void {
   submissions.delete(submission);
 }
 
+/** A submission in flight settles against `to`, where its chat's draft just moved unchanged: it takes `to`'s
+ *  revision, so its commit still consumes the draft it sent unless that is edited later. */
+export function moveDraftSubmission(submission: DraftSubmission, to: string): void {
+  submission.key = to;
+  submission.revision = getDraftRevision(to);
+}
+
 function markSubmissionsEdited(key: string): void {
   for (const submission of submissions) if (submission.key === key) submission.edited = true;
 }
@@ -225,8 +234,52 @@ export function getDraft(key: string): ChatDraft | null {
   return draft ? cloneDraft(draft) : null;
 }
 
-export function recoverDraft(key: string, recovery: DraftRecovery): void {
+/** The draft key each chat's mounted composer shows (`holdDraftOwner`), by chat. */
+const liveOwners = (globalThis.__tauChatDraftOwners ??= new Map<string, string>());
+
+/** Records that `owner`'s composer shows `key` until the returned release runs. */
+export function holdDraftOwner(owner: string, key: string): () => void {
+  liveOwners.set(owner, key);
+  return () => {
+    if (liveOwners.get(owner) === key) liveOwners.delete(owner);
+  };
+}
+
+// Its own namespace: a workspace's key starts with `new:` and a session's is its id, so neither can look like one.
+const SENT_KEY_PREFIX = "sent:";
+
+/** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. `chat`
+ *  holds no `:`. */
+export function sentDraftKey(base: string, chat: string): string {
+  return `${SENT_KEY_PREFIX}${chat}:${base}`;
+}
+
+export function isSentDraftKey(key: string): boolean {
+  return key.startsWith(SENT_KEY_PREFIX);
+}
+
+function sentDraftBase(key: string): string {
+  return key.slice(key.indexOf(":", SENT_KEY_PREFIX.length) + 1);
+}
+
+/** A `sentDraftKey`'s draft goes back to its workspace's (its chat is gone, or the page was reloaded): recovered into
+ *  it as into any composer, so a new chat showing it gets the text too. */
+export function foldSentDraft(key: string): void {
+  const draft = getDraft(key);
+  clearDraft(key);
+  if (draft) recoverDraft(sentDraftBase(key), { text: draft.value, images: draft.images.length ? draft.images : undefined, files: draft.files.length ? draft.files : undefined, uploads: draft.uploads, ...(draft.promptOnly ? { promptOnly: true } : {}) });
+}
+
+/** Recovers into `key`'s draft or, when `owner`'s composer is mounted, into the draft it shows now: a new chat that
+ *  sent moves to a key of its own, and another chat may have its old one. */
+export function recoverDraft(key: string, recovery: DraftRecovery, owner?: string): void {
   if (!recovery.text && !recovery.images?.length && !recovery.files?.length && !recovery.uploads?.length) return;
+  // The chat's own key over the workspace it sent on, while it shows it; never another draft, which may be another
+  // workspace's on another host than the recovered uploads (a session the send created comes as its own `key`).
+  const shown = owner ? liveOwners.get(owner) : undefined;
+  if (shown && isSentDraftKey(shown) && sentDraftBase(shown) === key) key = shown;
+  // A chat's own key that no composer shows any more (its chat went away): its workspace's draft takes it.
+  if (isSentDraftKey(key) && ![...liveOwners.values()].includes(key)) key = sentDraftBase(key);
   if (key) {
     const draft = getDraft(key) ?? { value: "", images: [], files: [] };
     setDraft(key, {
@@ -295,4 +348,10 @@ export function clearDraft(key: string): void {
   if (deleted) {
     for (const listener of listeners) listener();
   }
+}
+
+// A reload reopens no chat's own key: their drafts are their workspaces' again (once per page, not per hot reload).
+if (!globalThis.__tauChatDraftsFolded) {
+  globalThis.__tauChatDraftsFolded = true;
+  for (const key of [...drafts.keys()]) if (isSentDraftKey(key)) foldSentDraft(key);
 }

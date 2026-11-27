@@ -6108,6 +6108,14 @@ test("a kept chat that sent a builtin command creating its session keeps a tab o
   const h = await sentBesideFreshChat(t, undefined, "/name Early");
   assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own");
   assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
+  world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "fresh idea" } }); await sleep(60); });
+  await act(async () => { h.release(); await sleep(400); });
+  assert.equal([...h.view.container.querySelectorAll("textarea")].some((area) => area.value.includes("/name Early")), false, "the command, once run, is cleared from the draft it moved to");
+  const stored = Object.keys(window.sessionStorage).filter((key) => window.sessionStorage.getItem(key)?.includes("/name Early"));
+  assert.deepEqual(stored, [], "and from storage, where a reload would bring it back");
+  assert.equal(window.sessionStorage.getItem("tau-draft-new:pool:workers:app"), "fresh idea", "the fresh new chat's stored draft is not cleared with it");
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "" } }); await sleep(30); });
   h.view.unmount();
 });
 
@@ -6121,6 +6129,117 @@ test("a kept chat whose session cannot be created keeps its tab and shows the er
   assert.equal(h.focusedGroup(), h.draftGroup);
   assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
   assert.match(h.chatView(h.draftGroup).textContent, /spawn failed/, "showing its error");
+  h.view.unmount();
+});
+
+test("a kept chat whose send fails gets its text back in its own composer, not the fresh new chat's", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "fresh idea" } }); await sleep(60); });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.composerIn(h.draftGroup).value, "hello there", "the kept chat has its prompt back");
+  assert.equal(h.composerIn(h.other).value, "fresh idea", "the fresh new chat keeps only its own text");
+  h.view.unmount();
+});
+
+test("two kept chats swapped in and out of the new chat's tab each keep their own draft", async (t) => {
+  let releaseB;
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  // The fresh chat B sends too, then a third new chat opens: B moves to a tab of its own beside A's.
+  world.holds.push({ match: (method, url) => method === "POST" && url === "/api/agent/new", produce: () => new Promise((resolve) => { releaseB = () => resolve({ status: 500, value: { error: "spawn failed too" } }); }) });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "second prompt" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.composerIn(h.other), { key: "Enter" }); await sleep(60); });
+  await until(() => releaseB, "B's session is being created");
+  const tabA = within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") });
+  // Taking A up moves B to a tab of its own; taking B up again moves A back.
+  await act(async () => { fireEvent.click(tabA); await sleep(150); });
+  const tabB = h.newChatTabs().find((tab) => tab !== tabA && h.other.contains(tab)) ?? h.newChatTabs().find((tab) => tab.getAttribute("aria-selected") !== "true");
+  await act(async () => { fireEvent.click(tabB); await sleep(150); });
+  await act(async () => { h.release(); releaseB(); await sleep(400); });
+  const values = [h.composerIn(h.draftGroup).value, h.composerIn(h.other).value].sort();
+  assert.deepEqual(values, ["hello there", "second prompt"], "each failed prompt is back in its own chat, once");
+  for (const group of [h.draftGroup, h.other]) await act(async () => { fireEvent.change(h.composerIn(group), { target: { value: "" } }); await sleep(30); });
+  h.view.unmount();
+});
+
+test("a new chat that replaces a shown kept chat gets the workspace's draft, and that chat's failed prompt", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "fresh idea" } }); await sleep(60); });
+  // Taking the kept chat up closes the unsent fresh one; its draft stays with the workspace.
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") })); await sleep(150); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(150); });
+  const shown = h.newChatTabs().find((tab) => tab.getAttribute("aria-selected") === "true" && h.groupOf(tab).querySelector('[data-group-focused="true"]'));
+  const composer = h.composerIn(h.groupOf(shown ?? h.newChatTab()));
+  assert.match(composer.value, /fresh idea/, "the workspace's draft, not a kept chat's key");
+  await act(async () => { h.release(); await sleep(300); });
+  assert.match(composer.value, /hello there/, "the replaced chat's failed prompt comes back there");
+  await act(async () => { fireEvent.change(composer, { target: { value: "" } }); await sleep(30); });
+  h.view.unmount();
+});
+
+test("a kept chat's failed prompt goes to the workspace's new chat once the kept chat's tab is closed", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  const kept = within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") });
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("button", { name: translate("tabBar.closeTab", { label: kept.textContent || translate("appShell.newSession") }) })); await sleep(120); });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.match(h.composerIn(h.other).value, /hello there/, "a send that fails after its tab closed is not lost");
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "" } }); await sleep(60); });
+  h.view.unmount();
+});
+
+test("text typed into a kept chat after it sent stays with it when another new chat opens", async (t) => {
+  let release;
+  const h = await draftInItsOwnGroup(t);
+  world.holds.push({ match: (method, url) => method === "POST" && url === "/api/agent/new", produce: () => new Promise((resolve) => { release = () => resolve({ status: 500, value: { error: "spawn failed" } }); }) });
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "hello there" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.draftComposer, { key: "Enter" }); await sleep(60); });
+  await until(() => release, "the new chat is being created");
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "and more" } }); await sleep(60); });
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(h.composerIn(h.other).value, "", "the fresh new chat starts empty");
+  assert.equal(h.composerIn(h.draftGroup).value, "and more", "the kept chat keeps what was typed into it");
+  await act(async () => { release(); await sleep(300); });
+  assert.match(h.composerIn(h.draftGroup).value, /and more[\s\S]*hello there|hello there[\s\S]*and more/, "and gets its failed prompt back beside it");
+  assert.equal(h.composerIn(h.other).value, "");
+  h.view.unmount();
+});
+
+test("text typed into a new chat while its session is created stays in that chat once the session takes over", async (t) => {
+  const h = await sentBesideFreshChat(t);
+  world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "typed while spawning" } }); await sleep(60); });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.ok(within(h.draftGroup).queryByRole("tab", { name: "hello there" }), "the session took the kept chat's tab");
+  assert.equal(h.composerIn(h.draftGroup).value, "typed while spawning", "its composer keeps the text");
+  assert.equal(h.composerIn(h.other).value, "", "the fresh new chat does not get it");
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "" } }); await sleep(30); });
+  h.view.unmount();
+});
+
+test("a failed kept chat replaced by another new chat leaves its text to the workspace's draft", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.composerIn(h.draftGroup).value, "hello there");
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") })); await sleep(150); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(150); });
+  const composers = [...h.view.container.querySelectorAll("textarea")].map((area) => area.value);
+  assert.ok(composers.some((value) => value === "hello there"), `the new chat shows it: ${JSON.stringify(composers)}`);
+  for (const area of h.view.container.querySelectorAll("textarea")) await act(async () => { fireEvent.change(area, { target: { value: "" } }); await sleep(20); });
+  h.view.unmount();
+});
+
+test("a kept chat whose retry fails too gets its prompt back in its own composer", async (t) => {
+  let releaseRetry;
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { h.release(); await sleep(300); });
+  world.holds.push({ match: (method, url) => method === "POST" && url === "/api/agent/new", produce: () => new Promise((resolve) => { releaseRetry = () => resolve({ status: 500, value: { error: "spawn failed again" } }); }) });
+  const kept = h.composerIn(h.draftGroup);
+  await act(async () => { fireEvent.keyDown(kept, { key: "Enter" }); await sleep(60); });
+  await until(() => releaseRetry, "the retry is sent");
+  await act(async () => { releaseRetry(); await sleep(300); });
+  assert.equal(h.composerIn(h.draftGroup).value, "hello there", "back where it was sent from");
+  assert.equal(h.composerIn(h.other).value, "", "not in the fresh new chat");
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "" } }); await sleep(30); });
   h.view.unmount();
 });
 
