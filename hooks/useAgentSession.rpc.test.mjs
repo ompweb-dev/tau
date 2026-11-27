@@ -6148,6 +6148,7 @@ test("a new chat's own tab is never saved with the workbench", async (t) => {
   const savedGroups = groups(JSON.parse(saved).layout);
   assert.equal(savedGroups.length, 1, "the group it alone filled is not saved");
   assert.ok(savedGroups.every((group) => group.active && group.tabs.includes(group.active)), "every saved group shows a saved tab");
+  assert.ok(savedGroups.some((group) => group.id === JSON.parse(saved).focused), "and the saved focus names a saved group");
   h.view.unmount();
 });
 

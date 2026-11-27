@@ -3659,10 +3659,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         case "name": {
+          // A usage error starts no session (and so marks nothing sent).
+          if (!args) return complete({ handled: true, error: translate("agentSession.nameUsage") });
           onSentRef.current?.();
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noSessionToName") });
-          if (!args) return complete({ handled: true, error: translate("agentSession.nameUsage") });
           await sendAgentCommand(sid, { type: "set_session_name", name: args });
           await loadSession(sid);
           promoteNewSession();

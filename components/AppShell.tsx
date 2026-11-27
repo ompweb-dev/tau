@@ -1590,6 +1590,8 @@ export function AppShell({ appName }: { appName: string }) {
   // becomes its session's in place, keeping its mount, and the selection stays where the user went.
   // A session opened meanwhile already has its tab: the new chat's tab then just closes.
   const promoteUnselectedChat = useCallback((tabId: string, session: SessionInfo) => {
+    // Its mount key goes to the session's tab: a later new chat given that key has sent nothing.
+    sentChatsRef.current.delete(chatMountsRef.current?.keys[tabId] ?? tabId);
     const id = chatTabId(session);
     const placed = Boolean(groupOfTab(tabLayoutRef.current, id));
     setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== tabId));
@@ -1608,6 +1610,7 @@ export function AppShell({ appName }: { appName: string }) {
       promoteUnselectedChat(NEW_CHAT_TAB_ID, session);
       return;
     }
+    sentChatsRef.current.delete(chatMountsRef.current?.keys[NEW_CHAT_TAB_ID] ?? NEW_CHAT_TAB_ID);
     setNewSessionCwd(null);
     setNewSessionPoolProject(null);
     setSelectedSession(session);
@@ -2188,7 +2191,9 @@ export function AppShell({ appName }: { appName: string }) {
   useEffect(() => {
     // A new chat's own tab is not saved (nor its chat): its id would name nothing after a reload.
     const savedIds = groupsOf(tabLayout).flatMap((group) => group.tabs).filter((id) => !id.startsWith(DRAFT_TAB_PREFIX));
-    saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout: reconcileTabs(tabLayout, savedIds, null), focused: lastFocusedGroupId });
+    const layout = reconcileTabs(tabLayout, savedIds, null);
+    const focused = groupsOf(layout).some((group) => group.id === lastFocusedGroupId) ? lastFocusedGroupId : groupsOf(layout)[0]?.id ?? lastFocusedGroupId;
+    saveWorkbench({ chats: chatTabs, files: fileTabs.map((tab) => ({ ...tab, revealLine: undefined })), layout, focused });
   }, [chatTabs, fileTabs, tabLayout, lastFocusedGroupId]);
   const stripIds = useMemo(
     () => [...chatTabs.map(chatTabId), ...(draftTabOpen ? [NEW_CHAT_TAB_ID] : []), ...draftTabs.map((tab) => tab.id), ...fileTabs.map((tab) => tab.id)],
