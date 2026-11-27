@@ -51,15 +51,13 @@ function sendFences(): Map<string, Promise<void>> {
 /** Everything POST /api/agent/[id] does once the body is parsed; shared with
  * the browser socket. `owner`: the caller's web session (lib/web-auth.ts
  * `requestOwner`), whose uploads a prompt may attach. `hostId`: only that host's
- * copy of the id; without it the live wrapper, else the host listing the id
- * (this machine first). Never throws: failures become `commandErrorResponse`. */
+ * copy of the id; without it the host it resolves to (a live copy, else the host listing the id,
+ * this machine first). Never throws: failures become `commandErrorResponse`. */
 export async function runAgentCommand(
   id: string,
   body: unknown,
   owner: string,
-  trustedUploads?: OutboxUploadReceipt[],
-  trustedOrigin?: MessageOrigin,
-  hostId?: string | null,
+  { hostId, trustedUploads, trustedOrigin }: { hostId?: string | null; trustedUploads?: OutboxUploadReceipt[]; trustedOrigin?: MessageOrigin } = {},
 ): Promise<Response> {
   let release = () => {}; // frees this command's send fence; idempotent
   try {
@@ -72,7 +70,7 @@ export async function runAgentCommand(
       return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
     }
     // Held messages: stored and answered here; the outbox's dispatcher sends them to pi (lib/message-outbox.ts).
-    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner, undefined, hostId);
+    if (type === "outbox_add" || type === "outbox_remove" || type === "outbox_scope") return await runOutboxCommand(id, command, owner, { hostId });
     if (type === "get_client_message_status") {
       const ids = readClientMessageIds(command.clientMessageIds);
       if (!ids) return Response.json({ error: "clientMessageIds must contain 1 to 32 unique valid IDs", code: "invalid_client_message_ids" }, { status: 400 });
@@ -83,8 +81,12 @@ export async function runAgentCommand(
     // Hold later wrapper selection as well as dispatch behind attachment preparation, so a Stop
     // cannot overtake the preparing prompt.
     // A moved session answers to several ids: a command through any of them waits. Fences are per host copy;
-    // without a host, the copy a command would reach (the live wrapper's host, else this machine).
-    const fenceHost = hostId || getRpcSession(id)?.host.id || LOCAL_HOST_ID;
+    // without a host, the copy it resolves to, so a later Stop naming that host waits behind it.
+    if (!hostId) {
+      const early = await resolveSessionHostOr404(id);
+      if ("host" in early) hostId = early.host.id;
+    }
+    const fenceHost = hostId || LOCAL_HOST_ID;
     const held = getRpcSessionKeys(id, fenceHost).flatMap((key) => sendFences().get(sessionHostKey(fenceHost, key)) ?? []);
     const prior = held.length ? Promise.all(held).then(() => {}) : undefined;
     if (uploads) {

@@ -59,12 +59,12 @@ declare global {
 
 // Session state is keyed by (host_id, session_id): the same id on two hosts is two sessions.
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS watches (host_id TEXT NOT NULL DEFAULT 'local', session_id TEXT NOT NULL, item_key TEXT NOT NULL, kind TEXT NOT NULL, cursor_json TEXT NOT NULL, created_at INTEGER NOT NULL, registration_id TEXT NOT NULL DEFAULT '', PRIMARY KEY (host_id, session_id, item_key));
-CREATE TABLE IF NOT EXISTS pending (host_id TEXT NOT NULL DEFAULT 'local', session_id TEXT NOT NULL, item_key TEXT NOT NULL, entry_id TEXT NOT NULL, message TEXT NOT NULL, cursor_json TEXT NOT NULL, final INTEGER NOT NULL, batches_json TEXT NOT NULL DEFAULT '[]', batch_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (host_id, session_id, item_key));
-CREATE TABLE IF NOT EXISTS watch_intents (token TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL DEFAULT 'local', session_id TEXT NOT NULL, item_key TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS watches (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, kind TEXT NOT NULL, cursor_json TEXT NOT NULL, created_at INTEGER NOT NULL, registration_id TEXT NOT NULL DEFAULT '', PRIMARY KEY (host_id, session_id, item_key));
+CREATE TABLE IF NOT EXISTS pending (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, entry_id TEXT NOT NULL, message TEXT NOT NULL, cursor_json TEXT NOT NULL, final INTEGER NOT NULL, batches_json TEXT NOT NULL DEFAULT '[]', batch_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (host_id, session_id, item_key));
+CREATE TABLE IF NOT EXISTS watch_intents (token TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS watch_intents_host_session_item ON watch_intents (host_id, session_id, item_key);
 CREATE TABLE IF NOT EXISTS posted (item_key TEXT NOT NULL, comment_id TEXT NOT NULL, PRIMARY KEY (item_key, comment_id));
-CREATE TABLE IF NOT EXISTS read_grants (host_id TEXT NOT NULL DEFAULT 'local', session_id TEXT NOT NULL, repo_key TEXT NOT NULL, PRIMARY KEY (host_id, session_id, repo_key));
+CREATE TABLE IF NOT EXISTS read_grants (host_id TEXT NOT NULL, session_id TEXT NOT NULL, repo_key TEXT NOT NULL, PRIMARY KEY (host_id, session_id, repo_key));
 CREATE TABLE IF NOT EXISTS active_posts (item_key TEXT NOT NULL, token TEXT NOT NULL PRIMARY KEY, lease_until INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS active_posts_item_lease ON active_posts (item_key, lease_until);
 `;

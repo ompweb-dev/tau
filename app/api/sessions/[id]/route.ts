@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import type { SessionReadValue } from "@/lib/hosts/session-ops";
@@ -80,7 +80,9 @@ export async function GET(
   const { id } = await params;
   try {
     const searchParams = new URL(req.url).searchParams;
-    const resolved = await resolveSessionHostOr404(id, searchParams.get("hostId"));
+    const host = hostIdParam(searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
 
     const meta = searchParams.get("meta") === "1";
@@ -154,7 +156,9 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
-    const hostId = new URL(req.url).searchParams.get("hostId");
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const { hostId } = host;
     const { name } = await parseJsonWithinLimit<{ name?: string }>(req, 64 * 1024);
     if (typeof name !== "string" || !name.trim()) {
       return Response.json({ error: "name is required", code: "session_name_required" }, { status: 400 });
@@ -213,7 +217,9 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
-    const resolved = await resolveSessionHostOr404(id, new URL(req.url).searchParams.get("hostId"));
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     // Await the child's exit before unlinking: a running pi would
     // recreate the file on its next append.

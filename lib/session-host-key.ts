@@ -2,3 +2,9 @@
 export function sessionHostKey(hostId: string, id: string): string {
   return `${hostId}/${id}`;
 }
+
+/** The host and id of a `sessionHostKey`. */
+export function splitSessionHostKey(key: string): { hostId: string; id: string } {
+  const slash = key.indexOf("/");
+  return { hostId: key.slice(0, slash), id: key.slice(slash + 1) };
+}

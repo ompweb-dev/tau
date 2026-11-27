@@ -60,7 +60,7 @@ async function liveChild(sessionId: string, hostId?: string | null) {
     if (live.destroyPromise) throw new HostOpError(503, "handoff_child_pending", "The session's native process is shutting down");
   } else {
     // A child a host still runs is not gone just because this server failed to adopt it: retry.
-    if (hostListsChild(sessionId)) throw new HostOpError(503, "handoff_child_pending", "The session's native process is running but not attached here yet");
+    if (hostListsChild(sessionId, hostId)) throw new HostOpError(503, "handoff_child_pending", "The session's native process is running but not attached here yet");
     // Throws a 503 while a host that may hold the session is offline or its list unavailable.
     const host = hostId ? await hostHoldingSession(sessionId, hostId) : await hostForSessionId(sessionId);
     if (host && !isLinkUp(host.status())) throw new WebRpcError(`${host.label} is offline`, "host_offline", "refused");

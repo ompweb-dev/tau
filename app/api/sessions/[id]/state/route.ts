@@ -1,5 +1,5 @@
 import { getExitedRpcSession, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
-import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { outboxScope, outboxSnapshot } from "@/lib/message-outbox";
 
 /** Every answer, an offline host's 503 included, carries the session's held messages (`outbox`): a tab opening a
@@ -9,7 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const hostId = new URL(req.url).searchParams.get("hostId");
+  const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+  if ("response" in host) return host.response;
+  const { hostId } = host;
   const response = await sessionState(id, hostId);
   const { entries, settledIds, ...settlements } = outboxSnapshot(id, hostId);
   return Response.json({

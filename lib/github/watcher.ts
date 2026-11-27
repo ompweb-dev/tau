@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { MAX_AGENT_COMMAND_REQUEST_BYTES } from "../image-attachments";
 import { ORIGIN_MAX_BYTES, type MessageOrigin } from "../message-origin";
 import { readAgentToolsEnabledFromDisk } from "../web-settings";
-import { sessionHostKey } from "../session-host-key";
+import { sessionHostKey, splitSessionHostKey } from "../session-host-key";
 import { fetchSnapshot } from "./api";
 import { diffSnapshot, formatUpdate, githubMessageOrigin, splitUpdateEvents, updateEntryId } from "./events";
 import { checkGh, defaultGhRunner, formatTarget, GhUnavailableError, parseGithubTarget, type GhRunner } from "./gh";
@@ -73,7 +73,7 @@ async function defaultDeliver(sessionId: string, hostId: string, id: string, mes
   try {
     // Lazy: message-outbox pulls in rpc-manager, which will load the agent tools that load this module.
     const { runOutboxCommand, outboxScope, GITHUB_WATCH_OUTBOX_OWNER } = await import("../message-outbox");
-    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, GITHUB_WATCH_OUTBOX_OWNER, origin, hostId));
+    return await deliveryOf(await runOutboxCommand(sessionId, { type: "outbox_add", id, scope: outboxScope(), mode: "prompt", message }, GITHUB_WATCH_OUTBOX_OWNER, { origin, hostId }));
   } catch {
     return "retry";
   }
@@ -269,8 +269,7 @@ async function pollItem(state: WatcherState, itemKey: string): Promise<void> {
 /** `key`: sessionHostKey(host, id) of one watching copy; another host's copy of the id is told on its own. */
 async function notify(state: WatcherState, key: string, kind: "paused" | "resumed", minute: number, text: string): Promise<boolean> {
   if (state.stopped || !readAgentToolsEnabledFromDisk()) return false;
-  const hostId = key.slice(0, key.indexOf("/"));
-  const sessionId = key.slice(key.indexOf("/") + 1);
+  const { hostId, id: sessionId } = splitSessionHostKey(key);
   const id = `gh-${createHash("sha256").update(`${hostId}\0${sessionId}\0${kind}\0${minute}`).digest("base64url").slice(0, 40)}`;
   const outcome = await state.deps.deliver(sessionId, hostId, id, `GitHub update (tau): ${text}`);
   if (state.stopped || !readAgentToolsEnabledFromDisk()) return false;

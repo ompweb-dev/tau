@@ -536,7 +536,7 @@ function servePooledWorkspace() {
   world.respond = (method, raw) => {
     if (method !== "GET") return null;
     const url = new URL(raw, "https://omp.test");
-    if (url.pathname === "/api/sessions") return jsonResponse(200, { sessions, runningSessionIds: [], runningSessions: [], unavailableHosts });
+    if (url.pathname === "/api/sessions") return jsonResponse(200, { sessions, runningSessions: [], unavailableHosts });
     if (url.pathname === "/api/projects") return jsonResponse(200, { projects });
     if (url.pathname === "/api/hosts") return jsonResponse(200, { hosts, pools });
     if (url.pathname === "/api/worktrees") return jsonResponse(200, { isGit: false, isTopLevel: false, worktrees: [] });

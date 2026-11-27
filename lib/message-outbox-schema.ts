@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS entries (
   replacement_id TEXT,
   replacement_digest TEXT,
   origin TEXT,
-  host_id TEXT NOT NULL DEFAULT 'local'
+  host_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS entries_session ON entries (session_id, state);
 CREATE TABLE IF NOT EXISTS completed_uploads (id TEXT PRIMARY KEY, owner TEXT NOT NULL, receipt TEXT NOT NULL, at INTEGER NOT NULL);

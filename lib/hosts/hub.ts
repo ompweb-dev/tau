@@ -1944,8 +1944,10 @@ export async function reconcilePooledChild(hostId: string, creationId: string): 
 }
 
 /** Whether a host still runs a child of `sessionId`, joined by this server or not (a failed join leaves it running). */
-export function hostListsChild(sessionId: string): boolean {
-  for (const link of hub().links.values()) {
+/** `hostId`: only that host's link (the same id running on another host is another session). */
+export function hostListsChild(sessionId: string, hostId?: string | null): boolean {
+  for (const [id, link] of hub().links) {
+    if (hostId && id !== hostId) continue;
     // A link kept across `bun --hot` from older code lacks the set: its listing is unknown, so stay retryable.
     const listed: Set<string> | undefined = link.listedSessions;
     if (isLinkUp(link.status) && (listed ? listed.has(sessionId) : true)) return true;

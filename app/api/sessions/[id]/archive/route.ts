@@ -1,4 +1,4 @@
-import { apiErrorResponse, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, hostOfflineResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { clearExitedRpcSession, getRpcSession } from "@/lib/rpc-manager";
@@ -11,7 +11,9 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const resolved = await resolveSessionHostOr404(id, new URL(req.url).searchParams.get("hostId"));
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     const { sessionOps } = resolved.host;
     // Parent-session paths are native branch metadata. Moving only a parent

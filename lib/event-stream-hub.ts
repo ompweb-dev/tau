@@ -564,10 +564,9 @@ function openRunningChannel(handle: SubscriptionHandle): SubscribeResult {
   handle.open();
   // Subscribe BEFORE taking the initial snapshot so no state change can slip
   // through the gap between snapshot and subscription.
-  const unsubscribeRunning = subscribeRunningSessions(({ ids, runningSessions, exitedSessions, refreshSessionList }) => {
+  const unsubscribeRunning = subscribeRunningSessions(({ runningSessions, exitedSessions, refreshSessionList }) => {
     handle.send({
       type: "running",
-      runningSessionIds: ids,
       runningSessions,
       exitedSessions,
       ...(refreshSessionList ? { refreshSessionList: true } : {}),
@@ -583,7 +582,6 @@ function openRunningChannel(handle: SubscriptionHandle): SubscribeResult {
   const initialRunning = getRunningRpcSessions();
   handle.send({
     type: "running",
-    runningSessionIds: initialRunning.map((session) => session.id),
     runningSessions: initialRunning,
     exitedSessions: getExitedRpcSessions(),
   });
@@ -666,10 +664,10 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
     }
   };
   const detachRunning = subscribeRunningSessions(rebind);
-  const detachOutbox = onOutboxChange(sessionId, () => {
+  const detachOutbox = onOutboxChange(sessionId, outboxHost, () => {
     rebind();
     handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, outboxHost) });
-  }, outboxHost);
+  });
   rebind();
   handle.setDetach(() => {
     detachOutbox();

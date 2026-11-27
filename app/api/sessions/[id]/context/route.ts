@@ -1,5 +1,5 @@
 import { buildSessionContext } from "@/lib/session-reader";
-import { apiErrorResponse, ifNoneMatchSatisfied, opErrorResponse, resolveSessionHostOr404, strongEtag } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, ifNoneMatchSatisfied, opErrorResponse, resolveSessionHostOr404, strongEtag } from "@/lib/api-utils";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { MAX_SYNC_MESSAGES, parseHistoryCursor, selectSessionHistory, type SessionHistoryCursor, type SessionHistoryPage, type SessionSyncResponse } from "@/lib/session-sync";
 
@@ -29,7 +29,9 @@ export async function GET(
   const { id } = await params;
   const url = new URL(req.url);
   const leafId = url.searchParams.get("leafId") ?? undefined;
-  const hostId = url.searchParams.get("hostId");
+  const host = hostIdParam(url.searchParams.get("hostId"));
+  if ("response" in host) return host.response;
+  const { hostId } = host;
   const deferThinking = url.searchParams.has("deferThinking");
   const deferToolResultImages = url.searchParams.has("deferMedia");
   // Read-only transcript mode: include entries omitted from the active agent context.

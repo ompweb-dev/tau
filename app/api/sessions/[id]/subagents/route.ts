@@ -1,4 +1,4 @@
-import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
 import { getRpcSession } from "@/lib/rpc-manager";
 
@@ -14,7 +14,9 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const hostId = new URL(req.url).searchParams.get("hostId");
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const { hostId } = host;
     const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) {
       // A brand-new session's file can land just after the prompt

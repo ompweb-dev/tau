@@ -1,3 +1,4 @@
+import { hostIdParam } from "@/lib/api-utils";
 import { commandErrorResponse } from "@/lib/agent-command";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import type { ExtensionUiResponse, RpcAskDialogAnswer } from "@/lib/pi-types";
@@ -63,8 +64,9 @@ export async function POST(req: Request) {
   const response = parseResponse(body.response);
   if (!response) return invalid("response must be exactly one of value, confirmed, cancelled or answers");
 
-  const hostId = body.hostId;
-  if (hostId !== undefined && !isId(hostId)) return invalid("hostId must be a host id");
+  const host = hostIdParam(body.hostId);
+  if ("response" in host) return host.response;
+  const { hostId } = host;
   // `hostId`: only that host's copy of the id; without it, as before (this machine's copy first).
   const session = getRpcSession(body.sessionId, hostId);
   if (!session || !session.isAlive()) return Response.json({ status: "sessionGone" });

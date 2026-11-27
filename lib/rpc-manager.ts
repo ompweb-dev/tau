@@ -24,7 +24,7 @@ import type { AgentToolHost } from "./agent-tool-hosts";
 import { createGithubToolOps, GITHUB_REPLAY_SAFE_TOOLS, GITHUB_TOOL_NAMES } from "./github/tools";
 import { markShuttingDown, recordRunningSessions, resumeOnHostLink, takeInterruptedSessions, type InterruptibleSession } from "./session-resume";
 import { RESUME_PROMPT } from "./hosts/host-resume";
-import { sessionHostKey } from "./session-host-key";
+import { sessionHostKey, splitSessionHostKey } from "./session-host-key";
 import { samePath } from "./paths";
 import { isRecord } from "./type-guards";
 import type { MessageOrigin } from "./message-origin";
@@ -2785,7 +2785,6 @@ export interface RunningRpcSession {
 }
 
 export interface RunningSessionUpdate {
-  ids: string[];
   runningSessions: RunningRpcSession[];
   exitedSessions: ExitedRpcSession[];
   refreshSessionList: boolean;
@@ -2870,20 +2869,29 @@ export function getRpcSession(sessionId: string, hostId?: string | null): AgentS
   return hostCopy(getRegistry(), sessionId, hostId);
 }
 
+/** A live copy of the id for a caller naming no host: this machine's if alive, else another host's live one. A dead
+ * wrapper never wins over a live copy elsewhere. */
+export function getLiveRpcSession(sessionId: string): AgentSessionWrapper | undefined {
+  const local = getRpcSession(sessionId, LOCAL_HOST_ID);
+  if (local?.isAlive()) return local;
+  for (const [key, live] of getRegistry()) if (splitSessionHostKey(key).id === sessionId && live.isAlive()) return live;
+  return undefined;
+}
+
 /** Every session id the wrapper under `sessionId` (on `hostId`, else as `getRpcSession`) answers to (its id and any
  * requested alias), else `[sessionId]`. Plain ids: they all name sessions on the wrapper's host. */
 export function getRpcSessionKeys(sessionId: string, hostId?: string | null): string[] {
   const wrapper = getRpcSession(sessionId, hostId);
   if (!wrapper) return [sessionId];
   // Every key of one wrapper carries its host's prefix; host ids never contain "/".
-  return [...getRegistry()].flatMap(([key, live]) => (live === wrapper ? [key.slice(key.indexOf("/") + 1)] : []));
+  return [...getRegistry()].flatMap(([key, live]) => (live === wrapper ? [splitSessionHostKey(key).id] : []));
 }
 
 export function getRunningRpcSessions(): RunningRpcSession[] {
   const map = new Map<string, RunningRpcSession>();
   for (const [key, session] of getRegistry()) {
     if (session.isRunning()) {
-      const id = session.sessionId || key.slice(key.indexOf("/") + 1);
+      const id = session.sessionId || splitSessionHostKey(key).id;
       map.set(sessionHostKey(session.host.id, id), {
         id,
         cwd: session.cwd,
@@ -2893,10 +2901,6 @@ export function getRunningRpcSessions(): RunningRpcSession[] {
     }
   }
   return [...map.values()];
-}
-
-export function getRunningRpcSessionIds(): string[] {
-  return getRunningRpcSessions().map((s) => s.id);
 }
 
 /** Ids of `hostId`'s sessions with a live pi process (turn running or idle); an id live on another host is another session. */
@@ -2969,13 +2973,12 @@ let lastRunningSnapshot = "[[],[]]";
 export function notifyRunningChange({ refreshSessionList = false }: { refreshSessionList?: boolean } = {}): void {
   const runningSessions = getRunningRpcSessions();
   const exitedSessions = getExitedRpcSessions();
-  const ids = runningSessions.map((s) => s.id);
   const byId = (a: { id: string; hostId?: string }, b: { id: string; hostId?: string }) => a.id.localeCompare(b.id) || (a.hostId ?? "").localeCompare(b.hostId ?? "");
   const snapshot = JSON.stringify([runningSessions.slice().sort(byId), exitedSessions.slice().sort(byId)]);
   if (snapshot === lastRunningSnapshot && !refreshSessionList) return;
   lastRunningSnapshot = snapshot;
   syncInterruptibleSessions();
-  const update: RunningSessionUpdate = { ids, runningSessions, exitedSessions, refreshSessionList };
+  const update: RunningSessionUpdate = { runningSessions, exitedSessions, refreshSessionList };
   for (const listener of getRunningListeners()) {
     try { listener(update); } catch { /* ignore listener errors */ }
   }

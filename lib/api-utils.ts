@@ -7,7 +7,7 @@ import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
 import { hostForSessionId, hostHoldingSession, hostSessions } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
-import { getRpcSession, WebRpcError } from "./rpc-manager";
+import { getLiveRpcSession, getRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
 
 const SESSION_NOT_FOUND = { error: "Session not found", code: "session_not_found" } as const;
@@ -20,7 +20,8 @@ export async function resolveSessionHostOr404(
   /** The host the caller's row names (`?hostId=`): the same id on another host is not this session. */
   hostId?: string | null,
 ): Promise<{ host: Host } | { response: Response }> {
-  const live = getRpcSession(id, hostId);
+  // Without a host, a live copy on any host: a dead wrapper on this machine must not hide it.
+  const live = hostId ? getRpcSession(id, hostId) : getLiveRpcSession(id);
   if (live?.isAlive()) return { host: live.host };
   try {
     const host = hostId ? await hostHoldingSession(id, hostId) : await hostForSessionId(id);
@@ -31,6 +32,18 @@ export async function resolveSessionHostOr404(
     if (error instanceof HostOpError && error.code === "host_sessions_unavailable") return { response: apiErrorResponse(error) };
     throw error;
   }
+}
+
+/** What a host id may be: "local" or a registry UUID, i.e. letters, digits, "-" and "_". Never "/" or "*", which the
+ * server's composite keys (`sessionHostKey`) and any-host listener key use, nor empty, which is an unbound outbox row. */
+const HOST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** A request's `hostId` (`?hostId=` or a body field) at the trust boundary: absent is null, a host id is kept,
+ * anything else answers 400 `invalid_host_id`. */
+export function hostIdParam(value: unknown): { hostId: string | null } | { response: Response } {
+  if (value === null || value === undefined) return { hostId: null };
+  if (typeof value === "string" && HOST_ID_RE.test(value)) return { hostId: value };
+  return { response: Response.json({ error: "hostId is not a host id", code: "invalid_host_id" }, { status: 400 }) };
 }
 
 /** 503 `{hostOffline: true, delivery: "refused"}` while a host's link is down; null when it takes requests. */

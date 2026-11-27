@@ -1,4 +1,4 @@
-import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 
 export async function GET(
   req: Request,
@@ -13,7 +13,9 @@ export async function GET(
   }
 
   try {
-    const resolved = await resolveSessionHostOr404(id, query.get("hostId"));
+    const host = hostIdParam(query.get("hostId"));
+    if ("response" in host) return host.response;
+    const resolved = await resolveSessionHostOr404(id, host.hostId);
     if ("response" in resolved) return resolved.response;
     const result = await resolved.host.sessionOps.readThinking(id, entryId, blockIndex);
     return result.ok ? Response.json(result.value) : opErrorResponse(result);

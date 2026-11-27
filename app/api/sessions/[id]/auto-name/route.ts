@@ -2,7 +2,7 @@ import { deriveSessionTitleFromFirstMessage, sanitizeSessionTitle } from "@/lib/
 import { getRpcSession } from "@/lib/rpc-manager";
 import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import { HostOpError } from "@/lib/hosts/link-protocol";
-import { apiErrorResponse, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
+import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 
 /**
  * POST /api/sessions/[id]/auto-name
@@ -18,7 +18,9 @@ export async function POST(
   const { id } = await params;
 
   try {
-    const hostId = new URL(req.url).searchParams.get("hostId");
+    const host = hostIdParam(new URL(req.url).searchParams.get("hostId"));
+    if ("response" in host) return host.response;
+    const { hostId } = host;
     const resolved = await resolveSessionHostOr404(id, hostId);
     if ("response" in resolved) return resolved.response;
     const { sessionOps } = resolved.host;

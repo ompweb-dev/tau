@@ -318,7 +318,7 @@ export function publishNotification(event: NotificationEvent): void {
  *
  * Never throws: callers run on the RPC frame path.
  */
-export function publishNotificationDismiss(sessionId: string, requestId: string, hostId?: string): void {
+export function publishNotificationDismiss(sessionId: string, requestId: string, hostId: string): void {
   retract(sessionId, requestId, "permanent", hostId);
 }
 
@@ -332,12 +332,12 @@ export function publishNotificationDismiss(sessionId: string, requestId: string,
  * retraction TTL. A dialog that is really gone is never replayed, and its
  * notification stays closed.
  */
-export function publishNotificationForgotten(sessionId: string, requestId: string, hostId?: string): void {
+export function publishNotificationForgotten(sessionId: string, requestId: string, hostId: string): void {
   retract(sessionId, requestId, "temporary", hostId);
 }
 
 /** `hostId`: the session's host when it is not this machine, as on `NotificationEvent`. */
-function retract(sessionId: string, requestId: string, kind: "permanent" | "temporary", hostId?: string): void {
+function retract(sessionId: string, requestId: string, kind: "permanent" | "temporary", hostId: string): void {
   const sessionKey = notificationSessionKey(sessionId, hostId);
   const tag = `${sessionKey}:input`;
   const state = hub();

@@ -18,7 +18,7 @@ import { parseMessageOrigin, type MessageOrigin } from "./message-origin";
 import { getAgentDir } from "./pi/paths";
 import { getRpcSession, getRpcSessionKeys, nativeWriteStarted, tapSessionFrames, type AgentEvent, type AgentSessionWrapper } from "./rpc-manager";
 import { LOCAL_HOST_ID } from "./hosts/registry";
-import { sessionHostKey } from "./session-host-key";
+import { sessionHostKey, splitSessionHostKey } from "./session-host-key";
 import { isRecord } from "./type-guards";
 import type { OutboxEntry, OutboxMode } from "./types";
 import { MAX_UPLOADS_PER_MESSAGE, UPLOAD_ID_RE } from "./upload-limits";
@@ -140,7 +140,8 @@ function db(): Database {
       database.exec(OUTBOX_SCHEMA);
       database.exec(RECEIPT_PIN_SCHEMA);
       const columns = database.prepare("PRAGMA table_info(entries)").all() as { name: string }[];
-      for (const [name, type] of [["host_id", "TEXT NOT NULL DEFAULT 'local'"], ["dispatch_pid", "INTEGER"], ["upload_receipts", "TEXT"], ["payload_bytes", "INTEGER NOT NULL DEFAULT 0"], ["previous_entry_ids", "TEXT"], ["source_session_id", "TEXT"], ["settlement", "TEXT"], ["replacement_id", "TEXT"], ["replacement_digest", "TEXT"], ["origin", "TEXT"]]) {
+      // Rows from before hosts stay unbound (''): their dispatcher binds each to the host it resolves, never to "local".
+      for (const [name, type] of [["host_id", "TEXT NOT NULL DEFAULT ''"], ["dispatch_pid", "INTEGER"], ["upload_receipts", "TEXT"], ["payload_bytes", "INTEGER NOT NULL DEFAULT 0"], ["previous_entry_ids", "TEXT"], ["source_session_id", "TEXT"], ["settlement", "TEXT"], ["replacement_id", "TEXT"], ["replacement_digest", "TEXT"], ["origin", "TEXT"]]) {
         if (!columns.some((column) => column.name === name)) database.exec(`ALTER TABLE entries ADD COLUMN ${name} ${type}`);
       }
       database.exec("CREATE INDEX IF NOT EXISTS entries_source_session ON entries (source_session_id, state)");
@@ -311,7 +312,7 @@ export function outboxEntries(sessionId: string, hostId?: string | null): Outbox
 
 /** The sessions that own these ids' rows now. A native identity move re-homes a row while its browser still asks under the old id. */
 export function outboxCanonicalSessions(ids: readonly string[], hostId?: string | null): string[] {
-  const rows = db().prepare(`SELECT DISTINCT session_id FROM entries WHERE id IN (${slots(ids)})${hostId ? " AND host_id = ?" : ""}`).all(...ids, ...(hostId ? [hostId] : [])) as { session_id: string }[];
+  const rows = db().prepare(`SELECT DISTINCT session_id FROM entries WHERE id IN (${slots(ids)})${hostId ? " AND host_id IN (?, '')" : ""}`).all(...ids, ...(hostId ? [hostId] : [])) as { session_id: string }[];
   return rows.map((row) => row.session_id);
 }
 
@@ -395,7 +396,7 @@ export function forgetSessionReplacementMappings(sessionId: string, hostId: stri
 }
 
 /** Call `listener` with one host copy's entries after every change. */
-export function onOutboxChange(sessionId: string, listener: (entries: OutboxEntry[]) => void, hostId?: string | null): () => void {
+export function onOutboxChange(sessionId: string, hostId: string | null | undefined, listener: (entries: OutboxEntry[]) => void): () => void {
   const state = outbox();
   const { listeners } = state;
   const key = sessionHostKey(hostId || ANY_HOST, sessionId);
@@ -425,9 +426,8 @@ function publish(sessionId: string, hostId: string): void {
 
 /** `key`: sessionHostKey(host, id) of a watched copy. */
 function notifyListeners(key: string): void {
-  const host = key.slice(0, key.indexOf("/"));
+  const { hostId: host, id: sessionId } = splitSessionHostKey(key);
   const hostId = host === ANY_HOST ? null : host;
-  const sessionId = key.slice(key.indexOf("/") + 1);
   const state = outbox();
   const listeners = state.listeners.get(key);
   if (!listeners?.size) {
@@ -515,7 +515,7 @@ function confirmedReplacementId(entry: Row, sessionId: string, hostId: HostScope
 /** `outbox_add` / `outbox_remove` for `hostId`'s copy of `sessionId`, as runAgentCommand answers them. Without a host,
  * a known entry keeps its own, and a new one takes the host runAgentCommand would reach (the live wrapper's, else the
  * host listing the id), stored on the row: every later step uses that copy only. */
-export async function runOutboxCommand(sessionId: string, command: Record<string, unknown>, owner: string, originValue?: MessageOrigin, hostId?: string | null): Promise<Response> {
+export async function runOutboxCommand(sessionId: string, command: Record<string, unknown>, owner: string, { origin: originValue, hostId }: { origin?: MessageOrigin; hostId?: string | null } = {}): Promise<Response> {
   if (command.origin !== undefined) return Response.json({ error: "Message origin is server-owned.", code: "origin_not_allowed" }, { status: 400 });
   const origin = originValue === undefined ? undefined : parseMessageOrigin(originValue);
   if (originValue !== undefined && !origin) return invalid("origin is invalid");
@@ -575,7 +575,7 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
     if ("response" in current && current.response.status === 404) return current.response;
   }
   // An owner no host list can name yet is never guessed: the row stays UNBOUND until its dispatcher discovers it.
-  const host = hostId || getRpcSession(sessionId)?.host?.id || ("host" in resolved ? resolved.host.id : UNBOUND);
+  const host = hostId || ("host" in resolved ? resolved.host.id : UNBOUND);
 
   const now = Date.now();
   const database = db();
@@ -727,22 +727,25 @@ function removeEntry(sessionId: string, hostId: string | null | undefined, id: s
 /** Send the oldest held entry of `hostId`'s copy of the session unless one of its entries is in flight. Another host's
  * copy of the id has its own claim. Never throws. */
 export function pumpOutbox(sessionId: string, hostId?: string | null): void {
-  const hosts = hostId ? [hostId, UNBOUND]
+  const hosts = hostId ? [hostId]
     : (db().prepare("SELECT DISTINCT host_id FROM entries WHERE session_id = ?").all(sessionId) as { host_id: string }[]).map((row) => row.host_id);
   for (const host of hosts) pump(sessionId, host);
 }
 
-/** `hostId` of the rows to pump, or UNBOUND for rows whose host is not discovered yet. */
+/** One conversation's queue: `hostId`'s rows and the UNBOUND rows of the same id, oldest first and one delivering at a
+ * time (an UNBOUND row may be this host's copy's, and goes to it). `hostId` UNBOUND: only rows no host has bound yet. */
 function pump(sessionId: string, hostId: string): void {
   const { busy } = outbox();
   const keys = sessionKeys(sessionId, hostId);
+  // Busy per host copy only: another host's queue may take an UNBOUND row too, but binding it is atomic (deliver), so it
+  // goes to one host, and another host's delivery never holds this one.
   const busyKeys = keys.map((key) => sessionHostKey(hostId, key));
   if (busyKeys.some((key) => busy.has(key))) return;
   let next: Row | null;
   try {
-    for (const key of keys) recoverDelivering(key, hostId);
-    if (db().prepare(`SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering'`).get(hostId, ...keys)) return;
-    next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as Row | null;
+    for (const key of keys) for (const host of new Set([hostId, UNBOUND])) recoverDelivering(key, host);
+    if (db().prepare(`SELECT 1 FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state = 'delivering'`).get(hostId, ...keys)) return;
+    next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as Row | null;
   } catch (error) {
     console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
     return;
@@ -752,17 +755,17 @@ function pump(sessionId: string, hostId: string): void {
   const state = outbox();
   const release = () => {
     for (const key of busyKeys) busy.delete(key);
-    for (const [index, key] of busyKeys.entries()) if (state.wakes?.delete(key)) queueMicrotask(() => {
-      if (globalThis.__tauOutbox === state && state.started) pump(keys[index], hostId);
+    for (const key of busyKeys) if (state.wakes?.delete(key)) queueMicrotask(() => {
+      if (globalThis.__tauOutbox === state && state.started) pump(splitSessionHostKey(key).id, hostId);
     });
   };
-  void deliver(next).then((outcome) => {
+  void deliver(next, hostId).then((outcome) => {
     release();
     if (outcome === "next") pump(sessionId, hostId);
     else if (outcome === "offline") {
       const linkedKeys = sessionKeys(sessionId, hostId);
       // The delivered row may have been bound to its host meanwhile: it is matched by id.
-      db().prepare(`UPDATE entries SET state = 'waiting_host', error = NULL WHERE (host_id = ? AND session_id IN (${slots(linkedKeys)}) AND state = 'held') OR (id = ? AND state = 'delivering' AND dispatch_pid = ?)`)
+      db().prepare(`UPDATE entries SET state = 'waiting_host', error = NULL WHERE (host_id IN (?, '') AND session_id IN (${slots(linkedKeys)}) AND state = 'held') OR (id = ? AND state = 'delivering' AND dispatch_pid = ?)`)
         .run(hostId, ...linkedKeys, next.id, process.pid);
       publish(sessionId, hostId);
     }
@@ -837,18 +840,18 @@ export function startOutbox(): void {
     try {
       while (dirty.delete(hostId) && attached && state.started) {
         // Only this host's copies: the same id held for another host is another session.
-        const held = db().prepare("SELECT DISTINCT host_id, session_id FROM entries WHERE host_id IN (?, '') AND state IN ('held', 'waiting_host')").all(hostId) as { host_id: string; session_id: string }[];
+        const held = db().prepare("SELECT DISTINCT session_id FROM entries WHERE host_id IN (?, '') AND state IN ('held', 'waiting_host')").all(hostId) as { session_id: string }[];
         if (!held.length) continue;
         const host = getHost(hostId);
         if (!host || !isLinkUp(host.status())) continue; // the next hello resumes offline work
         const sessions = await host.sessionOps.listSessions();
         if (!attached || !state.started) return;
         const ids = new Set(sessions.map((session) => session.id));
-        for (const { host_id, session_id } of held) if (ids.has(session_id)) {
+        for (const session_id of new Set(held.map((row) => row.session_id))) if (ids.has(session_id)) {
           // A change can race the dispatcher's archive read. Leave one wake to run after that claim releases.
-          const key = sessionHostKey(host_id, session_id);
-          if (state.busy.has(key)) wakes.add(key);
-          else pump(session_id, host_id);
+          const busyKey = [sessionHostKey(hostId, session_id), sessionHostKey(UNBOUND, session_id)].find((key) => state.busy.has(key));
+          if (busyKey) wakes.add(busyKey);
+          else pump(session_id, hostId); // an UNBOUND row of an id this host lists goes to it
         }
       }
     } catch {
@@ -970,9 +973,14 @@ function onChildExit(wrapper: AgentSessionWrapper, event: AgentEvent): void {
  * "offline" when the host is down (every entry waits for its next hello), "wait" when a timer or a restore resumes it. */
 type Outcome = "next" | "wait" | "offline";
 
-async function deliver(entry: Row): Promise<Outcome> {
+/** `queueHost`: the host whose queue chose this entry; an UNBOUND entry is bound to it before anything is sent. */
+async function deliver(entry: Row, queueHost: string): Promise<Outcome> {
   const sessionId = entry.session_id;
   let hostId = entry.host_id;
+  if (hostId === UNBOUND && queueHost !== UNBOUND) {
+    if (!db().prepare("UPDATE entries SET host_id = ? WHERE id = ? AND host_id = ''").run(queueHost, entry.id).changes) return "next";
+    hostId = queueHost;
+  }
   if (entry.uploads && Date.now() - entry.created_at > STAGED_MAX_AGE_MS) {
     // The host's sweep has removed the staged files by now (spec O3): never send the message without them.
     return fail(entry, "The attached files are gone: attach them again", false);
@@ -981,7 +989,7 @@ async function deliver(entry: Row): Promise<Outcome> {
   const priorWrapper = getRpcSession(sessionId, hostId);
   const generation = priorWrapper?.getMessageCommandGeneration() ?? 0;
   const competingPending = priorWrapper?.hasPendingMessageCommands() ?? false;
-  const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.owner, undefined, undefined, hostId);
+  const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.owner, { hostId });
   const wrapper = getRpcSession(sessionId, hostId);
   let current = row(entry.id);
   if (!current || (current.state !== "held" && current.state !== "waiting_host")) return "next";
@@ -1012,7 +1020,7 @@ async function deliver(entry: Row): Promise<Outcome> {
   const idle = !wrapper.isRunning(true);
   const keys = sessionKeys(sessionId, hostId);
   // A cold start can discover native aliases. Re-select across them before claiming, so an older alias wins.
-  const oldest = db().prepare(`SELECT id FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as { id: string } | null;
+  const oldest = db().prepare(`SELECT id FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as { id: string } | null;
   if (oldest?.id !== current.id) return "next";
   // Give legacy accepted authority its immutable generation before transcript/attachment preparation can yield.
   for (const receipt of current.upload_receipts ? JSON.parse(current.upload_receipts) as OutboxUploadReceipt[] : []) {
@@ -1036,7 +1044,7 @@ async function deliver(entry: Row): Promise<Outcome> {
     ...(current.images ? { images: JSON.parse(current.images) as unknown } : {}),
     ...(current.uploads ? { uploads: JSON.parse(current.uploads) as unknown } : {}),
   };
-  const claimed = db().prepare(`UPDATE entries SET state = 'delivering', dispatch_pid = ? WHERE id = ? AND state IN ('held', 'waiting_host') AND NOT EXISTS (SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering')`).run(process.pid, current.id, hostId, ...keys);
+  const claimed = db().prepare(`UPDATE entries SET state = 'delivering', dispatch_pid = ? WHERE id = ? AND state IN ('held', 'waiting_host') AND NOT EXISTS (SELECT 1 FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state = 'delivering')`).run(process.pid, current.id, hostId, ...keys);
   if (!claimed.changes) return "wait";
   // Claimed but not written yet: anything that stops it before a wrapper begins its native write (including
   // attachment preparation and fences inside runAgentCommand) leaves it unsent, so it is retried.
@@ -1087,7 +1095,7 @@ async function deliver(entry: Row): Promise<Outcome> {
   publish(sessionId, hostId);
   try {
     // attachUploads mutates this same command before writing it: the watcher matches the final attachment block too.
-    const response = await runAgentCommand(sessionId, command, current.owner, uploadReceipts, origin, hostId);
+    const response = await runAgentCommand(sessionId, command, current.owner, { hostId, trustedUploads: uploadReceipts, trustedOrigin: origin });
     if (!response.ok) {
       // Nothing was written: a gone child is retried, and any other refusal is classified as not sent.
       const written = nativeWriteStarted(command);
@@ -1176,7 +1184,7 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
     // not deletion; a deferred host-change wake must likewise get a chance to resume this still-unsent entry.
     const resolved = await resolveSessionHostOr404(entry.session_id, entry.host_id);
     if ("host" in resolved) {
-      if (outbox().wakes?.has(sessionHostKey(entry.host_id, entry.session_id))) {
+      if (woken(entry)) {
         if (!setState(entry.id, "held")) return "next";
         publish(entry.session_id, entry.host_id);
         return "wait";
@@ -1184,10 +1192,15 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
       return retry(entry);
     }
     if (resolved.response.status !== 404) return refused(entry, resolved.response, false);
-    if (outbox().wakes?.has(sessionHostKey(entry.host_id, entry.session_id))) return retry(entry);
+    if (woken(entry)) return retry(entry);
   }
   // A lost reply (delivery unknown), a server error or an unresponsive child after the message went: pi may have it.
   return fail(entry, error, sent && (response.status >= 500 || body.code === "session_unresponsive"));
+}
+
+/** A host-change wake waits for this entry's queue (its host's, or the UNBOUND one it was taken from). */
+function woken(entry: Row): boolean {
+  return [entry.host_id, UNBOUND].some((host) => outbox().wakes?.has(sessionHostKey(host, entry.session_id)));
 }
 
 /** `archived`/`absent`: every source answered. Otherwise the archive could not be read: `hello` while only a host's
