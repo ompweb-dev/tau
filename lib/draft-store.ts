@@ -167,6 +167,11 @@ export function endDraftSubmission(submission: DraftSubmission): void {
   submissions.delete(submission);
 }
 
+/** Submissions in flight from `from` settle against `to` (the same chat's draft moved there). */
+export function moveDraftSubmissions(from: string, to: string): void {
+  for (const submission of submissions) if (submission.key === from) submission.key = to;
+}
+
 function markSubmissionsEdited(key: string): void {
   for (const submission of submissions) if (submission.key === key) submission.edited = true;
 }

@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, getDraft, getDraftRevision, foldSentDraft, holdDraftOwner, isSameDraft, isSentDraftKey, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, moveDraftSubmissions, getDraft, getDraftRevision, foldSentDraft, holdDraftOwner, isSameDraft, isSentDraftKey, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -971,6 +971,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       draftRecoveryIdentityRef.current = { key: draftKey };
       setDraft(draftKey, captureDraft());
       clearDraft(previousDraftKey);
+      // A command in flight (`/name` sends before it clears) clears the moved draft once it is stored.
+      moveDraftSubmissions(previousDraftKey, draftKey);
       return;
     }
     // Leaving the chat's own key: what it holds goes to its session's draft when the session takes over, else back to
@@ -1176,8 +1178,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       const result = await pending;
       if (result.status === "rejected") {
         const destination = result.recoveryKey ?? key;
-        // A session id the hook names is the chat's; otherwise the chat's draft now, wherever it moved.
-        if (destination) recoverDraft(destination, recovery, destination === key ? draftOwner : undefined);
+        // Into the chat's own draft when it shows one over the destination workspace; a session id stays as named.
+        if (destination) recoverDraft(destination, recovery, draftOwner);
       }
     } catch (error) {
       if (key) recoverDraft(key, recovery, draftOwner);

@@ -6108,6 +6108,9 @@ test("a kept chat that sent a builtin command creating its session keeps a tab o
   const h = await sentBesideFreshChat(t, undefined, "/name Early");
   assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own");
   assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
+  world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
+  await act(async () => { h.release(); await sleep(400); });
+  assert.equal([...h.view.container.querySelectorAll("textarea")].some((area) => area.value.includes("/name Early")), false, "the command, once run, is cleared from the draft it moved to");
   h.view.unmount();
 });
 
@@ -6217,6 +6220,21 @@ test("a failed kept chat replaced by another new chat leaves its text to the wor
   const composers = [...h.view.container.querySelectorAll("textarea")].map((area) => area.value);
   assert.ok(composers.some((value) => value === "hello there"), `the new chat shows it: ${JSON.stringify(composers)}`);
   for (const area of h.view.container.querySelectorAll("textarea")) await act(async () => { fireEvent.change(area, { target: { value: "" } }); await sleep(20); });
+  h.view.unmount();
+});
+
+test("a kept chat whose retry fails too gets its prompt back in its own composer", async (t) => {
+  let releaseRetry;
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { h.release(); await sleep(300); });
+  world.holds.push({ match: (method, url) => method === "POST" && url === "/api/agent/new", produce: () => new Promise((resolve) => { releaseRetry = () => resolve({ status: 500, value: { error: "spawn failed again" } }); }) });
+  const kept = h.composerIn(h.draftGroup);
+  await act(async () => { fireEvent.keyDown(kept, { key: "Enter" }); await sleep(60); });
+  await until(() => releaseRetry, "the retry is sent");
+  await act(async () => { releaseRetry(); await sleep(300); });
+  assert.equal(h.composerIn(h.draftGroup).value, "hello there", "back where it was sent from");
+  assert.equal(h.composerIn(h.other).value, "", "not in the fresh new chat");
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "" } }); await sleep(30); });
   h.view.unmount();
 });
 
