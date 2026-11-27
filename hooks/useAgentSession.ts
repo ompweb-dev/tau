@@ -3165,6 +3165,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       independentRunErrorRef.current = null;
       slashCommandRunRef.current = false;
       dispatch({ type: "end" });
+      // ensureNewSession itself promotes a session created before its host went offline, then throws.
+      if (isNew && onSessionCreated && newSessionPromotedRef.current && sessionIdRef.current) recoveryKey = sessionHostKey(currentSessionHost(), sessionIdRef.current);
       return mayHaveRun ? { status: "accepted" } : { status: "rejected", recoveryKey };
     }
   }, [catchUp, eventCoalescer, isNew, pooled, newSessionPoolId, newSessionProjectId, newSessionCwd, newSessionHostId, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, onSessionCreated, waitForPromptSettlement, addNotice, refreshSubagentRoster, clearLiveToolResults, clearTerminalReconcileTimer, snapshotRunEntries, holdMessage, currentSessionHost]);

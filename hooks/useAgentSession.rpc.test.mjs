@@ -5231,6 +5231,7 @@ test("a fresh chat whose host drops after the spawn adopts the kept session, so 
   let first;
   await act(async () => { first = await w.latest.handleSend("first"); await sleep(30); });
   assert.equal(first.status, "rejected");
+  assert.equal(first.recoveryKey, "h1/kept-remote", "the chat was promoted before the refusal: its text goes to the session's composer");
   assert.equal(toastCalls[0]?.[0], "error");
   let retry;
   await act(async () => { retry = w.latest.handleSend("first"); await sleep(30); });
