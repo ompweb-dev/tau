@@ -994,9 +994,9 @@ export const SessionSidebar = memo(function SessionSidebar({ selectedSessionId, 
         // newer than the server's answer falls back to its title.
         const score = serverScores?.[s.id]
           ?? scoreSearchFields([searchField(s.name ?? "", TITLE_WEIGHT)], query);
-        if (score !== null) scores.set(s.id, score);
+        if (score !== null) scores.set(sessionHostKey(s.hostId, s.id), score);
       }
-      list = list.filter((s) => scores.has(s.id));
+      list = list.filter((s) => scores.has(sessionHostKey(s.hostId, s.id)));
       // Label/alias-only matches surface as empty workspaces; without this
       // a custom workspace name would be unfindable by search.
       const labelScore = scoreSearchFields([searchField(project.name ?? projectLabel(project.path), TITLE_WEIGHT), searchField(project.alias ?? "", TITLE_WEIGHT)], query);

@@ -202,7 +202,7 @@ function buildSessionTree(sessions: SessionInfo[], scores?: Map<string, number>)
 
   // Sort each level by search score (when searching), then modified desc
   const sort = (nodes: SessionTreeNode[]) => {
-    nodes.sort((a, b) => ((scores?.get(b.session.id) ?? 0) - (scores?.get(a.session.id) ?? 0)) || b.session.modified.localeCompare(a.session.modified));
+    nodes.sort((a, b) => ((scores?.get(sessionHostKey(b.session.hostId, b.session.id)) ?? 0) - (scores?.get(sessionHostKey(a.session.hostId, a.session.id)) ?? 0)) || b.session.modified.localeCompare(a.session.modified));
     nodes.forEach((n) => sort(n.children));
   };
   sort(roots);

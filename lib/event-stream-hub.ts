@@ -655,7 +655,8 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
   // A hostless subscription is pinned to the host of the first copy it attaches: it never switches to another host's
   // session of the same id.
   let boundHost = hostId ?? session?.host?.id;
-  const rebind = () => {
+  const rebind = (announceBind = true) => {
+    const unbound = boundHost === undefined;
     const live = getLiveRpcSession(sessionId, boundHost);
     boundHost ??= live?.host?.id;
     if (live !== session) {
@@ -664,14 +665,16 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
       session = live;
       if (live) attach(live);
     }
+    // Binding narrows the every-host snapshot sent before it to the bound copy's held messages.
+    if (announceBind && unbound && boundHost !== undefined && handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, boundHost) });
   };
-  const detachRunning = subscribeRunningSessions(rebind);
+  const detachRunning = subscribeRunningSessions(() => rebind());
   const detachOutbox = onOutboxChange(sessionId, hostId, () => {
-    rebind();
+    rebind(false);
     // A hostless channel shows the bound copy's held messages once a copy binds; every host's before that.
     handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, boundHost) });
   });
-  rebind();
+  rebind(false);
   handle.setDetach(() => {
     detachOutbox();
     detachRunning();

@@ -79,3 +79,11 @@ test("buildSessionTree keeps two hosts' copies of one id apart and finds a paren
     ["local", "s1", []],
   ]);
 });
+
+test("buildSessionTree ranks each host's copy of one id by its own search score", async () => {
+  const { buildSessionTree } = await import("./SessionSidebar-helpers.ts");
+  const s = (hostId, modified) => ({ id: "s1", hostId, path: "", cwd: "/w", created: modified, modified, messageCount: 1, firstMessage: "" });
+  // The newer copy matches worse: only its own host-keyed score can put the older copy first.
+  const tree = buildSessionTree([s("h1", "2026-01-01T00:00:00Z"), s("h2", "2026-02-01T00:00:00Z")], new Map([["h1/s1", 9], ["h2/s1", 1]]));
+  assert.deepEqual(tree.map((node) => node.session.hostId), ["h1", "h2"]);
+});
