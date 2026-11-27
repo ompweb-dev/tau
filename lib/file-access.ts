@@ -156,8 +156,8 @@ export function isPiSecretFile(filePath: string): boolean {
       if (!isMissingPathError(error)) metadataUnavailable = true;
     }
     const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name)),
-      // Hashing the live files is left to a hard-linked request.
-      ...(identity ? tauCredentialCopies(dir, markUnavailable) : [])];
+      // A member's own credential symlink moved into own-config/ still protects its target.
+      ...tauCredentialCopies(dir, markUnavailable)];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;
