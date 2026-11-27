@@ -6100,6 +6100,7 @@ test("a kept chat whose shell command is creating its session gets its session's
   await act(async () => { releaseBash(); await sleep(300); });
   assert.ok(h.view.queryByRole("tab", { name: "!echo hi" }), "its session's tab takes the kept chat's");
   assert.equal(h.newChatTabs().length, 1, "beside the fresh new chat");
+  assert.equal(h.shownSession(), null, "the fresh new chat stays shown: the latest handler promoted it, not the one captured at send");
   h.view.unmount();
 });
 
