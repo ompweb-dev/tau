@@ -54,6 +54,7 @@ declare global {
   var __tauChatDrafts: Map<string, ChatDraft> | undefined;
   var __tauChatDraftListeners: Set<() => void> | undefined;
   var __tauChatDraftOwners: Map<string, string> | undefined;
+  var __tauChatDraftsFolded: boolean | undefined;
   var __tauChatDraftRecoveryListeners: Set<(key: string, recovery: DraftRecovery) => void> | undefined;
   var __tauChatDraftConsumptionListeners: Set<(key: string, snapshot: ChatDraft) => void> | undefined;
   var __tauChatDraftRevisions: { byKey: Map<string, number>; last: number } | undefined;
@@ -240,12 +241,19 @@ export function holdDraftOwner(owner: string, key: string): () => void {
 const SENT_KEY_MARK = "#sent:";
 
 /** A new chat's draft key of its own once it sent, over its workspace's `base`, until its session takes over. */
+function sentDraftBase(key: string): string {
+  return key.slice(0, key.lastIndexOf(SENT_KEY_MARK));
+}
+
 export function sentDraftKey(base: string, chat: string): string {
   return `${base}${SENT_KEY_MARK}${chat}`;
 }
 
+// The exact shape at the end of the key (a chat id is base36): `#` is legal in a workspace path.
+const SENT_KEY_RE = /#sent:[0-9a-z]{12,}$/;
+
 export function isSentDraftKey(key: string): boolean {
-  return key.includes(SENT_KEY_MARK);
+  return SENT_KEY_RE.test(key);
 }
 
 /** A `sentDraftKey`'s draft goes back to its workspace's (its chat is gone, or the page was reloaded): recovered into
@@ -253,7 +261,7 @@ export function isSentDraftKey(key: string): boolean {
 export function foldSentDraft(key: string): void {
   const draft = getDraft(key);
   clearDraft(key);
-  if (draft) recoverDraft(key.slice(0, key.lastIndexOf(SENT_KEY_MARK)), { text: draft.value, images: draft.images.length ? draft.images : undefined, files: draft.files.length ? draft.files : undefined, uploads: draft.uploads, ...(draft.promptOnly ? { promptOnly: true } : {}) });
+  if (draft) recoverDraft(sentDraftBase(key), { text: draft.value, images: draft.images.length ? draft.images : undefined, files: draft.files.length ? draft.files : undefined, uploads: draft.uploads, ...(draft.promptOnly ? { promptOnly: true } : {}) });
 }
 
 /** Recovers into `key`'s draft or, when `owner`'s composer is mounted, into the draft it shows now: a new chat that
@@ -261,6 +269,8 @@ export function foldSentDraft(key: string): void {
 export function recoverDraft(key: string, recovery: DraftRecovery, owner?: string): void {
   if (!recovery.text && !recovery.images?.length && !recovery.files?.length && !recovery.uploads?.length) return;
   key = (owner && liveOwners.get(owner)) || key;
+  // A chat's own key that no composer shows any more (its chat went away): its workspace's draft takes it.
+  if (isSentDraftKey(key) && ![...liveOwners.values()].includes(key)) key = sentDraftBase(key);
   if (key) {
     const draft = getDraft(key) ?? { value: "", images: [], files: [] };
     setDraft(key, {
@@ -331,5 +341,8 @@ export function clearDraft(key: string): void {
   }
 }
 
-// A reload reopens no chat's own key: their drafts are their workspaces' again.
-for (const key of [...drafts.keys()]) if (isSentDraftKey(key)) foldSentDraft(key);
+// A reload reopens no chat's own key: their drafts are their workspaces' again (once per page, not per hot reload).
+if (!globalThis.__tauChatDraftsFolded) {
+  globalThis.__tauChatDraftsFolded = true;
+  for (const key of [...drafts.keys()]) if (isSentDraftKey(key)) foldSentDraft(key);
+}

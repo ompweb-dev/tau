@@ -434,7 +434,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   }, [onAgentEnd]);
 
   // This chat across remounts of its composer (ChatInput's draftOwner).
-  const [draftOwner] = useState(() => Math.random().toString(36).slice(2, 12) + Date.now().toString(36));
+  // At least 12 base36 characters: the shape `isSentDraftKey` recognizes.
+  const [draftOwner] = useState(() => Math.random().toString(36).slice(2, 12).padEnd(10, "0") + Date.now().toString(36));
   // Once a new chat sent, its draft is its own until its session takes over: another new chat on the workspace (it
   // may open while this one's session is created) has the workspace's.
   // Held for the workspace key it sent on: another workspace's draft is that workspace's again.
