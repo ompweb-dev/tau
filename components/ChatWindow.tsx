@@ -39,7 +39,7 @@ import {
 } from "@/lib/chat-lazy-load";
 import { getDraftSummary } from "@/lib/draft-store";
 import { isLinkUp, type HostStatus } from "@/lib/hosts/host";
-import { newChatDraftKey } from "@/lib/project-ordering";
+import { freshChatDraftKey, scopedDraftKey } from "@/lib/project-ordering";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { getFileName } from "@/lib/file-paths";
@@ -556,8 +556,10 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
   // top, load another page while keeping the scroll position stable.
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
   const prevSessionKeyForPagingRef = useRef<string | null>(null);
-  const baseDraftKey = session?.id ?? (newSessionPoolId && newSessionProjectId ? `new:pool:${newSessionPoolId}:${newSessionProjectId}` : newSessionCwd ? newChatDraftKey(newSessionCwd, newSessionHostId) : undefined);
-  const draftKey = session?.id ?? (baseDraftKey && draftScope ? `${baseDraftKey}#${draftScope}` : baseDraftKey);
+  const freshDraftKey = freshChatDraftKey(newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId);
+  // This chat, across remounts of its composer.
+  const [draftOwner] = useState(() => ({}));
+  const draftKey = session?.id ?? (freshDraftKey && draftScope ? scopedDraftKey(freshDraftKey, draftScope) : freshDraftKey);
   const sessionKeyForPaging = draftKey ?? "empty";
   useEffect(() => {
     if (prevSessionKeyForPagingRef.current !== sessionKeyForPaging) {
@@ -970,7 +972,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       onBuiltinCommand={handleBuiltinSlashCommand}
       onAudioUnlock={unlockAudio}
       draftKey={draftKey}
-      draftKeyContinues={draftScope ? baseDraftKey : undefined}
+      draftKeyContinues={!session && draftScope ? freshDraftKey : undefined}
+      draftOwner={draftOwner}
       uploadHostId={session ? session.hostId : newSessionHostId}
       resolveUploadHost={!session && newSessionPoolId ? resolveUploadHost : undefined}
       cwd={!session && newSessionPoolId ? null : session?.cwd ?? newSessionCwd}

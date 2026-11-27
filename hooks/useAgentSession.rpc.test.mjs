@@ -6132,6 +6132,64 @@ test("a kept chat whose send fails gets its text back in its own composer, not t
   h.view.unmount();
 });
 
+test("text typed into a kept chat after it sent stays with it when another new chat opens", async (t) => {
+  let release;
+  const h = await draftInItsOwnGroup(t);
+  world.holds.push({ match: (method, url) => method === "POST" && url === "/api/agent/new", produce: () => new Promise((resolve) => { release = () => resolve({ status: 500, value: { error: "spawn failed" } }); }) });
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "hello there" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.draftComposer, { key: "Enter" }); await sleep(60); });
+  await until(() => release, "the new chat is being created");
+  await act(async () => { fireEvent.change(h.composerIn(h.draftGroup), { target: { value: "and more" } }); await sleep(60); });
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(h.composerIn(h.other).value, "", "the fresh new chat starts empty");
+  assert.equal(h.composerIn(h.draftGroup).value, "and more", "the kept chat keeps what was typed into it");
+  // Closing the kept chat's tab gives its text and its failed prompt back to the workspace's new chat.
+  const kept = within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") });
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("button", { name: translate("tabBar.closeTab", { label: kept.textContent || translate("appShell.newSession") }) })); await sleep(120); });
+  assert.match(h.composerIn(h.other).value, /and more/);
+  await act(async () => { release(); await sleep(300); });
+  assert.match(h.composerIn(h.other).value, /hello there/, "a send that fails after its tab closed is not lost");
+  // The workspace's draft outlives this view: leave it empty for the next test.
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "" } }); await sleep(60); });
+  h.view.unmount();
+});
+
+test("two kept chats swapped in and out of the new chat's tab each keep their own draft", async (t) => {
+  let releaseB;
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  // The fresh chat B sends too, then a third new chat opens: B moves to a tab of its own beside A's.
+  world.holds.push({ match: (method, url) => method === "POST" && url === "/api/agent/new", produce: () => new Promise((resolve) => { releaseB = () => resolve({ status: 500, value: { error: "spawn failed too" } }); }) });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "second prompt" } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.composerIn(h.other), { key: "Enter" }); await sleep(60); });
+  await until(() => releaseB, "B's session is being created");
+  const tabA = within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") });
+  // Taking A up moves B to a tab of its own; taking B up again moves A back.
+  await act(async () => { fireEvent.click(tabA); await sleep(150); });
+  const tabB = h.newChatTabs().find((tab) => tab !== tabA && h.other.contains(tab)) ?? h.newChatTabs().find((tab) => tab.getAttribute("aria-selected") !== "true");
+  await act(async () => { fireEvent.click(tabB); await sleep(150); });
+  await act(async () => { h.release(); releaseB(); await sleep(400); });
+  const values = [h.composerIn(h.draftGroup).value, h.composerIn(h.other).value].sort();
+  assert.deepEqual(values, ["hello there", "second prompt"], "each failed prompt is back in its own chat, once");
+  for (const group of [h.draftGroup, h.other]) await act(async () => { fireEvent.change(h.composerIn(group), { target: { value: "" } }); await sleep(30); });
+  h.view.unmount();
+});
+
+test("a new chat that replaces a shown kept chat gets the workspace's draft, and that chat's failed prompt", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { fireEvent.change(h.composerIn(h.other), { target: { value: "fresh idea" } }); await sleep(60); });
+  // Taking the kept chat up closes the unsent fresh one; its draft stays with the workspace.
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("tab", { name: translate("appShell.newSession") })); await sleep(150); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(150); });
+  const shown = h.newChatTabs().find((tab) => tab.getAttribute("aria-selected") === "true" && h.groupOf(tab).querySelector('[data-group-focused="true"]'));
+  const composer = h.composerIn(h.groupOf(shown ?? h.newChatTab()));
+  assert.match(composer.value, /fresh idea/, "the workspace's draft, not a kept chat's key");
+  await act(async () => { h.release(); await sleep(300); });
+  assert.match(composer.value, /hello there/, "the replaced chat's failed prompt comes back there");
+  await act(async () => { fireEvent.change(composer, { target: { value: "" } }); await sleep(30); });
+  h.view.unmount();
+});
+
 test("another new chat replaces an unsent kept one and opens fresh in the focused group", async (t) => {
   const h = await draftInItsOwnGroup(t);
   await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });

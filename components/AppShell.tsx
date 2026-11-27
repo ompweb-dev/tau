@@ -45,13 +45,13 @@ import type { WorkspaceFileSource } from "@/lib/workspace-types";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { findSessionTarget, getInitialNavigation, sameSessionTarget, sessionNavigationUrl } from "@/lib/initial-navigation";
 import { comparableProjectPath } from "@/lib/comparable-path";
-import { foldedHostProjectKey, hostProjectKey, LOCAL_HOST_ID, remoteHostId, projectIdentity, projectTargetId } from "@/lib/project-ordering";
+import { foldedHostProjectKey, freshChatDraftKey, hostProjectKey, LOCAL_HOST_ID, scopedDraftKey, remoteHostId, projectIdentity, projectTargetId } from "@/lib/project-ordering";
 import { isClusterTarget } from "@/lib/hosts/cluster";
 import { useHostRows } from "@/hooks/useHostRows";
 import { isRecord } from "@/lib/type-guards";
 import { LocalDaemonBanner } from "./LocalDaemonBanner";
 import { hostName, hostUnavailableReason } from "./host-status";
-import { clearDraft } from "@/lib/draft-store";
+import { clearDraft, continueDraft, foldDraft } from "@/lib/draft-store";
 import { useNotifications } from "@/hooks/useNotifications";
 import {
   APP_UPDATE_COMPLETED_RELOAD_MS,
@@ -131,6 +131,15 @@ const NEW_CHAT_TAB_ID = "chat:new";
 /** `scope`: set once the chat sent something and moved to a tab of its own, which gives it a composer draft of its
  *  own (ChatWindow's `draftScope`): the new chat that opens after it has the workspace's. */
 type DraftChat = { cwd: string | null; hostId?: string; project: ManagedProject | null; creationId?: string; initialization?: string; scope?: string };
+const draftKeyOf = (draft: DraftChat) => {
+  const fresh = freshChatDraftKey(draft.cwd, draft.hostId, draft.project?.poolId, draft.project?.projectId);
+  return fresh && draft.scope ? scopedDraftKey(fresh, draft.scope) : fresh;
+};
+/** A closing new chat's draft of its own goes back to its workspace's (as an unsent one's stays there). */
+const foldScopedDraft = (draft: DraftChat) => {
+  const fresh = draftKeyOf({ ...draft, scope: undefined });
+  if (fresh && draft.scope) foldDraft(scopedDraftKey(fresh, draft.scope), fresh);
+};
 const chatTabId = (session: SessionInfo) => `chat:${remoteHostId(session.hostId) ?? LOCAL_HOST_ID}:${session.id}`;
 /** The strips kept across reloads of this browser tab (sessionStorage: another window keeps its own). */
 const WORKBENCH_STORAGE_KEY = "tau:workbench";
@@ -224,6 +233,9 @@ export function AppShell({ appName }: { appName: string }) {
       return;
     }
     const id = `${DRAFT_TAB_PREFIX}${++draftTabSeqRef.current}`;
+    const freshKey = draftKeyOf({ ...draft, scope: undefined });
+    // Its draft moves before the new chat taking the workspace's renders (that one reads the store as it mounts).
+    if (!draft.scope && freshKey) continueDraft(freshKey, scopedDraftKey(freshKey, id));
     setDraftTabs((tabs) => [...tabs, { id, draft: { ...draft, scope: draft.scope ?? id } }]);
     setNewChatScope(undefined);
     setTabLayout((layout) => replaceTab(layout, NEW_CHAT_TAB_ID, id));
@@ -1442,8 +1454,13 @@ export function AppShell({ appName }: { appName: string }) {
   }, [router, isMobile, selectedSession]);
 
   const handleNewSession = useCallback((creationId: string, cwd: string | null, hostId?: string, project?: ManagedProject, initialization?: string) => {
-    // Taking the kept new chat up again passes its own creation id.
-    if ((creationId || undefined) !== draftChatRef.current?.creationId) dropKeptDraft();
+    // Taking the kept new chat up again passes its own creation id (takeUpDraft then sets its scope).
+    if ((creationId || undefined) !== draftChatRef.current?.creationId) {
+      // A shown new chat is replaced: a draft of its own goes back to its workspace's, for the chat that replaces it.
+      if (draftShownRef.current && draftChatRef.current) foldScopedDraft(draftChatRef.current);
+      dropKeptDraft();
+    }
+    setNewChatScope(undefined);
     setSettingsTab(null);
     setFileShown(false);
     setSelectedSession(null);
@@ -2198,7 +2215,10 @@ export function AppShell({ appName }: { appName: string }) {
   draftKeptRef.current = draftKept;
   // A new chat whose tab is gone (a chat selected into its group replaced it) is forgotten.
   useEffect(() => {
-    if (!draftTabOpen) setDraftChat(null);
+    if (draftTabOpen) return;
+    if (draftChatRef.current) foldScopedDraft(draftChatRef.current);
+    setDraftChat(null);
+    setNewChatScope(undefined);
   }, [draftTabOpen]);
   useEffect(() => {
     // A new chat's own tab is not saved (nor its chat): its id would name nothing after a reload.
@@ -2377,8 +2397,11 @@ export function AppShell({ appName }: { appName: string }) {
     let selected: SessionInfo | undefined;
     if (id === NEW_CHAT_TAB_ID) {
       // Only another group's new chat closes (see draftKept); its draft stays in the store.
+      if (draftChat) foldScopedDraft(draftChat);
       setDraftChat(null);
     } else if (draftTabs.some((tab) => tab.id === id)) {
+      const closed = draftTabs.find((tab) => tab.id === id);
+      if (closed) foldScopedDraft(closed.draft);
       setDraftTabs((tabs) => tabs.filter((tab) => tab.id !== id));
     } else if (!session) {
       handleCloseFileTab(id);

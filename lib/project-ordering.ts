@@ -36,6 +36,14 @@ export function newChatDraftKey(cwd: string, hostId: string | undefined): string
   return `new:${hostProjectKey(hostId, cwd)}`;
 }
 
+/** Composer draft key of a new chat (ChatWindow's): a pool project's, else its workspace's. */
+export function freshChatDraftKey(cwd: string | null | undefined, hostId: string | undefined, poolId?: string, projectId?: string): string | undefined {
+  return poolId && projectId ? `new:pool:${poolId}:${projectId}` : cwd ? newChatDraftKey(cwd, hostId) : undefined;
+}
+
+/** A new chat's draft key of its own (AppShell's DraftChat.scope) over its workspace's. */
+export const scopedDraftKey = (freshKey: string, scope: string) => `${freshKey}#${scope}`;
+
 /** `hostProjectKey` over the case-folded comparable path (how sessions find their project). */
 export function foldedHostProjectKey(hostId: string | undefined, path: string): string {
   return path.startsWith("pool:") ? path : hostProjectKey(hostId, comparableProjectPath(path));
