@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import type {
   AgentMessage,
   BashExecutionMessage,
@@ -235,6 +235,8 @@ export interface UseAgentSessionOptions {
   onNewSessionInitialization?: (body: string) => void;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
+  /** A send that can create the new chat's session begins (a prompt, `!cmd`, `/btw <q>`, `/compact`, `/name`). */
+  onSent?: () => void;
   onSessionForked?: (newSessionId: string) => void;
   chatInputRef?: React.RefObject<ChatInputHandle | null>;
   modelsRefreshKey?: number;
@@ -311,7 +313,7 @@ function reconcileConfirmedLocalOutbox(sessionId: string, localEntries: LocalOut
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionHostId, newSessionCreationId, newSessionPoolId, newSessionProjectId, newSessionInitialization, onNewSessionInitialization, onAgentEnd, onSessionCreated, onSent, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemPromptLoaderChange, onSessionStatsPanelOpen,
     onOpenFile, onOpenUrl,
   } = opts;
@@ -646,6 +648,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
+  // The latest: a send in flight promotes through the shell's current handler (the chat's tab may have moved).
+  const onSessionCreatedRef = useRef(onSessionCreated);
+  useLayoutEffect(() => { onSessionCreatedRef.current = onSessionCreated; }, [onSessionCreated]);
+  const onSentRef = useRef(onSent);
+  useLayoutEffect(() => { onSentRef.current = onSent; }, [onSent]);
   // Raw child-session events stream at token rate; coalesce the per-subagent
   // revision bumps to one per animation frame so an open dialog only re-pages
   // once per frame instead of per event.
@@ -1222,7 +1229,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!isNew || !sid || newSessionPromotedRef.current) return;
     if (pooled && (!createdOwnerRef.current?.hostId || !createdOwnerRef.current.cwd)) return;
     newSessionPromotedRef.current = true;
-    onSessionCreated?.({
+    onSessionCreatedRef.current?.({
       id: sid,
       path: "",
       cwd: createdOwnerRef.current?.cwd ?? newSessionCwd ?? "",
@@ -1234,7 +1241,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ...(createdOwnerRef.current?.hostId ? { hostId: createdOwnerRef.current.hostId } : newSessionHostId ? { hostId: newSessionHostId } : {}),
       ...(pooled ? { poolId: newSessionPoolId, projectId: newSessionProjectId, projectKey: `pool:${newSessionPoolId}:${newSessionProjectId}` } : {}),
     });
-  }, [isNew, newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId, pooled, onSessionCreated]);
+  }, [isNew, newSessionCwd, newSessionHostId, newSessionPoolId, newSessionProjectId, pooled]);
 
   // Assigned after connectEvents is defined. A runtime created for an empty
   // chat emits its startup frames before any stream exists, so it must be
@@ -2993,6 +3000,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
       if (!bashCmd) return { status: "rejected" };
+      // Marked once the send is valid, before anything can create the session.
+      onSentRef.current?.();
       await executeBashRef.current?.(bashCmd, isExcluded);
       return { status: "accepted" };
     }
@@ -3019,6 +3028,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       addNotice({ type: "error", message: promptError });
       return { status: "rejected" };
     }
+    onSentRef.current?.();
 
     if (!isNew && session) {
       // The outbox owns delivery from here: Send ends once this browser has stored it, and the run state starts
@@ -3094,8 +3104,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // No UI left to update on a dead instance — and attaching an
           // event stream now would leak it, since this instance's unmount
           // cleanup already ran.
-          if (!ownerGone) {
-            await ensureEventsConnected(sid);
+          // Once promoted, the chat may be gone (its session's tab is behind another): the prompt still goes out.
+          if (!ownerGone && await ensureEventsConnected(sid).then(() => true, (error: unknown) => { if (hookAliveRef.current) throw error; return false; })) {
             void refreshSubagentRoster(sid);
           }
           if (existingSid) {
@@ -3561,6 +3571,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const askBtw = useCallback(async (question: string, recordId?: string): Promise<boolean> => {
     if (btwAskPendingRef.current) return false;
     btwAskPendingRef.current = true;
+    onSentRef.current?.();
     try {
       const sid = sessionIdRef.current ?? await ensureNewSession();
       if (!sid) {
@@ -3617,6 +3628,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const ensureRuntime = async () => sessionIdRef.current ?? await ensureNewSession();
       switch (commandName) {
         case "compact": {
+          onSentRef.current?.();
           const sid = await ensureRuntime();
           if (!sid || isCompactingRef.current || isCompacting) return complete({ handled: true, error: translate("agentSession.noSessionToCompact") });
           ownsCompaction = true;
@@ -3649,9 +3661,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
 
         case "name": {
+          // A usage error starts no session (and so marks nothing sent).
+          if (!args) return complete({ handled: true, error: translate("agentSession.nameUsage") });
+          onSentRef.current?.();
           const sid = await ensureRuntime();
           if (!sid) return complete({ handled: true, error: translate("agentSession.noSessionToName") });
-          if (!args) return complete({ handled: true, error: translate("agentSession.nameUsage") });
           await sendAgentCommand(sid, { type: "set_session_name", name: args });
           await loadSession(sid);
           promoteNewSession();

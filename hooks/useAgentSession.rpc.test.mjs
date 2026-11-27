@@ -408,6 +408,10 @@ const { MessageView } = await import("@/components/MessageView");
 const { translate } = await import("@/lib/i18n");
 const { ChatWindow } = await import("@/components/ChatWindow");
 const { SessionSidebar } = await import("@/components/SessionSidebar");
+// As app/boot.ts does before the app loads: the sidebar history hook handles its own traversals (and puts the
+// current address back on the entry it returns to) ahead of the router's popstate listener.
+const { SIDEBAR_HISTORY_BRIDGE_SCRIPT } = await import("@/lib/sidebar-history-bridge");
+(0, eval)(SIDEBAR_HISTORY_BRIDGE_SCRIPT);
 const { AppShell } = await import("@/components/AppShell");
 const { FileExplorer } = await import("@/components/FileExplorer");
 // Edit only opens a confirm dialog; the edit starts from its confirm button.
@@ -5999,18 +6003,6 @@ test("a new chat in a group of its own keeps its tab while another group's chat 
   h.view.unmount();
 });
 
-test("another new chat replaces a kept one and opens fresh in the focused group", async (t) => {
-  const h = await draftInItsOwnGroup(t);
-  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
-  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
-  assert.ok(h.newChatTab(), "kept");
-  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
-  assert.equal(h.separators(), 0, "the kept new chat's group is gone");
-  assert.ok(h.other.contains(h.newChatTab()), "the new chat opens in the focused group");
-  assert.equal(h.draftComposer.isConnected, false, "as a new mount");
-  h.view.unmount();
-});
-
 test("a new chat sent and left for another group's chat becomes its session there, unselected", async (t) => {
   const h = await draftInItsOwnGroup(t);
   let release;
@@ -6031,12 +6023,132 @@ test("a new chat sent and left for another group's chat becomes its session ther
   assert.equal(viewIn(h.draftGroup), sending, "the sending chat stays mounted in its group");
   await act(async () => { release(); await sleep(300); });
   assert.equal(h.focusedGroup(), h.other, "the selection stays where the user went");
+  assert.equal(h.shownSession(), "worker-two", "and so does the address");
   assert.equal(h.newChatTab(), null, "the new chat's tab is its session's now");
   assert.ok(h.draftGroup.querySelector('[role="tab"]'), "in its own group");
   assert.equal(h.draftGroup.querySelectorAll('[role="tab"]').length, 1);
   assert.equal(h.separators(), 1);
   assert.equal(viewIn(h.draftGroup), sending, "on the same mount");
   assert.equal(h.composerIn(h.other), otherComposer, "and the selected chat keeps its own");
+  h.view.unmount();
+});
+
+// The issue's scenario: a new chat sent in a group of its own, left for the other group's chat, then another
+// new chat started there while the first one's session is still being created.
+async function sentBesideFreshChat(t, answer = { value: { sessionId: "created", hostId: "h1", cwd: "/shared" } }, message = "hello there") {
+  const h = await draftInItsOwnGroup(t);
+  world.holds.push({
+    match: (method, url) => method === "POST" && url === "/api/agent/new",
+    produce: () => new Promise((resolve) => { h.release = () => resolve(answer); }),
+  });
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: message } }); await sleep(30); });
+  await act(async () => { fireEvent.keyDown(h.draftComposer, { key: "Enter" }); await sleep(60); });
+  await until(() => h.release, "the new chat is being created");
+  h.chatView = (group) => h.view.container.querySelector(`[data-layer-group="${group.dataset.groupId}"] [id^="workspace-chat-"]`);
+  h.sending = h.chatView(h.draftGroup);
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  h.newChatTabs = () => h.view.queryAllByRole("tab", { name: translate("appShell.newSession") });
+  h.prompted = () => callsTo("POST", "/api/agent/created").some((call) => call.body?.type === "prompt" && call.body?.message === message);
+  return h;
+}
+
+test("another new chat while a kept one's session is being created keeps the kept chat's tab until its session takes it", async (t) => {
+  const h = await sentBesideFreshChat(t);
+  assert.equal(h.newChatTabs().length, 2, "the fresh new chat has its tab, and the kept one keeps one of its own");
+  assert.ok(h.newChatTabs().some((tab) => h.other.contains(tab) && tab.getAttribute("aria-selected") === "true"), "the fresh one opens selected in the focused group");
+  assert.equal(h.separators(), 1, "the kept chat keeps its group");
+  assert.equal(h.chatView(h.draftGroup), h.sending, "and its mount");
+  const freshComposer = h.composerIn(h.other);
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.newChatTabs().length, 1, "the kept chat's tab is its session's now");
+  assert.ok(h.other.contains(h.newChatTab()), "the fresh new chat stays");
+  assert.ok(within(h.draftGroup).queryByRole("tab", { name: "hello there" }), "the session's tab is where the kept chat's was");
+  assert.equal(h.chatView(h.draftGroup), h.sending, "on the same mount");
+  assert.equal(h.composerIn(h.other), freshComposer, "the fresh new chat keeps its own");
+  assert.equal(h.shownSession(), null, "and stays selected");
+  // The kept chat is still mounted: its prompt goes out once its stream opens.
+  await act(async () => { world.esInstances.filter((es) => es.channel.sessionId === "created").forEach((es) => es.open()); await sleep(100); });
+  await until(() => h.prompted(), "the first prompt is sent");
+  h.view.unmount();
+});
+
+test("a kept chat moved behind the fresh new chat still gets its session's tab", async (t) => {
+  const h = await sentBesideFreshChat(t);
+  // The fresh new chat moves into the kept chat's group, in front of it: no group shows the kept chat.
+  await act(async () => { fireEvent.click(within(h.draftGroup).getByRole("button", { name: translate("appShell.newSessionInGroup") })); await sleep(120); });
+  assert.equal(h.newChatTabs().length, 2);
+  assert.ok(h.newChatTabs().every((tab) => h.draftGroup.contains(tab)), "both new chats are in one group");
+  await act(async () => { h.release(); await sleep(300); });
+  assert.ok(h.view.queryByRole("tab", { name: "hello there" }), "the kept chat's tab is its session's");
+  assert.equal(h.newChatTabs().length, 1, "beside the fresh new chat");
+  await until(() => h.prompted(), "the first prompt is sent");
+  h.view.unmount();
+});
+
+test("a kept chat whose shell command is creating its session gets its session's tab", async (t) => {
+  let releaseBash;
+  const h = await sentBesideFreshChat(t, undefined, "!echo hi");
+  world.holds.push({
+    match: (method, url, body) => method === "POST" && url === "/api/agent/created" && body?.type === "bash",
+    produce: () => new Promise((resolve) => { releaseBash = () => resolve({ value: { success: true, data: { output: "hi\n", exitCode: 0 } } }); }),
+  });
+  world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
+  assert.equal(h.newChatTabs().length, 2);
+  await act(async () => { h.release(); await sleep(200); });
+  await until(() => releaseBash, "the command is sent");
+  await act(async () => { releaseBash(); await sleep(300); });
+  assert.ok(h.view.queryByRole("tab", { name: "!echo hi" }), "its session's tab takes the kept chat's");
+  assert.equal(h.newChatTabs().length, 1, "beside the fresh new chat");
+  assert.equal(h.shownSession(), null, "the fresh new chat stays shown: the latest handler promoted it, not the one captured at send");
+  h.view.unmount();
+});
+
+test("a kept chat that sent a builtin command creating its session keeps a tab of its own", async (t) => {
+  const h = await sentBesideFreshChat(t, undefined, "/name Early");
+  assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own");
+  assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
+  h.view.unmount();
+});
+
+test("a kept chat whose session cannot be created keeps its tab and shows the error", async (t) => {
+  const h = await sentBesideFreshChat(t, { status: 500, value: { error: "spawn failed" } });
+  await act(async () => { h.release(); await sleep(300); });
+  assert.equal(h.newChatTabs().length, 2, "the kept chat keeps its tab");
+  const kept = h.newChatTabs().find((tab) => h.draftGroup.contains(tab));
+  await act(async () => { fireEvent.click(kept); await sleep(120); });
+  assert.equal(kept.getAttribute("aria-selected"), "true", "it can be selected");
+  assert.equal(h.focusedGroup(), h.draftGroup);
+  assert.equal(h.chatView(h.draftGroup), h.sending, "on its mount");
+  assert.match(h.chatView(h.draftGroup).textContent, /spawn failed/, "showing its error");
+  h.view.unmount();
+});
+
+test("another new chat replaces an unsent kept one and opens fresh in the focused group", async (t) => {
+  const h = await draftInItsOwnGroup(t);
+  await act(async () => { fireEvent.change(h.draftComposer, { target: { value: "unsent idea" } }); await sleep(60); });
+  await act(async () => { fireEvent.pointerDown(h.composerIn(h.other)); await sleep(80); });
+  assert.ok(h.newChatTab(), "kept");
+  await act(async () => { fireEvent.click(h.newSessionButton()); await sleep(120); });
+  assert.equal(h.view.queryAllByRole("tab", { name: translate("appShell.newSession") }).length, 1, "the unsent kept chat gets no tab of its own");
+  assert.equal(h.separators(), 0, "the kept new chat's group is gone");
+  assert.ok(h.other.contains(h.newChatTab()), "the new chat opens in the focused group");
+  assert.equal(h.draftComposer.isConnected, false, "as a new mount");
+  assert.equal(h.composerIn(h.other).value, "unsent idea", "with the kept chat's draft, which only one composer holds");
+  h.view.unmount();
+});
+
+test("a new chat's own tab is never saved with the workbench", async (t) => {
+  const h = await sentBesideFreshChat(t);
+  assert.equal(h.newChatTabs().length, 2, "the kept chat has a tab of its own, its group's only one");
+  const saved = window.sessionStorage.getItem("tau:workbench");
+  assert.ok(saved, "the workbench is saved");
+  assert.doesNotMatch(saved, /chat:draft:/, "without the new chat's own tab");
+  const groups = (layout) => layout.kind === "group" ? [layout] : layout.children.flatMap(groups);
+  const savedGroups = groups(JSON.parse(saved).layout);
+  assert.equal(savedGroups.length, 1, "the group it alone filled is not saved");
+  assert.ok(savedGroups.every((group) => group.active && group.tabs.includes(group.active)), "every saved group shows a saved tab");
+  assert.ok(savedGroups.some((group) => group.id === JSON.parse(saved).focused), "and the saved focus names a saved group");
   h.view.unmount();
 });
 

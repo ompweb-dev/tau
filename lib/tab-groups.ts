@@ -223,6 +223,15 @@ export function nextChatMounts(prev: ChatMounts, selected: string | null, sessio
   return { selected, sessionKey, keys };
 }
 
+/**
+ * Mount keys after the chat of tab `from` moves to the new tab `to`: `to` keeps the key the chat is mounted under
+ * (the tab id itself without an entry), and `from` gets a fresh one, so the next chat there never takes the mount.
+ */
+export function moveChatMount(mounts: ChatMounts, from: string, to: string): ChatMounts {
+  const { [from]: mounted = from, ...keys } = mounts.keys;
+  return { ...mounts, keys: { ...keys, [to]: mounted, [from]: `${from}~${to}` } };
+}
+
 /** What a chat tab uses of its session (label, where it runs); counters and timestamps alone change no tab. */
 const TAB_SESSION_FIELDS = ["name", "firstMessage", "cwd", "path", "hostId", "projectRoot", "projectKey", "poolId", "projectId", "worktreeBranch"];
 
