@@ -132,6 +132,7 @@ function open(dir: string, path: string): Database {
     transaction(database, () => {
       // A store a host-keyed build (#37, reverted) created has host_id NOT NULL in its keys; its watches are set again.
       const hostKeyed = database.prepare<{ name: string }, []>("PRAGMA table_info(watches)").all().some(({ name }) => name === "host_id");
+      if (hostKeyed) console.warn("[tau] GitHub watch store from a host-keyed build: its watches are dropped and must be set again");
       if (hostKeyed) database.exec("DROP TABLE IF EXISTS watches; DROP TABLE IF EXISTS pending; DROP TABLE IF EXISTS watch_intents; DROP TABLE IF EXISTS read_grants;");
       database.exec(SCHEMA);
       const columns = database.prepare<{ name: string }, []>("PRAGMA table_info(watches)").all();

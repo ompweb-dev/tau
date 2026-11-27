@@ -90,13 +90,17 @@ export async function listSessionsAllHosts(): Promise<SessionInfo[]> {
   const lists = await Promise.all(hostIds().map((id) => hostSessions(id)));
   const merged: SessionInfo[] = [];
   const seen = new Map<string, number>();
+  const counted = new Set<string>();
   for (const sessions of lists) {
     for (const session of sessions) {
       const kept = seen.get(session.id);
       if (kept !== undefined) {
         const label = getHost(session.hostId!)?.label ?? session.hostId!;
-        const also = merged[kept].alsoOnHosts ?? [];
-        if (session.hostId !== merged[kept].hostId && !also.includes(label)) merged[kept] = { ...merged[kept], alsoOnHosts: [...also, label] };
+        const copy = `${session.hostId}\n${session.id}`;
+        if (session.hostId !== merged[kept].hostId && !counted.has(copy)) {
+          counted.add(copy);
+          merged[kept] = { ...merged[kept], alsoOnHosts: [...(merged[kept].alsoOnHosts ?? []), label] };
+        }
         continue;
       }
       seen.set(session.id, merged.length);

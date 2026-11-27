@@ -741,7 +741,7 @@ const SessionItem = memo(function SessionItem({
         : isUnread ? t("sessionSidebar.statusDone")
           : t("sessionSidebar.statusReady");
   const statusId = useId();
-  const alsoOn = session.alsoOnHosts ? t("sessionSidebar.statusAlsoOn", { hosts: session.alsoOnHosts.join(", ") }) : null;
+  const alsoOn = session.alsoOnHosts?.length ? t("sessionSidebar.statusAlsoOn", { hosts: session.alsoOnHosts.join(", ") }) : null;
   const statusLine = [status, hasUnsentDraft ? t("sessionSidebar.statusDraft") : null, alsoOn, relativeTime].filter(Boolean).join(" · ");
   const rowBackground = isSelected
     ? "color-mix(in srgb, var(--bg-selected) 70%, transparent)"
