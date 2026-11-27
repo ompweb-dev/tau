@@ -48,7 +48,7 @@ import { freezeHostLinks, getHost, hostOwnsLifecycle, isNotifier, lastUplinkAt, 
 import { CREATION_ID_RE, HISTORY_MUTATING_COMMANDS, HostOpError, PEER_MESSAGE_FRAME } from "./hosts/link-protocol";
 import { LOCAL_HOST_ID } from "./hosts/registry";
 import type { OpResult } from "./hosts/session-ops";
-import { hostForSessionId, hostHoldingSession, invalidateHostSessionList, listSessionsAllHosts, sessionSpawnTarget } from "./hosts/session-index";
+import { hostForSessionId, invalidateHostSessionList, sessionHost, listSessionsAllHosts, sessionSpawnTarget } from "./hosts/session-index";
 import { loadPools, poolProjectBindings } from "./hosts/pools";
 import { PoolStartError, requireProviderLogin, startPooledSession } from "./hosts/pool-starts";
 import { comparableProjectPath } from "./comparable-path";
@@ -2859,8 +2859,7 @@ function hostCopy<T>(map: Map<string, T>, sessionId: string, hostId?: string | n
   if (hostId) return map.get(sessionHostKey(hostId, sessionId));
   const local = map.get(sessionHostKey(LOCAL_HOST_ID, sessionId));
   if (local !== undefined) return local;
-  const suffix = `/${sessionId}`;
-  for (const [key, value] of map) if (key.endsWith(suffix) && !key.slice(0, -suffix.length).includes("/")) return value;
+  for (const [key, value] of map) if (splitSessionHostKey(key).id === sessionId) return value;
   return undefined;
 }
 
@@ -2869,9 +2868,13 @@ export function getRpcSession(sessionId: string, hostId?: string | null): AgentS
   return hostCopy(getRegistry(), sessionId, hostId);
 }
 
-/** A live copy of the id for a caller naming no host: this machine's if alive, else another host's live one. A dead
- * wrapper never wins over a live copy elsewhere. */
-export function getLiveRpcSession(sessionId: string): AgentSessionWrapper | undefined {
+/** A live copy of the id: with `hostId`, that host's wrapper if alive; without, this machine's if alive, else another
+ * host's live one. A dead wrapper never wins over a live copy elsewhere. */
+export function getLiveRpcSession(sessionId: string, hostId?: string | null): AgentSessionWrapper | undefined {
+  if (hostId) {
+    const copy = getRpcSession(sessionId, hostId);
+    return copy?.isAlive() ? copy : undefined;
+  }
   const local = getRpcSession(sessionId, LOCAL_HOST_ID);
   if (local?.isAlive()) return local;
   for (const [key, live] of getRegistry()) if (splitSessionHostKey(key).id === sessionId && live.isAlive()) return live;
@@ -3063,7 +3066,7 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
   return {
     github: createGithubToolOps(hosts),
     async listSessions() {
-      const running = new Set(getRunningRpcSessions().map((s) => sessionHostKey(s.hostId ?? LOCAL_HOST_ID, s.id)));
+      const running = new Set(getRunningRpcSessions().map((s) => sessionHostKey(s.hostId, s.id)));
       const sessions = await listSessionsAllHosts();
       return sessions.map((s) => {
         const hostId = s.hostId ?? LOCAL_HOST_ID;
@@ -3153,11 +3156,11 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
     },
 
     async deliver(input): Promise<AgentToolDeliverResult> {
-      const live = getRpcSession(input.sessionId, input.hostId);
-      let wrapper = live?.isAlive() ? live : undefined;
+      // Without a host, a live copy: a dead wrapper here must not hide one elsewhere.
+      let wrapper = getLiveRpcSession(input.sessionId, input.hostId);
       let cold = false;
       if (!wrapper) {
-        const host = input.hostId ? await hostHoldingSession(input.sessionId, input.hostId) : await hostForSessionId(input.sessionId);
+        const host = await sessionHost(input.sessionId, input.hostId);
         const target = host && await sessionSpawnTarget(input.sessionId, host);
         if (!host || !target) throw new Error(`Session not found: ${input.sessionId}`);
         // The open's preparation lease keeps an idle shared child until the message is sent.
@@ -3199,9 +3202,14 @@ function createAgentToolOps(source: AgentToolContext, replaying: boolean): Agent
       };
     },
 
-    async sessionHostId(sessionId) {
-      const live = getRpcSession(sessionId);
-      if (live?.isAlive()) return live.host.id;
+    async sessionHostId(sessionId, preferHostId) {
+      // The caller's own host's copy first; its list being unavailable is no answer, so the others are asked.
+      if (preferHostId) {
+        if (getLiveRpcSession(sessionId, preferHostId)) return preferHostId;
+        if (await sessionHost(sessionId, preferHostId).catch(() => null)) return preferHostId;
+      }
+      const live = getLiveRpcSession(sessionId);
+      if (live) return live.host.id;
       return (await hostForSessionId(sessionId))?.id ?? null;
     },
   };

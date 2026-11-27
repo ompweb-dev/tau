@@ -5,10 +5,10 @@ import { isLinkUp, type Host } from "./hosts/host";
 import { getHost } from "./hosts/hub";
 import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
-import { hostForSessionId, hostHoldingSession, hostSessions } from "./hosts/session-index";
+import { hostHoldingSession, hostSessions, sessionHost } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
 import { isHostId } from "./session-host-key";
-import { getLiveRpcSession, getRpcSession, WebRpcError } from "./rpc-manager";
+import { getLiveRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
 
 const SESSION_NOT_FOUND = { error: "Session not found", code: "session_not_found" } as const;
@@ -22,10 +22,10 @@ export async function resolveSessionHostOr404(
   hostId?: string | null,
 ): Promise<{ host: Host } | { response: Response }> {
   // Without a host, a live copy on any host: a dead wrapper on this machine must not hide it.
-  const live = hostId ? getRpcSession(id, hostId) : getLiveRpcSession(id);
+  const live = getLiveRpcSession(id, hostId);
   if (live?.isAlive()) return { host: live.host };
   try {
-    const host = hostId ? await hostHoldingSession(id, hostId) : await hostForSessionId(id);
+    const host = await sessionHost(id, hostId);
     return host ? { host } : { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   } catch (error) {
     // Nothing was sent: a command the composer holds is refused, not lost.
@@ -71,8 +71,8 @@ export async function resolveWorkspaceHost(
   if (!isValidSessionId(sessionId)) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
   // The named host's copy of an id first; any other copy answers 409 below.
   const named = typeof hostId === "string" ? hostId : null;
-  const live = getRpcSession(sessionId, named);
-  const running = live?.isAlive() ? live : undefined;
+  // Without one, a live copy: a dead wrapper here must not hide one elsewhere.
+  const running = getLiveRpcSession(sessionId, named);
   const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
   let holder: Host | null = null;
   if (!running && named && retained?.hostId !== named) {

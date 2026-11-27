@@ -155,8 +155,8 @@ export interface AgentToolSessionOps {
   /** Authorize the actual physical owner before any preparation or spawn. */
   createSession(input: AgentToolCreateSessionInput, authorize: (host: AgentToolHost) => Promise<boolean>): Promise<AgentToolCreateSessionResult>;
   deliver(input: AgentToolDeliverInput): Promise<AgentToolDeliverResult>;
-  /** The host a session lives on; null when no host has it. */
-  sessionHostId(sessionId: string): Promise<string | null>;
+  /** The host a session lives on, `preferHostId`'s copy first; null when no host has it. */
+  sessionHostId(sessionId: string, preferHostId?: string): Promise<string | null>;
   /** The GitHub tools' `gh` runner, host list and write setting. */
   github: GithubToolOps;
 }
@@ -455,9 +455,14 @@ export async function executeAgentTool(
   const { wait, waitTimeoutMs } = parseWait(record);
   const depth = ctx.guard.checkChainDepth(ctx.sourceSessionId);
   const sessions = await ops.listSessions();
-  const targetSession = sessions.find((session) => session.id === sessionId);
+  // The caller's own host's copy of the id first: the same id on another host is another session.
+  const listed = sessions.filter((session) => session.id === sessionId);
+  const copyHost = (session: { hostId?: string }) => session.hostId ?? "local";
+  const targetHostId = ctx.sourceHostId === "local"
+    ? (listed.find((session) => copyHost(session) === "local") ? "local" : listed[0]?.hostId)
+    : await ops.sessionHostId(sessionId, ctx.sourceHostId);
+  const targetSession = listed.find((session) => copyHost(session) === (targetHostId ?? "local"));
   const hosts = ops.listHosts();
-  const targetHostId = ctx.sourceHostId === "local" ? targetSession?.hostId : await ops.sessionHostId(sessionId);
   if (ctx.sourceHostId !== "local" && !targetHostId) throw new Error(`Session not found: ${sessionId}`);
   const targetHost = targetHostId ? hosts.find((host) => host.id === targetHostId) : undefined;
   const targetRef = targetSession && targetHostId ? {

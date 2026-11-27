@@ -767,7 +767,8 @@ function sameOutboxIntent(a: LocalOutboxEntry, b: LocalOutboxEntry): boolean {
   return true;
 }
 
-/** One host's copy of a session: the same id on another host is another session (a row from before hosts is this machine's). */
+/** One host's copy of a session: the same id on another host is another session. A row from before hosts (no `hostId`)
+ * is grouped with this machine's and posted without a host, so the server resolves its host. */
 const outboxSession = (entry: Pick<LocalOutboxEntry, "sessionId" | "hostId">): string => sessionHostKey(entry.hostId, entry.sessionId);
 
 // A local failed ancestor proves lineage only in the same session (host copy) with the exact original intent.

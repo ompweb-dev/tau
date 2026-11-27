@@ -3,7 +3,7 @@
 import { BellOff, CheckCheck, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n";
-import { OPEN_SESSION_EVENT } from "@/lib/notification-client";
+import { openSessionView } from "@/lib/notification-client";
 import { renderNotification, type NotificationHistoryEntry } from "@/lib/notification-events";
 import { notificationHistory, useNotificationHistory, useUnreadNotificationCount } from "@/lib/notification-history";
 import { ClampedDescription, createSwipeTracker, descriptionBaseStyle, dismissButtonStyle, DRAG_SLOP_PX, KindIcon, useDragClickGuard, type SwipeTracker } from "./ui/toast";
@@ -85,7 +85,7 @@ function NotificationRow({ entry }: { entry: NotificationHistoryEntry }) {
   // Following a notification is reading it.
   const open = sessionId ? () => {
     notificationHistory.markRead(entry.id);
-    window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId, hostId: hostId ?? "local" } }));
+    openSessionView(sessionId, hostId);
   } : undefined;
   const clickGuard = useDragClickGuard();
   const drag = useRef<{ id: number; x: number; y: number; claimed: boolean; tracker: SwipeTracker } | null>(null);

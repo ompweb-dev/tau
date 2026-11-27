@@ -1,5 +1,5 @@
 import { apiErrorResponse, hostOfflineResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
-import { startRpcSession, getRpcSession, getRpcSessionKeys, WebRpcError, type AgentSessionWrapper } from "@/lib/rpc-manager";
+import { startRpcSession, getLiveRpcSession, getRpcSessionKeys, WebRpcError, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { sessionSpawnTarget } from "@/lib/hosts/session-index";
 import { RpcCommandError } from "@/lib/pi/rpc-process";
 import { RequestBodyTooLargeError } from "@/lib/bounded-form-data";
@@ -81,10 +81,18 @@ export async function runAgentCommand(
     // Hold later wrapper selection as well as dispatch behind attachment preparation, so a Stop
     // cannot overtake the preparing prompt.
     // A moved session answers to several ids: a command through any of them waits. Fences are per host copy;
-    // without a host, the copy it resolves to, so a later Stop naming that host waits behind it.
+    // without a host, the live copy's host, else the host it resolves to, so a later Stop naming that host waits
+    // behind it. Limit (hostless API callers only): a hostless prompt still resolving can be overtaken by a Stop that
+    // names the host.
+    const live = getLiveRpcSession(id, hostId);
+    // Never waits on host lists: there is no child to ask, so the reply is known.
+    if (!live && Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
     if (!hostId) {
-      const early = await resolveSessionHostOr404(id);
-      if ("host" in early) hostId = early.host.id;
+      if (live) hostId = live.host.id;
+      else {
+        const early = await resolveSessionHostOr404(id);
+        if ("host" in early) hostId = early.host.id;
+      }
     }
     const fenceHost = hostId || LOCAL_HOST_ID;
     const held = getRpcSessionKeys(id, fenceHost).flatMap((key) => sendFences().get(sessionHostKey(fenceHost, key)) ?? []);
@@ -117,8 +125,8 @@ export async function runAgentCommand(
     };
 
     // Fast path: already-running session.
-    const existing = getRpcSession(id, hostId);
-    if (existing?.isAlive()) return Response.json({ success: true, data: await send(existing) });
+    const existing = getLiveRpcSession(id, hostId);
+    if (existing) return Response.json({ success: true, data: await send(existing) });
     if (Object.hasOwn(NO_SPAWN_REPLIES, type)) return Response.json({ success: true, data: NO_SPAWN_REPLIES[type] });
 
     const resolved = await resolveSessionHostOr404(id, hostId);

@@ -59,8 +59,8 @@ declare global {
 
 // Session state is keyed by (host_id, session_id): the same id on two hosts is two sessions.
 const SCHEMA = `
-CREATE TABLE IF NOT EXISTS watches (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, kind TEXT NOT NULL, cursor_json TEXT NOT NULL, created_at INTEGER NOT NULL, registration_id TEXT NOT NULL DEFAULT '', PRIMARY KEY (host_id, session_id, item_key));
-CREATE TABLE IF NOT EXISTS pending (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, entry_id TEXT NOT NULL, message TEXT NOT NULL, cursor_json TEXT NOT NULL, final INTEGER NOT NULL, batches_json TEXT NOT NULL DEFAULT '[]', batch_index INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (host_id, session_id, item_key));
+CREATE TABLE IF NOT EXISTS watches (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, kind TEXT NOT NULL, cursor_json TEXT NOT NULL, created_at INTEGER NOT NULL, registration_id TEXT NOT NULL, PRIMARY KEY (host_id, session_id, item_key));
+CREATE TABLE IF NOT EXISTS pending (host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL, entry_id TEXT NOT NULL, message TEXT NOT NULL, cursor_json TEXT NOT NULL, final INTEGER NOT NULL, batches_json TEXT NOT NULL, batch_index INTEGER NOT NULL, PRIMARY KEY (host_id, session_id, item_key));
 CREATE TABLE IF NOT EXISTS watch_intents (token TEXT NOT NULL PRIMARY KEY, host_id TEXT NOT NULL, session_id TEXT NOT NULL, item_key TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS watch_intents_host_session_item ON watch_intents (host_id, session_id, item_key);
 CREATE TABLE IF NOT EXISTS posted (item_key TEXT NOT NULL, comment_id TEXT NOT NULL, PRIMARY KEY (item_key, comment_id));
@@ -322,39 +322,17 @@ export function claimPending(
 }
 
 export function getPending(sessionId: string, hostId: string, itemKey: string, registrationId?: string): PendingUpdate | null {
-  const d = db();
-  const select = d.prepare<PendingRow, [string, string, string, string | null, string | null]>(
-    "SELECT entry_id, message, cursor_json, final, batches_json, batch_index FROM pending p WHERE p.host_id = ? AND p.session_id = ? AND p.item_key = ? AND (? IS NULL OR EXISTS (SELECT 1 FROM watches w WHERE w.host_id = p.host_id AND w.session_id = p.session_id AND w.item_key = p.item_key AND w.registration_id = ?))",
-  );
   const registration = registrationId ?? null;
-  const row = select.get(hostId, sessionId, itemKey, registration, registration);
-  if (!row) return null;
-  if (row.batches_json !== "[]") return toPending(row);
-
-  return transaction(d, () => {
-    const current = select.get(hostId, sessionId, itemKey, registration, registration);
-    if (!current) return null;
-    if (current.batches_json !== "[]") return toPending(current);
-    const batchesJson = JSON.stringify([{ entryId: current.entry_id, message: current.message }]);
-    const { changes } = d
-      .prepare("UPDATE pending SET batches_json = ?, batch_index = 0 WHERE host_id = ? AND session_id = ? AND item_key = ? AND entry_id = ? AND batches_json = '[]'")
-      .run(batchesJson, hostId, sessionId, itemKey, current.entry_id);
-    if (!changes) {
-      const refreshed = select.get(hostId, sessionId, itemKey, registration, registration);
-      return refreshed ? toPending(refreshed) : null;
-    }
-    return toPending({ ...current, batches_json: batchesJson, batch_index: 0 });
-  });
+  const row = db().prepare<PendingRow, [string, string, string, string | null, string | null]>(
+    "SELECT entry_id, message, cursor_json, final, batches_json, batch_index FROM pending p WHERE p.host_id = ? AND p.session_id = ? AND p.item_key = ? AND (? IS NULL OR EXISTS (SELECT 1 FROM watches w WHERE w.host_id = p.host_id AND w.session_id = p.session_id AND w.item_key = p.item_key AND w.registration_id = ?))",
+  ).get(hostId, sessionId, itemKey, registration, registration);
+  return row ? toPending(row) : null;
 }
 
 /** One SQLite snapshot of every current pending batch that has not yet been acknowledged. */
 export function pendingBatchEntryIds(): Set<string> {
   const rows = db().prepare<{ entry_id: string }, []>(
-    `SELECT p.entry_id AS entry_id
-       FROM watches w JOIN pending p USING (host_id, session_id, item_key)
-      WHERE p.batches_json = '[]'
-     UNION ALL
-     SELECT json_extract(batch.value, '$.entryId') AS entry_id
+    `SELECT json_extract(batch.value, '$.entryId') AS entry_id
        FROM watches w JOIN pending p USING (host_id, session_id, item_key)
        JOIN json_each(p.batches_json) AS batch
       WHERE CAST(batch.key AS INTEGER) >= p.batch_index`,

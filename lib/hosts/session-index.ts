@@ -180,6 +180,11 @@ export async function hostHoldingSession(id: string, hostId: string): Promise<Ho
   return null;
 }
 
+/** The host holding the session: `hostId`'s when named (`hostHoldingSession`), else any (`hostForSessionId`). */
+export function sessionHost(id: string, hostId?: string | null): Promise<Host | null> {
+  return hostId ? hostHoldingSession(id, hostId) : hostForSessionId(id);
+}
+
 /** Where a session's file is and which cwd to start it in, on `host`; null when the host has no such session. */
 export async function sessionSpawnTarget(
   id: string,

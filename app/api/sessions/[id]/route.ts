@@ -4,7 +4,7 @@ import { invalidateHostSessionList } from "@/lib/hosts/session-index";
 import type { SessionReadValue } from "@/lib/hosts/session-ops";
 import { invalidateSessionCaches } from "@/lib/session-reader";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
-import { clearExitedRpcSession, getLiveRpcSessionIds, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
+import { clearExitedRpcSession, getLiveRpcSession, getLiveRpcSessionIds, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
 import { forgetSessionReplacementMappings } from "@/lib/message-outbox";
 import { removeSessionWatches } from "@/lib/github/watch-store";
 import { RpcCommandError, RpcCommandTimeoutError } from "@/lib/pi/rpc-process";
@@ -168,8 +168,9 @@ export async function PATCH(
     // the path check because pi does not create the session file until the
     // history holds an assistant message.
     let renamed = false;
-    const rpc = getRpcSession(id, hostId);
-    if (rpc?.isAlive?.() && typeof rpc.send === "function") {
+    // Without a host, a live copy: a dead wrapper here must not hide one elsewhere.
+    const rpc = getLiveRpcSession(id, hostId);
+    if (rpc && typeof rpc.send === "function") {
       try {
         await rpc.send({ type: "set_session_name", name: name.trim() });
         renamed = true;
@@ -195,7 +196,7 @@ export async function PATCH(
       if ("response" in resolved) return resolved.response;
       // Resolution awaited: an Edit may have started on the current wrapper
       // since the failed native rename. Never bypass its fence with a file write.
-      if (getRpcSession(id, hostId)?.isEditingHistory()) {
+      if (getRpcSession(id, resolved.host.id)?.isEditingHistory()) {
         throw new WebRpcError("Wait for the history edit to finish", "session_busy");
       }
       const result = await resolved.host.sessionOps.renameSessionFile(id, name.trim());

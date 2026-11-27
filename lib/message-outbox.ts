@@ -305,7 +305,7 @@ export function outboxEntries(sessionId: string, hostId?: string | null): Outbox
   const scope = hostId || null;
   const keys = sessionKeys(sessionId, scope);
   const rows = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE ${entrySessionMatch(keys)} AND state != 'delivered' ORDER BY rowid`).all(...matchArgs(scope, keys)) as Row[];
-  return rows.map((entry) => ({ ...toEntry(entry), sessionId, ...(scope ? { hostId: scope } : {}) }));
+  return rows.map((entry) => ({ ...toEntry(entry), sessionId }));
 }
 
 /** The sessions that own these ids' rows now. A native identity move re-homes a row while its browser still asks under the old id. */
@@ -733,10 +733,8 @@ function removeEntry(sessionId: string, hostId: string | null | undefined, id: s
 
 /** Send the oldest held entry of `hostId`'s copy of the session unless one of its entries is in flight. Another host's
  * copy of the id has its own claim. Never throws. */
-export function pumpOutbox(sessionId: string, hostId?: string | null): void {
-  const hosts = hostId ? [hostId]
-    : (db().prepare("SELECT DISTINCT host_id FROM entries WHERE session_id = ?").all(sessionId) as { host_id: string }[]).map((row) => row.host_id);
-  for (const host of hosts) pump(sessionId, host);
+export function pumpOutbox(sessionId: string, hostId: string): void {
+  pump(sessionId, hostId);
 }
 
 /** One host copy's queue: `hostId`'s rows of the session, oldest first and one delivering at a time; another host's copy
@@ -748,7 +746,7 @@ function pump(sessionId: string, hostId: string): void {
   if (busyKeys.some((key) => busy.has(key))) return;
   let next: Row | null;
   try {
-    for (const key of keys) recoverDelivering(key, hostId);
+    for (const key of keys) recoverDelivering({ sessionId: key, hostId });
     if (db().prepare(`SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering'`).get(hostId, ...keys)) return;
     next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as Row | null;
   } catch (error) {
@@ -808,7 +806,7 @@ export function startOutbox(): void {
   state.startupRetry = undefined;
   try {
     db();
-    recoverDelivering(undefined, undefined, true);
+    recoverDelivering(undefined, true);
     pruneDelivered(db(), Date.now() - KEEP_DELIVERED_MS);
     db().prepare("DELETE FROM completed_uploads WHERE at < ?").run(Date.now() - STAGED_MAX_AGE_MS);
   } catch (error) {
@@ -936,9 +934,9 @@ export function startOutbox(): void {
 }
 
 /** A live instance owns its delivery. An orphaned claim is uncertain, never replayed by this dispatcher. */
-function recoverDelivering(sessionId?: string, hostId?: string, startup = false): void {
-  const inFlight = db().prepare(`SELECT id, session_id, host_id, dispatch_pid FROM entries WHERE state = 'delivering'${sessionId ? " AND session_id = ? AND host_id = ?" : ""}`)
-    .all(...(sessionId ? [sessionId, hostId ?? LOCAL_HOST_ID] : [])) as { id: string; session_id: string; host_id: string; dispatch_pid: number | null }[];
+function recoverDelivering(copy?: { sessionId: string; hostId: string }, startup = false): void {
+  const inFlight = db().prepare(`SELECT id, session_id, host_id, dispatch_pid FROM entries WHERE state = 'delivering'${copy ? " AND session_id = ? AND host_id = ?" : ""}`)
+    .all(...(copy ? [copy.sessionId, copy.hostId] : [])) as { id: string; session_id: string; host_id: string; dispatch_pid: number | null }[];
   for (const entry of inFlight) {
     // At startup a same-PID row is usually a reused PID from the last run; only a claim this process holds in memory is live.
     if (entry.dispatch_pid === process.pid && (!startup || outbox().busy.has(sessionHostKey(entry.host_id, entry.session_id)))) continue;
@@ -1196,7 +1194,8 @@ type ArchiveState = "archived" | "absent" | "hello" | "retry";
 type ArchiveRead = boolean | "hello" | "retry";
 
 /** Whether `sessionId` is in an archive: this machine's, or any linked host's (as GET /api/sessions/archive lists them),
- * or only `hostId`'s when given; `hostId` in the answer is the host whose archive lists it. An unreadable archive is
+ * or only `hostId`'s when given; `hostId` in the answer is the one host whose archive lists it (none when several do,
+ * or another archive could not be read). An unreadable archive is
  * never `absent`: the session may be in it. */
 async function archiveState(sessionId: string, hostId?: string | null): Promise<{ state: ArchiveState; hostId?: string }> {
   const linked = listHosts().filter((row) => !hostId || row.id === hostId);
@@ -1217,7 +1216,10 @@ async function archiveState(sessionId: string, hostId?: string | null): Promise<
     }),
   ];
   const found = await Promise.all(reads);
-  const archivedAt = found.indexOf(true);
-  if (archivedAt !== -1) return { state: "archived", hostId: hosts[archivedAt] };
+  const archivedOn = hosts.filter((_, index) => found[index] === true);
+  // Archived on more than one host, or another host's archive unreadable: which copy is meant cannot be told, so no
+  // host is named.
+  const certain = archivedOn.length === 1 && found.every((read) => typeof read === "boolean");
+  if (archivedOn.length) return { state: "archived", ...(certain ? { hostId: archivedOn[0] } : {}) };
   return { state: found.includes("retry") ? "retry" : found.includes("hello") ? "hello" : "absent" };
 }

@@ -77,9 +77,9 @@ export function rememberLocalOutbox(current: ServerOutbox, entries: LocalOutboxE
 }
 
 /** This chat's host copy: the same id on another host is another session. A browser row from before hosts has no
- *  `hostId`: it is posted without one and the server resolves its host, so it may be any copy's. */
+ *  `hostId`: it is this machine's, as the worker and sw.js group it. */
 export function sameCopy(entry: { sessionId: unknown; hostId?: unknown }, sessionId: string | null, hostId: string): boolean {
-  return entry.sessionId === sessionId && (entry.hostId === undefined || entry.hostId === hostId);
+  return entry.sessionId === sessionId && (entry.hostId ?? "local") === hostId;
 }
 
 export function markOutboxUncertain(current: ServerOutbox, ids: Iterable<string>): ServerOutbox {

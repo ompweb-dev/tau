@@ -102,10 +102,10 @@ test("a chat shows and remembers only its own host's copy of a session id", () =
   assert.deepEqual([...rememberLocalOutbox(EMPTY_SERVER_OUTBOX, [remote, here], "s", "box").known.keys()], ["remote-browser"]);
 });
 
-test("a browser row from before hosts (no hostId) shows on any host copy's chat of its id; an empty hostId on none", () => {
+test("a browser row from before hosts (no hostId) is this machine's copy's; an empty hostId is no copy's", () => {
   const legacy = { ...local("legacy", 10, 1) };
   delete legacy.hostId;
-  assert.deepEqual(order(mergeHeldMessages("s", "box", [legacy], [], EMPTY_SERVER_OUTBOX)), ["legacy:browser"]);
+  assert.deepEqual(order(mergeHeldMessages("s", "box", [legacy], [], EMPTY_SERVER_OUTBOX)), []);
   assert.deepEqual(order(mergeHeldMessages("s", "local", [legacy], [], EMPTY_SERVER_OUTBOX)), ["legacy:browser"]);
   assert.deepEqual(order(mergeHeldMessages("other", "box", [legacy], [], EMPTY_SERVER_OUTBOX)), [], "never another session id's");
   const empty = { ...stored("empty-host", 10), hostId: "" };

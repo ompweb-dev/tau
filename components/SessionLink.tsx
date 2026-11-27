@@ -2,7 +2,7 @@
 
 import type { MouseEvent } from "react";
 import type { SessionOriginRef } from "@/lib/message-origin";
-import { OPEN_SESSION_EVENT } from "@/lib/notification-client";
+import { openSessionView } from "@/lib/notification-client";
 
 function sessionLabel(session: SessionOriginRef): string {
   if (session.name?.trim()) return session.name.trim();
@@ -20,9 +20,7 @@ export function SessionLink({ session, newTab = false }: { session: SessionOrigi
   const open = (event: MouseEvent<HTMLAnchorElement>) => {
     if (newTab || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, {
-      detail: { sessionId: session.id, hostId: session.hostId },
-    }));
+    openSessionView(session.id, session.hostId);
   };
   return (
     <a

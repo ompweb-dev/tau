@@ -1,4 +1,4 @@
-import { getLiveRpcSession, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
+import { getLiveRpcSession, WebRpcError } from "@/lib/rpc-manager";
 import { commandErrorResponse, runAgentCommand } from "@/lib/agent-command";
 import { parseJsonWithinLimit } from "@/lib/bounded-form-data";
 import { MAX_AGENT_COMMAND_REQUEST_BYTES } from "@/lib/image-attachments";
@@ -50,7 +50,7 @@ export async function GET(
   try {
     // `?hostId=`: only that host's copy; the same id live on another host is another session.
     // Without one, a live copy: a dead wrapper on this machine must not hide a live one elsewhere.
-    const session = host.hostId ? getRpcSession(id, host.hostId) : getLiveRpcSession(id);
+    const session = getLiveRpcSession(id, host.hostId);
     if (!session || !session.isAlive()) {
       return Response.json({ running: false });
     }

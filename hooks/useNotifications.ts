@@ -12,6 +12,7 @@ import {
   hasStoredNotificationPrefs,
   notificationClientId,
   OPEN_SESSION_EVENT,
+  openSessionView,
   showSystemNotification,
   subscribeNotificationPrefs,
   syncNotificationDevice,
@@ -116,8 +117,7 @@ export function useNotifications({ sessionIds, locale, onOpenSession }: { sessio
   // Delivery to this tab and notification clicks. Every open goes through
   // OPEN_SESSION_EVENT, so listeners such as the bell popover see each one.
   useEffect(() => {
-    // A notification without a host is this machine's session, never another host's copy of the id.
-    const openSession = (sessionId: string, hostId = "local") => window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId, hostId } }));
+    const openSession = openSessionView;
     // Request id of the toast each tag currently shows. A retraction names the
     // request it closes, so a toast replaced by the next dialog of that tag stays.
     const toastRequests = new Map<string, string | undefined>();

@@ -195,6 +195,11 @@ async function subscribeForPush(): Promise<boolean> {
 /** Window event (detail: `{ sessionId, hostId }`) asking the app to open a session. */
 export const OPEN_SESSION_EVENT = "tau-open-session";
 
+/** Open one host's copy of a session in this tab (no host: this machine's, never another host's copy of the id). */
+export function openSessionView(sessionId: string, hostId?: string | null): void {
+  window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId, hostId: hostId ?? "local" } }));
+}
+
 /**
  * Show a system notification the same way the service worker shows pushes.
  * Returns false when the browser does not allow it, so the caller can fall back.
@@ -221,7 +226,7 @@ export async function showSystemNotification(notification: RenderedNotification,
     fallback.onclick = () => {
       fallback.close();
       window.focus();
-      window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { sessionId: notification.sessionId, hostId: notification.hostId ?? "local" } }));
+      openSessionView(notification.sessionId, notification.hostId);
     };
     return true;
   } catch {

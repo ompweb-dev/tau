@@ -6,7 +6,7 @@ import { isLinkUp } from "./hosts/host";
 import { HostOpError } from "./hosts/link-protocol";
 import type { WorkspaceFileEvent } from "./workspace-types";
 import { attachNotificationClient } from "./notification-hub";
-import { getExitedRpcSessions, getRpcSession, getRunningRpcSessions, subscribeHostToolCalls, subscribeRunningSessions, type AgentSessionWrapper } from "./rpc-manager";
+import { getExitedRpcSessions, getLiveRpcSession, getRunningRpcSessions, subscribeHostToolCalls, subscribeRunningSessions, type AgentSessionWrapper } from "./rpc-manager";
 import { onOutboxChange, outboxEntries, outboxSnapshot } from "./message-outbox";
 import { subscribeSessionFileChanges } from "./session-watcher";
 import {
@@ -635,12 +635,11 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
   // Observer-only: opening a saved session must not create another pi
   // process for a terminal-owned session. Explicit commands use
   // POST /api/agent/[id], which starts the wrapper before this attaches.
-  const existing = getRpcSession(sessionId, hostId);
-  let session = existing?.isAlive() ? existing : undefined;
+  // Without a host, a live copy: a dead wrapper here must not hide one elsewhere.
+  let session = getLiveRpcSession(sessionId, hostId);
   // Held messages show before pi runs (a host offline): the channel attaches to the wrapper the dispatcher starts.
   // The held messages of this host's copy only (every host's without one): the same id on another host is another session.
-  const outboxHost = hostId ?? null;
-  if (!session && outboxEntries(sessionId, outboxHost).length === 0) {
+  if (!session && outboxEntries(sessionId, hostId).length === 0) {
     return { ok: false, status: 409, error: "Session is not managed by tau", code: "session_not_managed" };
   }
 
@@ -654,8 +653,7 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
   };
   if (session) attach(session);
   const rebind = () => {
-    const existing = getRpcSession(sessionId, hostId);
-    const live = existing?.isAlive() ? existing : undefined;
+    const live = getLiveRpcSession(sessionId, hostId);
     if (live !== session) {
       detachSession();
       detachSession = () => {};
@@ -664,9 +662,9 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
     }
   };
   const detachRunning = subscribeRunningSessions(rebind);
-  const detachOutbox = onOutboxChange(sessionId, outboxHost, () => {
+  const detachOutbox = onOutboxChange(sessionId, hostId, () => {
     rebind();
-    handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, outboxHost) });
+    handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, hostId) });
   });
   rebind();
   handle.setDetach(() => {
@@ -674,7 +672,7 @@ function openSessionChannel(sessionId: string, hostId: string | undefined, handl
     detachRunning();
     detachSession();
   });
-  if (handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, outboxHost) });
+  if (handle.active) handle.send({ type: "outbox_update", ...outboxSnapshot(sessionId, hostId) });
   return SUBSCRIBED;
 }
 

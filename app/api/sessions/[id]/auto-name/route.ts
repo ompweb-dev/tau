@@ -40,12 +40,13 @@ export async function POST(
     }
 
     // The session list read yielded; Edit may now own this session.
-    if (getRpcSession(id, hostId)?.isEditingHistory()) {
+    if (getRpcSession(id, resolved.host.id)?.isEditingHistory()) {
       return Response.json({ error: "Wait for the history edit to finish", code: "session_busy" }, { status: 409 });
     }
 
     // A live pi holds the session: name it there. Otherwise append to the file.
-    const rpc = getRpcSession(id, hostId);
+    // The resolved host's copy: another host's live copy of the id is another session.
+    const rpc = getRpcSession(id, resolved.host.id);
     let named = false;
     if (rpc?.isAlive?.()) {
       try {

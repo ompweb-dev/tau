@@ -1,6 +1,6 @@
 import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { HostOpError } from "@/lib/hosts/link-protocol";
-import { getRpcSession } from "@/lib/rpc-manager";
+import { getLiveRpcSession } from "@/lib/rpc-manager";
 
 /**
  * GET /api/sessions/[id]/subagents
@@ -23,7 +23,7 @@ export async function GET(
       // acknowledgement; while its RPC wrapper is alive that is "no on-disk
       // history yet", not "unknown session". The client treats an empty
       // roster the same as a 404, so answer 200 to keep the console clean.
-      if (getRpcSession(id, hostId)?.isAlive()) {
+      if (getLiveRpcSession(id, hostId)) {
         return Response.json({ subagents: [] });
       }
       return resolved.response;

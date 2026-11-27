@@ -1,4 +1,4 @@
-import { getExitedRpcSession, getLiveRpcSession, getRpcSession, WebRpcError } from "@/lib/rpc-manager";
+import { getExitedRpcSession, getLiveRpcSession, WebRpcError } from "@/lib/rpc-manager";
 import { apiErrorResponse, hostIdParam, opErrorResponse, resolveSessionHostOr404 } from "@/lib/api-utils";
 import { outboxScope, outboxSnapshot } from "@/lib/message-outbox";
 
@@ -28,7 +28,7 @@ async function sessionState(id: string, hostId: string | null): Promise<Response
     // A live process proves the session exists: pi does not create the session
     // file until the history holds a user or assistant message, so the path check
     // below would 404 a brand-new running session.
-    const rpc = hostId ? getRpcSession(id, hostId) : getLiveRpcSession(id);
+    const rpc = getLiveRpcSession(id, hostId);
     if (rpc?.isAlive()) {
       try {
         const state = await rpc.send({ type: "get_state" });
