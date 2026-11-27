@@ -70,19 +70,17 @@ export async function resolveWorkspaceHost(
   const named = typeof hostId === "string" ? hostId : null;
   const live = getRpcSession(sessionId, named);
   const running = live?.isAlive() ? live : undefined;
-  const pooled = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
-  const retained = pooled && (!named || pooled.hostId === named) ? pooled : null;
+  const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
+  // An unreadable named list falls through to the id's owner (and its errors).
+  const holder = !running && named && retained?.hostId !== named ? await hostHoldingSession(sessionId, named).catch(() => null) : null;
   let session: { host: Host } | { response: Response };
   if (running) session = { host: running.host };
+  else if (holder) session = { host: holder };
   else if (retained) {
     const host = getHost(retained.hostId);
     if (!host) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
     session = { host };
-  } else {
-    // An unreadable named list falls through to the id's owner (and its errors).
-    const holder = named ? await hostHoldingSession(sessionId, named).catch(() => null) : null;
-    session = holder ? { host: holder } : await resolveSessionHostOr404(sessionId);
-  }
+  } else session = await resolveSessionHostOr404(sessionId);
   if ("response" in session) return session;
   const offline = hostOfflineResponse(session.host);
   if (offline) return { response: offline };

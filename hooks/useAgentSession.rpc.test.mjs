@@ -7302,7 +7302,7 @@ test("offline history and state 503s still hydrate held messages and scope while
   world.outboxHold = true;
   const entry = { id: "offline-server-held", sessionId: sid, mode: "followUp", message: "waiting on the offline host", state: "waiting_host", createdAt: 1 };
   world.holds.push({
-    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state`,
+    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state?hostId=h1`,
     produce: async () => ({ status: 503, value: { running: false, hostOffline: true, error: "Build box is offline", outbox: [entry], outboxScope: "offline-scope" } }),
   });
   const view = ownRoot(render(React.createElement(ChatWindow, {
@@ -7322,7 +7322,7 @@ test("offline history and state 503s still hydrate held messages and scope while
   assert.equal(callsTo("POST", `/api/agent/${sid}`).some((call) => call.body?.type === "prompt"), false);
   world.contextUnavailable = false;
   world.holds.push({
-    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state`,
+    match: (method, url) => method === "GET" && url === `/api/sessions/${sid}/state?hostId=h1`,
     produce: async () => ({ value: { running: false, outbox: [entry], outboxScope: "offline-scope" } }),
   });
   await act(() => fireEvent.click(view.getByRole("button", { name: translate("chatWindow.retry") })));
