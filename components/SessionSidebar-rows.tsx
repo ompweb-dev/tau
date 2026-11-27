@@ -99,7 +99,7 @@ interface ProjectRowProps {
   tree: SessionTreeNode[];
   /** Sessions beyond the cap (0 when a filter is active — show all matches). */
   hiddenCount: number;
-  selectedSessionId: string | null;
+  selectedSessionKey: string | null;
   runningSessionIds: Set<string>;
   awaitingInputIds: Set<string>;
   unreadSessionIds: Set<string>;
@@ -138,7 +138,7 @@ function ProjectRow({
   activity,
   tree,
   hiddenCount,
-  selectedSessionId,
+  selectedSessionKey,
   runningSessionIds,
   awaitingInputIds,
   unreadSessionIds,
@@ -476,9 +476,9 @@ function ProjectRow({
             <>
               {visibleRoots.map((node) => (
                 <SessionTreeItem
-                  key={`${node.session.hostId ?? LOCAL_HOST_ID}:${node.session.id}`}
+                  key={sessionRowKey(node.session.hostId, node.session.id)}
                   node={node}
-                  selectedSessionId={selectedSessionId}
+                  selectedSessionKey={selectedSessionKey}
                   runningSessionIds={runningSessionIds}
                   awaitingInputIds={awaitingInputIds}
                   unreadSessionIds={unreadSessionIds}
@@ -531,7 +531,7 @@ function ProjectRow({
 }
 const SessionTreeItem = memo(function SessionTreeItem({
   node,
-  selectedSessionId,
+  selectedSessionKey,
   runningSessionIds,
   awaitingInputIds,
   unreadSessionIds,
@@ -545,7 +545,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
   depth,
 }: {
   node: SessionTreeNode;
-  selectedSessionId: string | null;
+  selectedSessionKey: string | null;
   runningSessionIds: Set<string>;
   awaitingInputIds: Set<string>;
   unreadSessionIds: Set<string>;
@@ -566,7 +566,8 @@ const SessionTreeItem = memo(function SessionTreeItem({
 
   // Pre-compute the booleans so SessionItem only sees primitives — its memo
   // check then never re-renders unless this row's flags actually changed.
-  const isSelected = sessionId === selectedSessionId;
+  const rowKey = sessionRowKey(node.session.hostId, sessionId);
+  const isSelected = rowKey === selectedSessionKey;
   const isRunning = runningSessionIds.has(sessionId);
   const isAwaitingInput = awaitingInputIds.has(sessionId);
   const isUnread = unreadSessionIds.has(sessionId);
@@ -630,9 +631,9 @@ const SessionTreeItem = memo(function SessionTreeItem({
         <div>
           {node.children.map((child) => (
             <SessionTreeItem
-              key={`${child.session.hostId ?? LOCAL_HOST_ID}:${child.session.id}`}
+              key={sessionRowKey(child.session.hostId, child.session.id)}
               node={child}
-              selectedSessionId={selectedSessionId}
+              selectedSessionKey={selectedSessionKey}
               runningSessionIds={runningSessionIds}
               awaitingInputIds={awaitingInputIds}
               unreadSessionIds={unreadSessionIds}
@@ -653,10 +654,13 @@ const SessionTreeItem = memo(function SessionTreeItem({
 }, (prev, next) => {
   // Deep-changed inputs warrant a re-render; otherwise skip.
   if (prev.node !== next.node) return false;
-  if (prev.selectedSessionId !== next.selectedSessionId) {
+  if (prev.selectedSessionKey !== next.selectedSessionKey) {
     // Only re-render if THIS node's selection state flipped.
-    const id = prev.node.session.id;
-    if ((id === prev.selectedSessionId) !== (id === next.selectedSessionId)) return false;
+    const key = sessionRowKey(prev.node.session.hostId, prev.node.session.id);
+    if ((key === prev.selectedSessionKey) !== (key === next.selectedSessionKey)) return false;
+    // Nested rows render inside this memo boundary: a descendant's selection may have flipped. Every parent row
+    // re-renders on a selection change, as for unread; a subtree key set would avoid that if trees grow large.
+    if (prev.node.children.length > 0) return false;
   }
   if (prev.runningSessionIds !== next.runningSessionIds) {
     const id = prev.node.session.id;
@@ -938,6 +942,9 @@ const SessionItem = memo(function SessionItem({
     </>
   );
 });
+/** A session row's identity: one session id can exist on two hosts (a copied session). */
+export const sessionRowKey = (hostId: string | null | undefined, id: string) => `${hostId ?? LOCAL_HOST_ID}:${id}`;
+
 export {
   HostGroup,
   ProjectRow,
