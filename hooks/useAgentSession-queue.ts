@@ -76,10 +76,10 @@ export function rememberLocalOutbox(current: ServerOutbox, entries: LocalOutboxE
   return rememberOutboxEntries(current, entries.filter((entry) => sameCopy(entry, sessionId, hostId)), true);
 }
 
-/** This chat's host copy: the same id on another host is another session (absent = this machine). A server row stored
- *  unbound (`hostId: ""`, no host could name the owner yet) is bound to whichever copy's queue reaches it: any copy's. */
+/** This chat's host copy: the same id on another host is another session. A browser row from before hosts has no
+ *  `hostId`: it is posted without one and the server resolves its host, so it may be any copy's. */
 export function sameCopy(entry: { sessionId: unknown; hostId?: unknown }, sessionId: string | null, hostId: string): boolean {
-  return entry.sessionId === sessionId && (entry.hostId === "" || (entry.hostId ?? "local") === hostId);
+  return entry.sessionId === sessionId && (entry.hostId === undefined || entry.hostId === hostId);
 }
 
 export function markOutboxUncertain(current: ServerOutbox, ids: Iterable<string>): ServerOutbox {

@@ -4043,7 +4043,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (frame.type !== "running" || !Array.isArray(frame.runningSessions)) return;
         // Only this host's copy of the id: another host's run of it is another session (absent hostId = this machine).
         const host = currentSessionHost();
-        wanted = frame.runningSessions.some((running: { id?: unknown; hostId?: unknown }) => Boolean(running) && sameCopy({ sessionId: running.id, hostId: running.hostId }, sid, host));
+        wanted = frame.runningSessions.some((running: { id?: unknown; hostId?: unknown }) => Boolean(running) && running.id === sid && (running.hostId ?? "local") === host); // a running entry without a host is this machine's
         frames += 1;
         failures = 0;
         checkRunning();

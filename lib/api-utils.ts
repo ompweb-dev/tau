@@ -7,6 +7,7 @@ import { HostOpError } from "./hosts/link-protocol";
 import type { OpResult } from "./hosts/session-ops";
 import { hostForSessionId, hostHoldingSession, hostSessions } from "./hosts/session-index";
 import { LOCAL_HOST_ID } from "./hosts/registry";
+import { isHostId } from "./session-host-key";
 import { getLiveRpcSession, getRpcSession, WebRpcError } from "./rpc-manager";
 import type { WorkspaceOwner } from "./workspace-types";
 
@@ -34,15 +35,11 @@ export async function resolveSessionHostOr404(
   }
 }
 
-/** What a host id may be: "local" or a registry UUID, i.e. letters, digits, "-" and "_". Never "/" or "*", which the
- * server's composite keys (`sessionHostKey`) and any-host listener key use, nor empty, which is an unbound outbox row. */
-const HOST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-
 /** A request's `hostId` (`?hostId=` or a body field) at the trust boundary: absent is null, a host id is kept,
  * anything else answers 400 `invalid_host_id`. */
 export function hostIdParam(value: unknown): { hostId: string | null } | { response: Response } {
   if (value === null || value === undefined) return { hostId: null };
-  if (typeof value === "string" && HOST_ID_RE.test(value)) return { hostId: value };
+  if (isHostId(value)) return { hostId: value };
   return { response: Response.json({ error: "hostId is not a host id", code: "invalid_host_id" }, { status: 400 }) };
 }
 

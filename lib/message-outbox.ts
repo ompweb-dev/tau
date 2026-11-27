@@ -38,8 +38,6 @@ const MAX_GLOBAL_OUTBOX_BYTES = 256 * 1024 * 1024;
 const MAX_GLOBAL_OUTBOX_ENTRIES = 1000;
 
 const ENTRY_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-/** `host_id` of an entry accepted while no host list could name its session's owner (never guessed as this machine). */
-const UNBOUND = "";
 /** The listener key's host for a caller that names none (host ids never are "*"). */
 const ANY_HOST = "*";
 const MODES: Record<OutboxMode, true> = { prompt: true, followUp: true, steer: true };
@@ -140,8 +138,8 @@ function db(): Database {
       database.exec(OUTBOX_SCHEMA);
       database.exec(RECEIPT_PIN_SCHEMA);
       const columns = database.prepare("PRAGMA table_info(entries)").all() as { name: string }[];
-      // Rows from before hosts stay unbound (''): their dispatcher binds each to the host it resolves, never to "local".
-      for (const [name, type] of [["host_id", "TEXT NOT NULL DEFAULT ''"], ["dispatch_pid", "INTEGER"], ["upload_receipts", "TEXT"], ["payload_bytes", "INTEGER NOT NULL DEFAULT 0"], ["previous_entry_ids", "TEXT"], ["source_session_id", "TEXT"], ["settlement", "TEXT"], ["replacement_id", "TEXT"], ["replacement_digest", "TEXT"], ["origin", "TEXT"]]) {
+      // Pre-alpha: rows from before hosts are this machine's.
+      for (const [name, type] of [["host_id", "TEXT NOT NULL DEFAULT 'local'"], ["dispatch_pid", "INTEGER"], ["upload_receipts", "TEXT"], ["payload_bytes", "INTEGER NOT NULL DEFAULT 0"], ["previous_entry_ids", "TEXT"], ["source_session_id", "TEXT"], ["settlement", "TEXT"], ["replacement_id", "TEXT"], ["replacement_digest", "TEXT"], ["origin", "TEXT"]]) {
         if (!columns.some((column) => column.name === name)) database.exec(`ALTER TABLE entries ADD COLUMN ${name} ${type}`);
       }
       database.exec("CREATE INDEX IF NOT EXISTS entries_source_session ON entries (source_session_id, state)");
@@ -312,7 +310,7 @@ export function outboxEntries(sessionId: string, hostId?: string | null): Outbox
 
 /** The sessions that own these ids' rows now. A native identity move re-homes a row while its browser still asks under the old id. */
 export function outboxCanonicalSessions(ids: readonly string[], hostId?: string | null): string[] {
-  const rows = db().prepare(`SELECT DISTINCT session_id FROM entries WHERE id IN (${slots(ids)})${hostId ? " AND host_id IN (?, '')" : ""}`).all(...ids, ...(hostId ? [hostId] : [])) as { session_id: string }[];
+  const rows = db().prepare(`SELECT DISTINCT session_id FROM entries WHERE id IN (${slots(ids)})${hostId ? " AND host_id = ?" : ""}`).all(...ids, ...(hostId ? [hostId] : [])) as { session_id: string }[];
   return rows.map((row) => row.session_id);
 }
 
@@ -326,7 +324,7 @@ export function outboxSettlements(sessionId: string, hostId?: string | null): {
   // Read both bounded windows and their dispositions in one SQLite snapshot.
   const receipts = db().prepare(`
     WITH current_receipts AS (
-      SELECT id, settlement FROM entries WHERE (? IS NULL OR host_id IN (?, '')) AND session_id IN (${slots(keys)})
+      SELECT id, settlement FROM entries WHERE (? IS NULL OR host_id = ?) AND session_id IN (${slots(keys)})
         AND state = 'delivered' AND done_at >= ? ORDER BY done_at DESC, rowid DESC LIMIT 256
     ), moved_receipts AS (
       SELECT id, settlement FROM entries WHERE ${entrySessionMatch(keys)}
@@ -348,8 +346,8 @@ export function outboxSnapshot(sessionId: string, hostId?: string | null): { ent
   return db().transaction(() => ({ entries: outboxEntries(sessionId, hostId), ...outboxSettlements(sessionId, hostId) }))();
 }
 
-/** Which copies of a session id a read or match covers: one host's (its UNBOUND rows included: those may be any copy's), or
- * null, every host's, for a caller that names none (as before hosts). The dispatcher always passes a row's own host. */
+/** Which copies of a session id a read or match covers: one host's, or null, every host's, for a caller that names none
+ * (as before hosts). The dispatcher always passes a row's own host. */
 type HostScope = string | null;
 
 /** The ids one host's copy of a session answers to (its native aliases). Another host's copy of the id is another session. */
@@ -362,7 +360,7 @@ const slots = (keys: readonly string[]) => keys.map(() => "?").join(",");
 /** Bound with `matchArgs(scope, keys)`. */
 function entrySessionMatch(keys: string[]): string {
   const values = slots(keys);
-  return `((? IS NULL OR host_id IN (?, '')) AND (session_id IN (${values}) OR source_session_id IN (${values}) OR id IN (SELECT entry_id FROM entry_aliases WHERE session_id IN (${values}))))`;
+  return `((? IS NULL OR host_id = ?) AND (session_id IN (${values}) OR source_session_id IN (${values}) OR id IN (SELECT entry_id FROM entry_aliases WHERE session_id IN (${values}))))`;
 }
 const matchArgs = (scope: HostScope, keys: string[]) => [scope, scope, ...keys, ...keys, ...keys];
 
@@ -446,8 +444,8 @@ function notifyListeners(key: string): void {
         `SELECT COALESCE(SUM(revision), 0) AS revision FROM session_changes WHERE substr(session_id, instr(session_id, '/') + 1) IN (${slots(keys)})`,
       ).get(...keys)
       : db().prepare<{ revision: number }, string[]>(
-        `SELECT COALESCE(SUM(revision), 0) AS revision FROM session_changes WHERE session_id IN (${slots([...keys, ...keys])})`,
-      ).get(...keys.flatMap((id) => [sessionHostKey(hostId, id), sessionHostKey(UNBOUND, id)]));
+        `SELECT COALESCE(SUM(revision), 0) AS revision FROM session_changes WHERE session_id IN (${slots(keys)})`,
+      ).get(...keys.map((id) => sessionHostKey(hostId, id)));
     const revision = `${keys.join("\0")}:${changed?.revision}`;
     if (state.notifiedRevisions.get(key) === revision && (state.pendingNotifications.get(key) ?? Infinity) > now) return;
     let progress = state.listenerProgress.get(key);
@@ -564,23 +562,32 @@ export async function runOutboxCommand(sessionId: string, command: Record<string
   const uploadPayload = uploadIds.length ? JSON.stringify(uploadIds) : null;
   const digestKey = resolveWebAuthSecret().key;
   const retryDigest = createHmac("sha256", digestKey).update(JSON.stringify([mode, message, imagePayload, uploadPayload])).digest("base64url");
+  // Without a host, the owner is resolved once (a live copy first, else the host lists) and stored on the row.
   const resolved = await resolveSessionHostOr404(sessionId, hostId);
-  // Unavailable host lists cannot prove absence: retain the entry until discovery can resolve its owner. An archived
-  // session (on this machine or a linked host) is not gone either: its entries wait until it is restored (spec O6),
-  // and so do those whose archive no host could be asked about.
-  if ("response" in resolved && resolved.response.status === 404 && (await archiveState(sessionId, hostId)) === "absent") {
-    // A restore can move the session from archive to active between these independent reads. Only a fresh active
-    // lookup may confirm deletion; an owner discovered now, or uncertain discovery, keeps this intent durable.
-    const current = await resolveSessionHostOr404(sessionId, hostId);
-    if ("response" in current && current.response.status === 404) return current.response;
+  let host = hostId || ("host" in resolved ? resolved.host.id : null);
+  // An archived session (on this machine or a linked host) is not gone: its entries wait on the host whose archive
+  // lists it until it is restored (spec O6), and so do a named host's whose archive could not be asked about.
+  if ("response" in resolved && resolved.response.status === 404) {
+    const archive = await archiveState(sessionId, hostId);
+    if (archive.state === "archived") host = hostId || archive.hostId || null;
+    else if (archive.state === "absent") {
+      // A restore can move the session from archive to active between these independent reads. Only a fresh active
+      // lookup may confirm deletion.
+      const current = await resolveSessionHostOr404(sessionId, hostId);
+      if ("response" in current && current.response.status === 404) return current.response;
+      if ("host" in current) host = current.host.id;
+    }
   }
-  // An owner no host list can name yet is never guessed: the row stays UNBOUND until its dispatcher discovers it.
-  const host = hostId || ("host" in resolved ? resolved.host.id : UNBOUND);
+  // No host can be named (its list is unavailable): never stored and never guessed as this machine. The retryable
+  // answer leaves the browser its copy, which it sends again.
+  if (!host) {
+    return "response" in resolved && resolved.response.status !== 404 ? resolved.response
+      : Response.json({ error: "The session's host cannot be determined yet", code: "host_sessions_unavailable" }, { status: 503 });
+  }
 
   const now = Date.now();
   const database = db();
-  // An UNBOUND add matches as a host-less caller does: its owner may be any host's copy.
-  const hostScope = host || null;
+  const hostScope = host;
   const keys = sessionKeys(sessionId, hostScope);
   let result: AddResult;
   try {
@@ -732,20 +739,18 @@ export function pumpOutbox(sessionId: string, hostId?: string | null): void {
   for (const host of hosts) pump(sessionId, host);
 }
 
-/** One conversation's queue: `hostId`'s rows and the UNBOUND rows of the same id, oldest first and one delivering at a
- * time (an UNBOUND row may be this host's copy's, and goes to it). `hostId` UNBOUND: only rows no host has bound yet. */
+/** One host copy's queue: `hostId`'s rows of the session, oldest first and one delivering at a time; another host's copy
+ * of the id has its own. */
 function pump(sessionId: string, hostId: string): void {
   const { busy } = outbox();
   const keys = sessionKeys(sessionId, hostId);
-  // Busy per host copy only: another host's queue may take an UNBOUND row too, but binding it is atomic (deliver), so it
-  // goes to one host, and another host's delivery never holds this one.
   const busyKeys = keys.map((key) => sessionHostKey(hostId, key));
   if (busyKeys.some((key) => busy.has(key))) return;
   let next: Row | null;
   try {
-    for (const key of keys) for (const host of new Set([hostId, UNBOUND])) recoverDelivering(key, host);
-    if (db().prepare(`SELECT 1 FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state = 'delivering'`).get(hostId, ...keys)) return;
-    next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as Row | null;
+    for (const key of keys) recoverDelivering(key, hostId);
+    if (db().prepare(`SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering'`).get(hostId, ...keys)) return;
+    next = db().prepare(`SELECT ${COLUMNS} FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as Row | null;
   } catch (error) {
     console.warn(`[tau] outbox: ${error instanceof Error ? error.message : String(error)}`);
     return;
@@ -759,13 +764,12 @@ function pump(sessionId: string, hostId: string): void {
       if (globalThis.__tauOutbox === state && state.started) pump(splitSessionHostKey(key).id, hostId);
     });
   };
-  void deliver(next, hostId).then((outcome) => {
+  void deliver(next).then((outcome) => {
     release();
     if (outcome === "next") pump(sessionId, hostId);
     else if (outcome === "offline") {
       const linkedKeys = sessionKeys(sessionId, hostId);
-      // The delivered row may have been bound to its host meanwhile: it is matched by id.
-      db().prepare(`UPDATE entries SET state = 'waiting_host', error = NULL WHERE (host_id IN (?, '') AND session_id IN (${slots(linkedKeys)}) AND state = 'held') OR (id = ? AND state = 'delivering' AND dispatch_pid = ?)`)
+      db().prepare(`UPDATE entries SET state = 'waiting_host', error = NULL WHERE (host_id = ? AND session_id IN (${slots(linkedKeys)}) AND state = 'held') OR (id = ? AND state = 'delivering' AND dispatch_pid = ?)`)
         .run(hostId, ...linkedKeys, next.id, process.pid);
       publish(sessionId, hostId);
     }
@@ -840,7 +844,7 @@ export function startOutbox(): void {
     try {
       while (dirty.delete(hostId) && attached && state.started) {
         // Only this host's copies: the same id held for another host is another session.
-        const held = db().prepare("SELECT DISTINCT session_id FROM entries WHERE host_id IN (?, '') AND state IN ('held', 'waiting_host')").all(hostId) as { session_id: string }[];
+        const held = db().prepare("SELECT DISTINCT session_id FROM entries WHERE host_id = ? AND state IN ('held', 'waiting_host')").all(hostId) as { session_id: string }[];
         if (!held.length) continue;
         const host = getHost(hostId);
         if (!host || !isLinkUp(host.status())) continue; // the next hello resumes offline work
@@ -849,9 +853,9 @@ export function startOutbox(): void {
         const ids = new Set(sessions.map((session) => session.id));
         for (const session_id of new Set(held.map((row) => row.session_id))) if (ids.has(session_id)) {
           // A change can race the dispatcher's archive read. Leave one wake to run after that claim releases.
-          const busyKey = [sessionHostKey(hostId, session_id), sessionHostKey(UNBOUND, session_id)].find((key) => state.busy.has(key));
-          if (busyKey) wakes.add(busyKey);
-          else pump(session_id, hostId); // an UNBOUND row of an id this host lists goes to it
+          const key = sessionHostKey(hostId, session_id);
+          if (state.busy.has(key)) wakes.add(key);
+          else pump(session_id, hostId);
         }
       }
     } catch {
@@ -973,14 +977,8 @@ function onChildExit(wrapper: AgentSessionWrapper, event: AgentEvent): void {
  * "offline" when the host is down (every entry waits for its next hello), "wait" when a timer or a restore resumes it. */
 type Outcome = "next" | "wait" | "offline";
 
-/** `queueHost`: the host whose queue chose this entry; an UNBOUND entry is bound to it before anything is sent. */
-async function deliver(entry: Row, queueHost: string): Promise<Outcome> {
-  const sessionId = entry.session_id;
-  let hostId = entry.host_id;
-  if (hostId === UNBOUND && queueHost !== UNBOUND) {
-    if (!db().prepare("UPDATE entries SET host_id = ? WHERE id = ? AND host_id = ''").run(queueHost, entry.id).changes) return "next";
-    hostId = queueHost;
-  }
+async function deliver(entry: Row): Promise<Outcome> {
+  const { session_id: sessionId, host_id: hostId } = entry;
   if (entry.uploads && Date.now() - entry.created_at > STAGED_MAX_AGE_MS) {
     // The host's sweep has removed the staged files by now (spec O3): never send the message without them.
     return fail(entry, "The attached files are gone: attach them again", false);
@@ -991,17 +989,10 @@ async function deliver(entry: Row, queueHost: string): Promise<Outcome> {
   const competingPending = priorWrapper?.hasPendingMessageCommands() ?? false;
   const started = await runAgentCommand(sessionId, { type: "get_state" }, entry.owner, { hostId });
   const wrapper = getRpcSession(sessionId, hostId);
-  let current = row(entry.id);
+  const current = row(entry.id);
   if (!current || (current.state !== "held" && current.state !== "waiting_host")) return "next";
   if (!started.ok) return refused(current, started, false);
   if (!wrapper?.isAlive()) return retry(current);
-  if (hostId === UNBOUND) {
-    // The owner is discovered now: the row is that host's copy's from here on.
-    hostId = wrapper.host.id;
-    db().prepare("UPDATE entries SET host_id = ? WHERE id = ? AND host_id = ''").run(hostId, current.id);
-    current = row(current.id);
-    if (!current || current.host_id !== hostId) return "next";
-  }
   const baseline = await started.json() as { data?: { queuedMessages?: unknown; supportsClientMessageIds?: boolean } };
   // A pi child without client message IDs (no tau extension) gets the earlier text-matched hand-off; its rows retire without a bridge.
   const correlated = baseline.data?.supportsClientMessageIds === true;
@@ -1020,7 +1011,7 @@ async function deliver(entry: Row, queueHost: string): Promise<Outcome> {
   const idle = !wrapper.isRunning(true);
   const keys = sessionKeys(sessionId, hostId);
   // A cold start can discover native aliases. Re-select across them before claiming, so an older alias wins.
-  const oldest = db().prepare(`SELECT id FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as { id: string } | null;
+  const oldest = db().prepare(`SELECT id FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state IN ('held', 'waiting_host') ORDER BY rowid LIMIT 1`).get(hostId, ...keys) as { id: string } | null;
   if (oldest?.id !== current.id) return "next";
   // Give legacy accepted authority its immutable generation before transcript/attachment preparation can yield.
   for (const receipt of current.upload_receipts ? JSON.parse(current.upload_receipts) as OutboxUploadReceipt[] : []) {
@@ -1044,7 +1035,7 @@ async function deliver(entry: Row, queueHost: string): Promise<Outcome> {
     ...(current.images ? { images: JSON.parse(current.images) as unknown } : {}),
     ...(current.uploads ? { uploads: JSON.parse(current.uploads) as unknown } : {}),
   };
-  const claimed = db().prepare(`UPDATE entries SET state = 'delivering', dispatch_pid = ? WHERE id = ? AND state IN ('held', 'waiting_host') AND NOT EXISTS (SELECT 1 FROM entries WHERE host_id IN (?, '') AND session_id IN (${slots(keys)}) AND state = 'delivering')`).run(process.pid, current.id, hostId, ...keys);
+  const claimed = db().prepare(`UPDATE entries SET state = 'delivering', dispatch_pid = ? WHERE id = ? AND state IN ('held', 'waiting_host') AND NOT EXISTS (SELECT 1 FROM entries WHERE host_id = ? AND session_id IN (${slots(keys)}) AND state = 'delivering')`).run(process.pid, current.id, hostId, ...keys);
   if (!claimed.changes) return "wait";
   // Claimed but not written yet: anything that stops it before a wrapper begins its native write (including
   // attachment preparation and fences inside runAgentCommand) leaves it unsent, so it is retried.
@@ -1168,7 +1159,7 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
     || (!sent && (body.code === "host_timeout" || body.code === "host_sessions_unavailable" || body.code === "session_state_timeout"))) return retry(entry);
   // Only a missing session can be an archived one; any other 404 (an upload that is gone, say) is that refusal.
   if (!sent && response.status === 404 && body.code === "session_not_found") {
-    const archive = await archiveState(entry.session_id, entry.host_id);
+    const { state: archive } = await archiveState(entry.session_id, entry.host_id);
     // An unreadable archive cannot prove the session is gone: never failed. A passing failure is tried again; one
     // only a host's next hello can change waits for it, as for an offline host, without a timer.
     if (archive === "retry") return retry(entry);
@@ -1184,7 +1175,7 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
     // not deletion; a deferred host-change wake must likewise get a chance to resume this still-unsent entry.
     const resolved = await resolveSessionHostOr404(entry.session_id, entry.host_id);
     if ("host" in resolved) {
-      if (woken(entry)) {
+      if (outbox().wakes?.has(sessionHostKey(entry.host_id, entry.session_id))) {
         if (!setState(entry.id, "held")) return "next";
         publish(entry.session_id, entry.host_id);
         return "wait";
@@ -1192,15 +1183,10 @@ async function refused(entry: Row, response: Response, sent: boolean): Promise<O
       return retry(entry);
     }
     if (resolved.response.status !== 404) return refused(entry, resolved.response, false);
-    if (woken(entry)) return retry(entry);
+    if (outbox().wakes?.has(sessionHostKey(entry.host_id, entry.session_id))) return retry(entry);
   }
   // A lost reply (delivery unknown), a server error or an unresponsive child after the message went: pi may have it.
   return fail(entry, error, sent && (response.status >= 500 || body.code === "session_unresponsive"));
-}
-
-/** A host-change wake waits for this entry's queue (its host's, or the UNBOUND one it was taken from). */
-function woken(entry: Row): boolean {
-  return [entry.host_id, UNBOUND].some((host) => outbox().wakes?.has(sessionHostKey(host, entry.session_id)));
 }
 
 /** `archived`/`absent`: every source answered. Otherwise the archive could not be read: `hello` while only a host's
@@ -1210,13 +1196,17 @@ type ArchiveState = "archived" | "absent" | "hello" | "retry";
 type ArchiveRead = boolean | "hello" | "retry";
 
 /** Whether `sessionId` is in an archive: this machine's, or any linked host's (as GET /api/sessions/archive lists them),
- * or only `hostId`'s when given. An unreadable archive is never `absent`: the session may be in it. */
-async function archiveState(sessionId: string, hostId?: string | null): Promise<ArchiveState> {
+ * or only `hostId`'s when given; `hostId` in the answer is the host whose archive lists it. An unreadable archive is
+ * never `absent`: the session may be in it. */
+async function archiveState(sessionId: string, hostId?: string | null): Promise<{ state: ArchiveState; hostId?: string }> {
+  const linked = listHosts().filter((row) => !hostId || row.id === hostId);
+  const local = !hostId || hostId === LOCAL_HOST_ID;
+  const hosts = [...(local ? [LOCAL_HOST_ID] : []), ...linked.map((row) => row.id)];
   const reads: Promise<ArchiveRead>[] = [
-    ...(!hostId || hostId === LOCAL_HOST_ID
+    ...(local
       ? [listArchivedSessions().then((archives) => archives.some((archive) => archive.id === sessionId), (): ArchiveRead => "retry")]
       : []),
-    ...listHosts().filter((row) => !hostId || row.id === hostId).map(async (row): Promise<ArchiveRead> => {
+    ...linked.map(async (row): Promise<ArchiveRead> => {
       const host = isLinkUp(row.status) ? getHost(row.id) : null;
       if (!host) return "hello";
       try {
@@ -1227,6 +1217,7 @@ async function archiveState(sessionId: string, hostId?: string | null): Promise<
     }),
   ];
   const found = await Promise.all(reads);
-  if (found.includes(true)) return "archived";
-  return found.includes("retry") ? "retry" : found.includes("hello") ? "hello" : "absent";
+  const archivedAt = found.indexOf(true);
+  if (archivedAt !== -1) return { state: "archived", hostId: hosts[archivedAt] };
+  return { state: found.includes("retry") ? "retry" : found.includes("hello") ? "hello" : "absent" };
 }
