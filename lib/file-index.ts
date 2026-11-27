@@ -236,7 +236,7 @@ async function credentialCandidates(): Promise<(filePath: string, info: BigIntSt
       catch (error) { if (!missing(error)) unknown = true; }
     }
   }
-  for (const file of agentDirs.flatMap((dir) => tauCredentialCopies(dir, () => { unknown = true; }))) {
+  for (const file of agentDirs.flatMap((dir) => tauCredentialCopies(dir, true, () => { unknown = true; }))) {
     try { const target = statSync(file, { bigint: true }); targets.add(`${target.dev}:${target.ino}`); }
     catch (error) { if (!missing(error)) unknown = true; }
   }

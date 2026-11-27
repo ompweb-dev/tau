@@ -1,5 +1,4 @@
-import { createHash } from "crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "fs";
+import { existsSync, lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from "fs";
 import { realpath } from "fs/promises";
 import { homedir } from "os";
 import path from "path";
@@ -100,18 +99,28 @@ const TAU_SECRET_FILES = ["web-auth-secret.json", "host.json", "hosts.json", "ho
 const MIRRORED_SECRET_FILES = ["models.json", "mcp.json"];
 
 /**
- * tau's copies of credential files, checked by identity: the member's own ones in `own-config/` (and its agent
- * environment), the staged and replaced ones, and the downloaded objects of the live ones, named by their sha256.
- * ponytail: an object of a version downloaded but not yet applied is not matched; the manifest would name it.
+ * tau's copies of credential files: the member's own ones in `own-config/` (and its agent environment), the staged
+ * and replaced ones, and, for a hard-linked request (`objects`), every downloaded object (tau-written, flat, bounded
+ * by the manifest). A relative symlink moved into `own-config/` also names what it resolved to in the agent dir.
  */
-export function tauCredentialCopies(agentDir: string, onUnavailable?: () => void): string[] {
+export function tauCredentialCopies(agentDir: string, objects: boolean, onUnavailable?: () => void): string[] {
   const tau = path.join(agentDir, "tau");
   const files = [path.join(tau, "own-config", "agent-env.json")];
   for (const name of MIRRORED_SECRET_FILES) {
     for (const dir of [path.join(tau, "own-config"), ...["stage", "trash"].map((d) => path.join(tau, "cluster-config", d))]) {
       files.push(path.join(dir, "agent", name));
     }
-    try { files.push(path.join(tau, "cluster-config", "objects", createHash("sha256").update(readFileSync(path.join(agentDir, name))).digest("hex"))); }
+    const own = path.join(tau, "own-config", "agent", name);
+    try {
+      if (lstatSync(own).isSymbolicLink()) {
+        const link = readlinkSync(own);
+        if (!path.isAbsolute(link)) files.push(path.join(agentDir, link));
+      }
+    } catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
+  }
+  if (objects) {
+    const dir = path.join(tau, "cluster-config", "objects");
+    try { for (const name of readdirSync(dir)) files.push(path.join(dir, name)); }
     catch (error) { if (!isMissingPathError(error)) onUnavailable?.(); }
   }
   return files;
@@ -157,7 +166,7 @@ export function isPiSecretFile(filePath: string): boolean {
     }
     const files = [...[...names].map((name) => path.join(dir, name)), ...TAU_SECRET_FILES.map((name) => path.join(dir, "tau", name)),
       // A member's own credential symlink moved into own-config/ still protects its target.
-      ...tauCredentialCopies(dir, markUnavailable)];
+      ...tauCredentialCopies(dir, Boolean(identity), markUnavailable)];
     for (const file of files) {
       const canonical = resolvedOrSelf(file, markUnavailable);
       if (target === comparablePath(canonical)) return true;
