@@ -624,7 +624,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
         />
       </div>
       {matchesOpen && searchQuery && onOpenSearchMatch && (
-        <SessionSearchMatches key={searchQuery} sessionId={sessionId} hostId={node.session.hostId ?? LOCAL_HOST_ID} query={searchQuery} depth={depth} onOpen={handleOpenMatch} />
+        <SessionSearchMatches key={`${node.session.hostId ?? LOCAL_HOST_ID}:${searchQuery}`} sessionId={sessionId} hostId={node.session.hostId ?? LOCAL_HOST_ID} query={searchQuery} depth={depth} onOpen={handleOpenMatch} />
       )}
       {hasChildren && !collapsed && (
         <div>
