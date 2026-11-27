@@ -140,16 +140,18 @@ test("the sidebar selects the selected host's copy of a session id, not this mac
     if (url.pathname === "/api/sessions") return Response.json({ sessions: [copy("local", "Here"), copy("h1", "There")] });
     return Response.json({});
   };
+  // Both copies' projects are expanded, so both rows render.
+  localStorage.setItem("tau:expanded-projects", JSON.stringify(["/srv/app", "h1:/srv/app"]));
   try {
     render(React.createElement(SessionSidebar, {
       selectedSessionId: "s1", selectedHostId: "h1", selectedCwd: "/srv/app", skipInitialProjectSelection: true,
       onSelectSession() {}, addProjectOpen: false, setAddProjectOpen() {}, usageVisible: false,
     }));
     await waitFor(() => assert.equal(screen.getByRole("button", { name: "There" }).getAttribute("aria-current"), "true"));
-    const here = screen.queryByRole("button", { name: "Here" });
-    assert.equal(here?.getAttribute("aria-current") ?? null, null, "this machine's copy is not selected");
+    assert.equal(screen.getByRole("button", { name: "Here" }).getAttribute("aria-current"), null, "this machine's copy is not selected");
   } finally {
     cleanup();
+    localStorage.removeItem("tau:expanded-projects");
     Object.assign(globalThis, { fetch: original.fetch, Worker: original.Worker, SharedWorker: original.SharedWorker });
     window.matchMedia = original.matchMedia;
   }
