@@ -6111,6 +6111,8 @@ test("a kept chat that sent a builtin command creating its session keeps a tab o
   world.sessions.set("created", { leafId: null, messages: [], entryIds: [] });
   await act(async () => { h.release(); await sleep(400); });
   assert.equal([...h.view.container.querySelectorAll("textarea")].some((area) => area.value.includes("/name Early")), false, "the command, once run, is cleared from the draft it moved to");
+  const stored = Object.keys(window.sessionStorage).filter((key) => window.sessionStorage.getItem(key)?.includes("/name Early"));
+  assert.deepEqual(stored, [], "and from storage, where a reload would bring it back");
   h.view.unmount();
 });
 

@@ -15,7 +15,7 @@ import type { SttAfter } from "@/lib/stt";
 import { formatCompactNumber, formatPercent } from "@/lib/format";
 import { ContextDetailPanel } from "./ComposerPanels";
 import { RecordingDeck } from "./RecordingDeck";
-import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, moveDraftSubmissions, getDraft, getDraftRevision, foldSentDraft, holdDraftOwner, isSameDraft, isSentDraftKey, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
+import { beginDraftSubmission, clearDraft, consumeDraft, endDraftSubmission, moveDraftSubmission, getDraft, type DraftSubmission, getDraftRevision, foldSentDraft, holdDraftOwner, isSameDraft, isSentDraftKey, markDraftEdited, mergeRecoveredText, recoverDraft, requiresPromptMode, setDraft, subscribeDraftConsumption, subscribeDraftRecovery, type ChatDraft } from "@/lib/draft-store";
 import { expandWebSlashCommand } from "@/lib/web-slash-commands";
 import { WorkspaceFileContext } from "@/lib/workspace-file-context";
 import type { AttachedImage, AttachedTextFile } from "./ChatInput-draft-attachments";
@@ -463,6 +463,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   }, [markInputEdited]);
   // Navigation starts a new identity, even when a draft key is later reused.
   const draftRecoveryIdentityRef = useRef({ key: draftKey });
+  // This composer's submissions in flight (clearOnceStored), which move with its draft.
+  const ownSubmissionsRef = useRef(new Set<DraftSubmission>());
   // Async dictation and slash-command completions must see the latest edit gate.
   const submissionBlockedRef = useRef(submissionBlocked);
   const valueRef = useRef(value);
@@ -935,8 +937,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     // Dictation can submit before the layout persistence effect sees its inserted text.
     if (key) setDraft(key, captureDraft());
     const pending = beginDraftSubmission(draftKeyRef.current);
+    ownSubmissionsRef.current.add(pending);
     const commit = () => {
       endDraftSubmission(pending);
+      ownSubmissionsRef.current.delete(pending);
       // Only the sent draft itself is ever consumed: an edit since it was sent keeps it.
       if (pending.edited) return;
       if (composerAliveRef.current && draftKeyRef.current === pending.key
@@ -946,7 +950,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       else if (pending.key && pending.snapshot) consumeDraft(pending.key, pending.snapshot, pending.revision);
     };
     /** The submission settled without a commit (refused or failed): stop tracking it. */
-    commit.release = () => endDraftSubmission(pending);
+    commit.release = () => {
+      endDraftSubmission(pending);
+      ownSubmissionsRef.current.delete(pending);
+    };
     return commit;
   }, [clearInput, captureDraft]);
 
@@ -971,8 +978,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       draftRecoveryIdentityRef.current = { key: draftKey };
       setDraft(draftKey, captureDraft());
       clearDraft(previousDraftKey);
-      // A command in flight (`/name` sends before it clears) clears the moved draft once it is stored.
-      moveDraftSubmissions(previousDraftKey, draftKey);
+      // This composer's command in flight (`/name` sends before it clears) clears the moved draft once it is stored.
+      for (const submission of ownSubmissionsRef.current) if (submission.key === previousDraftKey) moveDraftSubmission(submission, draftKey);
       return;
     }
     // Leaving the chat's own key: what it holds goes to its session's draft when the session takes over, else back to

@@ -167,9 +167,11 @@ export function endDraftSubmission(submission: DraftSubmission): void {
   submissions.delete(submission);
 }
 
-/** Submissions in flight from `from` settle against `to` (the same chat's draft moved there). */
-export function moveDraftSubmissions(from: string, to: string): void {
-  for (const submission of submissions) if (submission.key === from) submission.key = to;
+/** A submission in flight settles against `to`, where its chat's draft just moved unchanged: it takes `to`'s
+ *  revision, so its commit still consumes the draft it sent unless that is edited later. */
+export function moveDraftSubmission(submission: DraftSubmission, to: string): void {
+  submission.key = to;
+  submission.revision = getDraftRevision(to);
 }
 
 function markSubmissionsEdited(key: string): void {
