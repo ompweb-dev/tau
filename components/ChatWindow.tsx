@@ -1,6 +1,6 @@
 "use client";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { ArrowDown, ChevronDown, ChevronUp, Paperclip, Square } from "lucide-react";
 import type { AgentMessage, AssistantMessage, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
 import { translate, useI18n } from "@/lib/i18n";
@@ -74,7 +74,7 @@ interface Props {
   hideThinkingBlock?: boolean;
   onAgentEnd?: () => void;
   onSessionCreated?: (session: SessionInfo) => void;
-  /** True while this new chat's session is being created, false once that settles or the chat unmounts. */
+  /** True from a send that creates this new chat's session until the chat is promoted or the send ends; false on unmount too. */
   onCreatingChange?: (creating: boolean) => void;
   /** A file tab covers this chat: its window-level keys (Esc stop, model and thinking cycling, dictation) stay off. */
   covered?: boolean;
@@ -523,7 +523,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
 
   // The latest handler reports the end: the chat's tab (and so its handler) may change while its session is created.
   const onCreatingChangeRef = useRef(onCreatingChange);
-  onCreatingChangeRef.current = onCreatingChange;
+  useLayoutEffect(() => { onCreatingChangeRef.current = onCreatingChange; }, [onCreatingChange]);
   useEffect(() => {
     if (!creatingSession) return;
     onCreatingChangeRef.current?.(true);

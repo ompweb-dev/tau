@@ -200,6 +200,8 @@ export function AppShell({ appName }: { appName: string }) {
   // Kept new chats whose session was still being created when another new chat started: each keeps its tab
   // (and mount) under an id of its own until its session takes the tab over.
   const [creatingChats, setCreatingChats] = useState<{ id: string; draft: DraftChat }[]>([]);
+  const creatingChatsRef = useRef(creatingChats);
+  creatingChatsRef.current = creatingChats;
   const creatingChatSeqRef = useRef(0);
   // A fresh new chat while one is kept in a group: the kept one closes (its draft stays in the store), so the
   // fresh one opens in the focused group on a mount of its own. One being created moves to a tab of its own.
@@ -212,7 +214,11 @@ export function AppShell({ appName }: { appName: string }) {
       const id = `chat:creating:${++creatingChatSeqRef.current}`;
       setCreatingChats((chats) => [...chats, { id, draft: kept }]);
       setTabLayout((layout) => replaceTab(layout, NEW_CHAT_TAB_ID, id));
-      setChatMounts((mounts) => ({ ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[NEW_CHAT_TAB_ID] ?? NEW_CHAT_TAB_ID } }));
+      // The mount goes with it: a fresh new chat must not reuse its key, and so its ChatWindow.
+      setChatMounts((mounts) => {
+        const { [NEW_CHAT_TAB_ID]: key = NEW_CHAT_TAB_ID, ...keys } = mounts.keys;
+        return { ...mounts, keys: { ...keys, [id]: key } };
+      });
       return;
     }
     setTabLayout((layout) => closeTab(layout, NEW_CHAT_TAB_ID));
@@ -1585,10 +1591,17 @@ export function AppShell({ appName }: { appName: string }) {
     if (!placed) setChatMounts((mounts) => ({ ...mounts, keys: { ...mounts.keys, [id]: mounts.keys[tabId] ?? tabId } }));
     setRefreshKey((k) => k + 1);
   }, []);
-  // Its tab closes with it. A creation that ends without a session closes it too (the composer keeps the draft).
+  // Its tab closes with it.
   const dropCreatingChat = useCallback((tabId: string) => {
     setCreatingChats((chats) => chats.filter((chat) => chat.id !== tabId));
   }, []);
+  // Its send ended without a session to show (its chat's notice goes with it): say so, then close it. The
+  // composer recovers the message into the draft it was sent from.
+  const failCreatingChat = useCallback((tabId: string) => {
+    if (!creatingChatsRef.current.some((chat) => chat.id === tabId)) return; // Promoted or closed.
+    toast.error(t("appShell.creatingSessionFailed"));
+    dropCreatingChat(tabId);
+  }, [t, dropCreatingChat]);
   const handleCreatingChatCreated = useCallback((tabId: string, session: SessionInfo) => {
     dropCreatingChat(tabId);
     promoteUnselectedChat(tabId, session);
@@ -2299,7 +2312,7 @@ export function AppShell({ appName }: { appName: string }) {
     }),
     // Closable only while another chat is selected: the selected new chat has nothing to give way to.
     ...(draftTabOpen ? [[NEW_CHAT_TAB_ID, { id: NEW_CHAT_TAB_ID, label: t("appShell.newSession"), title: t("appShell.newSession"), icon: chatIcon, closable: !draftTabShown, file: false }] as const] : []),
-    ...creatingChats.map((chat) => [chat.id, { id: chat.id, label: t("appShell.creatingSession"), title: t("appShell.creatingSession"), icon: chatIcon, file: false }] as const),
+    ...creatingChats.map((chat) => [chat.id, { id: chat.id, label: t("appShell.creatingSession"), title: t("appShell.creatingSession"), icon: chatIcon, disabled: true, file: false }] as const),
     ...fileTabs.map((tab) => [tab.id, { id: tab.id, label: tab.label, title: tab.filePath, icon: getFileIcon(tab.label, 13), file: true }] as const),
   ]);
   const unreachableReason = (session: SessionInfo) => hostUnavailableReason(t, hosts, remoteHostId(session.hostId) ?? LOCAL_HOST_ID);
@@ -3068,7 +3081,7 @@ export function AppShell({ appName }: { appName: string }) {
               newSessionProjectId={draft.project?.projectId}
               newSessionInitialization={draft.project?.poolId ? draft.initialization : undefined}
               onSessionCreated={creatingId ? (session) => handleCreatingChatCreated(creatingId, session) : handleSessionCreated}
-              onCreatingChange={creatingId ? (creating) => { if (!creating) dropCreatingChat(creatingId); } : handleDraftCreating}
+              onCreatingChange={creatingId ? (creating) => { if (!creating) failCreatingChat(creatingId); } : handleDraftCreating}
               onAgentEnd={handleAgentEnd}
               modelsRefreshKey={modelsRefreshKey}
               onOpenProviders={() => setSettingsTab("providers")}
