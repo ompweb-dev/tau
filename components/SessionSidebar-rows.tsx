@@ -624,7 +624,7 @@ const SessionTreeItem = memo(function SessionTreeItem({
         />
       </div>
       {matchesOpen && searchQuery && onOpenSearchMatch && (
-        <SessionSearchMatches key={searchQuery} sessionId={sessionId} query={searchQuery} depth={depth} onOpen={handleOpenMatch} />
+        <SessionSearchMatches key={searchQuery} sessionId={sessionId} hostId={node.session.hostId ?? LOCAL_HOST_ID} query={searchQuery} depth={depth} onOpen={handleOpenMatch} />
       )}
       {hasChildren && !collapsed && (
         <div>
@@ -763,7 +763,7 @@ const SessionItem = memo(function SessionItem({
     setRenaming(false);
     if (name === (session.name ?? "")) return;
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}?hostId=${encodeURIComponent(session.hostId ?? LOCAL_HOST_ID)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -773,7 +773,7 @@ const SessionItem = memo(function SessionItem({
     } catch {
       // The next refresh remains authoritative if the rename fails.
     }
-  }, [renameValue, session.id, session.name, onRenamed]);
+  }, [renameValue, session.id, session.hostId, session.name, onRenamed]);
 
  const handleArchive = useCallback(async () => {
  setDeleting(true);
@@ -785,7 +785,7 @@ const SessionItem = memo(function SessionItem({
  setDeleting(false);
  toast.error(t("sessionSidebar.archiveFailed"));
  }
- }, [session.id, onDeleted, t]);
+ }, [session.id, session.hostId, onDeleted, t]);
   const archiveBlocked = hasChildren;
   const archiveTitle = hasChildren ? t("sessionSidebar.archiveLeafOnly") : t("sessionSidebar.archive");
 
@@ -801,13 +801,13 @@ const SessionItem = memo(function SessionItem({
       setDeleting(false);
       toast.error(t("sessionSidebar.deleteFailed"));
     }
-  }, [session.id, onDeleted, t, deleting]);
+  }, [session.id, session.hostId, onDeleted, t, deleting]);
   const [copyingTranscript, setCopyingTranscript] = useState(false);
   const handleCopyTranscript = useCallback(async () => {
     if (copyingTranscript) return;
     setCopyingTranscript(true);
     try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`);
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}?hostId=${encodeURIComponent(session.hostId ?? LOCAL_HOST_ID)}`);
       if (!response.ok) throw new Error("Session transcript fetch failed");
       const data = await response.json() as { context?: { messages?: AgentMessage[] }; info?: { cwd?: string } };
       const markdown = transcriptToMarkdown(data.context?.messages ?? [], { title, cwd: data.info?.cwd ?? session.cwd });
@@ -818,7 +818,7 @@ const SessionItem = memo(function SessionItem({
     } finally {
       setCopyingTranscript(false);
     }
-  }, [copyingTranscript, session.id, session.cwd, title, t]);
+  }, [copyingTranscript, session.id, session.hostId, session.cwd, title, t]);
 
  const closeConfirmation = useCallback(() => {
  setConfirmDelete(false);

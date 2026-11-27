@@ -1048,6 +1048,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionHostId, newSessio
       <SubagentTranscriptDialog
         subagent={selectedSubagent}
         sessionId={session?.id ?? sessionIdRef.current ?? null}
+        hostId={fileSource.hostId}
         transcriptVersion={selectedSubagent ? (subagentTranscriptVersions[selectedSubagent.id] ?? 0) : 0}
         events={selectedSubagent ? (subagentEvents[selectedSubagent.id] ?? []) : undefined}
         onClose={() => setSelectedSubagent(null)}

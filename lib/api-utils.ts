@@ -66,16 +66,23 @@ export async function resolveWorkspaceHost(
     return "response" in resolved ? resolved : { host: resolved.host, sessionId: null, sessionFile: null, cwd: null };
   }
   if (!isValidSessionId(sessionId)) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
-  const live = getRpcSession(sessionId);
+  // The named host's copy of an id first; any other copy answers 409 below.
+  const named = typeof hostId === "string" ? hostId : null;
+  const live = getRpcSession(sessionId, named);
   const running = live?.isAlive() ? live : undefined;
-  const retained = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
+  const pooled = running?.sessionId === sessionId ? null : pooledWorkspaceForSession(sessionId);
+  const retained = pooled && (!named || pooled.hostId === named) ? pooled : null;
   let session: { host: Host } | { response: Response };
   if (running) session = { host: running.host };
   else if (retained) {
     const host = getHost(retained.hostId);
     if (!host) return { response: Response.json(SESSION_NOT_FOUND, { status: 404 }) };
     session = { host };
-  } else session = await resolveSessionHostOr404(sessionId);
+  } else {
+    // An unreadable named list falls through to the id's owner (and its errors).
+    const holder = named ? await hostHoldingSession(sessionId, named).catch(() => null) : null;
+    session = holder ? { host: holder } : await resolveSessionHostOr404(sessionId);
+  }
   if ("response" in session) return session;
   const offline = hostOfflineResponse(session.host);
   if (offline) return { response: offline };
